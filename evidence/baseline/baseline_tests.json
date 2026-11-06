@@ -1,0 +1,12 @@
+{
+ "command": "PYTHONPATH=src:. python3 -m pytest -q",
+ "python": "3.12.0",
+ "platform": "macOS (Darwin 25.2.0, arm64)",
+ "revision": "07a9174b55c1cf21a5873bd7962b2227cd545c96",
+ "collected": 664,
+ "passed": 662,
+ "skipped": 2,
+ "failed": 0,
+ "duration_seconds": 18.44,
+ "recorded_at": "2026-10-25T05:39:55Z"
+}

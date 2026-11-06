@@ -1,0 +1,104 @@
+{
+  "schema_version": 1,
+  "kind": "qualification_run",
+  "branch": "codex/sis-v3.3-governed-learning",
+  "generated_at": "2026-10-26T08:03:26Z",
+  "commit_at_generation": "279fee137946212fc8f7d453e0a32142caa23d58",
+  "note": "the suite, deterministic campaign, smoke, ingestion smoke, skill-holdout and packaging rows were re-run at commit_at_generation; the live codex campaign and the v3.2 failure-injection rows are carried over from 980dd34e945821e2d46f748d4f1b2fa8adaa5608 and are marked as such. The exact source commit of the packaged archive is recorded in release/release_manifest.json",
+  "commands": [
+    {
+      "command": "PYTHONPATH=src python3 -m pytest tests/ -q",
+      "result": {
+        "passed": 804,
+        "skipped": 2,
+        "failed": 0
+      }
+    },
+    {
+      "command": "PYTHONPATH=src python3 tools/governed_campaign.py -o <evidence_dir>",
+      "result": {
+        "exit_code": 0,
+        "solved": {
+          "A": 0,
+          "B": 2,
+          "C": 2,
+          "D": 0,
+          "E": 2
+        },
+        "qualified_candidates": 5,
+        "verdict": "machinery evidence only; scripted agent, not live efficacy"
+      }
+    },
+    {
+      "command": "PYTHONPATH=src python3 tools/governed_live_campaign.py -o <evidence_dir> --wall 120",
+      "result": {
+        "exit_code": 0,
+        "agent": "authenticated codex exec (ChatGPT login)",
+        "solved_holdout": {
+          "A": 2,
+          "B": 2,
+          "C": 2,
+          "D": 2,
+          "E": 2
+        },
+        "qualified_candidates": 5,
+        "verdict": "full lifecycle authentic; null efficacy contrast \u2014 fixture ceiling hit unaided",
+        "carried_over_from": "980dd34e945821e2d46f748d4f1b2fa8adaa5608"
+      }
+    },
+    {
+      "command": "PYTHONPATH=src python3 tools/smoke_integration.py",
+      "result": {
+        "exit_code": 0,
+        "note": "CLI + authed loopback HTTP smoke; 401/403/200 boundaries"
+      }
+    },
+    {
+      "command": "PYTHONPATH=src python3 tools/ingest_skills.py --skills skills/skills-main/skills --registry <dir>/c.db --scope-kind family_id --scope-value skills",
+      "result": {
+        "exit_code": 1,
+        "discovered": 34,
+        "submitted": 33,
+        "rejected": 1,
+        "rejected_reasons": [
+          "graphics/isometric-motion: skill_body_too_large"
+        ],
+        "state_after_ingest": "proposed",
+        "second_run": "33 already_present, 0 submitted",
+        "verdict": "packaging smoke only; ingested skills are unqualified and were not evaluated"
+      }
+    },
+    {
+      "command": "PYTHONPATH=src python3 tools/skill_holdout.py --skills-root ../skills/skills-main/skills --skills-root \"../skills/vskill-main 2/plugins\" -o evidence/skills/holdout.json",
+      "result": {
+        "exit_code": 0,
+        "qualified": [
+          "write-skills",
+          "php2shell-check",
+          "write-tests"
+        ],
+        "solved": {
+          "A": 0,
+          "E": 1
+        },
+        "served_skill_steps": true,
+        "verdict": "worked template with a deterministic scripted agent and test-custody keys; machinery evidence only"
+      }
+    },
+    {
+      "command": "security failure injection (13 scenarios)",
+      "result": {
+        "scenarios_failing": 0,
+        "scenarios_total": 13,
+        "evidence": "evidence/security/failure_injection.json",
+        "carried_over_from": "980dd34e945821e2d46f748d4f1b2fa8adaa5608"
+      }
+    },
+    {
+      "command": "python3 tools/package_release.py --status IMPLEMENTED_NOT_EFFICACY_QUALIFIED --passed 804 --skipped 2 --failed 0",
+      "result": "see release/release_manifest.json and release/verification.json"
+    }
+  ],
+  "status": "IMPLEMENTED_NOT_EFFICACY_QUALIFIED",
+  "efficacy": "EFFICACY_NOT_QUALIFIED \u2014 no powered preregistered live holdout has been run"
+}

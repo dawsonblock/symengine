@@ -1,0 +1,83 @@
+{
+  "agent": "codex exec (ChatGPT-authenticated)",
+  "generated_at": "2026-10-25T06:42:31Z",
+  "kind": "live_study_summary",
+  "paired": {
+    "C_vs_A": {
+      "losses": 1,
+      "mcnemar_exact_p": "1.0000000000",
+      "solved_delta": -1,
+      "ties": 5,
+      "wins": 0
+    },
+    "D_vs_A": {
+      "losses": 0,
+      "mcnemar_exact_p": "1.0000000000",
+      "solved_delta": 1,
+      "ties": 5,
+      "wins": 1
+    },
+    "D_vs_B": {
+      "losses": 0,
+      "mcnemar_exact_p": "0.5000000000",
+      "solved_delta": 2,
+      "ties": 4,
+      "wins": 2
+    },
+    "D_vs_C": {
+      "losses": 0,
+      "mcnemar_exact_p": "0.5000000000",
+      "solved_delta": 2,
+      "ties": 4,
+      "wins": 2
+    }
+  },
+  "per_task": {
+    "task-clamp": {
+      "A": "pass",
+      "B": "fail",
+      "C": "fail",
+      "D": "pass"
+    },
+    "task-csv": {
+      "A": "pass",
+      "B": "pass",
+      "C": "pass",
+      "D": "pass"
+    },
+    "task-dates": {
+      "A": "pass",
+      "B": "pass",
+      "C": "pass",
+      "D": "pass"
+    },
+    "task-dedup": {
+      "A": "pass",
+      "B": "pass",
+      "C": "pass",
+      "D": "pass"
+    },
+    "task-money": {
+      "A": "fail",
+      "B": "fail",
+      "C": "fail",
+      "D": "pass"
+    },
+    "task-slug": {
+      "A": "fail",
+      "B": "fail",
+      "C": "fail",
+      "D": "fail"
+    }
+  },
+  "report_digest": "f5ce1a9cf94b5793be9ef936e5b16e48d7414035637eecbd73f9353494caad83",
+  "schema_version": 1,
+  "solved": {
+    "A": 4,
+    "B": 3,
+    "C": 3,
+    "D": 5
+  },
+  "tool": "tools/live_study.py --wall 120",
+  "verdict": "positive D-vs-A direction (1W/0L) but underpowered: p=1.0, gate not met \u2014 inconclusive"
+}

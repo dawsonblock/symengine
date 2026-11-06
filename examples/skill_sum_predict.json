@@ -1,0 +1,10 @@
+{
+  "namespace": "list_sum",
+  "inputs": {
+    "nums": [
+      10,
+      20,
+      30
+    ]
+  }
+}

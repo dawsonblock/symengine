@@ -1,0 +1,147 @@
+{
+  "archive": {
+    "path": "release/SIS-v3.3.1-AUTHORITY-CLOSURE.zip",
+    "project_dir": "sis-v2-authority-transfer",
+    "sha256": "d9503b0ba968c848e8cecf9aa1db5c75145303a5977a107cd97ebd122597518a",
+    "sha256_verified_by": "tools/verify_release.py (streaming ZIP verification)",
+    "source_files": 353,
+    "verification": {
+      "archive": "SIS-v3.3.1-AUTHORITY-CLOSURE.zip",
+      "fresh_extraction": {
+        "compileall_src": true,
+        "extracted_test_smoke": {
+          "command": "pytest -q tests/v3/test_candidates.py",
+          "returncode": 0,
+          "tail": "39 passed in 0.49s"
+        },
+        "verify_tree": {
+          "files": 353
+        }
+      },
+      "kind": "release_verification",
+      "schema_version": 1,
+      "source": {
+        "commit": "c5e6c9969f1fef7bf3b6337a2793d3a37eb9dc2d",
+        "dirty": false,
+        "dirty_paths": []
+      },
+      "source_binding": {
+        "files": 353,
+        "project": "sis-v2-authority-transfer",
+        "source_bound": true
+      },
+      "zip_verify": {
+        "manifest": "RELEASE_SHA256.json",
+        "project": "sis-v2-authority-transfer",
+        "source_files": 353,
+        "valid": true,
+        "zip_sha256": "d9503b0ba968c848e8cecf9aa1db5c75145303a5977a107cd97ebd122597518a"
+      }
+    }
+  },
+  "kind": "release_qualification",
+  "known_limitations": [
+    "Local seatbelt/subprocess executor is not a validated hostile-code boundary.",
+    "Checkpoint and custody separation is a deployment requirement.",
+    "A compromised authority or evaluator key defeats its gate.",
+    "Pattern-based injection scanning is advisory, not proof of safety.",
+    "No powered real-agent efficacy result; no claim of improvement."
+  ],
+  "real_agent_attempt": {
+    "evidence": "evidence/evaluation/real_agent_attempt_summary.json",
+    "reason": "Codex usage limit after 20 of 40 arm runs",
+    "status": "INVALID_INFRASTRUCTURE",
+    "tasks_no_action": [
+      "refactor-discount",
+      "dep-import",
+      "diag-bank",
+      "test-slug"
+    ],
+    "tasks_preregistered": 8,
+    "tasks_with_agent_action": 4
+  },
+  "release": "SIS-v3.3.1-AUTHORITY-CLOSURE",
+  "release_classification": "IMPLEMENTED_NOT_EFFICACY_QUALIFIED",
+  "release_gate_checklist": [
+    {
+      "evidence": "tests/v3/test_authority_checkpoints.py",
+      "gate": "Protected authority checkpoint rejects journal rollback",
+      "status": "PASS"
+    },
+    {
+      "evidence": "tests/v3/test_authority_checkpoints.py",
+      "gate": "Signed revocations remain effective after database restoration",
+      "status": "PASS"
+    },
+    {
+      "evidence": "tests/v3/test_evaluation_certificates.py",
+      "gate": "Evaluation certificates attest to the actual candidate delivered",
+      "status": "PASS"
+    },
+    {
+      "evidence": "tests/v3/test_evaluation_certificates.py",
+      "gate": "Underpowered or nonconforming evaluations cannot qualify production candidates",
+      "status": "PASS"
+    },
+    {
+      "evidence": "tests/v3/test_execution_identity_custody.py",
+      "gate": "Repository identity and source snapshot are authenticated",
+      "status": "PASS"
+    },
+    {
+      "evidence": "tests/v3/test_execution_identity_custody.py",
+      "gate": "Revoked or corrupted evidence prevents trusted serving",
+      "status": "PASS"
+    },
+    {
+      "evidence": "tests/v3/test_skill_ingest_hardening.py",
+      "gate": "Identical skill content does not collapse distinct scopes",
+      "status": "PASS"
+    },
+    {
+      "evidence": "tests/v3/test_skill_ingest_hardening.py",
+      "gate": "Markdown code examples are not extracted as active instructions",
+      "status": "PASS"
+    },
+    {
+      "evidence": "tests/v3/test_skill_ingest_hardening.py",
+      "gate": "Catalog discovery cannot silently truncate results",
+      "status": "PASS"
+    },
+    {
+      "evidence": "evidence/sandbox/holdout_summary.json",
+      "gate": "Scripted holdouts run without environment-specific manual fixes",
+      "status": "PASS"
+    },
+    {
+      "attempt_summary": "evidence/evaluation/real_agent_attempt_summary.json",
+      "detail": "Eight-task real Codex attempt executed; Codex usage limit hit after 20/40 arm runs. Four tasks had zero tool events and are infrastructure failures, not task failures. Gate blocked until a valid quota-available rerun.",
+      "evidence": "evidence/evaluation/real_agent_gate.json",
+      "gate": "Independent five-arm real-agent evaluation completed",
+      "status": "BLOCKED"
+    },
+    {
+      "evidence": "release/verification.json",
+      "gate": "Canonical release ZIP passes independent integrity verification",
+      "status": "PASS"
+    }
+  ],
+  "schema_version": 1,
+  "security_vs_efficacy": {
+    "authority_and_correctness": "IMPLEMENTED_AND_TESTED",
+    "learning_efficacy": "BLOCKED_EXTERNAL_AGENT_QUOTA",
+    "sandbox": "IMPLEMENTED_DEFENSE_IN_DEPTH_NOT_A_VALIDATED_OS_BOUNDARY"
+  },
+  "source_commit": "c5e6c9969f1fef7bf3b6337a2793d3a37eb9dc2d",
+  "tests": {
+    "baseline_v33": {
+      "failed": 0,
+      "passed": 804,
+      "skipped": 2
+    },
+    "command": "PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONNOUSERSITE=1 PYTHONPATH=src python3 -m pytest -q",
+    "failed": 0,
+    "passed": 926,
+    "skipped": 3
+  }
+}

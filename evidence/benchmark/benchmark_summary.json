@@ -1,0 +1,63 @@
+{
+  "deterministic_campaign": {
+    "evidence": "evidence/integration/campaign_evidence.json",
+    "reading": "machinery reproduces end-to-end; scripted agent proves pipeline, not efficacy",
+    "solved": {
+      "A": 0,
+      "B": 2,
+      "C": 2,
+      "D": 0,
+      "E": 2
+    },
+    "tool": "tools/governed_campaign.py"
+  },
+  "generated_at": "2026-10-25T06:49:41Z",
+  "kind": "benchmark_summary",
+  "live_governed_campaign": {
+    "agent": "codex exec (ChatGPT-authenticated)",
+    "audit_entries": 31,
+    "contrast_E_vs_A": {
+      "losses": 0,
+      "mcnemar_p": "1.0000000000",
+      "solved_delta": 0,
+      "wins": 0
+    },
+    "evidence": "evidence/benchmark/live-campaign/live_campaign_evidence.json",
+    "lifecycle": "real episodes -> induction -> candidates -> 5-arm sealed holdout -> receipt-bound qualification -> serving -> revocation",
+    "qualified_candidates": 5,
+    "reading": "full lifecycle authentic with real agent; holdout ceiling hit unaided \u2014 null efficacy on this fixture pair",
+    "solved_dev_baseline": {
+      "A": 2
+    },
+    "solved_holdout": {
+      "A": 2,
+      "B": 2,
+      "C": 2,
+      "D": 2,
+      "E": 2
+    },
+    "tool": "tools/governed_live_campaign.py --wall 120"
+  },
+  "live_study_A_vs_D": {
+    "agent": "codex exec (ChatGPT-authenticated)",
+    "arms": "A/B/C unguided, D served qualified procedures",
+    "contrast_D_vs_A": {
+      "losses": 0,
+      "mcnemar_p": "1.0000000000",
+      "solved_delta": 1,
+      "wins": 1
+    },
+    "evidence": "evidence/benchmark/live_study_v33.json",
+    "reading": "positive direction, underpowered \u2014 gate not met",
+    "solved": {
+      "A": 4,
+      "B": 3,
+      "C": 3,
+      "D": 5
+    },
+    "tasks": 6,
+    "tool": "tools/live_study.py --wall 120"
+  },
+  "schema_version": 1,
+  "verdict": "IMPLEMENTED_NOT_EFFICACY_QUALIFIED \u2014 all machinery verified with a real model; no powered effect demonstrated on this branch"
+}

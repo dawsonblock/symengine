@@ -1,0 +1,18 @@
+
+CLOSED D1_identity_disableable_in_production
+       observed={'constructed': False, 'error': 'production_requires_execution_identity'}
+       expected={'constructed': False}
+CLOSED D2_same_nonce_two_replicas
+       observed={'a': 'no_qualified_procedure', 'b': 'catalog_unavailable'}
+       expected={'a': 'no_qualified_procedure', 'b': 'catalog_unavailable'}
+CLOSED D3_revocation_history_rollback
+       observed={'after_revoke': 'revoked', 'after_restore': 'active', 'custody_verify_ok': True, 'authority_gate': 'rejected:authority_checkpoint_rejected:custody_entry_count_regression'}
+       expected={'after_revoke': 'revoked', 'authority_gate': 'rejected:authority_checkpoint_rejected:custody_entry_count_regression'}
+CLOSED D4_diamond_dependency_graph
+       observed={'status_a': 'active'}
+       expected={'status_a': 'active'}
+CLOSED D5_revocation_during_decision
+       observed={'decision': 'abstain', 'reason': 'catalog_unavailable', 'served_revoked_text': False}
+       expected={'decision': 'abstain', 'reason': 'catalog_unavailable', 'served_revoked_text': False}
+
+open defects: 0

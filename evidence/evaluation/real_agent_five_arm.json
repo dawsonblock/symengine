@@ -1,0 +1,1093 @@
+{
+  "bootstrap": {
+    "detail": "",
+    "import_receipt_digest": "befabe5112b3467867b5ec95c66aafd35d15d73a740e0e7be541edc919af0528",
+    "ok": true,
+    "pytest_receipt_digest": "eed0c9e190165172670bb86fda9902a6725ef644445e1f30d47295d47ff82e9d",
+    "pytest_version": "8.4.2",
+    "reason": "ok"
+  },
+  "budget": {
+    "token_budget": 100000,
+    "tool_budget": 1000,
+    "wall_seconds": 300
+  },
+  "budget_enforcement": "wall clock is hard-enforced: arms run in a watchdog thread abandoned at the limit (agent_timeout); token/tool budgets prefer harness-metered (verified) counters over agent-reported usage; missing usage is UNVERIFIED",
+  "budget_violations": 0,
+  "codex_gate": {
+    "agent": "codex-cli",
+    "authenticated": true,
+    "available": true,
+    "binary": "/Users/dawsonblock/.nvm/versions/node/v24.16.0/bin/codex",
+    "reason": "ok"
+  },
+  "evaluator_runtime": {
+    "bootstrap_memory_bytes": 2147483648,
+    "bootstrap_process_count": null,
+    "cpu_seconds": 60,
+    "disabled_plugins": [
+      "cacheprovider",
+      "randomly",
+      "xdist",
+      "cov"
+    ],
+    "disk_bytes": 67108864,
+    "enabled_plugins": [],
+    "output_bytes": 1048576,
+    "process_count": null,
+    "profile_version": "sis-evaluator-runtime/1",
+    "pytest_version": "8.4.2",
+    "python_version": "3.12",
+    "task_memory_bytes": 2147483648,
+    "wall_seconds": 180
+  },
+  "evaluator_runtime_digest": "40dbf6f3b385e024cbd441ab1e9fceb5244836843e6bc2c0efd573497ccbf5d0",
+  "governed": {
+    "analysis_mode": "confirmatory",
+    "arms": [
+      "A",
+      "B",
+      "C",
+      "D",
+      "E"
+    ],
+    "conformance": {
+      "conforms": true,
+      "mismatches": []
+    },
+    "metrics": {
+      "A": {
+        "abstention_rate": 1.0,
+        "evaluation_integrity_failures": 0,
+        "failure_rate": 0.5,
+        "mean_cost_per_verified_solve": null,
+        "mean_tokens_per_task": null,
+        "mean_tool_calls_per_task": 3.0,
+        "mean_wall_seconds_per_task": 22.75,
+        "negative_transfer_rate": null,
+        "paired_loss_rate": 0.0,
+        "paired_win_rate": 0.0,
+        "served": 0,
+        "solved_task_rate": 0.5,
+        "verified_regression_rate": 0.0
+      },
+      "B": {
+        "abstention_rate": 0.0,
+        "evaluation_integrity_failures": 0,
+        "failure_rate": 0.5,
+        "mean_cost_per_verified_solve": null,
+        "mean_tokens_per_task": null,
+        "mean_tool_calls_per_task": 3.5,
+        "mean_wall_seconds_per_task": 19.0,
+        "negative_transfer_rate": null,
+        "paired_loss_rate": 0.0,
+        "paired_win_rate": 0.0,
+        "served": 8,
+        "solved_task_rate": 0.5,
+        "verified_regression_rate": 0.0
+      },
+      "C": {
+        "abstention_rate": 0.0,
+        "evaluation_integrity_failures": 0,
+        "failure_rate": 0.5,
+        "mean_cost_per_verified_solve": null,
+        "mean_tokens_per_task": null,
+        "mean_tool_calls_per_task": 3.0,
+        "mean_wall_seconds_per_task": 19.75,
+        "negative_transfer_rate": null,
+        "paired_loss_rate": 0.0,
+        "paired_win_rate": 0.0,
+        "served": 8,
+        "solved_task_rate": 0.5,
+        "verified_regression_rate": 0.0
+      },
+      "D": {
+        "abstention_rate": 0.0,
+        "evaluation_integrity_failures": 0,
+        "failure_rate": 0.5,
+        "mean_cost_per_verified_solve": null,
+        "mean_tokens_per_task": null,
+        "mean_tool_calls_per_task": 3.0,
+        "mean_wall_seconds_per_task": 15.375,
+        "negative_transfer_rate": null,
+        "paired_loss_rate": 0.0,
+        "paired_win_rate": 0.0,
+        "served": 8,
+        "solved_task_rate": 0.5,
+        "verified_regression_rate": 0.0
+      },
+      "E": {
+        "abstention_rate": 0.0,
+        "evaluation_integrity_failures": 0,
+        "failure_rate": 0.5,
+        "mean_cost_per_verified_solve": null,
+        "mean_tokens_per_task": null,
+        "mean_tool_calls_per_task": 3.75,
+        "mean_wall_seconds_per_task": 17.375,
+        "negative_transfer_rate": null,
+        "paired_loss_rate": 0.0,
+        "paired_win_rate": 0.0,
+        "served": 8,
+        "solved_task_rate": 0.5,
+        "verified_regression_rate": 0.0
+      }
+    },
+    "protocol_digest": "7aefad2aa3dead74df0326e71492640b082f0c3c3618455df4d51e22ad560bbd"
+  },
+  "guidance_bundles": {
+    "memory": {
+      "api_compatibility": "Recall: existing callers are part of the contract; keep the old name working.",
+      "bug_fix": "Recall: reproduce the failure, check empty/zero/negative and boundary inputs, preserve the public API.",
+      "dependency_debugging": "Recall: trace the import to the module that actually defines the symbol.",
+      "failure_diagnosis": "Recall: identify the invalid state, then raise the documented error instead of silently accepting it.",
+      "multi_file_edit": "Recall: after changing a shared value or name, update every caller.",
+      "refactoring": "Recall: remove duplication without changing either public behavior.",
+      "test_generation": "Recall: a good test pins exact behavior and fails on a plausible mutant."
+    },
+    "skill": {
+      "api_compatibility": "Workflow: keep the old symbol as an alias, then verify both entry points.",
+      "bug_fix": "Workflow: read the task, locate the public function, make the smallest change, run a focused test, then check edge cases.",
+      "dependency_debugging": "Workflow: list the package, find the defining module, fix the import, then import the public API.",
+      "failure_diagnosis": "Workflow: reproduce the invalid state, add the guard, and test both success and failure.",
+      "multi_file_edit": "Workflow: find every caller, update the shared source, then run the focused test.",
+      "refactoring": "Workflow: extract the shared helper, keep both public names, and compare outputs.",
+      "test_generation": "Workflow: create test_slugify.py, assert exact outputs, and include punctuation and multi-word cases."
+    },
+    "symbolic": {
+      "api_compatibility": "Procedure: old symbol -> same callable; verify old and new names.",
+      "bug_fix": "Procedure: expected vs actual; adjust the arithmetic operator; verify two examples.",
+      "dependency_debugging": "Procedure: unresolved symbol -> defining module -> corrected import.",
+      "failure_diagnosis": "Procedure: invalid transition -> explicit exception -> success path unchanged.",
+      "multi_file_edit": "Procedure: shared constant -> one definition -> all callers read it.",
+      "refactoring": "Procedure: duplicate bodies -> one helper -> both names delegate.",
+      "test_generation": "Procedure: input -> exact output; mutate behavior; test must go red."
+    }
+  },
+  "harness_digest": null,
+  "kind": "real_agent_five_arm_evaluation",
+  "learning_qualification": {
+    "arms": {
+      "A": "baseline",
+      "B": "memory",
+      "C": "skills",
+      "D": "symbolic",
+      "E": "integrated"
+    },
+    "confidence_intervals": {
+      "A": {
+        "solved_rate_wilson_95": [
+          0.215216,
+          0.784784
+        ]
+      },
+      "B": {
+        "solved_rate_wilson_95": [
+          0.215216,
+          0.784784
+        ]
+      },
+      "C": {
+        "solved_rate_wilson_95": [
+          0.215216,
+          0.784784
+        ]
+      },
+      "D": {
+        "solved_rate_wilson_95": [
+          0.215216,
+          0.784784
+        ]
+      },
+      "E": {
+        "solved_rate_wilson_95": [
+          0.215216,
+          0.784784
+        ]
+      }
+    },
+    "contrasts": {
+      "E_vs_A": {
+        "baseline": "A",
+        "baseline_solved": 4,
+        "delta": 0.0,
+        "difference_interval_95": [
+          -0.402745,
+          0.402745
+        ],
+        "losses": 0,
+        "mcnemar_exact_p": 1.0,
+        "significant": false,
+        "tasks": 8,
+        "ties": 8,
+        "treatment": "A",
+        "treatment_solved": 4,
+        "wins": 0
+      },
+      "E_vs_B": {
+        "baseline": "B",
+        "baseline_solved": 4,
+        "delta": 0.0,
+        "difference_interval_95": [
+          -0.402745,
+          0.402745
+        ],
+        "losses": 0,
+        "mcnemar_exact_p": 1.0,
+        "significant": false,
+        "tasks": 8,
+        "ties": 8,
+        "treatment": "E",
+        "treatment_solved": 4,
+        "wins": 0
+      },
+      "E_vs_C": {
+        "baseline": "C",
+        "baseline_solved": 4,
+        "delta": 0.0,
+        "difference_interval_95": [
+          -0.402745,
+          0.402745
+        ],
+        "losses": 0,
+        "mcnemar_exact_p": 1.0,
+        "significant": false,
+        "tasks": 8,
+        "ties": 8,
+        "treatment": "E",
+        "treatment_solved": 4,
+        "wins": 0
+      },
+      "E_vs_D": {
+        "baseline": "D",
+        "baseline_solved": 4,
+        "delta": 0.0,
+        "difference_interval_95": [
+          -0.402745,
+          0.402745
+        ],
+        "losses": 0,
+        "mcnemar_exact_p": 1.0,
+        "significant": false,
+        "tasks": 8,
+        "ties": 8,
+        "treatment": "E",
+        "treatment_solved": 4,
+        "wins": 0
+      }
+    },
+    "decisive_contrast": {
+      "baseline": "A",
+      "baseline_solved": 4,
+      "delta": 0.0,
+      "difference_interval_95": [
+        -0.402745,
+        0.402745
+      ],
+      "losses": 0,
+      "mcnemar_exact_p": 1.0,
+      "significant": false,
+      "tasks": 8,
+      "ties": 8,
+      "treatment": "E",
+      "treatment_solved": 4,
+      "wins": 0
+    },
+    "efficacy_claim": "no_evidence",
+    "evidence_class": "exploratory",
+    "failure_categories": {
+      "A": {
+        "task_fail": 4
+      },
+      "B": {
+        "task_fail": 4
+      },
+      "C": {
+        "task_fail": 4
+      },
+      "D": {
+        "task_fail": 4
+      },
+      "E": {
+        "task_fail": 4
+      }
+    },
+    "frozen_candidates": {},
+    "hidden_holdout": true,
+    "integration_vs_components": {
+      "B": {
+        "baseline": "B",
+        "baseline_solved": 4,
+        "delta": 0.0,
+        "difference_interval_95": [
+          -0.402745,
+          0.402745
+        ],
+        "losses": 0,
+        "mcnemar_exact_p": 1.0,
+        "significant": false,
+        "tasks": 8,
+        "ties": 8,
+        "treatment": "E",
+        "treatment_solved": 4,
+        "wins": 0
+      },
+      "C": {
+        "baseline": "C",
+        "baseline_solved": 4,
+        "delta": 0.0,
+        "difference_interval_95": [
+          -0.402745,
+          0.402745
+        ],
+        "losses": 0,
+        "mcnemar_exact_p": 1.0,
+        "significant": false,
+        "tasks": 8,
+        "ties": 8,
+        "treatment": "E",
+        "treatment_solved": 4,
+        "wins": 0
+      },
+      "D": {
+        "baseline": "D",
+        "baseline_solved": 4,
+        "delta": 0.0,
+        "difference_interval_95": [
+          -0.402745,
+          0.402745
+        ],
+        "losses": 0,
+        "mcnemar_exact_p": 1.0,
+        "significant": false,
+        "tasks": 8,
+        "ties": 8,
+        "treatment": "E",
+        "treatment_solved": 4,
+        "wins": 0
+      }
+    },
+    "kind": "five_arm_learning_qualification",
+    "limitations": [
+      "underpowered: ran 8 tasks; preregistered 8"
+    ],
+    "metrics": {
+      "A": {
+        "abstention_rate": 1.0,
+        "evaluation_integrity_failures": 0,
+        "failure_rate": 0.5,
+        "mean_cost_per_verified_solve": null,
+        "mean_tokens_per_task": null,
+        "mean_tool_calls_per_task": 3.0,
+        "mean_wall_seconds_per_task": 22.75,
+        "negative_transfer_rate": null,
+        "paired_loss_rate": 0.0,
+        "paired_win_rate": 0.0,
+        "served": 0,
+        "solved_task_rate": 0.5,
+        "verified_regression_rate": 0.0
+      },
+      "B": {
+        "abstention_rate": 0.0,
+        "evaluation_integrity_failures": 0,
+        "failure_rate": 0.5,
+        "mean_cost_per_verified_solve": null,
+        "mean_tokens_per_task": null,
+        "mean_tool_calls_per_task": 3.5,
+        "mean_wall_seconds_per_task": 19.0,
+        "negative_transfer_rate": null,
+        "paired_loss_rate": 0.0,
+        "paired_win_rate": 0.0,
+        "served": 8,
+        "solved_task_rate": 0.5,
+        "verified_regression_rate": 0.0
+      },
+      "C": {
+        "abstention_rate": 0.0,
+        "evaluation_integrity_failures": 0,
+        "failure_rate": 0.5,
+        "mean_cost_per_verified_solve": null,
+        "mean_tokens_per_task": null,
+        "mean_tool_calls_per_task": 3.0,
+        "mean_wall_seconds_per_task": 19.75,
+        "negative_transfer_rate": null,
+        "paired_loss_rate": 0.0,
+        "paired_win_rate": 0.0,
+        "served": 8,
+        "solved_task_rate": 0.5,
+        "verified_regression_rate": 0.0
+      },
+      "D": {
+        "abstention_rate": 0.0,
+        "evaluation_integrity_failures": 0,
+        "failure_rate": 0.5,
+        "mean_cost_per_verified_solve": null,
+        "mean_tokens_per_task": null,
+        "mean_tool_calls_per_task": 3.0,
+        "mean_wall_seconds_per_task": 15.375,
+        "negative_transfer_rate": null,
+        "paired_loss_rate": 0.0,
+        "paired_win_rate": 0.0,
+        "served": 8,
+        "solved_task_rate": 0.5,
+        "verified_regression_rate": 0.0
+      },
+      "E": {
+        "abstention_rate": 0.0,
+        "evaluation_integrity_failures": 0,
+        "failure_rate": 0.5,
+        "mean_cost_per_verified_solve": null,
+        "mean_tokens_per_task": null,
+        "mean_tool_calls_per_task": 3.75,
+        "mean_wall_seconds_per_task": 17.375,
+        "negative_transfer_rate": null,
+        "paired_loss_rate": 0.0,
+        "paired_win_rate": 0.0,
+        "served": 8,
+        "solved_task_rate": 0.5,
+        "verified_regression_rate": 0.0
+      }
+    },
+    "negative_transfer": {
+      "integrated_rate": null,
+      "per_arm": {
+        "A": null,
+        "B": null,
+        "C": null,
+        "D": null,
+        "E": null
+      }
+    },
+    "note": "A confirmatory label requires a real coding agent, a hidden repository-disjoint holdout, protocol conformance and the preregistered sample size. No label here authorizes production skill promotion by itself.",
+    "power_analysis": {
+      "alpha": 0.05,
+      "expected_baseline": 0.8,
+      "expected_treatment": 0.2,
+      "minimum_n": 15,
+      "power": 0.8,
+      "preregistered_n": 8,
+      "required_n": 15
+    },
+    "protocol": {
+      "alpha": 0.05,
+      "arms": [
+        "A",
+        "B",
+        "C",
+        "D",
+        "E"
+      ],
+      "budget": {
+        "token_budget": 100000,
+        "tool_budget": 1000,
+        "wall_seconds": 300
+      },
+      "method": "mcnemar_exact",
+      "min_effect": 1.0,
+      "notes": "Real Codex CLI; eight synthetic repository-disjoint tasks; fixed guidance bundles frozen before the run; exploratory because the preregistered power target is larger than the executed sample.",
+      "power_analysis": {
+        "expected_baseline": 0.8,
+        "expected_treatment": 0.2,
+        "power": 0.8,
+        "required_n": 15
+      },
+      "primary_metric": "paired solved_delta E vs A",
+      "protocol_digest": "7aefad2aa3dead74df0326e71492640b082f0c3c3618455df4d51e22ad560bbd",
+      "sample_size": 8,
+      "schema_version": 1
+    },
+    "protocol_digest": "7aefad2aa3dead74df0326e71492640b082f0c3c3618455df4d51e22ad560bbd",
+    "real_agent": true,
+    "release_gate": "IMPLEMENTED_NOT_EFFICACY_QUALIFIED",
+    "required_sample_size_0_6_vs_0_4": 103,
+    "resource_overhead": {
+      "A": {
+        "abstention_rate": 1.0,
+        "cost_per_verified_solution": {
+          "tokens": null,
+          "tool_calls": 6.0,
+          "wall_seconds": 45.5
+        },
+        "evaluation_integrity_failures": 0,
+        "mean_tokens_per_task": null,
+        "mean_tool_calls_per_task": 3.0,
+        "mean_wall_seconds_per_task": 22.75,
+        "negative_transfer_rate": null
+      },
+      "B": {
+        "abstention_rate": 0.0,
+        "cost_per_verified_solution": {
+          "tokens": null,
+          "tool_calls": 7.0,
+          "wall_seconds": 38.0
+        },
+        "evaluation_integrity_failures": 0,
+        "mean_tokens_per_task": null,
+        "mean_tool_calls_per_task": 3.5,
+        "mean_wall_seconds_per_task": 19.0,
+        "negative_transfer_rate": null
+      },
+      "C": {
+        "abstention_rate": 0.0,
+        "cost_per_verified_solution": {
+          "tokens": null,
+          "tool_calls": 6.0,
+          "wall_seconds": 39.5
+        },
+        "evaluation_integrity_failures": 0,
+        "mean_tokens_per_task": null,
+        "mean_tool_calls_per_task": 3.0,
+        "mean_wall_seconds_per_task": 19.75,
+        "negative_transfer_rate": null
+      },
+      "D": {
+        "abstention_rate": 0.0,
+        "cost_per_verified_solution": {
+          "tokens": null,
+          "tool_calls": 6.0,
+          "wall_seconds": 30.75
+        },
+        "evaluation_integrity_failures": 0,
+        "mean_tokens_per_task": null,
+        "mean_tool_calls_per_task": 3.0,
+        "mean_wall_seconds_per_task": 15.375,
+        "negative_transfer_rate": null
+      },
+      "E": {
+        "abstention_rate": 0.0,
+        "cost_per_verified_solution": {
+          "tokens": null,
+          "tool_calls": 7.5,
+          "wall_seconds": 34.75
+        },
+        "evaluation_integrity_failures": 0,
+        "mean_tokens_per_task": null,
+        "mean_tool_calls_per_task": 3.75,
+        "mean_wall_seconds_per_task": 17.375,
+        "negative_transfer_rate": null
+      }
+    },
+    "sample_size_preregistered": 8,
+    "schema_version": 1,
+    "tasks": 8,
+    "underpowered": true
+  },
+  "note": "Real Codex CLI execution. Fixed guidance bundles, eight synthetic repository-disjoint tasks. Exploratory: the preregistered power target is larger than the executed sample; no confirmatory efficacy claim.",
+  "paired": {
+    "B_vs_A": {
+      "losses": 0,
+      "mcnemar_exact_p": "1.0000000000",
+      "solved_delta": 0,
+      "ties": 8,
+      "wins": 0
+    },
+    "C_vs_A": {
+      "losses": 0,
+      "mcnemar_exact_p": "1.0000000000",
+      "solved_delta": 0,
+      "ties": 8,
+      "wins": 0
+    },
+    "D_vs_A": {
+      "losses": 0,
+      "mcnemar_exact_p": "1.0000000000",
+      "solved_delta": 0,
+      "ties": 8,
+      "wins": 0
+    },
+    "D_vs_B": {
+      "losses": 0,
+      "mcnemar_exact_p": "1.0000000000",
+      "solved_delta": 0,
+      "ties": 8,
+      "wins": 0
+    },
+    "D_vs_C": {
+      "losses": 0,
+      "mcnemar_exact_p": "1.0000000000",
+      "solved_delta": 0,
+      "ties": 8,
+      "wins": 0
+    },
+    "E_vs_A": {
+      "losses": 0,
+      "mcnemar_exact_p": "1.0000000000",
+      "solved_delta": 0,
+      "ties": 8,
+      "wins": 0
+    },
+    "E_vs_B": {
+      "losses": 0,
+      "mcnemar_exact_p": "1.0000000000",
+      "solved_delta": 0,
+      "ties": 8,
+      "wins": 0
+    },
+    "E_vs_C": {
+      "losses": 0,
+      "mcnemar_exact_p": "1.0000000000",
+      "solved_delta": 0,
+      "ties": 8,
+      "wins": 0
+    },
+    "E_vs_D": {
+      "losses": 0,
+      "mcnemar_exact_p": "1.0000000000",
+      "solved_delta": 0,
+      "ties": 8,
+      "wins": 0
+    }
+  },
+  "per_task": [
+    {
+      "arms": {
+        "A": {
+          "budget_accounting": "reported",
+          "budget_exceeded": false,
+          "outcome": "pass",
+          "receipt_digest": "0250bf3798291801e0473163927a9c74e07ee2ce08426e0d3b2552882c42616d",
+          "tokens_used": null,
+          "tools_used": 6,
+          "wall_seconds": 27
+        },
+        "B": {
+          "budget_accounting": "reported",
+          "budget_exceeded": false,
+          "outcome": "pass",
+          "receipt_digest": "04f0651329f48ad88fdb1a99e06bd2b0d14d1562b54955bbdd82e46512a54f5d",
+          "tokens_used": null,
+          "tools_used": 8,
+          "wall_seconds": 38
+        },
+        "C": {
+          "budget_accounting": "reported",
+          "budget_exceeded": false,
+          "outcome": "pass",
+          "receipt_digest": "0250bf3798291801e0473163927a9c74e07ee2ce08426e0d3b2552882c42616d",
+          "tokens_used": null,
+          "tools_used": 6,
+          "wall_seconds": 28
+        },
+        "D": {
+          "budget_accounting": "reported",
+          "budget_exceeded": false,
+          "outcome": "pass",
+          "receipt_digest": "0250bf3798291801e0473163927a9c74e07ee2ce08426e0d3b2552882c42616d",
+          "tokens_used": null,
+          "tools_used": 6,
+          "wall_seconds": 29
+        },
+        "E": {
+          "budget_accounting": "reported",
+          "budget_exceeded": false,
+          "outcome": "pass",
+          "receipt_digest": "f9859dd501d31f0ee85fc9187e3ca0bc1b3ef0e408857e96974c18117739b46e",
+          "tokens_used": null,
+          "tools_used": 10,
+          "wall_seconds": 38
+        }
+      },
+      "task_id": "bug-average"
+    },
+    {
+      "arms": {
+        "A": {
+          "budget_accounting": "reported",
+          "budget_exceeded": false,
+          "outcome": "pass",
+          "receipt_digest": "1031d797d0167b5617cc0db330db46aaecd438c1ad63f994630587edaace2e06",
+          "tokens_used": null,
+          "tools_used": 6,
+          "wall_seconds": 73
+        },
+        "B": {
+          "budget_accounting": "reported",
+          "budget_exceeded": false,
+          "outcome": "pass",
+          "receipt_digest": "1031d797d0167b5617cc0db330db46aaecd438c1ad63f994630587edaace2e06",
+          "tokens_used": null,
+          "tools_used": 8,
+          "wall_seconds": 46
+        },
+        "C": {
+          "budget_accounting": "reported",
+          "budget_exceeded": false,
+          "outcome": "pass",
+          "receipt_digest": "1031d797d0167b5617cc0db330db46aaecd438c1ad63f994630587edaace2e06",
+          "tokens_used": null,
+          "tools_used": 6,
+          "wall_seconds": 50
+        },
+        "D": {
+          "budget_accounting": "reported",
+          "budget_exceeded": false,
+          "outcome": "pass",
+          "receipt_digest": "1031d797d0167b5617cc0db330db46aaecd438c1ad63f994630587edaace2e06",
+          "tokens_used": null,
+          "tools_used": 6,
+          "wall_seconds": 30
+        },
+        "E": {
+          "budget_accounting": "reported",
+          "budget_exceeded": false,
+          "outcome": "pass",
+          "receipt_digest": "1031d797d0167b5617cc0db330db46aaecd438c1ad63f994630587edaace2e06",
+          "tokens_used": null,
+          "tools_used": 8,
+          "wall_seconds": 32
+        }
+      },
+      "task_id": "bug-clamp"
+    },
+    {
+      "arms": {
+        "A": {
+          "budget_accounting": "reported",
+          "budget_exceeded": false,
+          "outcome": "pass",
+          "receipt_digest": "6172794d0997aeff4db12aba0830f58da2a2ccca428e303c63e73f528504c4f1",
+          "tokens_used": null,
+          "tools_used": 6,
+          "wall_seconds": 24
+        },
+        "B": {
+          "budget_accounting": "reported",
+          "budget_exceeded": false,
+          "outcome": "pass",
+          "receipt_digest": "6172794d0997aeff4db12aba0830f58da2a2ccca428e303c63e73f528504c4f1",
+          "tokens_used": null,
+          "tools_used": 6,
+          "wall_seconds": 22
+        },
+        "C": {
+          "budget_accounting": "reported",
+          "budget_exceeded": false,
+          "outcome": "pass",
+          "receipt_digest": "6172794d0997aeff4db12aba0830f58da2a2ccca428e303c63e73f528504c4f1",
+          "tokens_used": null,
+          "tools_used": 6,
+          "wall_seconds": 22
+        },
+        "D": {
+          "budget_accounting": "reported",
+          "budget_exceeded": false,
+          "outcome": "pass",
+          "receipt_digest": "6172794d0997aeff4db12aba0830f58da2a2ccca428e303c63e73f528504c4f1",
+          "tokens_used": null,
+          "tools_used": 6,
+          "wall_seconds": 23
+        },
+        "E": {
+          "budget_accounting": "reported",
+          "budget_exceeded": false,
+          "outcome": "pass",
+          "receipt_digest": "6172794d0997aeff4db12aba0830f58da2a2ccca428e303c63e73f528504c4f1",
+          "tokens_used": null,
+          "tools_used": 6,
+          "wall_seconds": 24
+        }
+      },
+      "task_id": "api-alias"
+    },
+    {
+      "arms": {
+        "A": {
+          "budget_accounting": "reported",
+          "budget_exceeded": false,
+          "outcome": "pass",
+          "receipt_digest": "c7f28d6539af308eb24bc681cf44d92726cb22192495961dc444faa53054df1f",
+          "tokens_used": null,
+          "tools_used": 6,
+          "wall_seconds": 31
+        },
+        "B": {
+          "budget_accounting": "reported",
+          "budget_exceeded": false,
+          "outcome": "pass",
+          "receipt_digest": "c7f28d6539af308eb24bc681cf44d92726cb22192495961dc444faa53054df1f",
+          "tokens_used": null,
+          "tools_used": 6,
+          "wall_seconds": 22
+        },
+        "C": {
+          "budget_accounting": "reported",
+          "budget_exceeded": false,
+          "outcome": "pass",
+          "receipt_digest": "c7f28d6539af308eb24bc681cf44d92726cb22192495961dc444faa53054df1f",
+          "tokens_used": null,
+          "tools_used": 6,
+          "wall_seconds": 32
+        },
+        "D": {
+          "budget_accounting": "reported",
+          "budget_exceeded": false,
+          "outcome": "pass",
+          "receipt_digest": "c7f28d6539af308eb24bc681cf44d92726cb22192495961dc444faa53054df1f",
+          "tokens_used": null,
+          "tools_used": 6,
+          "wall_seconds": 21
+        },
+        "E": {
+          "budget_accounting": "reported",
+          "budget_exceeded": false,
+          "outcome": "pass",
+          "receipt_digest": "c7f28d6539af308eb24bc681cf44d92726cb22192495961dc444faa53054df1f",
+          "tokens_used": null,
+          "tools_used": 6,
+          "wall_seconds": 23
+        }
+      },
+      "task_id": "multi-config"
+    },
+    {
+      "arms": {
+        "A": {
+          "budget_accounting": "reported",
+          "budget_exceeded": false,
+          "outcome": "fail",
+          "receipt_digest": "b83e29bf4a000e17e2f602cc91c5180d0265653a9b01c5175ccd5f5d9161069e",
+          "tokens_used": null,
+          "tools_used": 0,
+          "wall_seconds": 6
+        },
+        "B": {
+          "budget_accounting": "reported",
+          "budget_exceeded": false,
+          "outcome": "fail",
+          "receipt_digest": "b83e29bf4a000e17e2f602cc91c5180d0265653a9b01c5175ccd5f5d9161069e",
+          "tokens_used": null,
+          "tools_used": 0,
+          "wall_seconds": 5
+        },
+        "C": {
+          "budget_accounting": "reported",
+          "budget_exceeded": false,
+          "outcome": "fail",
+          "receipt_digest": "b83e29bf4a000e17e2f602cc91c5180d0265653a9b01c5175ccd5f5d9161069e",
+          "tokens_used": null,
+          "tools_used": 0,
+          "wall_seconds": 6
+        },
+        "D": {
+          "budget_accounting": "reported",
+          "budget_exceeded": false,
+          "outcome": "fail",
+          "receipt_digest": "b83e29bf4a000e17e2f602cc91c5180d0265653a9b01c5175ccd5f5d9161069e",
+          "tokens_used": null,
+          "tools_used": 0,
+          "wall_seconds": 5
+        },
+        "E": {
+          "budget_accounting": "reported",
+          "budget_exceeded": false,
+          "outcome": "fail",
+          "receipt_digest": "b83e29bf4a000e17e2f602cc91c5180d0265653a9b01c5175ccd5f5d9161069e",
+          "tokens_used": null,
+          "tools_used": 0,
+          "wall_seconds": 6
+        }
+      },
+      "task_id": "refactor-discount"
+    },
+    {
+      "arms": {
+        "A": {
+          "budget_accounting": "reported",
+          "budget_exceeded": false,
+          "outcome": "fail",
+          "receipt_digest": "fce33363935aff965ca74e89d5ad21e2fe31e46dfe263a5a855a5c85c4d524cd",
+          "tokens_used": null,
+          "tools_used": 0,
+          "wall_seconds": 10
+        },
+        "B": {
+          "budget_accounting": "reported",
+          "budget_exceeded": false,
+          "outcome": "fail",
+          "receipt_digest": "fce33363935aff965ca74e89d5ad21e2fe31e46dfe263a5a855a5c85c4d524cd",
+          "tokens_used": null,
+          "tools_used": 0,
+          "wall_seconds": 6
+        },
+        "C": {
+          "budget_accounting": "reported",
+          "budget_exceeded": false,
+          "outcome": "fail",
+          "receipt_digest": "fce33363935aff965ca74e89d5ad21e2fe31e46dfe263a5a855a5c85c4d524cd",
+          "tokens_used": null,
+          "tools_used": 0,
+          "wall_seconds": 5
+        },
+        "D": {
+          "budget_accounting": "reported",
+          "budget_exceeded": false,
+          "outcome": "fail",
+          "receipt_digest": "fce33363935aff965ca74e89d5ad21e2fe31e46dfe263a5a855a5c85c4d524cd",
+          "tokens_used": null,
+          "tools_used": 0,
+          "wall_seconds": 5
+        },
+        "E": {
+          "budget_accounting": "reported",
+          "budget_exceeded": false,
+          "outcome": "fail",
+          "receipt_digest": "fce33363935aff965ca74e89d5ad21e2fe31e46dfe263a5a855a5c85c4d524cd",
+          "tokens_used": null,
+          "tools_used": 0,
+          "wall_seconds": 6
+        }
+      },
+      "task_id": "dep-import"
+    },
+    {
+      "arms": {
+        "A": {
+          "budget_accounting": "reported",
+          "budget_exceeded": false,
+          "outcome": "fail",
+          "receipt_digest": "e94cd327aca8020d54a2bd14b45bf153e4d485ac4cc364b02778f2f177d07594",
+          "tokens_used": null,
+          "tools_used": 0,
+          "wall_seconds": 6
+        },
+        "B": {
+          "budget_accounting": "reported",
+          "budget_exceeded": false,
+          "outcome": "fail",
+          "receipt_digest": "e94cd327aca8020d54a2bd14b45bf153e4d485ac4cc364b02778f2f177d07594",
+          "tokens_used": null,
+          "tools_used": 0,
+          "wall_seconds": 8
+        },
+        "C": {
+          "budget_accounting": "reported",
+          "budget_exceeded": false,
+          "outcome": "fail",
+          "receipt_digest": "e94cd327aca8020d54a2bd14b45bf153e4d485ac4cc364b02778f2f177d07594",
+          "tokens_used": null,
+          "tools_used": 0,
+          "wall_seconds": 10
+        },
+        "D": {
+          "budget_accounting": "reported",
+          "budget_exceeded": false,
+          "outcome": "fail",
+          "receipt_digest": "e94cd327aca8020d54a2bd14b45bf153e4d485ac4cc364b02778f2f177d07594",
+          "tokens_used": null,
+          "tools_used": 0,
+          "wall_seconds": 5
+        },
+        "E": {
+          "budget_accounting": "reported",
+          "budget_exceeded": false,
+          "outcome": "fail",
+          "receipt_digest": "e94cd327aca8020d54a2bd14b45bf153e4d485ac4cc364b02778f2f177d07594",
+          "tokens_used": null,
+          "tools_used": 0,
+          "wall_seconds": 5
+        }
+      },
+      "task_id": "diag-bank"
+    },
+    {
+      "arms": {
+        "A": {
+          "budget_accounting": "reported",
+          "budget_exceeded": false,
+          "outcome": "fail",
+          "receipt_digest": "e88a1ad6e5614dca88acefd171b00468848941c2f2c9ae327b57811a30106608",
+          "tokens_used": null,
+          "tools_used": 0,
+          "wall_seconds": 5
+        },
+        "B": {
+          "budget_accounting": "reported",
+          "budget_exceeded": false,
+          "outcome": "fail",
+          "receipt_digest": "e88a1ad6e5614dca88acefd171b00468848941c2f2c9ae327b57811a30106608",
+          "tokens_used": null,
+          "tools_used": 0,
+          "wall_seconds": 5
+        },
+        "C": {
+          "budget_accounting": "reported",
+          "budget_exceeded": false,
+          "outcome": "fail",
+          "receipt_digest": "e88a1ad6e5614dca88acefd171b00468848941c2f2c9ae327b57811a30106608",
+          "tokens_used": null,
+          "tools_used": 0,
+          "wall_seconds": 5
+        },
+        "D": {
+          "budget_accounting": "reported",
+          "budget_exceeded": false,
+          "outcome": "fail",
+          "receipt_digest": "e88a1ad6e5614dca88acefd171b00468848941c2f2c9ae327b57811a30106608",
+          "tokens_used": null,
+          "tools_used": 0,
+          "wall_seconds": 5
+        },
+        "E": {
+          "budget_accounting": "reported",
+          "budget_exceeded": false,
+          "outcome": "fail",
+          "receipt_digest": "e88a1ad6e5614dca88acefd171b00468848941c2f2c9ae327b57811a30106608",
+          "tokens_used": null,
+          "tools_used": 0,
+          "wall_seconds": 5
+        }
+      },
+      "task_id": "test-slug"
+    }
+  ],
+  "schema_version": 1,
+  "solve_rates": {
+    "A": {
+      "n": 8,
+      "solved": 4,
+      "wilson_ci95": [
+        "0.2152160607",
+        "0.7847839393"
+      ]
+    },
+    "B": {
+      "n": 8,
+      "solved": 4,
+      "wilson_ci95": [
+        "0.2152160607",
+        "0.7847839393"
+      ]
+    },
+    "C": {
+      "n": 8,
+      "solved": 4,
+      "wilson_ci95": [
+        "0.2152160607",
+        "0.7847839393"
+      ]
+    },
+    "D": {
+      "n": 8,
+      "solved": 4,
+      "wilson_ci95": [
+        "0.2152160607",
+        "0.7847839393"
+      ]
+    },
+    "E": {
+      "n": 8,
+      "solved": 4,
+      "wilson_ci95": [
+        "0.2152160607",
+        "0.7847839393"
+      ]
+    }
+  },
+  "solved_counts": {
+    "A": 4,
+    "B": 4,
+    "C": 4,
+    "D": 4,
+    "E": 4
+  },
+  "tasks": 8
+}

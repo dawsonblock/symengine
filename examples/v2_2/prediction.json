@@ -1,0 +1,7 @@
+{
+  "namespace": "v22_demo",
+  "inputs": {
+    "a": 15,
+    "b": 11
+  }
+}

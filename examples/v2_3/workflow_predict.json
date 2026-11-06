@@ -1,0 +1,19 @@
+{
+  "namespace": "tabular_demo",
+  "data": {
+    "rows": [
+      {
+        "region": "east",
+        "amount": 15
+      },
+      {
+        "region": "west",
+        "amount": 100
+      },
+      {
+        "region": "east",
+        "amount": 11
+      }
+    ]
+  }
+}

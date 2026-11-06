@@ -1,0 +1,217 @@
+{
+  "task_id": "arithmetic_synthetic_demo_not_independent",
+  "namespace": "arithmetic_demo",
+  "max_tokens": 128,
+  "cases": [
+    {
+      "inputs": {
+        "a": 100,
+        "b": -9
+      },
+      "output": 91
+    },
+    {
+      "inputs": {
+        "a": 101,
+        "b": -9
+      },
+      "output": 92
+    },
+    {
+      "inputs": {
+        "a": 102,
+        "b": -9
+      },
+      "output": 93
+    },
+    {
+      "inputs": {
+        "a": 103,
+        "b": -9
+      },
+      "output": 94
+    },
+    {
+      "inputs": {
+        "a": 104,
+        "b": -9
+      },
+      "output": 95
+    },
+    {
+      "inputs": {
+        "a": 105,
+        "b": -9
+      },
+      "output": 96
+    },
+    {
+      "inputs": {
+        "a": 106,
+        "b": -9
+      },
+      "output": 97
+    },
+    {
+      "inputs": {
+        "a": 107,
+        "b": -9
+      },
+      "output": 98
+    },
+    {
+      "inputs": {
+        "a": 108,
+        "b": -9
+      },
+      "output": 99
+    },
+    {
+      "inputs": {
+        "a": 109,
+        "b": -9
+      },
+      "output": 100
+    },
+    {
+      "inputs": {
+        "a": 110,
+        "b": -9
+      },
+      "output": 101
+    },
+    {
+      "inputs": {
+        "a": 111,
+        "b": -9
+      },
+      "output": 102
+    },
+    {
+      "inputs": {
+        "a": 112,
+        "b": -9
+      },
+      "output": 103
+    },
+    {
+      "inputs": {
+        "a": 113,
+        "b": -9
+      },
+      "output": 104
+    },
+    {
+      "inputs": {
+        "a": 114,
+        "b": -9
+      },
+      "output": 105
+    },
+    {
+      "inputs": {
+        "a": 115,
+        "b": -9
+      },
+      "output": 106
+    },
+    {
+      "inputs": {
+        "a": 116,
+        "b": -9
+      },
+      "output": 107
+    },
+    {
+      "inputs": {
+        "a": 117,
+        "b": -9
+      },
+      "output": 108
+    },
+    {
+      "inputs": {
+        "a": 118,
+        "b": -9
+      },
+      "output": 109
+    },
+    {
+      "inputs": {
+        "a": 119,
+        "b": -9
+      },
+      "output": 110
+    },
+    {
+      "inputs": {
+        "a": 120,
+        "b": -9
+      },
+      "output": 111
+    },
+    {
+      "inputs": {
+        "a": 121,
+        "b": -9
+      },
+      "output": 112
+    },
+    {
+      "inputs": {
+        "a": 122,
+        "b": -9
+      },
+      "output": 113
+    },
+    {
+      "inputs": {
+        "a": 123,
+        "b": -9
+      },
+      "output": 114
+    },
+    {
+      "inputs": {
+        "a": 124,
+        "b": -9
+      },
+      "output": 115
+    },
+    {
+      "inputs": {
+        "a": 125,
+        "b": -9
+      },
+      "output": 116
+    },
+    {
+      "inputs": {
+        "a": 126,
+        "b": -9
+      },
+      "output": 117
+    },
+    {
+      "inputs": {
+        "a": 127,
+        "b": -9
+      },
+      "output": 118
+    },
+    {
+      "inputs": {
+        "a": 128,
+        "b": -9
+      },
+      "output": 119
+    },
+    {
+      "inputs": {
+        "a": 129,
+        "b": -9
+      },
+      "output": 120
+    }
+  ]
+}

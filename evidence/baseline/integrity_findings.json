@@ -1,0 +1,47 @@
+{
+ "baseline": {
+  "revision": "07a9174b55c1cf21a5873bd7962b2227cd545c96",
+  "status": "TRUSTED",
+  "trusted_source": "origin/codex/sis-v3.2-authority-integrity @ 07a9174"
+ },
+ "discrepancies": [
+  {
+   "actual_sha256": "bb920f3a0a9c116fa1cf7943a6b572297cf4dd05e1a6c075746a3277032ee26f",
+   "file": "src/sis/v3/verifier.py",
+   "kind": "hash_mismatch",
+   "manifest_sha256": "c266f32e4a5f55f944354085e91b02105db1ec9f84cde6f2a754768a2bc528dd"
+  },
+  {
+   "actual_sha256": "2f00bda768a4b24ca0d7324b5a78e7e33c88551673eb314370d68f720bc8b01c",
+   "file": "tests/v3/test_receipt_signatures.py",
+   "kind": "hash_mismatch",
+   "manifest_sha256": "46b12bb1c467e24c4f263f347505f2f9c11082947404d417772e55e4aaa109f2"
+  },
+  {
+   "actual_sha256": "c5cb408302574afd28690a4aed81443b462c5e3748b3110642083a04162f0904",
+   "file": "tools/live_study.py",
+   "kind": "hash_mismatch",
+   "manifest_sha256": "56b868a34ef19951c3e31a0a10e2b8ea1efa733a2ddf70a61d09c5ddd985ec7c"
+  },
+  {
+   "actual_sha256": "ff087a7013011dba08fc5bc65cc1b947f74c8080bd6d976498a786174280df6a",
+   "file": "RELEASE_SHA256.json",
+   "kind": "unlisted_in_manifest"
+  },
+  {
+   "actual_sha256": "34c36853056adb7bee45d7540b409c8ad61856329d85d11478e900a7b91e7779",
+   "file": "docs/v3/V32_GAP_MAP.md",
+   "kind": "unlisted_in_manifest"
+  }
+ ],
+ "disposition": {
+  "RELEASE_SHA256.json": "self-exclusion: manifest does not list itself \u2014 expected, not a defect",
+  "docs/v3/V32_GAP_MAP.md": "added by commit 51feebc, updated 07a9174 \u2014 pushed to origin; new doc absent from older manifest",
+  "src/sis/v3/verifier.py": "changed by commit 07a9174 (v3.2 review fixes: statement_digest binding) \u2014 pushed to origin, author dawsonblock + Devin",
+  "tests/v3/test_receipt_signatures.py": "changed by commit 07a9174 (new statement-binding tests) \u2014 pushed to origin",
+  "tools/live_study.py": "changed by commits 5c89128 + 07a9174 (v3.2 capture/kill/metering + review fixes) \u2014 pushed to origin"
+ },
+ "manifest_entries": 263,
+ "manifest_file": "RELEASE_SHA256.json",
+ "verdict": "All discrepancies trace to pushed commits on origin/codex/sis-v3.2-authority-integrity (51feebc, 5c89128, d56616c, 07a9174). Legitimate unrecorded modifications relative to a stale manifest; manifest NOT regenerated \u2014 evidence preserved."
+}

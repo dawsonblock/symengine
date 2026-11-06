@@ -1,0 +1,435 @@
+{
+  "custody": "test-custody keys generated for this run; not production",
+  "evaluator_runtime": {
+    "bootstrap_memory_bytes": 2147483648,
+    "bootstrap_process_count": null,
+    "cpu_seconds": 60,
+    "disabled_plugins": [
+      "cacheprovider",
+      "randomly",
+      "xdist",
+      "cov"
+    ],
+    "disk_bytes": 67108864,
+    "enabled_plugins": [],
+    "output_bytes": 1048576,
+    "process_count": null,
+    "profile_version": "sis-evaluator-runtime/1",
+    "pytest_version": "8.4.2",
+    "python_version": "3.12",
+    "task_memory_bytes": 2147483648,
+    "wall_seconds": 120
+  },
+  "evaluator_runtime_digest": "4bfc03f4297dad5916a8f74d40bf9915dba8c147feafa8db5f9d6ff01d0b5abe",
+  "evidence": "deterministic scripted agent; machinery evidence only, not a claim about real-agent efficacy",
+  "generated_at": "2026-10-26T09:33:25Z",
+  "keys": {
+    "evaluator": "key-29cba2300cc7de988b07428e",
+    "operator": "key-09ddc79bc0702721c026d587"
+  },
+  "kind": "skill_holdout",
+  "missing_skills": [],
+  "only": null,
+  "protocol_digest": "c9386d0024b8ec2dac8b128574458b6f2ff3e2ffbf157d69f1e09c2309061061",
+  "registry": {
+    "audit": [
+      {
+        "actor_identity": "learner",
+        "candidate_id": "skill-write-skills-10f8a83211-a371dcf5fc",
+        "committed_at": "2026-10-26T09:33:23Z",
+        "decision_digest": "",
+        "entry_digest": "ca3cf8831d97b3e80c2028258a99e30e171e6bfbbe09323cab87fded6c65bca0",
+        "evidence_refs": [],
+        "from_state": "",
+        "note": "submitted",
+        "receipt_refs": [],
+        "seq": 1,
+        "to_state": "proposed"
+      },
+      {
+        "actor_identity": "learner",
+        "candidate_id": "skill-write-skills-10f8a83211-a371dcf5fc",
+        "committed_at": "2026-10-26T09:33:23Z",
+        "decision_digest": "",
+        "entry_digest": "9e97d4eff1f0248cdb991b1939fbea9856eefd764bef0a0436c636dd53364a21",
+        "evidence_refs": [],
+        "from_state": "proposed",
+        "note": "",
+        "receipt_refs": [],
+        "seq": 2,
+        "to_state": "validated"
+      },
+      {
+        "actor_identity": "evaluator",
+        "candidate_id": "skill-write-skills-10f8a83211-a371dcf5fc",
+        "committed_at": "2026-10-26T09:33:23Z",
+        "decision_digest": "",
+        "entry_digest": "74154c0f04af06c92cb75da12645835e08469277a9204ded0263cab11800cc5e",
+        "evidence_refs": [],
+        "from_state": "validated",
+        "note": "",
+        "receipt_refs": [],
+        "seq": 3,
+        "to_state": "evaluating"
+      },
+      {
+        "actor_identity": "skill-holdout-operator",
+        "candidate_id": "skill-write-skills-10f8a83211-a371dcf5fc",
+        "committed_at": "2026-10-26T09:33:24Z",
+        "decision_digest": "98913b7bb3f1451e158f01de8349141b60cd7ba454fdcd3eac04910cb2fbb4c7",
+        "entry_digest": "559fef09e90ac2fb7b5889a94ead79c9026be1cb9832a70c41193492c28369b0",
+        "evidence_refs": [
+          "ce174350f899952c5844ec81682d92787c1b0d6de619631ad3c197aa52fd29d0"
+        ],
+        "from_state": "evaluating",
+        "note": "skill holdout qualified",
+        "receipt_refs": [
+          "2ed872d880797e5c27d38a8f753b09632ecc52c894b776b829d9b606866d9a24"
+        ],
+        "seq": 4,
+        "to_state": "qualified"
+      },
+      {
+        "actor_identity": "learner",
+        "candidate_id": "skill-php2shell-check-dd0a8cdb69-10c1b1ce70",
+        "committed_at": "2026-10-26T09:33:24Z",
+        "decision_digest": "",
+        "entry_digest": "e22d54480cc96b3bdff148aa39716ab253053a38fbde9e4d818ce6708210e40d",
+        "evidence_refs": [],
+        "from_state": "",
+        "note": "submitted",
+        "receipt_refs": [],
+        "seq": 5,
+        "to_state": "proposed"
+      },
+      {
+        "actor_identity": "learner",
+        "candidate_id": "skill-php2shell-check-dd0a8cdb69-10c1b1ce70",
+        "committed_at": "2026-10-26T09:33:24Z",
+        "decision_digest": "",
+        "entry_digest": "b1b01df9909154e1e724811aec804d08b4a52f8fbc2917d9e406ab2ffbb93ca8",
+        "evidence_refs": [],
+        "from_state": "proposed",
+        "note": "",
+        "receipt_refs": [],
+        "seq": 6,
+        "to_state": "validated"
+      },
+      {
+        "actor_identity": "evaluator",
+        "candidate_id": "skill-php2shell-check-dd0a8cdb69-10c1b1ce70",
+        "committed_at": "2026-10-26T09:33:24Z",
+        "decision_digest": "",
+        "entry_digest": "06b52564277f7a732f3cec512e1aaa2851dff420498b01df62699dd63f1ad984",
+        "evidence_refs": [],
+        "from_state": "validated",
+        "note": "",
+        "receipt_refs": [],
+        "seq": 7,
+        "to_state": "evaluating"
+      },
+      {
+        "actor_identity": "skill-holdout-operator",
+        "candidate_id": "skill-php2shell-check-dd0a8cdb69-10c1b1ce70",
+        "committed_at": "2026-10-26T09:33:25Z",
+        "decision_digest": "182e69c24c24b3889da603919839f14996d92a711127da32eba7f15ceba08c20",
+        "entry_digest": "2fea765c9d839250fce4cbeff072f0d3a83fd384cc01a460d01912721e84aaf7",
+        "evidence_refs": [
+          "ea9494bd59a5a8a18f07cd633add39bba87fdf9934b8f50a16a2c8dc6916fe83"
+        ],
+        "from_state": "evaluating",
+        "note": "skill holdout qualified",
+        "receipt_refs": [
+          "8a2b6353749234df62a0daaf257e6fa1dfb1a6e46dae7ea9c1ab07f8dbbccdf0"
+        ],
+        "seq": 8,
+        "to_state": "qualified"
+      },
+      {
+        "actor_identity": "learner",
+        "candidate_id": "skill-write-tests-090bba05d5-f98e3e1453",
+        "committed_at": "2026-10-26T09:33:25Z",
+        "decision_digest": "",
+        "entry_digest": "bab5a33f06192cdf12c2459ccec3f236372da9eedadd318925629af2ae9f22c7",
+        "evidence_refs": [],
+        "from_state": "",
+        "note": "submitted",
+        "receipt_refs": [],
+        "seq": 9,
+        "to_state": "proposed"
+      },
+      {
+        "actor_identity": "learner",
+        "candidate_id": "skill-write-tests-090bba05d5-f98e3e1453",
+        "committed_at": "2026-10-26T09:33:25Z",
+        "decision_digest": "",
+        "entry_digest": "3214977d6c38b75db5aa6405c72efb16e93b7b8ec50618f73a98275b048cf539",
+        "evidence_refs": [],
+        "from_state": "proposed",
+        "note": "",
+        "receipt_refs": [],
+        "seq": 10,
+        "to_state": "validated"
+      },
+      {
+        "actor_identity": "evaluator",
+        "candidate_id": "skill-write-tests-090bba05d5-f98e3e1453",
+        "committed_at": "2026-10-26T09:33:25Z",
+        "decision_digest": "",
+        "entry_digest": "f9c4537f16ad5c263f5628d7828c5ef77c550a5a5816145fc2f969d996838d15",
+        "evidence_refs": [],
+        "from_state": "validated",
+        "note": "",
+        "receipt_refs": [],
+        "seq": 11,
+        "to_state": "evaluating"
+      },
+      {
+        "actor_identity": "skill-holdout-operator",
+        "candidate_id": "skill-write-tests-090bba05d5-f98e3e1453",
+        "committed_at": "2026-10-26T09:33:25Z",
+        "decision_digest": "c38aa8e7844f298d08cb7282045afb2929b4e2f50f442938b64474de4f57abb7",
+        "entry_digest": "b5d57fb514fb3fe237ecf686298d2f22d03ebae0885e45836cdf12568005c149",
+        "evidence_refs": [
+          "460434a69930a7d2d1395096baf29c8d38024086ff2041d48996570fb5d44ab0"
+        ],
+        "from_state": "evaluating",
+        "note": "skill holdout qualified",
+        "receipt_refs": [
+          "e492c3192366f6e83108fc4c74ed1b1088e37306a0437e96078b90ee04014c74"
+        ],
+        "seq": 12,
+        "to_state": "qualified"
+      }
+    ],
+    "verify": {
+      "authority": {
+        "mode": "uncheckpointed_development",
+        "ok": true,
+        "reason": "no_independent_checkpoint_configured"
+      },
+      "entries": 12,
+      "evidence_custody": null,
+      "head": "b5d57fb514fb3fe237ecf686298d2f22d03ebae0885e45836cdf12568005c149",
+      "migrations": [],
+      "ok": true,
+      "problems": [],
+      "qualification_mode": "demonstration"
+    }
+  },
+  "results": [
+    {
+      "candidate_digest": "1596ae6300d38a124a74a2558745ec06295ba7ed5e8399c54fc88c4984284dee",
+      "candidate_id": "skill-write-skills-10f8a83211-a371dcf5fc",
+      "decision_digest": "98913b7bb3f1451e158f01de8349141b60cd7ba454fdcd3eac04910cb2fbb4c7",
+      "evidence_digest": "ce174350f899952c5844ec81682d92787c1b0d6de619631ad3c197aa52fd29d0",
+      "probe": {
+        "conformance": {
+          "conforms": true,
+          "mismatches": []
+        },
+        "guidance_steps": [
+          "Trigger from the description. The frontmatter description is the",
+          "Spend tokens like they are scarce. Assume the agent is already good at",
+          "Write procedures, not essays. Prefer imperative rules, decision"
+        ],
+        "solved": {
+          "A": 0,
+          "E": 1
+        }
+      },
+      "receipt_refs": [
+        "2ed872d880797e5c27d38a8f753b09632ecc52c894b776b829d9b606866d9a24"
+      ],
+      "scan_findings": [],
+      "served": {
+        "checks": [
+          "Trigger from the description. The frontmatter description is the",
+          "Spend tokens like they are scarce. Assume the agent is already good at",
+          "Write procedures, not essays. Prefer imperative rules, decision",
+          "Use progressive disclosure. Keep the main skill file short. Push long"
+        ],
+        "decision": "abstain",
+        "delivered_skill_steps": true,
+        "reason_code": "no_qualified_procedure"
+      },
+      "skill": "write-skills",
+      "state": "qualified",
+      "status": "qualified",
+      "task_id": "task-write-skill"
+    },
+    {
+      "candidate_digest": "e6287f1df5565dbfaec9300e4e719ad52f46b30b0365e43b159847666203af7a",
+      "candidate_id": "skill-php2shell-check-dd0a8cdb69-10c1b1ce70",
+      "decision_digest": "182e69c24c24b3889da603919839f14996d92a711127da32eba7f15ceba08c20",
+      "evidence_digest": "ea9494bd59a5a8a18f07cd633add39bba87fdf9934b8f50a16a2c8dc6916fe83",
+      "probe": {
+        "conformance": {
+          "conforms": true,
+          "mismatches": []
+        },
+        "guidance_steps": [
+          "CVE-2026-109618 (GHSA-w8hw-w9fx-j79w): memory corruption when PHP runs out of memory while setting up request data; multipart parsing can trigger it. Unauthenticated RCE, shown on modphp with the default config; FPM, FrankenPHP and LSAPI are likely exposed.",
+          "CVE-2026-109619 (GHSA-6wmf-4rv5-p3rp): use-after-free of request state across requests on the same worker. Unauthenticated RCE or memory disclosure; shown on modphp (8.5 fatalerrorbacktraces) and PHP-FPM via session upload progress, which is on by default. No app code needed.",
+          "RHEL / Alma / Rocky: dnf upgrade 'php'. Remi users: update the php SCL or module stream."
+        ],
+        "solved": {
+          "A": 0,
+          "E": 1
+        }
+      },
+      "receipt_refs": [
+        "8a2b6353749234df62a0daaf257e6fa1dfb1a6e46dae7ea9c1ab07f8dbbccdf0"
+      ],
+      "scan_findings": [],
+      "served": {
+        "checks": [
+          "CVE-2026-109618 (GHSA-w8hw-w9fx-j79w): memory corruption when PHP runs out of memory while setting up request data; multipart parsing can trigger it. Unauthenticated RCE, shown on modphp with the default config; FPM, FrankenPHP and LSAPI are likely exposed.",
+          "CVE-2026-109619 (GHSA-6wmf-4rv5-p3rp): use-after-free of request state across requests on the same worker. Unauthenticated RCE or memory disclosure; shown on modphp (8.5 fatalerrorbacktraces) and PHP-FPM via session upload progress, which is on by default. No app code needed.",
+          "RHEL / Alma / Rocky: dnf upgrade 'php'. Remi users: update the php SCL or module stream.",
+          "Alpine: apk upgrade."
+        ],
+        "decision": "abstain",
+        "delivered_skill_steps": true,
+        "reason_code": "no_qualified_procedure"
+      },
+      "skill": "php2shell-check",
+      "state": "qualified",
+      "status": "qualified",
+      "task_id": "task-php-exposure"
+    },
+    {
+      "candidate_digest": "e0c21d33af860508b4eaa32029faf25e5f296cae9c2f41281fda927893cf239a",
+      "candidate_id": "skill-write-tests-090bba05d5-f98e3e1453",
+      "decision_digest": "c38aa8e7844f298d08cb7282045afb2929b4e2f50f442938b64474de4f57abb7",
+      "evidence_digest": "460434a69930a7d2d1395096baf29c8d38024086ff2041d48996570fb5d44ab0",
+      "probe": {
+        "conformance": {
+          "conforms": true,
+          "mismatches": []
+        },
+        "guidance_steps": [
+          "Write ONE test at a time. Assert first, watch it go red on the un-fixed",
+          "Iterate on the fastest focused runner (one file, one test name), and run",
+          "Before calling it done, prove the test can fail (below) and walk the"
+        ],
+        "solved": {
+          "A": 0,
+          "E": 1
+        }
+      },
+      "receipt_refs": [
+        "e492c3192366f6e83108fc4c74ed1b1088e37306a0437e96078b90ee04014c74"
+      ],
+      "scan_findings": [],
+      "served": {
+        "checks": [
+          "Write ONE test at a time. Assert first, watch it go red on the un-fixed",
+          "Iterate on the fastest focused runner (one file, one test name), and run",
+          "Before calling it done, prove the test can fail (below) and walk the",
+          "Observable behavior through the outermost practical entry point \u2014 return"
+        ],
+        "decision": "abstain",
+        "delivered_skill_steps": true,
+        "reason_code": "no_qualified_procedure"
+      },
+      "skill": "write-tests",
+      "state": "qualified",
+      "status": "qualified",
+      "task_id": "task-write-tests"
+    }
+  ],
+  "schema_version": 1,
+  "selected": [
+    "write-skills",
+    "php2shell-check",
+    "write-tests"
+  ],
+  "serving_audit": [
+    {
+      "candidate_digests": [
+        "1596ae6300d38a124a74a2558745ec06295ba7ed5e8399c54fc88c4984284dee"
+      ],
+      "decision": "abstain",
+      "kind": "served_guidance",
+      "rejections": [],
+      "repository_id": "serve-task-write-skill",
+      "resolutions": [],
+      "schema_version": 1,
+      "served_digest": "47f9a75170bbee39c38abcdaa0586f0dc5325ec142689b2b091c4b7f7957c8b5",
+      "serving_mode": "development",
+      "task_id": "task-write-skill"
+    },
+    {
+      "kind": "serving_outcome",
+      "outcome": "pass",
+      "receipt_digest": "2ed872d880797e5c27d38a8f753b09632ecc52c894b776b829d9b606866d9a24",
+      "schema_version": 1,
+      "served_digest": "47f9a75170bbee39c38abcdaa0586f0dc5325ec142689b2b091c4b7f7957c8b5",
+      "task_id": "task-write-skill"
+    },
+    {
+      "candidate_digests": [
+        "e6287f1df5565dbfaec9300e4e719ad52f46b30b0365e43b159847666203af7a"
+      ],
+      "decision": "abstain",
+      "kind": "served_guidance",
+      "rejections": [
+        {
+          "candidate_id": "skill-write-skills-10f8a83211-a371dcf5fc",
+          "reason": "out_of_scope"
+        }
+      ],
+      "repository_id": "serve-task-php-exposure",
+      "resolutions": [],
+      "schema_version": 1,
+      "served_digest": "f9cf2881ebd2811d4072634c40311c94c3ee261f5c023654b619f93f11979118",
+      "serving_mode": "development",
+      "task_id": "task-php-exposure"
+    },
+    {
+      "kind": "serving_outcome",
+      "outcome": "pass",
+      "receipt_digest": "8a2b6353749234df62a0daaf257e6fa1dfb1a6e46dae7ea9c1ab07f8dbbccdf0",
+      "schema_version": 1,
+      "served_digest": "f9cf2881ebd2811d4072634c40311c94c3ee261f5c023654b619f93f11979118",
+      "task_id": "task-php-exposure"
+    },
+    {
+      "candidate_digests": [
+        "e0c21d33af860508b4eaa32029faf25e5f296cae9c2f41281fda927893cf239a"
+      ],
+      "decision": "abstain",
+      "kind": "served_guidance",
+      "rejections": [
+        {
+          "candidate_id": "skill-php2shell-check-dd0a8cdb69-10c1b1ce70",
+          "reason": "out_of_scope"
+        },
+        {
+          "candidate_id": "skill-write-skills-10f8a83211-a371dcf5fc",
+          "reason": "out_of_scope"
+        }
+      ],
+      "repository_id": "serve-task-write-tests",
+      "resolutions": [],
+      "schema_version": 1,
+      "served_digest": "219be2ff78f0569a37b87cb01825ab8e8d1539683eedb01ec6b2188769a19fec",
+      "serving_mode": "development",
+      "task_id": "task-write-tests"
+    },
+    {
+      "kind": "serving_outcome",
+      "outcome": "pass",
+      "receipt_digest": "e492c3192366f6e83108fc4c74ed1b1088e37306a0437e96078b90ee04014c74",
+      "schema_version": 1,
+      "served_digest": "219be2ff78f0569a37b87cb01825ab8e8d1539683eedb01ec6b2188769a19fec",
+      "task_id": "task-write-tests"
+    }
+  ],
+  "skills_roots": [
+    "/Users/dawsonblock/Downloads/Symbolic-Engine/skills/skills-main/skills",
+    "/Users/dawsonblock/Downloads/Symbolic-Engine/skills/vskill-main 2/plugins"
+  ],
+  "tier": null
+}

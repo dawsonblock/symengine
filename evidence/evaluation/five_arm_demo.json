@@ -1,0 +1,750 @@
+{
+  "bootstrap": {
+    "detail": "",
+    "import_receipt_digest": "6e188ab291c6b7f0d35d964555f86e0776b35c2f0a8726e2f7a1b2a520e43d6e",
+    "ok": true,
+    "pytest_receipt_digest": "c833f9daf7b40b11103db71df98b319d13d773ea4549b58879dd87769af6d4d2",
+    "pytest_version": "8.4.2",
+    "reason": "ok"
+  },
+  "budget": {
+    "token_budget": 1000,
+    "tool_budget": 100,
+    "wall_seconds": 120
+  },
+  "budget_enforcement": "wall clock is hard-enforced: arms run in a watchdog thread abandoned at the limit (agent_timeout); token/tool budgets prefer harness-metered (verified) counters over agent-reported usage; missing usage is UNVERIFIED",
+  "budget_violations": 0,
+  "codex_gate": {
+    "agent": "codex-cli",
+    "authenticated": true,
+    "available": true,
+    "binary": "/Users/dawsonblock/.nvm/versions/node/v24.16.0/bin/codex",
+    "reason": "ok"
+  },
+  "evaluator_runtime": {
+    "bootstrap_memory_bytes": 2147483648,
+    "bootstrap_process_count": null,
+    "cpu_seconds": 60,
+    "disabled_plugins": [
+      "cacheprovider",
+      "randomly",
+      "xdist",
+      "cov"
+    ],
+    "disk_bytes": 67108864,
+    "enabled_plugins": [],
+    "output_bytes": 1048576,
+    "process_count": null,
+    "profile_version": "sis-evaluator-runtime/1",
+    "pytest_version": "8.4.2",
+    "python_version": "3.12",
+    "task_memory_bytes": 2147483648,
+    "wall_seconds": 120
+  },
+  "evaluator_runtime_digest": "4bfc03f4297dad5916a8f74d40bf9915dba8c147feafa8db5f9d6ff01d0b5abe",
+  "evidence": "scripted demonstration; machinery evidence only, not a claim about real coding-agent efficacy",
+  "governed": {
+    "analysis_mode": "confirmatory",
+    "arms": [
+      "A",
+      "B",
+      "C",
+      "D",
+      "E"
+    ],
+    "conformance": {
+      "conforms": true,
+      "mismatches": []
+    },
+    "metrics": {
+      "A": {
+        "abstention_rate": 1.0,
+        "evaluation_integrity_failures": 0,
+        "failure_rate": 1.0,
+        "mean_cost_per_verified_solve": null,
+        "mean_tokens_per_task": 10.0,
+        "mean_tool_calls_per_task": 1.0,
+        "mean_wall_seconds_per_task": 1.0,
+        "negative_transfer_rate": null,
+        "paired_loss_rate": 0.0,
+        "paired_win_rate": 0.0,
+        "served": 0,
+        "solved_task_rate": 0.0,
+        "verified_regression_rate": null
+      },
+      "B": {
+        "abstention_rate": 0.0,
+        "evaluation_integrity_failures": 0,
+        "failure_rate": 0.0,
+        "mean_cost_per_verified_solve": null,
+        "mean_tokens_per_task": 10.0,
+        "mean_tool_calls_per_task": 1.0,
+        "mean_wall_seconds_per_task": 1.0,
+        "negative_transfer_rate": null,
+        "paired_loss_rate": 0.0,
+        "paired_win_rate": 1.0,
+        "served": 2,
+        "solved_task_rate": 1.0,
+        "verified_regression_rate": null
+      },
+      "C": {
+        "abstention_rate": 0.0,
+        "evaluation_integrity_failures": 0,
+        "failure_rate": 0.0,
+        "mean_cost_per_verified_solve": null,
+        "mean_tokens_per_task": 10.0,
+        "mean_tool_calls_per_task": 1.0,
+        "mean_wall_seconds_per_task": 1.0,
+        "negative_transfer_rate": null,
+        "paired_loss_rate": 0.0,
+        "paired_win_rate": 1.0,
+        "served": 2,
+        "solved_task_rate": 1.0,
+        "verified_regression_rate": null
+      },
+      "D": {
+        "abstention_rate": 0.0,
+        "evaluation_integrity_failures": 0,
+        "failure_rate": 0.0,
+        "mean_cost_per_verified_solve": null,
+        "mean_tokens_per_task": 10.0,
+        "mean_tool_calls_per_task": 1.0,
+        "mean_wall_seconds_per_task": 1.0,
+        "negative_transfer_rate": null,
+        "paired_loss_rate": 0.0,
+        "paired_win_rate": 1.0,
+        "served": 2,
+        "solved_task_rate": 1.0,
+        "verified_regression_rate": null
+      },
+      "E": {
+        "abstention_rate": 0.0,
+        "evaluation_integrity_failures": 0,
+        "failure_rate": 0.0,
+        "mean_cost_per_verified_solve": null,
+        "mean_tokens_per_task": 10.0,
+        "mean_tool_calls_per_task": 1.0,
+        "mean_wall_seconds_per_task": 1.0,
+        "negative_transfer_rate": null,
+        "paired_loss_rate": 0.0,
+        "paired_win_rate": 1.0,
+        "served": 2,
+        "solved_task_rate": 1.0,
+        "verified_regression_rate": null
+      }
+    },
+    "protocol_digest": "8f6706160f494422b2e202f68fed2ca1c20b63b6c338bdb981aac64e323a78fb"
+  },
+  "harness_digest": null,
+  "kind": "five_arm_learning_qualification_demo",
+  "learning_qualification": {
+    "arms": {
+      "A": "baseline",
+      "B": "memory",
+      "C": "skills",
+      "D": "symbolic",
+      "E": "integrated"
+    },
+    "confidence_intervals": {
+      "A": {
+        "solved_rate_wilson_95": [
+          0.0,
+          0.65762
+        ]
+      },
+      "B": {
+        "solved_rate_wilson_95": [
+          0.34238,
+          1.0
+        ]
+      },
+      "C": {
+        "solved_rate_wilson_95": [
+          0.34238,
+          1.0
+        ]
+      },
+      "D": {
+        "solved_rate_wilson_95": [
+          0.34238,
+          1.0
+        ]
+      },
+      "E": {
+        "solved_rate_wilson_95": [
+          0.34238,
+          1.0
+        ]
+      }
+    },
+    "contrasts": {
+      "E_vs_A": {
+        "baseline": "A",
+        "baseline_solved": 0,
+        "delta": 0.0,
+        "difference_interval_95": [
+          -0.65762,
+          0.65762
+        ],
+        "losses": 0,
+        "mcnemar_exact_p": 1.0,
+        "significant": false,
+        "tasks": 2,
+        "ties": 2,
+        "treatment": "A",
+        "treatment_solved": 0,
+        "wins": 0
+      },
+      "E_vs_B": {
+        "baseline": "B",
+        "baseline_solved": 2,
+        "delta": 0.0,
+        "difference_interval_95": [
+          -0.65762,
+          0.65762
+        ],
+        "losses": 0,
+        "mcnemar_exact_p": 1.0,
+        "significant": false,
+        "tasks": 2,
+        "ties": 2,
+        "treatment": "E",
+        "treatment_solved": 2,
+        "wins": 0
+      },
+      "E_vs_C": {
+        "baseline": "C",
+        "baseline_solved": 2,
+        "delta": 0.0,
+        "difference_interval_95": [
+          -0.65762,
+          0.65762
+        ],
+        "losses": 0,
+        "mcnemar_exact_p": 1.0,
+        "significant": false,
+        "tasks": 2,
+        "ties": 2,
+        "treatment": "E",
+        "treatment_solved": 2,
+        "wins": 0
+      },
+      "E_vs_D": {
+        "baseline": "D",
+        "baseline_solved": 2,
+        "delta": 0.0,
+        "difference_interval_95": [
+          -0.65762,
+          0.65762
+        ],
+        "losses": 0,
+        "mcnemar_exact_p": 1.0,
+        "significant": false,
+        "tasks": 2,
+        "ties": 2,
+        "treatment": "E",
+        "treatment_solved": 2,
+        "wins": 0
+      }
+    },
+    "decisive_contrast": {
+      "baseline": "A",
+      "baseline_solved": 0,
+      "delta": 1.0,
+      "difference_interval_95": [
+        0.069985,
+        1.0
+      ],
+      "losses": 0,
+      "mcnemar_exact_p": 0.5,
+      "significant": false,
+      "tasks": 2,
+      "ties": 0,
+      "treatment": "E",
+      "treatment_solved": 2,
+      "wins": 2
+    },
+    "efficacy_claim": "no_evidence",
+    "evidence_class": "demonstration",
+    "failure_categories": {
+      "A": {
+        "task_fail": 2
+      },
+      "B": {},
+      "C": {},
+      "D": {},
+      "E": {}
+    },
+    "frozen_candidates": {},
+    "hidden_holdout": true,
+    "integration_vs_components": {
+      "B": {
+        "baseline": "B",
+        "baseline_solved": 2,
+        "delta": 0.0,
+        "difference_interval_95": [
+          -0.65762,
+          0.65762
+        ],
+        "losses": 0,
+        "mcnemar_exact_p": 1.0,
+        "significant": false,
+        "tasks": 2,
+        "ties": 2,
+        "treatment": "E",
+        "treatment_solved": 2,
+        "wins": 0
+      },
+      "C": {
+        "baseline": "C",
+        "baseline_solved": 2,
+        "delta": 0.0,
+        "difference_interval_95": [
+          -0.65762,
+          0.65762
+        ],
+        "losses": 0,
+        "mcnemar_exact_p": 1.0,
+        "significant": false,
+        "tasks": 2,
+        "ties": 2,
+        "treatment": "E",
+        "treatment_solved": 2,
+        "wins": 0
+      },
+      "D": {
+        "baseline": "D",
+        "baseline_solved": 2,
+        "delta": 0.0,
+        "difference_interval_95": [
+          -0.65762,
+          0.65762
+        ],
+        "losses": 0,
+        "mcnemar_exact_p": 1.0,
+        "significant": false,
+        "tasks": 2,
+        "ties": 2,
+        "treatment": "E",
+        "treatment_solved": 2,
+        "wins": 0
+      }
+    },
+    "kind": "five_arm_learning_qualification",
+    "limitations": [
+      "scripted/demonstration agent: machinery evidence only, not a claim about real coding-agent efficacy"
+    ],
+    "metrics": {
+      "A": {
+        "abstention_rate": 1.0,
+        "evaluation_integrity_failures": 0,
+        "failure_rate": 1.0,
+        "mean_cost_per_verified_solve": null,
+        "mean_tokens_per_task": 10.0,
+        "mean_tool_calls_per_task": 1.0,
+        "mean_wall_seconds_per_task": 1.0,
+        "negative_transfer_rate": null,
+        "paired_loss_rate": 0.0,
+        "paired_win_rate": 0.0,
+        "served": 0,
+        "solved_task_rate": 0.0,
+        "verified_regression_rate": null
+      },
+      "B": {
+        "abstention_rate": 0.0,
+        "evaluation_integrity_failures": 0,
+        "failure_rate": 0.0,
+        "mean_cost_per_verified_solve": null,
+        "mean_tokens_per_task": 10.0,
+        "mean_tool_calls_per_task": 1.0,
+        "mean_wall_seconds_per_task": 1.0,
+        "negative_transfer_rate": null,
+        "paired_loss_rate": 0.0,
+        "paired_win_rate": 1.0,
+        "served": 2,
+        "solved_task_rate": 1.0,
+        "verified_regression_rate": null
+      },
+      "C": {
+        "abstention_rate": 0.0,
+        "evaluation_integrity_failures": 0,
+        "failure_rate": 0.0,
+        "mean_cost_per_verified_solve": null,
+        "mean_tokens_per_task": 10.0,
+        "mean_tool_calls_per_task": 1.0,
+        "mean_wall_seconds_per_task": 1.0,
+        "negative_transfer_rate": null,
+        "paired_loss_rate": 0.0,
+        "paired_win_rate": 1.0,
+        "served": 2,
+        "solved_task_rate": 1.0,
+        "verified_regression_rate": null
+      },
+      "D": {
+        "abstention_rate": 0.0,
+        "evaluation_integrity_failures": 0,
+        "failure_rate": 0.0,
+        "mean_cost_per_verified_solve": null,
+        "mean_tokens_per_task": 10.0,
+        "mean_tool_calls_per_task": 1.0,
+        "mean_wall_seconds_per_task": 1.0,
+        "negative_transfer_rate": null,
+        "paired_loss_rate": 0.0,
+        "paired_win_rate": 1.0,
+        "served": 2,
+        "solved_task_rate": 1.0,
+        "verified_regression_rate": null
+      },
+      "E": {
+        "abstention_rate": 0.0,
+        "evaluation_integrity_failures": 0,
+        "failure_rate": 0.0,
+        "mean_cost_per_verified_solve": null,
+        "mean_tokens_per_task": 10.0,
+        "mean_tool_calls_per_task": 1.0,
+        "mean_wall_seconds_per_task": 1.0,
+        "negative_transfer_rate": null,
+        "paired_loss_rate": 0.0,
+        "paired_win_rate": 1.0,
+        "served": 2,
+        "solved_task_rate": 1.0,
+        "verified_regression_rate": null
+      }
+    },
+    "negative_transfer": {
+      "integrated_rate": null,
+      "per_arm": {
+        "A": null,
+        "B": null,
+        "C": null,
+        "D": null,
+        "E": null
+      }
+    },
+    "note": "A confirmatory label requires a real coding agent, a hidden repository-disjoint holdout, protocol conformance and the preregistered sample size. No label here authorizes production skill promotion by itself.",
+    "power_analysis": {
+      "alpha": 0.05,
+      "assumed_baseline": 0.6,
+      "assumed_treatment": 0.4,
+      "power": 0.8,
+      "preregistered_n": 2,
+      "required_n": 103
+    },
+    "protocol": {
+      "alpha": 0.05,
+      "arms": [
+        "A",
+        "B",
+        "C",
+        "D",
+        "E"
+      ],
+      "budget": {
+        "token_budget": 1000,
+        "tool_budget": 100,
+        "wall_seconds": 120
+      },
+      "method": "mcnemar_exact",
+      "min_effect": 1.0,
+      "notes": "",
+      "primary_metric": "paired solved_delta E vs A",
+      "protocol_digest": "8f6706160f494422b2e202f68fed2ca1c20b63b6c338bdb981aac64e323a78fb",
+      "sample_size": 2,
+      "schema_version": 1
+    },
+    "protocol_digest": "8f6706160f494422b2e202f68fed2ca1c20b63b6c338bdb981aac64e323a78fb",
+    "real_agent": false,
+    "release_gate": "IMPLEMENTED_NOT_EFFICACY_QUALIFIED",
+    "required_sample_size_0_6_vs_0_4": 103,
+    "resource_overhead": {
+      "A": {
+        "abstention_rate": 1.0,
+        "cost_per_verified_solution": {
+          "tokens": null,
+          "tool_calls": null,
+          "wall_seconds": null
+        },
+        "evaluation_integrity_failures": 0,
+        "mean_tokens_per_task": 10.0,
+        "mean_tool_calls_per_task": 1.0,
+        "mean_wall_seconds_per_task": 1.0,
+        "negative_transfer_rate": null
+      },
+      "B": {
+        "abstention_rate": 0.0,
+        "cost_per_verified_solution": {
+          "tokens": 10.0,
+          "tool_calls": 1.0,
+          "wall_seconds": 1.0
+        },
+        "evaluation_integrity_failures": 0,
+        "mean_tokens_per_task": 10.0,
+        "mean_tool_calls_per_task": 1.0,
+        "mean_wall_seconds_per_task": 1.0,
+        "negative_transfer_rate": null
+      },
+      "C": {
+        "abstention_rate": 0.0,
+        "cost_per_verified_solution": {
+          "tokens": 10.0,
+          "tool_calls": 1.0,
+          "wall_seconds": 1.0
+        },
+        "evaluation_integrity_failures": 0,
+        "mean_tokens_per_task": 10.0,
+        "mean_tool_calls_per_task": 1.0,
+        "mean_wall_seconds_per_task": 1.0,
+        "negative_transfer_rate": null
+      },
+      "D": {
+        "abstention_rate": 0.0,
+        "cost_per_verified_solution": {
+          "tokens": 10.0,
+          "tool_calls": 1.0,
+          "wall_seconds": 1.0
+        },
+        "evaluation_integrity_failures": 0,
+        "mean_tokens_per_task": 10.0,
+        "mean_tool_calls_per_task": 1.0,
+        "mean_wall_seconds_per_task": 1.0,
+        "negative_transfer_rate": null
+      },
+      "E": {
+        "abstention_rate": 0.0,
+        "cost_per_verified_solution": {
+          "tokens": 10.0,
+          "tool_calls": 1.0,
+          "wall_seconds": 1.0
+        },
+        "evaluation_integrity_failures": 0,
+        "mean_tokens_per_task": 10.0,
+        "mean_tool_calls_per_task": 1.0,
+        "mean_wall_seconds_per_task": 1.0,
+        "negative_transfer_rate": null
+      }
+    },
+    "sample_size_preregistered": 2,
+    "schema_version": 1,
+    "tasks": 2,
+    "underpowered": false
+  },
+  "paired": {
+    "B_vs_A": {
+      "losses": 0,
+      "mcnemar_exact_p": "0.5000000000",
+      "solved_delta": 2,
+      "ties": 0,
+      "wins": 2
+    },
+    "C_vs_A": {
+      "losses": 0,
+      "mcnemar_exact_p": "0.5000000000",
+      "solved_delta": 2,
+      "ties": 0,
+      "wins": 2
+    },
+    "D_vs_A": {
+      "losses": 0,
+      "mcnemar_exact_p": "0.5000000000",
+      "solved_delta": 2,
+      "ties": 0,
+      "wins": 2
+    },
+    "D_vs_B": {
+      "losses": 0,
+      "mcnemar_exact_p": "1.0000000000",
+      "solved_delta": 0,
+      "ties": 2,
+      "wins": 0
+    },
+    "D_vs_C": {
+      "losses": 0,
+      "mcnemar_exact_p": "1.0000000000",
+      "solved_delta": 0,
+      "ties": 2,
+      "wins": 0
+    },
+    "E_vs_A": {
+      "losses": 0,
+      "mcnemar_exact_p": "0.5000000000",
+      "solved_delta": 2,
+      "ties": 0,
+      "wins": 2
+    },
+    "E_vs_B": {
+      "losses": 0,
+      "mcnemar_exact_p": "1.0000000000",
+      "solved_delta": 0,
+      "ties": 2,
+      "wins": 0
+    },
+    "E_vs_C": {
+      "losses": 0,
+      "mcnemar_exact_p": "1.0000000000",
+      "solved_delta": 0,
+      "ties": 2,
+      "wins": 0
+    },
+    "E_vs_D": {
+      "losses": 0,
+      "mcnemar_exact_p": "1.0000000000",
+      "solved_delta": 0,
+      "ties": 2,
+      "wins": 0
+    }
+  },
+  "per_task": [
+    {
+      "arms": {
+        "A": {
+          "budget_accounting": "reported",
+          "budget_exceeded": false,
+          "outcome": "fail",
+          "receipt_digest": "e5d29aa6636b36cf2b0ac5326c7e360001e83c858c7821150c36e107ad9da22f",
+          "tokens_used": 10,
+          "tools_used": 1,
+          "wall_seconds": 1
+        },
+        "B": {
+          "budget_accounting": "reported",
+          "budget_exceeded": false,
+          "outcome": "pass",
+          "receipt_digest": "e988c31881ea427d699cf8ffb7581d5314d463433e1ebf4195b83704da9bf4e3",
+          "tokens_used": 10,
+          "tools_used": 1,
+          "wall_seconds": 1
+        },
+        "C": {
+          "budget_accounting": "reported",
+          "budget_exceeded": false,
+          "outcome": "pass",
+          "receipt_digest": "e988c31881ea427d699cf8ffb7581d5314d463433e1ebf4195b83704da9bf4e3",
+          "tokens_used": 10,
+          "tools_used": 1,
+          "wall_seconds": 1
+        },
+        "D": {
+          "budget_accounting": "reported",
+          "budget_exceeded": false,
+          "outcome": "pass",
+          "receipt_digest": "e988c31881ea427d699cf8ffb7581d5314d463433e1ebf4195b83704da9bf4e3",
+          "tokens_used": 10,
+          "tools_used": 1,
+          "wall_seconds": 1
+        },
+        "E": {
+          "budget_accounting": "reported",
+          "budget_exceeded": false,
+          "outcome": "pass",
+          "receipt_digest": "e988c31881ea427d699cf8ffb7581d5314d463433e1ebf4195b83704da9bf4e3",
+          "tokens_used": 10,
+          "tools_used": 1,
+          "wall_seconds": 1
+        }
+      },
+      "task_id": "demo-task-0"
+    },
+    {
+      "arms": {
+        "A": {
+          "budget_accounting": "reported",
+          "budget_exceeded": false,
+          "outcome": "fail",
+          "receipt_digest": "640f5635c1a070ccf10522fa8406b6e112cf73ec680fe224232a291df654d625",
+          "tokens_used": 10,
+          "tools_used": 1,
+          "wall_seconds": 1
+        },
+        "B": {
+          "budget_accounting": "reported",
+          "budget_exceeded": false,
+          "outcome": "pass",
+          "receipt_digest": "6dd72c2f5126275efff7f1092dcb98ee5d7d8da687afc3966241a19ef6dd53f5",
+          "tokens_used": 10,
+          "tools_used": 1,
+          "wall_seconds": 1
+        },
+        "C": {
+          "budget_accounting": "reported",
+          "budget_exceeded": false,
+          "outcome": "pass",
+          "receipt_digest": "6dd72c2f5126275efff7f1092dcb98ee5d7d8da687afc3966241a19ef6dd53f5",
+          "tokens_used": 10,
+          "tools_used": 1,
+          "wall_seconds": 1
+        },
+        "D": {
+          "budget_accounting": "reported",
+          "budget_exceeded": false,
+          "outcome": "pass",
+          "receipt_digest": "6dd72c2f5126275efff7f1092dcb98ee5d7d8da687afc3966241a19ef6dd53f5",
+          "tokens_used": 10,
+          "tools_used": 1,
+          "wall_seconds": 1
+        },
+        "E": {
+          "budget_accounting": "reported",
+          "budget_exceeded": false,
+          "outcome": "pass",
+          "receipt_digest": "6dd72c2f5126275efff7f1092dcb98ee5d7d8da687afc3966241a19ef6dd53f5",
+          "tokens_used": 10,
+          "tools_used": 1,
+          "wall_seconds": 1
+        }
+      },
+      "task_id": "demo-task-1"
+    }
+  ],
+  "receipts_issued": 4,
+  "schema_version": 1,
+  "solve_rates": {
+    "A": {
+      "n": 2,
+      "solved": 0,
+      "wilson_ci95": [
+        "0.0000000000",
+        "0.6576197760"
+      ]
+    },
+    "B": {
+      "n": 2,
+      "solved": 2,
+      "wilson_ci95": [
+        "0.3423802240",
+        "1.0000000000"
+      ]
+    },
+    "C": {
+      "n": 2,
+      "solved": 2,
+      "wilson_ci95": [
+        "0.3423802240",
+        "1.0000000000"
+      ]
+    },
+    "D": {
+      "n": 2,
+      "solved": 2,
+      "wilson_ci95": [
+        "0.3423802240",
+        "1.0000000000"
+      ]
+    },
+    "E": {
+      "n": 2,
+      "solved": 2,
+      "wilson_ci95": [
+        "0.3423802240",
+        "1.0000000000"
+      ]
+    }
+  },
+  "solved_counts": {
+    "A": 0,
+    "B": 2,
+    "C": 2,
+    "D": 2,
+    "E": 2
+  },
+  "tasks": 2
+}

@@ -1,0 +1,60 @@
+{
+  "namespace": "experience_scalar",
+  "promote": true,
+  "train_episodes": [
+    {
+      "inputs": {
+        "n": -2
+      },
+      "observed_output": -2,
+      "accepted": true,
+      "trace": [
+        "observed trusted label"
+      ]
+    },
+    {
+      "inputs": {
+        "n": 1
+      },
+      "observed_output": 1,
+      "accepted": true,
+      "trace": [
+        "observed trusted label"
+      ]
+    },
+    {
+      "inputs": {
+        "n": 3
+      },
+      "observed_output": 3,
+      "accepted": true,
+      "trace": [
+        "observed trusted label"
+      ]
+    }
+  ],
+  "validation_episodes": [
+    {
+      "inputs": {
+        "n": 4
+      },
+      "observed_output": 0,
+      "accepted": false,
+      "correct_output": 4,
+      "trace": [
+        "incorrect original output corrected by operator"
+      ]
+    },
+    {
+      "inputs": {
+        "n": -5
+      },
+      "observed_output": 0,
+      "accepted": false,
+      "correct_output": -5,
+      "trace": [
+        "incorrect original output corrected by operator"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,59 @@
+{
+  "decisive_contrast": {
+    "baseline": "A",
+    "baseline_solved": 4,
+    "delta": 0.0,
+    "difference_interval_95": [
+      -0.402745,
+      0.402745
+    ],
+    "losses": 0,
+    "mcnemar_exact_p": 1.0,
+    "significant": false,
+    "tasks": 8,
+    "ties": 8,
+    "treatment": "E",
+    "treatment_solved": 4,
+    "wins": 0
+  },
+  "efficacy_claim": "no_evidence",
+  "evidence_class": "exploratory",
+  "failure_categories": {
+    "A": {
+      "task_fail": 4
+    },
+    "B": {
+      "task_fail": 4
+    },
+    "C": {
+      "task_fail": 4
+    },
+    "D": {
+      "task_fail": 4
+    },
+    "E": {
+      "task_fail": 4
+    }
+  },
+  "kind": "real_agent_five_arm_attempt_summary",
+  "per_arm_solved": {
+    "A": 0.5,
+    "B": 0.5,
+    "C": 0.5,
+    "D": 0.5,
+    "E": 0.5
+  },
+  "reason": "Codex CLI returned 'You\u2019ve hit your usage limit ... try again at 8:19 PM' after 20 of 40 arm runs. Four tasks had zero tool events and unchanged workspaces; they are infrastructure failures, not genuine task failures.",
+  "schema_version": 1,
+  "status": "INVALID_INFRASTRUCTURE",
+  "tasks_no_action": [
+    "refactor-discount",
+    "dep-import",
+    "diag-bank",
+    "test-slug"
+  ],
+  "tasks_preregistered": 8,
+  "tasks_with_agent_action": 4,
+  "underpowered": true,
+  "valid_for_efficacy": false
+}

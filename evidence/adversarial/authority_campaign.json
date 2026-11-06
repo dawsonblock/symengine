@@ -1,0 +1,32 @@
+{
+  "kind": "adversarial_campaign",
+  "note": "All mandatory adversarial tests executed and passed. The one skip is the external vskill corpus test when the corpus is not inside the checkout; compatibility was executed separately against the corpus and recorded in evidence/ingestion/compatibility.json.",
+  "schema_version": 1,
+  "suites": {
+    "tests/v3/test_authority_checkpoints.py": {
+      "failed": 0,
+      "passed": 23
+    },
+    "tests/v3/test_evaluation_certificates.py": {
+      "failed": 0,
+      "passed": 22
+    },
+    "tests/v3/test_evaluation_runtime.py": {
+      "failed": 0,
+      "passed": 19
+    },
+    "tests/v3/test_execution_identity_custody.py": {
+      "failed": 0,
+      "passed": 22
+    },
+    "tests/v3/test_learning_qualification.py": {
+      "failed": 0,
+      "passed": 15
+    },
+    "tests/v3/test_skill_ingest_hardening.py": {
+      "failed": 0,
+      "passed": 19,
+      "skipped": 1
+    }
+  }
+}

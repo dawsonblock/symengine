@@ -1,0 +1,15 @@
+{
+  "namespace": "trace_calc",
+  "promote": true,
+  "train_episodes": [
+    {"inputs": {"a": 1, "b": 2}, "accepted": true, "observed_output": 6, "steps": [{"name": "sum", "expr": {"op": "binary", "fn": "add", "left": {"op": "input", "name": "a"}, "right": {"op": "input", "name": "b"}}, "value": 3}, {"name": "scaled", "expr": {"op": "binary", "fn": "mul", "left": {"op": "var", "name": "sum"}, "right": {"op": "const", "value": 2}}, "value": 6}]},
+    {"inputs": {"a": 5, "b": -2}, "accepted": true, "observed_output": 6, "steps": [{"name": "sum", "expr": {"op": "binary", "fn": "add", "left": {"op": "input", "name": "a"}, "right": {"op": "input", "name": "b"}}, "value": 3}, {"name": "scaled", "expr": {"op": "binary", "fn": "mul", "left": {"op": "var", "name": "sum"}, "right": {"op": "const", "value": 2}}, "value": 6}]},
+    {"inputs": {"a": -3, "b": 7}, "accepted": true, "observed_output": 8, "steps": [{"name": "sum", "expr": {"op": "binary", "fn": "add", "left": {"op": "input", "name": "a"}, "right": {"op": "input", "name": "b"}}, "value": 4}, {"name": "scaled", "expr": {"op": "binary", "fn": "mul", "left": {"op": "var", "name": "sum"}, "right": {"op": "const", "value": 2}}, "value": 8}]},
+    {"inputs": {"a": 11, "b": 13}, "accepted": true, "observed_output": 48, "steps": [{"name": "sum", "expr": {"op": "binary", "fn": "add", "left": {"op": "input", "name": "a"}, "right": {"op": "input", "name": "b"}}, "value": 24}, {"name": "scaled", "expr": {"op": "binary", "fn": "mul", "left": {"op": "var", "name": "sum"}, "right": {"op": "const", "value": 2}}, "value": 48}]}
+  ],
+  "validation_episodes": [
+    {"inputs": {"a": 7, "b": 8}, "accepted": true, "observed_output": 30},
+    {"inputs": {"a": -10, "b": 6}, "accepted": true, "observed_output": -8},
+    {"inputs": {"a": 20, "b": 0}, "accepted": true, "observed_output": 40}
+  ]
+}

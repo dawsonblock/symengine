@@ -1,0 +1,33 @@
+{
+  "cases": [
+    {
+      "args": {
+        "a": 2,
+        "b": 3
+      },
+      "expected": 5
+    },
+    {
+      "args": {
+        "a": 7,
+        "b": -2
+      },
+      "expected": 5
+    },
+    {
+      "args": {
+        "a": 10,
+        "b": 15
+      },
+      "expected": 25
+    }
+  ],
+  "filename": "one.py",
+  "function": "total",
+  "recipe": {
+    "from_op": "Sub",
+    "kind": "binary_operator_swap",
+    "to_op": "Add"
+  },
+  "source": "def total(a, b):\n    return a - b\n"
+}

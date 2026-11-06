@@ -1,0 +1,370 @@
+{
+  "report": {
+    "budget": {
+      "token_budget": 1000000,
+      "tool_budget": 10000,
+      "wall_seconds": 120
+    },
+    "budget_enforcement": "wall clock is hard-enforced: arms run in a watchdog thread abandoned at the limit (agent_timeout); token/tool budgets prefer harness-metered (verified) counters over agent-reported usage; missing usage is UNVERIFIED",
+    "budget_violations": 0,
+    "harness_digest": null,
+    "paired": {
+      "C_vs_A": {
+        "losses": 1,
+        "mcnemar_exact_p": "1.0000000000",
+        "solved_delta": -1,
+        "ties": 5,
+        "wins": 0
+      },
+      "D_vs_A": {
+        "losses": 0,
+        "mcnemar_exact_p": "1.0000000000",
+        "solved_delta": 1,
+        "ties": 5,
+        "wins": 1
+      },
+      "D_vs_B": {
+        "losses": 0,
+        "mcnemar_exact_p": "0.5000000000",
+        "solved_delta": 2,
+        "ties": 4,
+        "wins": 2
+      },
+      "D_vs_C": {
+        "losses": 0,
+        "mcnemar_exact_p": "0.5000000000",
+        "solved_delta": 2,
+        "ties": 4,
+        "wins": 2
+      }
+    },
+    "per_task": [
+      {
+        "arms": {
+          "A": {
+            "budget_accounting": "unverified",
+            "budget_exceeded": false,
+            "outcome": "fail",
+            "receipt_digest": "f33e5aa5c3f87e2db15a664ce10374565185bb48013496d5a2f50173fdf58fba",
+            "tokens_used": null,
+            "tools_used": null,
+            "wall_seconds": 36
+          },
+          "B": {
+            "budget_accounting": "unverified",
+            "budget_exceeded": false,
+            "outcome": "fail",
+            "receipt_digest": "901c38841bccbe431194d0274e992d7a897594a29d9295745b226e94f7bedcd5",
+            "tokens_used": null,
+            "tools_used": null,
+            "wall_seconds": 32
+          },
+          "C": {
+            "budget_accounting": "unverified",
+            "budget_exceeded": false,
+            "outcome": "fail",
+            "receipt_digest": "471254dc488a505b15201de157f2c5f239bd01a3a7df93ac28728aa8c651dc1f",
+            "tokens_used": null,
+            "tools_used": null,
+            "wall_seconds": 46
+          },
+          "D": {
+            "budget_accounting": "unverified",
+            "budget_exceeded": false,
+            "outcome": "pass",
+            "receipt_digest": "618720ce9e33ca46190637357a5fe30f9aba7fc9a438641bf072e7f4e2c4418a",
+            "tokens_used": null,
+            "tools_used": null,
+            "wall_seconds": 39
+          }
+        },
+        "task_id": "task-money"
+      },
+      {
+        "arms": {
+          "A": {
+            "budget_accounting": "unverified",
+            "budget_exceeded": false,
+            "outcome": "fail",
+            "receipt_digest": "a43b19b27f4ece8b061cf73b3236906e37970f628990fce9dceee10588d43390",
+            "tokens_used": null,
+            "tools_used": null,
+            "wall_seconds": 28
+          },
+          "B": {
+            "budget_accounting": "unverified",
+            "budget_exceeded": false,
+            "outcome": "fail",
+            "receipt_digest": "05b4312ece6349979f9c9592db1f2ad2b89b9c3961efc28d0959bd43f832f05b",
+            "tokens_used": null,
+            "tools_used": null,
+            "wall_seconds": 36
+          },
+          "C": {
+            "budget_accounting": "unverified",
+            "budget_exceeded": false,
+            "outcome": "fail",
+            "receipt_digest": "0544ccd1cec0cfb92edcfff9c03e748cd809ccf97f5050ba4460873c34281422",
+            "tokens_used": null,
+            "tools_used": null,
+            "wall_seconds": 28
+          },
+          "D": {
+            "budget_accounting": "unverified",
+            "budget_exceeded": false,
+            "outcome": "fail",
+            "receipt_digest": "9497134e661c48a5df21d245b9a10bc9ab81c1454f746222a9f7c3abd7466a92",
+            "tokens_used": null,
+            "tools_used": null,
+            "wall_seconds": 33
+          }
+        },
+        "task_id": "task-slug"
+      },
+      {
+        "arms": {
+          "A": {
+            "budget_accounting": "unverified",
+            "budget_exceeded": false,
+            "outcome": "pass",
+            "receipt_digest": "5c2d67f2617855e1b0e12d0582ae4b5537525efc21b3dc1d9836b604025cb698",
+            "tokens_used": null,
+            "tools_used": null,
+            "wall_seconds": 34
+          },
+          "B": {
+            "budget_accounting": "unverified",
+            "budget_exceeded": false,
+            "outcome": "pass",
+            "receipt_digest": "0138ed0b5bb9762eddd201f0ff9d4126b2ce81504bd1f271dc89f2befe4ee6ad",
+            "tokens_used": null,
+            "tools_used": null,
+            "wall_seconds": 31
+          },
+          "C": {
+            "budget_accounting": "unverified",
+            "budget_exceeded": false,
+            "outcome": "pass",
+            "receipt_digest": "5c2d67f2617855e1b0e12d0582ae4b5537525efc21b3dc1d9836b604025cb698",
+            "tokens_used": null,
+            "tools_used": null,
+            "wall_seconds": 31
+          },
+          "D": {
+            "budget_accounting": "unverified",
+            "budget_exceeded": false,
+            "outcome": "pass",
+            "receipt_digest": "5c2d67f2617855e1b0e12d0582ae4b5537525efc21b3dc1d9836b604025cb698",
+            "tokens_used": null,
+            "tools_used": null,
+            "wall_seconds": 36
+          }
+        },
+        "task_id": "task-dates"
+      },
+      {
+        "arms": {
+          "A": {
+            "budget_accounting": "unverified",
+            "budget_exceeded": false,
+            "outcome": "pass",
+            "receipt_digest": "6e98b1a8471d07ee40f70b0ab96584d44eb8431a219ad6d007918640a407647f",
+            "tokens_used": null,
+            "tools_used": null,
+            "wall_seconds": 35
+          },
+          "B": {
+            "budget_accounting": "unverified",
+            "budget_exceeded": false,
+            "outcome": "pass",
+            "receipt_digest": "d784b27968e10f6e7c670a516c53242a7cd85199e38f3b07d63d824bca1cf300",
+            "tokens_used": null,
+            "tools_used": null,
+            "wall_seconds": 31
+          },
+          "C": {
+            "budget_accounting": "unverified",
+            "budget_exceeded": false,
+            "outcome": "pass",
+            "receipt_digest": "7651818fb07f27827513b843d74f0bb001cf95f0066345ea3413f369e2ab1e08",
+            "tokens_used": null,
+            "tools_used": null,
+            "wall_seconds": 29
+          },
+          "D": {
+            "budget_accounting": "unverified",
+            "budget_exceeded": false,
+            "outcome": "pass",
+            "receipt_digest": "b0a17c96fc7344194baa911f2fe018d70adc8ae4de2c25f25a3d6c692906bb20",
+            "tokens_used": null,
+            "tools_used": null,
+            "wall_seconds": 46
+          }
+        },
+        "task_id": "task-csv"
+      },
+      {
+        "arms": {
+          "A": {
+            "budget_accounting": "unverified",
+            "budget_exceeded": false,
+            "outcome": "pass",
+            "receipt_digest": "ae88878dc8376350ec88d80799fa710ebe7edefc1167a5a62e79b0ec0517994a",
+            "tokens_used": null,
+            "tools_used": null,
+            "wall_seconds": 30
+          },
+          "B": {
+            "budget_accounting": "unverified",
+            "budget_exceeded": false,
+            "outcome": "pass",
+            "receipt_digest": "ae88878dc8376350ec88d80799fa710ebe7edefc1167a5a62e79b0ec0517994a",
+            "tokens_used": null,
+            "tools_used": null,
+            "wall_seconds": 33
+          },
+          "C": {
+            "budget_accounting": "unverified",
+            "budget_exceeded": false,
+            "outcome": "pass",
+            "receipt_digest": "d52baf6b199093a65903e124f2036427d93af28bd5e576301322d0f6c4815897",
+            "tokens_used": null,
+            "tools_used": null,
+            "wall_seconds": 27
+          },
+          "D": {
+            "budget_accounting": "unverified",
+            "budget_exceeded": false,
+            "outcome": "pass",
+            "receipt_digest": "fa36166fcf20987a9f13509524948d636ffa4afd17d6766e5ea036526029517e",
+            "tokens_used": null,
+            "tools_used": null,
+            "wall_seconds": 34
+          }
+        },
+        "task_id": "task-dedup"
+      },
+      {
+        "arms": {
+          "A": {
+            "budget_accounting": "unverified",
+            "budget_exceeded": false,
+            "outcome": "pass",
+            "receipt_digest": "ea9f698d5404a2b21fab3bd21d2f72802165eaeb5dcd33ef118553337db6b60b",
+            "tokens_used": null,
+            "tools_used": null,
+            "wall_seconds": 35
+          },
+          "B": {
+            "budget_accounting": "unverified",
+            "budget_exceeded": false,
+            "outcome": "fail",
+            "receipt_digest": "be88b50cac088f1fa89c36291056e511994f1538775e289e78f2d72762a2f243",
+            "tokens_used": null,
+            "tools_used": null,
+            "wall_seconds": 35
+          },
+          "C": {
+            "budget_accounting": "unverified",
+            "budget_exceeded": false,
+            "outcome": "fail",
+            "receipt_digest": "41fd9d6f78fe51ee2c5cbae9084eff963ead65055afa53a695cef030be25c69b",
+            "tokens_used": null,
+            "tools_used": null,
+            "wall_seconds": 35
+          },
+          "D": {
+            "budget_accounting": "unverified",
+            "budget_exceeded": false,
+            "outcome": "pass",
+            "receipt_digest": "ea9f698d5404a2b21fab3bd21d2f72802165eaeb5dcd33ef118553337db6b60b",
+            "tokens_used": null,
+            "tools_used": null,
+            "wall_seconds": 51
+          }
+        },
+        "task_id": "task-clamp"
+      }
+    ],
+    "schema_version": 1,
+    "solve_rates": {
+      "A": {
+        "n": 6,
+        "solved": 4,
+        "wilson_ci95": [
+          "0.2999933130",
+          "0.9032285898"
+        ]
+      },
+      "B": {
+        "n": 6,
+        "solved": 3,
+        "wilson_ci95": [
+          "0.1876163050",
+          "0.8123836950"
+        ]
+      },
+      "C": {
+        "n": 6,
+        "solved": 3,
+        "wilson_ci95": [
+          "0.1876163050",
+          "0.8123836950"
+        ]
+      },
+      "D": {
+        "n": 6,
+        "solved": 5,
+        "wilson_ci95": [
+          "0.4364971750",
+          "0.9699466306"
+        ]
+      }
+    },
+    "solved_counts": {
+      "A": 4,
+      "B": 3,
+      "C": 3,
+      "D": 5
+    },
+    "tasks": 6
+  },
+  "report_digest": "f5ce1a9cf94b5793be9ef936e5b16e48d7414035637eecbd73f9353494caad83",
+  "study_root": "/var/folders/xt/jh84t2kj6hl26tk5qx3m_28h0000gn/T/sis-live-study-5why8t6i",
+  "summary": {
+    "baseline": {
+      "arm": "A",
+      "n": 6,
+      "solved": 4,
+      "wilson_ci95": [
+        "0.2999933130",
+        "0.9032285898"
+      ]
+    },
+    "budget": {
+      "token_budget": 1000000,
+      "tool_budget": 10000,
+      "wall_seconds": 120
+    },
+    "budget_violations": 0,
+    "contrast": {
+      "losses": 0,
+      "mcnemar_exact_p": "1.0000000000",
+      "solved_delta": 1,
+      "ties": 5,
+      "wins": 1
+    },
+    "decision_rule": "solved_delta > 0 with mcnemar_exact_p <= 0.05 is the preregistered efficacy bar; anything else is not evidence of improvement",
+    "schema_version": 1,
+    "tasks": 6,
+    "treatment": {
+      "arm": "D",
+      "n": 6,
+      "solved": 5,
+      "wilson_ci95": [
+        "0.4364971750",
+        "0.9699466306"
+      ]
+    }
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "model_id": "/path/to/your/local-base-model",
+  "output_dir": "./outputs/sis-lora-v190-new",
+  "target_modules": ["q_proj", "v_proj"],
+  "epochs": 2,
+  "learning_rate": 0.0002,
+  "lora_rank": 8,
+  "lora_alpha": 16,
+  "lora_dropout": 0.05,
+  "batch_size": 1,
+  "grad_accumulation": 4,
+  "max_length": 1024,
+  "seed": 42,
+  "allow_download": false,
+  "max_steps": 100
+}

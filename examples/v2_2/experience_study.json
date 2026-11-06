@@ -1,0 +1,245 @@
+{
+  "namespace": "v22_demo",
+  "promote": true,
+  "train_captures": [
+    {
+      "capture": {
+        "version": 1,
+        "inputs": {
+          "a": 1,
+          "b": 2
+        },
+        "events": [
+          {
+            "id": "sum",
+            "tool": "add",
+            "bindings": {
+              "left": {
+                "input": "a"
+              },
+              "right": {
+                "input": "b"
+              }
+            },
+            "resolved": {
+              "left": 1,
+              "right": 2
+            },
+            "result": 3,
+            "prior": "0000000000000000000000000000000000000000000000000000000000000000",
+            "hash": "0662ff8fac61372f66aad96cfcb9eac1d0e72df767aa1f0ec6ce39a413eb0757"
+          },
+          {
+            "id": "double",
+            "tool": "mul",
+            "bindings": {
+              "left": {
+                "step": "sum"
+              },
+              "right": {
+                "literal": 2
+              }
+            },
+            "resolved": {
+              "left": 3,
+              "right": 2
+            },
+            "result": 6,
+            "prior": "0662ff8fac61372f66aad96cfcb9eac1d0e72df767aa1f0ec6ce39a413eb0757",
+            "hash": "5fa06f441a18abd504db8057298363edfda90cfee07d102f52f8dd52fe1e0a1f"
+          }
+        ],
+        "observed_output": 6,
+        "head": "5fa06f441a18abd504db8057298363edfda90cfee07d102f52f8dd52fe1e0a1f",
+        "capture_digest": "3dfc76bbedf26f3164091daac8ad25f0868455c360a9d78fbb0a2d947fa50a7e",
+        "evidence_scope": "local deterministic replay; no external attestation or outcome oracle"
+      },
+      "accepted": true
+    },
+    {
+      "capture": {
+        "version": 1,
+        "inputs": {
+          "a": 5,
+          "b": -2
+        },
+        "events": [
+          {
+            "id": "sum",
+            "tool": "add",
+            "bindings": {
+              "left": {
+                "input": "a"
+              },
+              "right": {
+                "input": "b"
+              }
+            },
+            "resolved": {
+              "left": 5,
+              "right": -2
+            },
+            "result": 3,
+            "prior": "0000000000000000000000000000000000000000000000000000000000000000",
+            "hash": "09757cbfce7df8a4474351457411ad5160f7535af9257a6cdabd68cf5a4a182d"
+          },
+          {
+            "id": "double",
+            "tool": "mul",
+            "bindings": {
+              "left": {
+                "step": "sum"
+              },
+              "right": {
+                "literal": 2
+              }
+            },
+            "resolved": {
+              "left": 3,
+              "right": 2
+            },
+            "result": 6,
+            "prior": "09757cbfce7df8a4474351457411ad5160f7535af9257a6cdabd68cf5a4a182d",
+            "hash": "e8af8e4faee39ad10c74af342e835a38c4d3b264ebe567828873aee1470e30a5"
+          }
+        ],
+        "observed_output": 6,
+        "head": "e8af8e4faee39ad10c74af342e835a38c4d3b264ebe567828873aee1470e30a5",
+        "capture_digest": "31d4fdd1b5e29ac34e7c3dec47808682b8718b5de11f4411e707ed735252f55d",
+        "evidence_scope": "local deterministic replay; no external attestation or outcome oracle"
+      },
+      "accepted": true
+    },
+    {
+      "capture": {
+        "version": 1,
+        "inputs": {
+          "a": -3,
+          "b": 7
+        },
+        "events": [
+          {
+            "id": "sum",
+            "tool": "add",
+            "bindings": {
+              "left": {
+                "input": "a"
+              },
+              "right": {
+                "input": "b"
+              }
+            },
+            "resolved": {
+              "left": -3,
+              "right": 7
+            },
+            "result": 4,
+            "prior": "0000000000000000000000000000000000000000000000000000000000000000",
+            "hash": "cfd35abfc4d74d11007afb270d32ae99b37b6ecc98c1f8ec57133148b74d35a0"
+          },
+          {
+            "id": "double",
+            "tool": "mul",
+            "bindings": {
+              "left": {
+                "step": "sum"
+              },
+              "right": {
+                "literal": 2
+              }
+            },
+            "resolved": {
+              "left": 4,
+              "right": 2
+            },
+            "result": 8,
+            "prior": "cfd35abfc4d74d11007afb270d32ae99b37b6ecc98c1f8ec57133148b74d35a0",
+            "hash": "4a8a0b13b8db0523cbd458bbbdcfd6ab3dac3bdba68c442de5da80733b2ca2c4"
+          }
+        ],
+        "observed_output": 8,
+        "head": "4a8a0b13b8db0523cbd458bbbdcfd6ab3dac3bdba68c442de5da80733b2ca2c4",
+        "capture_digest": "9e9d1dfeb699cdf2e595309891c54ac2802779ab19d498b32ea75858c1c5753d",
+        "evidence_scope": "local deterministic replay; no external attestation or outcome oracle"
+      },
+      "accepted": true
+    },
+    {
+      "capture": {
+        "version": 1,
+        "inputs": {
+          "a": 11,
+          "b": 13
+        },
+        "events": [
+          {
+            "id": "sum",
+            "tool": "add",
+            "bindings": {
+              "left": {
+                "input": "a"
+              },
+              "right": {
+                "input": "b"
+              }
+            },
+            "resolved": {
+              "left": 11,
+              "right": 13
+            },
+            "result": 24,
+            "prior": "0000000000000000000000000000000000000000000000000000000000000000",
+            "hash": "330ed8b2aaf4ba8d0651dc4385192b2ea28175ad7efaef2e9caa16de55f25e9a"
+          },
+          {
+            "id": "double",
+            "tool": "mul",
+            "bindings": {
+              "left": {
+                "step": "sum"
+              },
+              "right": {
+                "literal": 2
+              }
+            },
+            "resolved": {
+              "left": 24,
+              "right": 2
+            },
+            "result": 48,
+            "prior": "330ed8b2aaf4ba8d0651dc4385192b2ea28175ad7efaef2e9caa16de55f25e9a",
+            "hash": "05d4d92fae0d2ffcc672a27aa1cd5de250efb395ab1657b3d0c9738dae5212ab"
+          }
+        ],
+        "observed_output": 48,
+        "head": "05d4d92fae0d2ffcc672a27aa1cd5de250efb395ab1657b3d0c9738dae5212ab",
+        "capture_digest": "2370070d93592e43ce0c66138b57ccd781bbcbd85db6c1a129489199812a255d",
+        "evidence_scope": "local deterministic replay; no external attestation or outcome oracle"
+      },
+      "accepted": true
+    }
+  ],
+  "validation": [
+    {
+      "inputs": {
+        "a": 7,
+        "b": 8
+      },
+      "output": 30
+    },
+    {
+      "inputs": {
+        "a": -10,
+        "b": 6
+      },
+      "output": -8
+    },
+    {
+      "inputs": {
+        "a": 20,
+        "b": 0
+      },
+      "output": 40
+    }
+  ]
+}

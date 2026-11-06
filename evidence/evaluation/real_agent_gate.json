@@ -1,0 +1,25 @@
+{
+  "attempt": "evidence/evaluation/real_agent_five_arm.json",
+  "attempt_summary": "evidence/evaluation/real_agent_attempt_summary.json",
+  "codex_gate": {
+    "agent": "codex-cli",
+    "authenticated": true,
+    "available": true,
+    "binary": "/Users/dawsonblock/.nvm/versions/node/v24.16.0/bin/codex",
+    "reason": "ok"
+  },
+  "efficacy_claim": "none",
+  "kind": "real_agent_learning_gate",
+  "note": "The real-agent runner is implemented and fail-closed on no-action/error events. No scripted result was substituted. Rerun when the Codex quota is available; the gate remains blocked until a valid five-arm run completes.",
+  "reason": "Codex CLI returned 'You\u2019ve hit your usage limit ... try again at 8:19 PM' after 20 of 40 arm runs. Four tasks had zero tool events and unchanged workspaces; they are infrastructure failures, not genuine task failures.",
+  "schema_version": 1,
+  "status": "BLOCKED_EXTERNAL_AGENT_QUOTA",
+  "tasks_invalid_no_action": [
+    "refactor-discount",
+    "dep-import",
+    "diag-bank",
+    "test-slug"
+  ],
+  "tasks_preregistered": 8,
+  "tasks_with_agent_action": 4
+}

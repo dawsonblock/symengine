@@ -1,0 +1,8 @@
+# OPTIONAL. No requests to any LLM are made by default.
+# URL must end in /chat/completions, use HTTPS (or localhost HTTP)
+SIS_ENABLE_LLM=1
+SIS_LLM_URL=http://127.0.0.1:1234/v1/chat/completions
+SIS_LLM_MODEL=your-model-name
+SIS_LLM_API_KEY=
+# Set a long secret before exposing the HTTP server beyond loopback.
+SIS_API_KEY=

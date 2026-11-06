@@ -1,0 +1,68 @@
+{
+  "namespace": "list_sum",
+  "train": [
+    {
+      "inputs": {
+        "nums": [
+          1,
+          2,
+          3
+        ]
+      },
+      "output": 6
+    },
+    {
+      "inputs": {
+        "nums": [
+          2,
+          7,
+          1
+        ]
+      },
+      "output": 10
+    },
+    {
+      "inputs": {
+        "nums": [
+          -2,
+          4,
+          8
+        ]
+      },
+      "output": 10
+    },
+    {
+      "inputs": {
+        "nums": [
+          7,
+          8,
+          -4
+        ]
+      },
+      "output": 11
+    }
+  ],
+  "validation": [
+    {
+      "inputs": {
+        "nums": [
+          11,
+          2,
+          7
+        ]
+      },
+      "output": 20
+    },
+    {
+      "inputs": {
+        "nums": [
+          -9,
+          3,
+          1
+        ]
+      },
+      "output": -5
+    }
+  ],
+  "promote": true
+}

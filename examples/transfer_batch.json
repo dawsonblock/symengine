@@ -1,0 +1,10 @@
+{
+  "source_namespace": "arithmetic_demo",
+  "rule_id": "REPLACE_WITH_ID_FROM_TRAIN_PROMOTION",
+  "field_map": {"a": "left", "b": "right"},
+  "inputs": [
+    {"left": 14, "right": -3},
+    {"left": -5, "right": 9},
+    {"left": 200, "right": -120}
+  ]
+}

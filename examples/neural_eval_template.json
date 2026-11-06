@@ -1,0 +1,16 @@
+{
+  "namespace": "list_sum",
+  "task_description": "Return the sum of the integers in nums.",
+  "cases": [
+    {"inputs": {"nums": [20, 30, 40]}, "output": 90},
+    {"inputs": {"nums": [-5, 3, 7]}, "output": 5},
+    {"inputs": {"nums": [0, 4, 6]}, "output": 10},
+    {"inputs": {"nums": [9, 2, -1]}, "output": 10}
+  ],
+  "excluded_inputs": [
+    {"nums": [1, 2, 3]},
+    {"nums": [2, 7, 1]}
+  ],
+  "max_tokens": 128,
+  "include_placebo": true
+}

@@ -1,0 +1,13 @@
+{
+  "namespace": "ambiguous_demo",
+  "train": [
+    {"inputs": {"a": 1, "b": 1}, "output": 1},
+    {"inputs": {"a": 2, "b": 2}, "output": 2},
+    {"inputs": {"a": 3, "b": 3}, "output": 3}
+  ],
+  "validation": [
+    {"inputs": {"a": 5, "b": 5}, "output": 5},
+    {"inputs": {"a": 6, "b": 6}, "output": 6}
+  ],
+  "promote": true
+}

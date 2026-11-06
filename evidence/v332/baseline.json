@@ -1,0 +1,29 @@
+{
+  "baseline_commit": "c6b6ea7eb9f7807ab5c898a20ca229991f90d8cd",
+  "baseline_reproduction": "evidence/v332/baseline_reproduction.json",
+  "baseline_suite": {
+    "failed": 0,
+    "passed": 926,
+    "skipped": 3
+  },
+  "baseline_version": "3.3.1",
+  "baseline_worktree": "pristine v3.3.1 checkout at baseline_commit",
+  "fixed_reproduction": "evidence/v332/fixed_reproduction.txt",
+  "pytest": "8.4.2",
+  "python": "3.12.0",
+  "release": "SIS v3.3.2 M0 baseline freeze",
+  "reproduced_defects": [
+    "D1_identity_disableable_in_production",
+    "D2_same_nonce_two_replicas",
+    "D3_revocation_history_rollback",
+    "D4_diamond_dependency_graph",
+    "D5_revocation_during_decision"
+  ],
+  "source_sha256": {
+    "src/sis/v3/checkpoints.py": "29b842204febb3461bd640f085098363654f6e5be78d0ff5a88d8d10fd6893b7",
+    "src/sis/v3/contracts.py": "b3f82dda14dc064e43d926e0ed6fdf12c90ea91e53929d3cbcf9c7361e2cf3dd",
+    "src/sis/v3/evidence_custody.py": "c4f89e43426a4b8973999eed8ae0c5f21f51478a471bc713c484813a6feba339",
+    "src/sis/v3/execution_identity.py": "ebe60b23004895acac506e79e25c09b058a85c6d14ba96c21bd501f3198feba9",
+    "src/sis/v3/serving.py": "2b9135634181b35f649b45c2b5f99104990f4daa2875ad9a10720545ab633154"
+  }
+}

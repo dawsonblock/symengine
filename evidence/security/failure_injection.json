@@ -1,0 +1,79 @@
+{
+  "generated_at": "2026-10-25T08:31:54Z",
+  "kind": "failure_injection_evidence",
+  "platform": "macOS-26.2-arm64-arm-64bit",
+  "python": "3.12.0",
+  "results": {
+    "corrupted_receipt": {
+      "command": "/Users/dawsonblock/.pyenv/versions/3.12.0/bin/python3 -m pytest -q tests/v3/test_receipt_signatures.py -k tampered_receipt_body or corrupt_journal",
+      "exit_code": 0,
+      "summary": "2 passed, 15 deselected in 0.27s"
+    },
+    "forged_evaluator_identity": {
+      "command": "/Users/dawsonblock/.pyenv/versions/3.12.0/bin/python3 -m pytest -q tests/v3/test_receipt_signatures.py -k wrong_key_and_unknown_signer or agent_and_other_roles_cannot_evaluate",
+      "exit_code": 0,
+      "summary": "2 passed, 15 deselected in 0.21s"
+    },
+    "interrupted_db_transaction": {
+      "command": "/Users/dawsonblock/.pyenv/versions/3.12.0/bin/python3 -m pytest -q tests/v3/test_authority_db.py -k power_loss or fault_at_each_step or wal_sidecar",
+      "exit_code": 0,
+      "summary": "3 passed, 13 deselected in 0.27s"
+    },
+    "invalid_memory_scope": {
+      "command": "/Users/dawsonblock/.pyenv/versions/3.12.0/bin/python3 -m pytest -q tests/v3/test_memory.py tests/v3/test_candidates.py -k scope_override or abstains_when_inapplicable or scope_shape",
+      "exit_code": 0,
+      "summary": "3 passed, 26 deselected in 0.15s"
+    },
+    "missing_holdout_evidence": {
+      "command": "/Users/dawsonblock/.pyenv/versions/3.12.0/bin/python3 -m pytest -q tests/v3/test_candidates.py tests/v3/test_governed_eval.py -k qualify_requires_operator_and_receipts or overlap_and_empty_holdout",
+      "exit_code": 0,
+      "summary": "2 passed, 26 deselected in 0.18s"
+    },
+    "modified_candidate_artifact": {
+      "command": "/Users/dawsonblock/.pyenv/versions/3.12.0/bin/python3 -m pytest -q tests/v3/test_candidates.py tests/v3/test_memory.py -k tampered_row",
+      "exit_code": 0,
+      "summary": "2 passed, 27 deselected in 0.16s"
+    },
+    "optimizer_reads_sealed_eval": {
+      "command": "/Users/dawsonblock/.pyenv/versions/3.12.0/bin/python3 -m pytest -q tests/v3/test_governed_eval.py -k overlap_and_empty_holdout or disjoint_partition",
+      "exit_code": 0,
+      "summary": "2 passed, 12 deselected in 0.16s"
+    },
+    "prompt_injection_in_skill": {
+      "command": "/Users/dawsonblock/.pyenv/versions/3.12.0/bin/python3 -m pytest -q tests/v3/test_serving_package.py -k prompt_injection",
+      "exit_code": 0,
+      "summary": "1 passed, 15 deselected in 0.19s"
+    },
+    "repository_identity_mismatch": {
+      "command": "/Users/dawsonblock/.pyenv/versions/3.12.0/bin/python3 -m pytest -q tests/v3/test_serving_package.py tests/v3/test_receipt_signatures.py -k out_of_scope_and_unknown_repo or unregistered_task_and_source_mismatch",
+      "exit_code": 0,
+      "summary": "2 passed, 31 deselected in 0.19s"
+    },
+    "revocation_during_retrieval": {
+      "command": "/Users/dawsonblock/.pyenv/versions/3.12.0/bin/python3 -m pytest -q tests/v3/test_serving_package.py tests/v3/test_revocation.py -k unqualified_revoked or denies_immediately",
+      "exit_code": 0,
+      "summary": "2 passed, 29 deselected in 0.29s"
+    },
+    "sandbox_termination_failure": {
+      "command": "/Users/dawsonblock/.pyenv/versions/3.12.0/bin/python3 -m pytest -q tests/v3/test_runner_isolation.py -k infinite_loop_is_killed or fork_attempt",
+      "exit_code": 0,
+      "summary": "2 passed, 16 deselected in 3.24s"
+    },
+    "stale_revision": {
+      "command": "/Users/dawsonblock/.pyenv/versions/3.12.0/bin/python3 -m pytest -q tests/v3/test_authority_db.py -k stale_controller or head_recheck",
+      "exit_code": 0,
+      "summary": "2 passed, 14 deselected in 0.19s"
+    },
+    "unauthorized_promotion": {
+      "command": "/Users/dawsonblock/.pyenv/versions/3.12.0/bin/python3 -m pytest -q tests/v3/test_candidates.py -k qualify_requires_operator or unauthorized_roles",
+      "exit_code": 0,
+      "summary": "2 passed, 12 deselected in 0.17s"
+    }
+  },
+  "scenarios_failing": 0,
+  "scenarios_green": 13,
+  "scenarios_required": 13,
+  "scenarios_run": 13,
+  "scenarios_total": 13,
+  "schema_version": 1
+}

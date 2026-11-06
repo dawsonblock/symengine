@@ -1,0 +1,18 @@
+{
+  "after": {
+    "command": "PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONNOUSERSITE=1 PYTHONPATH=src python3 -m pytest -q",
+    "failed": 0,
+    "passed": 926,
+    "skipped": 3
+  },
+  "before": {
+    "command": "PYTHONPATH=src python3 -m pytest -q",
+    "failed": 0,
+    "passed": 804,
+    "skipped": 2
+  },
+  "kind": "regression_baseline",
+  "note": "The before count is the v3.3 branch baseline; the after count includes the v3.3.1 security and qualification suites.",
+  "release": "SIS-v3.3.1-AUTHORITY-CLOSURE",
+  "schema_version": 1
+}

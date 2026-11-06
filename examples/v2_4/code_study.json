@@ -1,0 +1,376 @@
+{
+  "namespace": "repair_demo",
+  "promote": true,
+  "train_captures": [
+    {
+      "after": {
+        "cases": [
+          {
+            "actual": 5,
+            "args": {
+              "a": 2,
+              "b": 3
+            },
+            "expected": 5,
+            "pass": true
+          },
+          {
+            "actual": 5,
+            "args": {
+              "a": 7,
+              "b": -2
+            },
+            "expected": 5,
+            "pass": true
+          },
+          {
+            "actual": 25,
+            "args": {
+              "a": 10,
+              "b": 15
+            },
+            "expected": 25,
+            "pass": true
+          }
+        ],
+        "passed": 3,
+        "total": 3
+      },
+      "before": {
+        "cases": [
+          {
+            "actual": -1,
+            "args": {
+              "a": 2,
+              "b": 3
+            },
+            "expected": 5,
+            "pass": false
+          },
+          {
+            "actual": 9,
+            "args": {
+              "a": 7,
+              "b": -2
+            },
+            "expected": 5,
+            "pass": false
+          },
+          {
+            "actual": -5,
+            "args": {
+              "a": 10,
+              "b": 15
+            },
+            "expected": 25,
+            "pass": false
+          }
+        ],
+        "passed": 0,
+        "total": 3
+      },
+      "capture_digest": "94d7d3d96ded8170eba229c1261da5e53a96236416f58a6afc72617b8eb453bf",
+      "cases": [
+        {
+          "args": {
+            "a": 2,
+            "b": 3
+          },
+          "expected": 5
+        },
+        {
+          "args": {
+            "a": 7,
+            "b": -2
+          },
+          "expected": 5
+        },
+        {
+          "args": {
+            "a": 10,
+            "b": 15
+          },
+          "expected": 25
+        }
+      ],
+      "evidence_scope": "local AST interpreter; caller supplies test labels",
+      "filename": "one.py",
+      "function": "total",
+      "original_sha256": "8fd25d0a91db93322fab8c481bd98527a9bf8b4ec43f5e06c4aa6ebebf669c8e",
+      "patched_sha256": "9344fe33a09be455d18787e4d4b0a09b1965cb22758f1562704835a0a1410e16",
+      "recipe": {
+        "from_op": "Sub",
+        "kind": "binary_operator_swap",
+        "to_op": "Add"
+      },
+      "source": "def total(a, b):\n    return a - b\n",
+      "version": 1
+    },
+    {
+      "after": {
+        "cases": [
+          {
+            "actual": 5,
+            "args": {
+              "x": 2,
+              "y": 3
+            },
+            "expected": 5,
+            "pass": true
+          },
+          {
+            "actual": 5,
+            "args": {
+              "x": 7,
+              "y": -2
+            },
+            "expected": 5,
+            "pass": true
+          },
+          {
+            "actual": 25,
+            "args": {
+              "x": 10,
+              "y": 15
+            },
+            "expected": 25,
+            "pass": true
+          }
+        ],
+        "passed": 3,
+        "total": 3
+      },
+      "before": {
+        "cases": [
+          {
+            "actual": -1,
+            "args": {
+              "x": 2,
+              "y": 3
+            },
+            "expected": 5,
+            "pass": false
+          },
+          {
+            "actual": 9,
+            "args": {
+              "x": 7,
+              "y": -2
+            },
+            "expected": 5,
+            "pass": false
+          },
+          {
+            "actual": -5,
+            "args": {
+              "x": 10,
+              "y": 15
+            },
+            "expected": 25,
+            "pass": false
+          }
+        ],
+        "passed": 0,
+        "total": 3
+      },
+      "capture_digest": "3cad5291120c55ce04b46a15d91e66d68698e80e64d7092f2b241c9016d0c243",
+      "cases": [
+        {
+          "args": {
+            "x": 2,
+            "y": 3
+          },
+          "expected": 5
+        },
+        {
+          "args": {
+            "x": 7,
+            "y": -2
+          },
+          "expected": 5
+        },
+        {
+          "args": {
+            "x": 10,
+            "y": 15
+          },
+          "expected": 25
+        }
+      ],
+      "evidence_scope": "local AST interpreter; caller supplies test labels",
+      "filename": "two.py",
+      "function": "combine",
+      "original_sha256": "67396786f3e2abf991fda0109b296fa3a44cfcf195902430e1d35bfba6a84801",
+      "patched_sha256": "edfd3946cfea87f49d0a64319fedb5535bf41d75dbd6c0034290b14ba1ef4f3e",
+      "recipe": {
+        "from_op": "Sub",
+        "kind": "binary_operator_swap",
+        "to_op": "Add"
+      },
+      "source": "def combine(x, y):\n    return x - y\n",
+      "version": 1
+    },
+    {
+      "after": {
+        "cases": [
+          {
+            "actual": 5,
+            "args": {
+              "lhs": 2,
+              "rhs": 3
+            },
+            "expected": 5,
+            "pass": true
+          },
+          {
+            "actual": 5,
+            "args": {
+              "lhs": 7,
+              "rhs": -2
+            },
+            "expected": 5,
+            "pass": true
+          },
+          {
+            "actual": 25,
+            "args": {
+              "lhs": 10,
+              "rhs": 15
+            },
+            "expected": 25,
+            "pass": true
+          }
+        ],
+        "passed": 3,
+        "total": 3
+      },
+      "before": {
+        "cases": [
+          {
+            "actual": -1,
+            "args": {
+              "lhs": 2,
+              "rhs": 3
+            },
+            "expected": 5,
+            "pass": false
+          },
+          {
+            "actual": 9,
+            "args": {
+              "lhs": 7,
+              "rhs": -2
+            },
+            "expected": 5,
+            "pass": false
+          },
+          {
+            "actual": -5,
+            "args": {
+              "lhs": 10,
+              "rhs": 15
+            },
+            "expected": 25,
+            "pass": false
+          }
+        ],
+        "passed": 0,
+        "total": 3
+      },
+      "capture_digest": "6898e12cee542ea18a4475a615ce5a7e780f11c16c84a12a4943c484203b4ef6",
+      "cases": [
+        {
+          "args": {
+            "lhs": 2,
+            "rhs": 3
+          },
+          "expected": 5
+        },
+        {
+          "args": {
+            "lhs": 7,
+            "rhs": -2
+          },
+          "expected": 5
+        },
+        {
+          "args": {
+            "lhs": 10,
+            "rhs": 15
+          },
+          "expected": 25
+        }
+      ],
+      "evidence_scope": "local AST interpreter; caller supplies test labels",
+      "filename": "three.py",
+      "function": "merge",
+      "original_sha256": "f8d6d2b88bcec4f86ee6d620fa18f34b452d55a930f96357c059291855f2cd62",
+      "patched_sha256": "f495c0d9532a6536567cf9690f824c340bc802d288cb711de21f30a42b34a166",
+      "recipe": {
+        "from_op": "Sub",
+        "kind": "binary_operator_swap",
+        "to_op": "Add"
+      },
+      "source": "def merge(lhs, rhs):\n    return lhs - rhs\n",
+      "version": 1
+    }
+  ],
+  "validation": [
+    {
+      "cases": [
+        {
+          "args": {
+            "c": 2,
+            "d": 3
+          },
+          "expected": 5
+        },
+        {
+          "args": {
+            "c": 7,
+            "d": -2
+          },
+          "expected": 5
+        },
+        {
+          "args": {
+            "c": 10,
+            "d": 15
+          },
+          "expected": 25
+        }
+      ],
+      "filename": "four.py",
+      "function": "accumulate",
+      "source": "def accumulate(c, d):\n    return c - d\n"
+    },
+    {
+      "cases": [
+        {
+          "args": {
+            "first": 2,
+            "second": 3
+          },
+          "expected": 5
+        },
+        {
+          "args": {
+            "first": 7,
+            "second": -2
+          },
+          "expected": 5
+        },
+        {
+          "args": {
+            "first": 10,
+            "second": 15
+          },
+          "expected": 25
+        }
+      ],
+      "filename": "five.py",
+      "function": "plus",
+      "source": "def plus(first, second):\n    return first - second\n"
+    }
+  ]
+}

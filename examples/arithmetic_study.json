@@ -1,0 +1,16 @@
+{
+  "namespace": "arithmetic_demo",
+  "train": [
+    {"inputs": {"a": 1, "b": 4}, "output": 5},
+    {"inputs": {"a": 2, "b": 7}, "output": 9},
+    {"inputs": {"a": -3, "b": 5}, "output": 2},
+    {"inputs": {"a": 5, "b": -2}, "output": 3},
+    {"inputs": {"a": 0, "b": 8}, "output": 8}
+  ],
+  "validation": [
+    {"inputs": {"a": 4, "b": 9}, "output": 13},
+    {"inputs": {"a": -4, "b": -6}, "output": -10},
+    {"inputs": {"a": 11, "b": 3}, "output": 14}
+  ],
+  "promote": true
+}

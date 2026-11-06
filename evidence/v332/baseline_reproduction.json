@@ -1,0 +1,60 @@
+[
+  {
+    "defect": "D1_identity_disableable_in_production",
+    "expected": {
+      "decision": "abstain",
+      "served_text": false
+    },
+    "observed": {
+      "decision": "abstain",
+      "served_text": true
+    },
+    "open": true
+  },
+  {
+    "defect": "D2_same_nonce_two_replicas",
+    "expected": {
+      "first": "no_qualified_procedure",
+      "second": "catalog_unavailable"
+    },
+    "observed": {
+      "first": "no_qualified_procedure",
+      "second": "no_qualified_procedure"
+    },
+    "open": true
+  },
+  {
+    "defect": "D3_revocation_history_rollback",
+    "expected": {
+      "after_restore": "revoked",
+      "authority_gate": "rejected"
+    },
+    "observed": {
+      "after_restore": "active",
+      "authority_gate": "checkpoint_verified"
+    },
+    "open": true
+  },
+  {
+    "defect": "D4_diamond_dependency_graph",
+    "expected": {
+      "status": "active"
+    },
+    "observed": {
+      "status": "invalid"
+    },
+    "open": true
+  },
+  {
+    "defect": "D5_revocation_during_decision",
+    "expected": {
+      "decision": "abstain",
+      "served_text": false
+    },
+    "observed": {
+      "decision": "abstain",
+      "served_text": true
+    },
+    "open": true
+  }
+]

@@ -1,0 +1,346 @@
+{
+  "namespace": "tabular_demo",
+  "promote": true,
+  "train_captures": [
+    {
+      "capture": {
+        "version": 1,
+        "data": {
+          "rows": [
+            {
+              "region": "east",
+              "amount": 1
+            },
+            {
+              "region": "west",
+              "amount": 100
+            },
+            {
+              "region": "east",
+              "amount": 2
+            }
+          ]
+        },
+        "events": [
+          {
+            "index": 0,
+            "operation": {
+              "op": "filter_eq",
+              "field": "region",
+              "value": "east"
+            },
+            "observed": {
+              "matching_rows": 2
+            },
+            "prior": "0000000000000000000000000000000000000000000000000000000000000000",
+            "hash": "53f966190aa9fff4d1e345c7edf6a91772af6bd927ea22832b90ffc77f3df910"
+          },
+          {
+            "index": 1,
+            "operation": {
+              "op": "filter_gt",
+              "field": "amount",
+              "value": -1000
+            },
+            "observed": {
+              "matching_rows": 2
+            },
+            "prior": "53f966190aa9fff4d1e345c7edf6a91772af6bd927ea22832b90ffc77f3df910",
+            "hash": "c9f0aa8069e655c8c9eb9cae69b25f669f479b2fdce30a24f09cb8edb152d260"
+          },
+          {
+            "index": 2,
+            "operation": {
+              "op": "sum",
+              "field": "amount"
+            },
+            "observed": {
+              "value": 3
+            },
+            "prior": "c9f0aa8069e655c8c9eb9cae69b25f669f479b2fdce30a24f09cb8edb152d260",
+            "hash": "89a345be684b1d825b07e712df5308985d8b0c7c2233f6bac1d34fada1190a8f"
+          }
+        ],
+        "output": 3,
+        "head": "89a345be684b1d825b07e712df5308985d8b0c7c2233f6bac1d34fada1190a8f",
+        "capture_digest": "0463ce6ca48b5b17a695d59ffb0eec70f243ab2ff037209ce9846d6d8c026287",
+        "evidence_scope": "bounded local replay; no independent execution attestation"
+      },
+      "accepted": true,
+      "expected_output": 3
+    },
+    {
+      "capture": {
+        "version": 1,
+        "data": {
+          "rows": [
+            {
+              "region": "east",
+              "amount": 3
+            },
+            {
+              "region": "west",
+              "amount": 100
+            },
+            {
+              "region": "east",
+              "amount": 7
+            }
+          ]
+        },
+        "events": [
+          {
+            "index": 0,
+            "operation": {
+              "op": "filter_gt",
+              "field": "amount",
+              "value": -1000
+            },
+            "observed": {
+              "matching_rows": 3
+            },
+            "prior": "0000000000000000000000000000000000000000000000000000000000000000",
+            "hash": "23baa1b50ecb065e40029fb758b4f30db71eefc1fcf788ae0e574ff8587f3fe1"
+          },
+          {
+            "index": 1,
+            "operation": {
+              "op": "filter_eq",
+              "field": "region",
+              "value": "east"
+            },
+            "observed": {
+              "matching_rows": 2
+            },
+            "prior": "23baa1b50ecb065e40029fb758b4f30db71eefc1fcf788ae0e574ff8587f3fe1",
+            "hash": "6b46347d70cb3c3bd40136aaaae36125cf98703d2f7b7f7e764de3c3ff14a81a"
+          },
+          {
+            "index": 2,
+            "operation": {
+              "op": "sum",
+              "field": "amount"
+            },
+            "observed": {
+              "value": 10
+            },
+            "prior": "6b46347d70cb3c3bd40136aaaae36125cf98703d2f7b7f7e764de3c3ff14a81a",
+            "hash": "b7e29508696f6710f5e9f9b37de0ec5cb4352f65511d6d089c4c95d3b55e41b9"
+          }
+        ],
+        "output": 10,
+        "head": "b7e29508696f6710f5e9f9b37de0ec5cb4352f65511d6d089c4c95d3b55e41b9",
+        "capture_digest": "4b55449728b2955d0931abd50a34b330e0a5be4367c7f2d241632c905cbb3bc2",
+        "evidence_scope": "bounded local replay; no independent execution attestation"
+      },
+      "accepted": true,
+      "expected_output": 10
+    },
+    {
+      "capture": {
+        "version": 1,
+        "data": {
+          "rows": [
+            {
+              "region": "east",
+              "amount": 10
+            },
+            {
+              "region": "west",
+              "amount": 100
+            },
+            {
+              "region": "east",
+              "amount": -4
+            }
+          ]
+        },
+        "events": [
+          {
+            "index": 0,
+            "operation": {
+              "op": "filter_eq",
+              "field": "region",
+              "value": "east"
+            },
+            "observed": {
+              "matching_rows": 2
+            },
+            "prior": "0000000000000000000000000000000000000000000000000000000000000000",
+            "hash": "53f966190aa9fff4d1e345c7edf6a91772af6bd927ea22832b90ffc77f3df910"
+          },
+          {
+            "index": 1,
+            "operation": {
+              "op": "filter_gt",
+              "field": "amount",
+              "value": -1000
+            },
+            "observed": {
+              "matching_rows": 2
+            },
+            "prior": "53f966190aa9fff4d1e345c7edf6a91772af6bd927ea22832b90ffc77f3df910",
+            "hash": "c9f0aa8069e655c8c9eb9cae69b25f669f479b2fdce30a24f09cb8edb152d260"
+          },
+          {
+            "index": 2,
+            "operation": {
+              "op": "filter_eq",
+              "field": "region",
+              "value": "east"
+            },
+            "observed": {
+              "matching_rows": 2
+            },
+            "prior": "c9f0aa8069e655c8c9eb9cae69b25f669f479b2fdce30a24f09cb8edb152d260",
+            "hash": "b27cd57053a6a60eab768fc5310e2cb1b41ac383389046bc4f8511a42e2b8377"
+          },
+          {
+            "index": 3,
+            "operation": {
+              "op": "sum",
+              "field": "amount"
+            },
+            "observed": {
+              "value": 6
+            },
+            "prior": "b27cd57053a6a60eab768fc5310e2cb1b41ac383389046bc4f8511a42e2b8377",
+            "hash": "f87f433242a37af32c9e47419a42dbe2d6d174684f3f240c33f07da43d14278c"
+          }
+        ],
+        "output": 6,
+        "head": "f87f433242a37af32c9e47419a42dbe2d6d174684f3f240c33f07da43d14278c",
+        "capture_digest": "c2b105ce29dbbc7f1d8d1fff49019689122ffefe01a2c0264c451987af8c92df",
+        "evidence_scope": "bounded local replay; no independent execution attestation"
+      },
+      "accepted": true,
+      "expected_output": 6
+    },
+    {
+      "capture": {
+        "version": 1,
+        "data": {
+          "rows": [
+            {
+              "region": "east",
+              "amount": 8
+            },
+            {
+              "region": "west",
+              "amount": 100
+            },
+            {
+              "region": "east",
+              "amount": 19
+            }
+          ]
+        },
+        "events": [
+          {
+            "index": 0,
+            "operation": {
+              "op": "filter_gt",
+              "field": "amount",
+              "value": -1000
+            },
+            "observed": {
+              "matching_rows": 3
+            },
+            "prior": "0000000000000000000000000000000000000000000000000000000000000000",
+            "hash": "23baa1b50ecb065e40029fb758b4f30db71eefc1fcf788ae0e574ff8587f3fe1"
+          },
+          {
+            "index": 1,
+            "operation": {
+              "op": "filter_eq",
+              "field": "region",
+              "value": "east"
+            },
+            "observed": {
+              "matching_rows": 2
+            },
+            "prior": "23baa1b50ecb065e40029fb758b4f30db71eefc1fcf788ae0e574ff8587f3fe1",
+            "hash": "6b46347d70cb3c3bd40136aaaae36125cf98703d2f7b7f7e764de3c3ff14a81a"
+          },
+          {
+            "index": 2,
+            "operation": {
+              "op": "sum",
+              "field": "amount"
+            },
+            "observed": {
+              "value": 27
+            },
+            "prior": "6b46347d70cb3c3bd40136aaaae36125cf98703d2f7b7f7e764de3c3ff14a81a",
+            "hash": "ce0e5932848b72c4bc4ba187a64c80192bb6f3ea1db3d45afae2d9bc3c5f3dc6"
+          }
+        ],
+        "output": 27,
+        "head": "ce0e5932848b72c4bc4ba187a64c80192bb6f3ea1db3d45afae2d9bc3c5f3dc6",
+        "capture_digest": "c95bd488b0c110c0b97d947170ded881548732216d24d01ed78516f87e3dcf59",
+        "evidence_scope": "bounded local replay; no independent execution attestation"
+      },
+      "accepted": true,
+      "expected_output": 27
+    }
+  ],
+  "validation": [
+    {
+      "data": {
+        "rows": [
+          {
+            "region": "east",
+            "amount": 4
+          },
+          {
+            "region": "west",
+            "amount": 100
+          },
+          {
+            "region": "east",
+            "amount": 6
+          }
+        ]
+      },
+      "expected_output": 10
+    },
+    {
+      "data": {
+        "rows": [
+          {
+            "region": "east",
+            "amount": 9
+          },
+          {
+            "region": "west",
+            "amount": 100
+          },
+          {
+            "region": "east",
+            "amount": -3
+          }
+        ]
+      },
+      "expected_output": 6
+    },
+    {
+      "data": {
+        "rows": [
+          {
+            "region": "east",
+            "amount": 15
+          },
+          {
+            "region": "west",
+            "amount": 100
+          },
+          {
+            "region": "east",
+            "amount": 20
+          }
+        ]
+      },
+      "expected_output": 35
+    }
+  ]
+}

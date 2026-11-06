@@ -1,0 +1,6 @@
+# Pinned test and production-profile dependencies for SIS v3.3.2.
+# The core package has no runtime dependencies; psycopg is required only
+# for the PostgreSQL control-plane profile.
+pytest==8.4.2
+psycopg[binary]==3.3.4
+setuptools==82.0.1

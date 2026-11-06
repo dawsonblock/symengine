@@ -1,0 +1,23 @@
+{
+  "case_id": "remaining-balance-sub-to-add",
+  "legacy_recipe": {
+    "kind": "binary_operator_swap",
+    "from_op": "Sub",
+    "to_op": "Add",
+    "legacy_scope": "caller-labeled local examples; applicability to new code is unproven"
+  },
+  "target": {
+    "source": "def remaining_balance(balance, payment):\n    return balance - payment\n",
+    "filename": "accounting.py",
+    "function": "remaining_balance",
+    "task_summary": "Return the balance left after applying a payment.",
+    "independent_semantic_contract_available": false,
+    "expected": "abstain"
+  },
+  "required_v3_guidance": {
+    "decision": "abstain",
+    "reason_code": "unverified_task_intent",
+    "procedure_ids": []
+  },
+  "scope": "The v3 M0 API has no qualified procedure catalog. The legacy v2 preview remains experimental and is not changed by this fixture."
+}

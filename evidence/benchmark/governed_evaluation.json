@@ -1,0 +1,185 @@
+{
+  "generated_at": "2026-10-25T08:24:20Z",
+  "governed_metrics": {
+    "A": {
+      "abstention_rate": 1.0,
+      "evaluation_integrity_failures": 0,
+      "failure_rate": 1.0,
+      "mean_cost_per_verified_solve": null,
+      "mean_tokens_per_task": 120.0,
+      "mean_tool_calls_per_task": 3.0,
+      "mean_wall_seconds_per_task": 1.0,
+      "negative_transfer_rate": null,
+      "paired_loss_rate": 0.0,
+      "paired_win_rate": 0.0,
+      "served": 0,
+      "solved_task_rate": 0.0,
+      "verified_regression_rate": null
+    },
+    "B": {
+      "abstention_rate": 0.0,
+      "evaluation_integrity_failures": 0,
+      "failure_rate": 0.0,
+      "mean_cost_per_verified_solve": null,
+      "mean_tokens_per_task": 140.0,
+      "mean_tool_calls_per_task": 3.0,
+      "mean_wall_seconds_per_task": 1.0,
+      "negative_transfer_rate": null,
+      "paired_loss_rate": 0.0,
+      "paired_win_rate": 1.0,
+      "served": 2,
+      "solved_task_rate": 1.0,
+      "verified_regression_rate": null
+    },
+    "C": {
+      "abstention_rate": 0.0,
+      "evaluation_integrity_failures": 0,
+      "failure_rate": 0.0,
+      "mean_cost_per_verified_solve": null,
+      "mean_tokens_per_task": 143.0,
+      "mean_tool_calls_per_task": 3.0,
+      "mean_wall_seconds_per_task": 1.0,
+      "negative_transfer_rate": null,
+      "paired_loss_rate": 0.0,
+      "paired_win_rate": 1.0,
+      "served": 2,
+      "solved_task_rate": 1.0,
+      "verified_regression_rate": null
+    },
+    "D": {
+      "abstention_rate": 1.0,
+      "evaluation_integrity_failures": 0,
+      "failure_rate": 1.0,
+      "mean_cost_per_verified_solve": null,
+      "mean_tokens_per_task": 136.0,
+      "mean_tool_calls_per_task": 3.0,
+      "mean_wall_seconds_per_task": 1.0,
+      "negative_transfer_rate": null,
+      "paired_loss_rate": 0.0,
+      "paired_win_rate": 0.0,
+      "served": 0,
+      "solved_task_rate": 0.0,
+      "verified_regression_rate": null
+    },
+    "E": {
+      "abstention_rate": 0.0,
+      "evaluation_integrity_failures": 0,
+      "failure_rate": 0.0,
+      "mean_cost_per_verified_solve": null,
+      "mean_tokens_per_task": 163.0,
+      "mean_tool_calls_per_task": 3.0,
+      "mean_wall_seconds_per_task": 1.0,
+      "negative_transfer_rate": null,
+      "paired_loss_rate": 0.0,
+      "paired_win_rate": 1.0,
+      "served": 2,
+      "solved_task_rate": 1.0,
+      "verified_regression_rate": null
+    }
+  },
+  "kind": "governed_evaluation_evidence",
+  "negative_transfer": {
+    "fixture": "examples/v3/negative_transfer/remaining_balance.json",
+    "live_campaign": "the 2-task live holdout contains no deliberately misleading task, so negative_transfer_rate is null rather than measured live",
+    "observed": "abstain / prior_negative_transfer; procedure_ids empty",
+    "test": "tests/v3/test_retrieval.py (test_negative_transfer_fixture_abstains)"
+  },
+  "note": "deterministic scripted-agent run \u2014 machinery evidence only, NOT live-model efficacy",
+  "paired": {
+    "B_vs_A": {
+      "losses": 0,
+      "mcnemar_exact_p": "0.5000000000",
+      "solved_delta": 2,
+      "ties": 0,
+      "wins": 2
+    },
+    "C_vs_A": {
+      "losses": 0,
+      "mcnemar_exact_p": "0.5000000000",
+      "solved_delta": 2,
+      "ties": 0,
+      "wins": 2
+    },
+    "D_vs_A": {
+      "losses": 0,
+      "mcnemar_exact_p": "1.0000000000",
+      "solved_delta": 0,
+      "ties": 2,
+      "wins": 0
+    },
+    "D_vs_B": {
+      "losses": 2,
+      "mcnemar_exact_p": "0.5000000000",
+      "solved_delta": -2,
+      "ties": 0,
+      "wins": 0
+    },
+    "D_vs_C": {
+      "losses": 2,
+      "mcnemar_exact_p": "0.5000000000",
+      "solved_delta": -2,
+      "ties": 0,
+      "wins": 0
+    },
+    "E_vs_A": {
+      "losses": 0,
+      "mcnemar_exact_p": "0.5000000000",
+      "solved_delta": 2,
+      "ties": 0,
+      "wins": 2
+    },
+    "E_vs_B": {
+      "losses": 0,
+      "mcnemar_exact_p": "1.0000000000",
+      "solved_delta": 0,
+      "ties": 2,
+      "wins": 0
+    },
+    "E_vs_C": {
+      "losses": 0,
+      "mcnemar_exact_p": "1.0000000000",
+      "solved_delta": 0,
+      "ties": 2,
+      "wins": 0
+    },
+    "E_vs_D": {
+      "losses": 0,
+      "mcnemar_exact_p": "0.5000000000",
+      "solved_delta": 2,
+      "ties": 0,
+      "wins": 2
+    }
+  },
+  "protocol": {
+    "alpha": 0.05,
+    "arms": [
+      "A",
+      "B",
+      "C",
+      "D",
+      "E"
+    ],
+    "budget": {
+      "token_budget": 100000,
+      "tool_budget": 1000,
+      "wall_seconds": 120
+    },
+    "method": "mcnemar_exact",
+    "min_effect": 1.0,
+    "notes": "",
+    "primary_metric": "paired solved_delta E vs A",
+    "protocol_digest": "479f52f273d4ce40c3cb5c4bf31184dfecc2575b08c854378055b8691ccf79e2",
+    "sample_size": 29,
+    "schema_version": 1
+  },
+  "report_digest": "e3d4b35231b697f7e0932babafe0deb9943800dc3a98f13fe0e32a99915eb05c",
+  "schema_version": 1,
+  "solved_counts": {
+    "A": 0,
+    "B": 2,
+    "C": 2,
+    "D": 0,
+    "E": 2
+  },
+  "source": "tools/governed_campaign.py -> evidence/integration/campaign_evidence.json"
+}

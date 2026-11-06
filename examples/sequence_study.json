@@ -1,0 +1,62 @@
+{
+  "namespace": "repeat_first",
+  "train": [
+    {
+      "inputs": {
+        "sequence": [
+          "A",
+          "B"
+        ]
+      },
+      "output": "A"
+    },
+    {
+      "inputs": {
+        "sequence": [
+          "C",
+          "D"
+        ]
+      },
+      "output": "C"
+    },
+    {
+      "inputs": {
+        "sequence": [
+          "e",
+          "f"
+        ]
+      },
+      "output": "e"
+    },
+    {
+      "inputs": {
+        "sequence": [
+          "AbC",
+          "Yz"
+        ]
+      },
+      "output": "AbC"
+    }
+  ],
+  "validation": [
+    {
+      "inputs": {
+        "sequence": [
+          "p",
+          "q"
+        ]
+      },
+      "output": "p"
+    },
+    {
+      "inputs": {
+        "sequence": [
+          "Mno",
+          "Pqr"
+        ]
+      },
+      "output": "Mno"
+    }
+  ],
+  "promote": true
+}

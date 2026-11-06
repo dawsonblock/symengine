@@ -1,0 +1,75 @@
+{
+  "evaluator_runtime": {
+    "bootstrap_memory_bytes": 2147483648,
+    "bootstrap_process_count": null,
+    "cpu_seconds": 60,
+    "disabled_plugins": [
+      "cacheprovider",
+      "randomly",
+      "xdist",
+      "cov"
+    ],
+    "disk_bytes": 67108864,
+    "enabled_plugins": [],
+    "output_bytes": 1048576,
+    "process_count": null,
+    "profile_version": "sis-evaluator-runtime/1",
+    "pytest_version": "8.4.2",
+    "python_version": "3.12",
+    "task_memory_bytes": 2147483648,
+    "wall_seconds": 120
+  },
+  "evaluator_runtime_digest": "4bfc03f4297dad5916a8f74d40bf9915dba8c147feafa8db5f9d6ff01d0b5abe",
+  "kind": "sandbox_holdout_evidence",
+  "missing_skills": [],
+  "note": "All three scripted holdouts ran under the pinned 2 GiB evaluator profile without manual memory-limit changes. This is machinery evidence, not real-agent efficacy.",
+  "registry_ok": true,
+  "results": [
+    {
+      "conformance": {
+        "conforms": true,
+        "mismatches": []
+      },
+      "scan_findings": [],
+      "skill": "write-skills",
+      "solved": {
+        "A": 0,
+        "E": 1
+      },
+      "status": "qualified"
+    },
+    {
+      "conformance": {
+        "conforms": true,
+        "mismatches": []
+      },
+      "scan_findings": [],
+      "skill": "php2shell-check",
+      "solved": {
+        "A": 0,
+        "E": 1
+      },
+      "status": "qualified"
+    },
+    {
+      "conformance": {
+        "conforms": true,
+        "mismatches": []
+      },
+      "scan_findings": [],
+      "skill": "write-tests",
+      "solved": {
+        "A": 0,
+        "E": 1
+      },
+      "status": "qualified"
+    }
+  ],
+  "schema_version": 1,
+  "selected": [
+    "write-skills",
+    "php2shell-check",
+    "write-tests"
+  ],
+  "source": "evidence/sandbox/skill_holdouts_v331.json"
+}

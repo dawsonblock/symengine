@@ -1,0 +1,32 @@
+{
+  "covered": [
+    "publish and verify",
+    "idempotent publication",
+    "candidate revision binding",
+    "checkpoint chain",
+    "verify authority block",
+    "stale CAS expectation",
+    "concurrent publishers",
+    "deleted final revocation",
+    "stale database restoration",
+    "qualified column flip",
+    "reordered audit events",
+    "journal head substitution",
+    "checkpoint signature",
+    "old epoch replay",
+    "tampered checkpoint log",
+    "store/database separation",
+    "production without checkpoint",
+    "production gateway rollback abstention",
+    "interrupted publication",
+    "recovery",
+    "rollback without republish",
+    "missing checkpoint service"
+  ],
+  "failed": 0,
+  "kind": "authority_checkpoint_evidence",
+  "passed": 23,
+  "schema_version": 1,
+  "serving_rule": "A qualified read requires an independently stored, signed checkpoint matching the local journal sequence, head and candidate revision.",
+  "tests": "tests/v3/test_authority_checkpoints.py"
+}

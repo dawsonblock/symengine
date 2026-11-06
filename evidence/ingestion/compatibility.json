@@ -1,0 +1,30 @@
+{
+  "accepted": 65,
+  "corpus": "vskill-main 2",
+  "files": 66,
+  "ingest_errors": [
+    {
+      "error": "skill_description_missing",
+      "path": "e2e/fixtures/skills/hotfix-dup-test/SKILL.md"
+    }
+  ],
+  "ingested_candidates": 65,
+  "kind": "skill_ingestion_compatibility",
+  "note": "Accepted means parseable under the bounded profile; it is not a qualification or a safety claim.",
+  "rejected": 1,
+  "rejected_detail": [
+    {
+      "error": "skill_description_missing",
+      "path": "e2e/fixtures/skills/hotfix-dup-test/SKILL.md"
+    }
+  ],
+  "schema_version": 1,
+  "total_steps": 1105,
+  "truncated_documents": [
+    ".claude/skills/higgsfield-seedance/SKILL.md",
+    ".claude/skills/marketing/social-media-posting/SKILL.md",
+    "plugins/marketing/skills/social-media-posting/SKILL.md",
+    "skills/hyperframes-best-practices/SKILL.md",
+    "skills/remotion-best-practices/SKILL.md"
+  ]
+}
