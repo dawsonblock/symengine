@@ -88,6 +88,8 @@ class RepositoryRegistry:
         if not (isinstance(registry_public_hex, str)
                 and re.fullmatch(r"[0-9a-f]{64}", registry_public_hex)):
             raise ContractError("registry public key must be a SHA-256 hex digest")
+        if not signatures.is_valid_public_key(bytes.fromhex(registry_public_hex)):
+            raise ContractError("registry public key is not a usable Ed25519 key")
         self._public = registry_public_hex
         self._by_id: dict[str, RepositoryIdentityV1] = {}
         self._by_tree: dict[str, str] = {}

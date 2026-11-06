@@ -26,7 +26,8 @@ from sis.v3 import serving as serving_mod
 from sis.v3.checkpoints import (AuthorityStateVerifier, CheckpointConflict,
                                 sign_checkpoint)
 from sis.v3.composition import _conflicts
-from sis.v3.control_plane import (ControlPlaneError, SqliteControlPlane)
+from sis.v3.control_plane import (SCHEMA_VERSION, ControlPlaneError,
+                                  SqliteControlPlane)
 from sis.v3.evaluation_runtime import (SANDBOX_FAILURE, TASK_PASS,
                                        classify_execution)
 from sis.v3.evidence_custody import EvidenceCustodyStore
@@ -157,7 +158,7 @@ class ReplayTests(_Base):
     def test_schema_version_is_recorded(self):
         plane = SqliteControlPlane(self.root / "schema.db")
         self.addCleanup(plane.close)
-        self.assertEqual(plane.schema_version(), 1)
+        self.assertEqual(plane.schema_version(), SCHEMA_VERSION)
 
     def test_newer_schema_is_refused(self):
         path = self.root / "schema-new.db"
@@ -181,7 +182,7 @@ class ReplayTests(_Base):
         con.close()
         plane = SqliteControlPlane(path)
         self.addCleanup(plane.close)
-        self.assertEqual(plane.schema_version(), 1)
+        self.assertEqual(plane.schema_version(), SCHEMA_VERSION)
 
     def test_checkpoint_ahead_of_head_abstains_then_recovers(self):
         latest = self.fixture.store.get_latest()
@@ -550,23 +551,79 @@ class SignedLinkSubstitutionTests(unittest.TestCase):
         self.assertFalse(self.custody.verify()["ok"])
 
 
-class KnownSemanticGapTests(unittest.TestCase):
-    """Documented limits that the lexical heuristics still do not close."""
+class ConflictDetectionTests(unittest.TestCase):
+    """Polarity-aware lexical conflict detection."""
 
-    @unittest.expectedFailure
     def test_opposite_polarity_instructions_conflict(self):
         self.assertTrue(_conflicts("Always deploy", "Never deploy"))
 
+    def test_same_polarity_instructions_do_not_conflict(self):
+        self.assertFalse(_conflicts("Never deploy", "Do not deploy"))
+        self.assertFalse(_conflicts("Always deploy", "Must deploy"))
+
+    def test_unrelated_instructions_do_not_conflict(self):
+        self.assertFalse(
+            _conflicts("Always deploy on Fridays", "Never use fixtures"))
+
+    def test_negation_against_plain_instruction_conflicts(self):
+        self.assertTrue(_conflicts(
+            "Do not retry failed jobs", "Retry failed jobs"))
+
 
 class TrustKeyValidationTests(unittest.TestCase):
-    """Documented gap: enrollment checks encoding, not curve membership."""
+    """Enrollment rejects keys that are not usable Ed25519 points."""
 
-    @unittest.expectedFailure
     def test_identity_public_key_is_rejected(self):
         identity = bytes([1]) + bytes(31)
         signature = identity + bytes(32)
         self.assertFalse(
             signatures.verify(signature, b"any message", identity))
+
+    def test_small_order_public_key_is_rejected(self):
+        # The small-order Ed25519 encodings (including the identity
+        # point) must never authenticate a signature.
+        small_order = [
+            bytes([1]) + bytes(31),
+            bytes(32),
+            bytes([0xEC]) + bytes([0xFF] * 30) + bytes([0x7F]),
+            bytes(31) + bytes([0x80]),
+            bytes([1]) + bytes(30) + bytes([0x80]),
+            bytes.fromhex(
+                "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a"),
+            bytes.fromhex(
+                "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc05"),
+        ]
+        for public in small_order:
+            self.assertFalse(signatures.is_valid_public_key(public),
+                             public.hex())
+            forged = bytes(64)
+            self.assertFalse(
+                signatures.verify(forged, b"message", public), public.hex())
+
+    def test_genuine_public_key_is_accepted(self):
+        seed, public = signatures.generate_keypair()
+        self.assertTrue(signatures.is_valid_public_key(public))
+        signature = signatures.sign(seed, b"message")
+        self.assertTrue(signatures.verify(signature, b"message", public))
+
+    def test_custody_rejects_small_order_trust_key(self):
+        from sis.v3.evidence_custody import EvidenceCustodyError
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaisesRegex(
+                    EvidenceCustodyError, "revocation_public_key_invalid"):
+                EvidenceCustodyStore(
+                    tmp, trusted_revocation_keys={
+                        "bad": (bytes([1]) + bytes(31)).hex()})
+
+    def test_identity_authority_rejects_small_order_trust_key(self):
+        from sis.v3.execution_identity import (
+            ExecutionIdentityAuthority, ExecutionIdentityError)
+        with self.assertRaisesRegex(
+                ExecutionIdentityError, "harness_public_key_invalid"):
+            ExecutionIdentityAuthority(
+                trusted_harness_keys={
+                    "bad": (bytes([1]) + bytes(31)).hex()},
+                repository_registry=None)
 
 
 class KeyRotationTests(_Base):
@@ -642,11 +699,42 @@ class ControlPlaneTests(_Base):
             execution_identity=identity)
         gateway.record_outcome(
             task_id="task-1", served_digest=guidance.digest,
-            receipt_digest="e" * 64, outcome="pass")
+            receipt_digest="e" * 64, outcome="pass",
+            requester="agent-1")
         receipt = self.fixture.control_plane.authorization_for_task("task-1")
         outcome = self.fixture.control_plane.outcome(
             receipt["authorization_id"])
         self.assertEqual(outcome["outcome"], "pass")
+        self.assertEqual(receipt["requester"], "agent-1")
+
+    def test_outcome_rejects_unbound_requester(self):
+        identity = self.fixture.identity()
+        gateway = self.gateway(
+            receipt_authority=lambda digest: SimpleNamespace(
+                task_id="task-1", outcome="pass"))
+        guidance = gateway.serve(
+            _request(), repository_id="repo-1",
+            execution_identity=identity)
+        with self.assertRaisesRegex(ValueError,
+                                    "outcome_requester_mismatch"):
+            gateway.record_outcome(
+                task_id="task-1", served_digest=guidance.digest,
+                receipt_digest="e" * 64, outcome="pass",
+                requester="agent-2")
+
+    def test_outcome_rejects_missing_requester(self):
+        identity = self.fixture.identity()
+        gateway = self.gateway(
+            receipt_authority=lambda digest: SimpleNamespace(
+                task_id="task-1", outcome="pass"))
+        guidance = gateway.serve(
+            _request(), repository_id="repo-1",
+            execution_identity=identity)
+        with self.assertRaisesRegex(ValueError,
+                                    "outcome_requester_mismatch"):
+            gateway.record_outcome(
+                task_id="task-1", served_digest=guidance.digest,
+                receipt_digest="e" * 64, outcome="pass")
 
     def test_outcome_rejects_wrong_served_digest(self):
         identity = self.fixture.identity()
@@ -871,6 +959,197 @@ class HttpBoundaryTests(_Base):
             token=TOKEN)
         self.assertEqual(status, 200)
         self.assertEqual(body["decision"], "advisory")
+
+
+class UnsignedCustodyTests(_Base):
+    def test_production_rejects_unsigned_link_custody(self):
+        # A custody store that accepts unsigned dependency links is not
+        # a production authority: stripping revoked dependencies must not
+        # be possible without touching the signed logs.
+        unsigned = EvidenceCustodyStore(self.root / "unsigned-custody")
+        self.fixture.registry.bind_evidence_custody(unsigned, require=True)
+        guidance = self.gateway().serve(
+            _request(), repository_id="repo-1",
+            execution_identity=self.fixture.identity())
+        self.assertEqual(guidance.decision, "abstain")
+        self.assertEqual(guidance.reason_code, "catalog_unavailable")
+
+
+def _strict_recommendation():
+    return SimpleNamespace(
+        decision="recommend", helpful_next_checks=("run tests",),
+        procedure_ids=("proc-1",), revision="f" * 64,
+        matched_preconditions=(
+            {"kind": "language_is", "value": "python"},),
+        contraindications=(),
+        evidence_ids=("e" * 64,), approximate_tokens=10)
+
+
+class _FlipStrict:
+    """Strict gateway whose authority fingerprint advances mid-request."""
+
+    def __init__(self):
+        self.fingerprint = "a" * 64
+        self.flipped = False
+
+    def authority_fingerprint(self):
+        return self.fingerprint
+
+    def recommend(self, request, **kwargs):
+        # A revocation committed while the decision was being prepared.
+        self.fingerprint = "b" * 64
+        self.flipped = True
+        return _strict_recommendation()
+
+
+class _StableStrict(_FlipStrict):
+    def recommend(self, request, **kwargs):
+        return _strict_recommendation()
+
+
+class StrictAuthoritySnapshotTests(_Base):
+    def test_strict_revocation_mid_request_abstains(self):
+        strict = _FlipStrict()
+        guidance = self.gateway(strict_gateway=strict).serve(
+            _request(), repository_id="repo-1",
+            execution_identity=self.fixture.identity())
+        self.assertTrue(strict.flipped)
+        self.assertEqual(guidance.decision, "abstain")
+        self.assertEqual(guidance.reason_code, "catalog_unavailable")
+
+    def test_strict_stable_authority_serves(self):
+        strict = _StableStrict()
+        guidance = self.gateway(strict_gateway=strict).serve(
+            _request(), repository_id="repo-1",
+            execution_identity=self.fixture.identity())
+        self.assertEqual(guidance.decision, "recommend")
+
+
+class PairedStatisticsTests(unittest.TestCase):
+    """Signed statistical claims must reconstruct from the paired matrix."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.fixture = CertificateFixture(Path(self.temp.name))
+
+    def _paired_fixture(self):
+        # Every treated task solved where the baseline failed: delta=1.0.
+        for entry in self.fixture.entries:
+            entry["baseline_outcome"] = "fail"
+        return self.fixture
+
+    def test_reconstructed_statistics_accept_consistent_claims(self):
+        fixture = self._paired_fixture()
+        certificate = fixture.certificate(confidence_interval={
+            "method": "wilson", "confidence_milli": 950,
+            "lower_milli": 800, "upper_milli": 1000,
+            "point_estimate_milli": 1000})
+        validation = fixture.validator.validate(
+            certificate, fixture.candidate)
+        self.assertTrue(validation.ok, validation.failures)
+
+    def test_claimed_point_estimate_must_match_receipts(self):
+        fixture = self._paired_fixture()
+        # Default fixture interval claims point_estimate_milli=200, but
+        # the paired matrix yields delta=1.0.
+        certificate = fixture.certificate()
+        validation = fixture.validator.validate(
+            certificate, fixture.candidate)
+        self.assertFalse(validation.ok)
+        self.assertIn("paired_point_estimate", validation.failures)
+
+    def test_claimed_interval_cannot_be_narrower_than_data(self):
+        fixture = self._paired_fixture()
+        certificate = fixture.certificate(confidence_interval={
+            "method": "wilson", "confidence_milli": 950,
+            "lower_milli": 900, "upper_milli": 1000,
+            "point_estimate_milli": 1000})
+        validation = fixture.validator.validate(
+            certificate, fixture.candidate)
+        self.assertFalse(validation.ok)
+        self.assertIn("paired_interval_not_narrower", validation.failures)
+
+    def test_interval_reconstructed_at_claimed_confidence(self):
+        from statistics import NormalDist
+        from sis.v3.learning_qualification import (
+            newcombe_difference_interval)
+        fixture = self._paired_fixture()
+        n = len(fixture.entries)
+        # delta=1.0. A bound one milli inside the reconstructed 99%
+        # interval is honest at 95% but not at the claimed 99%.
+        lower99, _ = newcombe_difference_interval(
+            n, n, 0, n, z=NormalDist().inv_cdf(0.995))
+        too_narrow = round(1000 * lower99) + 1
+        certificate = fixture.certificate(confidence_interval={
+            "method": "wilson", "confidence_milli": 990,
+            "lower_milli": too_narrow, "upper_milli": 1000,
+            "point_estimate_milli": 1000})
+        validation = fixture.validator.validate(
+            certificate, fixture.candidate)
+        self.assertFalse(validation.ok)
+        self.assertIn("paired_interval_not_narrower", validation.failures)
+        certificate = fixture.certificate(confidence_interval={
+            "method": "wilson", "confidence_milli": 990,
+            "lower_milli": too_narrow - 1, "upper_milli": 1000,
+            "point_estimate_milli": 1000})
+        validation = fixture.validator.validate(
+            certificate, fixture.candidate)
+        self.assertTrue(validation.ok, validation.failures)
+
+    def test_partial_evaluation_cannot_hide_paired_losses(self):
+        fixture = self._paired_fixture()
+        n = len(fixture.entries)
+        # Two claimed losses; only one task is left "unevaluated", so at
+        # most one loss may go uncounted and regressions=0 must fail.
+        for entry in fixture.entries[:2]:
+            entry["baseline_outcome"] = "pass"
+            entry["outcome"] = "fail"
+        delta = round(1000 * (n - 2 - 2) / n)
+        certificate = fixture.certificate(
+            confidence_interval={
+                "method": "wilson", "confidence_milli": 950,
+                "lower_milli": -1000, "upper_milli": 1000,
+                "point_estimate_milli": delta},
+            negative_transfer_results={
+                "evaluated": n - 1, "regressions": 0,
+                "negative_transfer_count": 0, "rate_milli": 0})
+        validation = fixture.validator.validate(
+            certificate, fixture.candidate)
+        self.assertFalse(validation.ok)
+        self.assertIn("paired_regressions", validation.failures)
+        # Counting the one accountable loss satisfies the bound (the
+        # second loss legitimately falls on the unevaluated task).
+        certificate = fixture.certificate(
+            confidence_interval={
+                "method": "wilson", "confidence_milli": 950,
+                "lower_milli": -1000, "upper_milli": 1000,
+                "point_estimate_milli": delta},
+            negative_transfer_results={
+                "evaluated": n - 1, "regressions": 1,
+                "negative_transfer_count": 0, "rate_milli": 0})
+        validation = fixture.validator.validate(
+            certificate, fixture.candidate)
+        self.assertNotIn("paired_regressions", validation.failures)
+
+    def test_policy_can_require_paired_outcomes(self):
+        import dataclasses
+        from sis.v3.evaluation_certificate import QualificationValidator
+        policy = dataclasses.replace(
+            self.fixture.policy, require_paired_outcomes=True)
+        validator = QualificationValidator(
+            policy,
+            certificate_authority=self.fixture.cert_authority,
+            delivery_authority=self.fixture.delivery_authority,
+            protocol_registry=self.fixture.protocols,
+            receipt_resolver=self.fixture.stack.resolve_receipt,
+            delivery_resolver=self.fixture.deliveries.__getitem__)
+        certificate = self.fixture.certificate(
+            qualification_policy_digest=policy.digest)
+        validation = validator.validate(
+            certificate, self.fixture.candidate)
+        self.assertFalse(validation.ok)
+        self.assertIn("paired_outcomes_required", validation.failures)
 
 
 if __name__ == "__main__":

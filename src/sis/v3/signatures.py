@@ -10,6 +10,7 @@ receipts and reports can state it honestly.
 """
 from __future__ import annotations
 
+import functools
 import hashlib
 import os
 
@@ -140,6 +141,8 @@ def _py_verify(signature: bytes, message: bytes, public: bytes) -> bool:
         return False
     if len(signature) != 64 or len(public) != 32:
         return False
+    if not is_valid_public_key(public):
+        return False
     s = _decode_int(signature[32:])
     if s >= _L:
         return False
@@ -154,6 +157,33 @@ def _py_verify(signature: bytes, message: bytes, public: bytes) -> bool:
     a_point = (a_x, a_y, 1, a_x * a_y % _Q)
     right = _to_affine(_add(right_point, _scalarmult(a_point, h)))
     return left == right
+
+
+def is_valid_public_key(public: bytes) -> bool:
+    """True when ``public`` is a usable Ed25519 verification key.
+
+    A 32-byte encoding is not enough: the point must decode canonically,
+    lie on the curve, and not be small-order. A small-order key (e.g. the
+    identity point ``01 00 ... 00``) accepts trivially forged signatures
+    under cofactorless verification, so it must never enter a trust root
+    or authenticate a signature.
+    """
+    if not isinstance(public, bytes) or len(public) != 32:
+        return False
+    return _valid_public_key_cached(bytes(public))
+
+
+@functools.lru_cache(maxsize=4096)
+def _valid_public_key_cached(public: bytes) -> bool:
+    """Curve-membership result, memoized on public bytes (no secrets)."""
+    try:
+        x, y = _decode_point(public)
+    except ValueError:
+        return False
+    point = (x, y, 1, x * y % _Q)
+    # Reject the 8-point torsion subgroup: small-order public keys make
+    # the verification equation solvable without the secret scalar.
+    return _to_affine(_scalarmult(point, 8)) != (0, 1)
 
 
 def backend() -> str:
@@ -188,6 +218,8 @@ def verify(signature: bytes, message: bytes, public: bytes) -> bool:
     if not (isinstance(signature, bytes) and isinstance(message, bytes) and isinstance(public, bytes)):
         return False
     if len(signature) != 64 or len(public) != 32:
+        return False
+    if not is_valid_public_key(public):
         return False
     try:
         _Ed25519PublicKey.from_public_bytes(public).verify(signature, message)

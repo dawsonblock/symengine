@@ -170,6 +170,12 @@ class OutcomeVerifier:
         self._tasks: dict[str, RegisteredTask] = {}
         self._nonces: set[str] = set()
         self._evaluated: set[tuple[str, str, str]] = set()
+        for public_hex in (trusted_keys or {}).values():
+            if not (isinstance(public_hex, str)
+                    and re.fullmatch(r"[0-9a-f]{64}", public_hex)
+                    and signatures.is_valid_public_key(
+                        bytes.fromhex(public_hex))):
+                raise ContractError("trusted_public_key_invalid")
         self._trusted: dict[str, str] = dict(trusted_keys or {})
         self._trusted[self.keystore.key_id] = self.keystore.public.hex()
         self._load_state()

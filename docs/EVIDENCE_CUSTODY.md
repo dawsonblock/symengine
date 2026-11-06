@@ -23,6 +23,29 @@ Writes are atomic (temp + fsync + rename) and read-only after creation.
 Reads verify both the content hash and the domain-separated digest; an
 altered object is `corrupt`, not a valid substitute.
 
+## Dependency links
+
+A certificate's dependency manifest lives at
+`links/<certificate_digest>.json`. Verification binds the manifest to
+its path: the declared `certificate_digest` must equal the digest in the
+filename, and the manifest's commitments must equal the certificate's
+declared receipt, delivery and attestation digests. A valid manifest
+copied over another certificate's link file is therefore `invalid` —
+signature validity alone does not authorize the substitution.
+
+With `require_signed_links=True` each manifest additionally carries an
+Ed25519 signature over its canonical body under domain
+`sis-v3:evidence_link:1`; unsigned manifests are rejected. Production
+serving requires this mode and abstains
+(`evidence_custody_unsigned_links`) when the bound store accepts
+unsigned links, because an unsigned manifest lets a link-directory
+writer strip revoked dependencies without touching the signed logs.
+
+The dependency graph is validated transitively: missing, corrupt,
+cyclic, revoked or superseded dependencies make the certificate
+`invalid`, `revoked` or `superseded` through the same logic in
+`status()` and `verify()`.
+
 ## Status
 
 `status(digest)` returns:

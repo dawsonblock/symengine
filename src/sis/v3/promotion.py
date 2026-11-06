@@ -171,6 +171,14 @@ class PromotionController:
             raise ContractError("min_distinct_repos must be positive")
         if expected_protocol is not None and not isinstance(expected_protocol, ExpectedProtocol):
             raise ContractError("expected_protocol must be an ExpectedProtocol")
+        for name, keys in (("evaluator", trusted_evaluator_keys),
+                           ("operator", trusted_operator_keys or {})):
+            for public_hex in keys.values():
+                if not (isinstance(public_hex, str)
+                        and re.fullmatch(r"[0-9a-f]{64}", public_hex)
+                        and signatures.is_valid_public_key(
+                            bytes.fromhex(public_hex))):
+                    raise ContractError(f"{name}_public_key_invalid")
         self.store = store
         self._token_digest = operator_token_digest
         self._operator_keys = dict(trusted_operator_keys or {})

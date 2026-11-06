@@ -15,6 +15,9 @@ controls. It does not qualify evaluator isolation (M6) or efficacy (M9).
 
 - `PostgresControlPlane` with a DSN such as
   `postgresql://sis_control@db/sis_control`.
+- `require_signed_links=True` is **required**: production `serve()`
+  abstains with `evidence_custody_unsigned_links` when the bound custody
+  store accepts unsigned dependency links.
 - Use separate database roles for the signing/authority process and the
   custody process; the adapter accepts one DSN, so role separation is a
   deployment grant boundary.
@@ -84,6 +87,15 @@ Unsigned legacy links are accepted only when `require_signed_links` is
 false, and are cross-checked against the certificate's declared receipt
 and delivery digests. Re-link legacy custody before enabling signed
 links.
+
+Signed or unsigned, a link manifest is only valid for the certificate
+whose digest names it: verification binds the manifest's declared
+certificate digest to the path it was read from and compares its
+dependency commitments to the certificate's receipt, delivery, and
+attestation digests. A valid manifest copied over another certificate's
+link file is rejected; missing, cyclic, revoked, or superseded
+dependencies are rejected through the same path in `status()` and
+`verify()`.
 
 ## Revocation publication
 

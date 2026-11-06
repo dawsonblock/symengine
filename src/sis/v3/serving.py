@@ -155,6 +155,7 @@ class GovernedServingGateway:
             if not isinstance(request, GuidanceRequestV1):
                 request = GuidanceRequestV1.from_dict(request)
             served_map["task_id"] = request.task_id
+            served_map["requester"] = requester_identity
             if self._production:
                 # Deny before any candidate text is composed: an
                 # uncheckpointed or rolled-back catalog is not a
@@ -169,6 +170,12 @@ class GovernedServingGateway:
                     # Without custody there is no revocation or
                     # supersession history to witness.
                     raise CandidateError("evidence_custody_unconfigured")
+                if not getattr(self._candidates,
+                               "evidence_custody_signed_links", False):
+                    # A custody store that accepts unsigned dependency
+                    # links lets a link-directory writer strip revoked
+                    # dependencies without touching the signed logs.
+                    raise CandidateError("evidence_custody_unsigned_links")
                 served_map["custody_freshness"] = \
                     self._candidates.check_offline_serving(offline=False)
                 snapshot = self._authority_snapshot()
@@ -404,6 +411,17 @@ class GovernedServingGateway:
         }
         if head["sequence"] is None or head["checkpoint_digest"] is None:
             raise CandidateError("authority_checkpoint_incomplete")
+        fingerprint = getattr(
+            self._strict, "authority_fingerprint", None)
+        if callable(fingerprint):
+            try:
+                head["strict_authority"] = fingerprint()
+            except Exception as exc:
+                # The strict path reads a second authority store; a
+                # revocation committed there between the candidate
+                # snapshot and the commit must abort this decision too.
+                raise CandidateError(
+                    "strict_authority_unavailable") from exc
         return {
             "authority": authority,
             "custody": custody,
@@ -432,6 +450,8 @@ class GovernedServingGateway:
                 if snapshot is not None:
                     self._revalidate(snapshot)
                 if self._control_plane is not None:
+                    requester = served_map.get("requester") or \
+                        identity_result.identity.requester_identity
                     receipt = self._control_plane.commit_authorization(
                         nonce=identity_result.identity.session_nonce,
                         session_digest=identity_result.identity.digest,
@@ -440,6 +460,7 @@ class GovernedServingGateway:
                         repository_id=served_map.get("repository_id"),
                         guidance_digest=out.digest,
                         decision=out.decision,
+                        requester=requester,
                         snapshot_digest=(
                             snapshot["digest"] if snapshot is not None
                             else canonical_digest(
@@ -545,13 +566,16 @@ class GovernedServingGateway:
 
     def record_outcome(self, *, task_id: str, served_digest: str,
                        receipt_digest: str, outcome: str,
-                       authorization_id: str | None = None) -> None:
+                       authorization_id: str | None = None,
+                       requester: str | None = None) -> None:
         """Bind the outcome that followed to the guidance that was served.
 
         The digest must be the guidance this gateway actually delivered
         for ``task_id``; the receipt must resolve through the trusted
         evaluator boundary, authenticate, carry the same task and the
-        same outcome. An unauthenticated digest is not an outcome.
+        same outcome. An unauthenticated digest is not an outcome. When
+        the authorization was committed for a requester, only that same
+        requester may attach the outcome.
         """
         if not isinstance(task_id, str) or not task_id:
             raise ValueError("task_id must be a nonempty string")
@@ -573,6 +597,8 @@ class GovernedServingGateway:
                     authorization["guidance_digest"] != served_digest or \
                     authorization["task_id"] != task_id:
                 raise ValueError("served_guidance_unknown")
+            if authorization.get("requester") != requester:
+                raise ValueError("outcome_requester_mismatch")
         elif self._served.get(task_id) != served_digest:
             raise ValueError("served_guidance_unknown")
         if self._receipt_authority is None:
@@ -592,7 +618,8 @@ class GovernedServingGateway:
                 self._control_plane.record_outcome(
                     authorization_id=authorization["authorization_id"],
                     task_id=task_id, served_digest=served_digest,
-                    receipt_digest=receipt_digest, outcome=outcome)
+                    receipt_digest=receipt_digest, outcome=outcome,
+                    requester=requester)
             except ControlPlaneError as exc:
                 raise ValueError(exc.reason) from exc
         self._audit_record({

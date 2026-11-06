@@ -112,6 +112,30 @@ class StrictGuidanceGateway:
         except (AuthorityError, ValueError, TypeError):
             return _abstain("catalog_unavailable", ("Authoritative qualification evidence could not be verified.",))
 
+    def authority_fingerprint(self) -> str:
+        """Digest over the strict-path authority inputs a decision reads.
+
+        The combined serving gateway re-checks a witnessed snapshot
+        before committing an authorization; the candidate journal and
+        custody heads alone do not cover a strict-procedure revocation
+        committed to this store in between. Binding the committed
+        revocations, the qualified set and the operator kill state into
+        the snapshot closes that window.
+        """
+        committed = self._committed_revocations()
+        qualified = sorted(
+            record.digest for record in self._view.by_status("qualified"))
+        return canonical_digest("strict_authority", 1, {
+            "revoked": sorted(self._revoked),
+            "committed_record": sorted(committed["record"]),
+            "committed_receipt": sorted(committed["receipt"]),
+            "committed_grant": sorted(committed["grant"]),
+            "committed_signer": sorted(committed["signer"]),
+            "qualified": qualified,
+            "disabled": bool(os.environ.get("SIS3_DISABLE"))
+            or bool(self._kill and self._kill.exists()),
+        })
+
     def _committed_revocations(self) -> dict:
         """Committed signed revocations, grouped by kind (PR-04)."""
         out = {"record": set(), "receipt": set(), "grant": set(),

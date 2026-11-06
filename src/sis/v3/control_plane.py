@@ -41,7 +41,7 @@ _MAX_ID = 256
 _DECISIONS = frozenset({"recommend", "advisory", "abstain"})
 _OUTCOMES = frozenset({"pass", "fail", "partial", "error"})
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 _SCHEMA = (
     """CREATE TABLE IF NOT EXISTS schema_meta (
@@ -63,6 +63,7 @@ _SCHEMA = (
         guidance_digest TEXT NOT NULL,
         decision TEXT NOT NULL,
         snapshot_digest TEXT NOT NULL,
+        requester TEXT,
         committed_at TEXT NOT NULL
     )""",
     """CREATE TABLE IF NOT EXISTS guidance_outcome (
@@ -135,6 +136,7 @@ class ControlPlane(Protocol):
         guidance_digest: str,
         decision: str,
         snapshot_digest: str,
+        requester: str | None = None,
         expected_head: dict | None = None,
         committed_at: str | None = None,
     ) -> dict: ...
@@ -153,6 +155,7 @@ class ControlPlane(Protocol):
         served_digest: str,
         receipt_digest: str,
         outcome: str,
+        requester: str | None = None,
         recorded_at: str | None = None,
     ) -> dict: ...
 
@@ -192,6 +195,17 @@ class _SqlControlPlane:
 
     placeholder = "?"
 
+    def _has_column(self, con, table: str, column: str) -> bool:
+        if self.placeholder == "?":
+            return any(row[1] == column for row in con.execute(
+                f"PRAGMA table_info({table})"))
+        return con.execute(
+            "SELECT 1 FROM information_schema.columns"
+            f" WHERE table_schema=current_schema()"
+            f" AND table_name={self.placeholder}"
+            f" AND column_name={self.placeholder}",
+            (table, column)).fetchone() is not None
+
     def _ensure_schema_version(self, con) -> None:
         row = con.execute(
             "SELECT version FROM schema_meta WHERE singleton=1").fetchone()
@@ -209,8 +223,14 @@ class _SqlControlPlane:
                 "control_plane_schema_too_new",
                 f"database={version} supported={SCHEMA_VERSION}")
         if version < SCHEMA_VERSION:
-            # No destructive migrations exist yet; a future version adds
-            # its ALTER/CREATE steps here before the version bump.
+            if version < 2:
+                # v1 -> v2: outcome submissions must bind the requester
+                # that the original authorization was committed for.
+                if not self._has_column(
+                        con, "authorization_receipt", "requester"):
+                    con.execute(
+                        "ALTER TABLE authorization_receipt"
+                        " ADD COLUMN requester TEXT")
             con.execute(
                 "UPDATE schema_meta SET version="
                 f"{self.placeholder} WHERE singleton=1",
@@ -237,7 +257,7 @@ class _SqlControlPlane:
 
     def _validate_commit(self, *, nonce, session_digest, expires_at,
                          task_id, repository_id, guidance_digest,
-                         decision, snapshot_digest) -> dict:
+                         decision, snapshot_digest, requester) -> dict:
         if decision not in _DECISIONS:
             raise ControlPlaneError("decision_invalid")
         return {
@@ -250,6 +270,8 @@ class _SqlControlPlane:
             "guidance_digest": _digest(guidance_digest, "guidance_digest"),
             "decision": _identifier(decision, "decision"),
             "snapshot_digest": _digest(snapshot_digest, "snapshot_digest"),
+            "requester": _identifier(
+                requester, "requester", optional=True),
         }
 
     @staticmethod
@@ -305,13 +327,15 @@ class SqliteControlPlane(_SqlControlPlane):
 
     def commit_authorization(self, *, nonce, session_digest, expires_at,
                              task_id, repository_id, guidance_digest,
-                             decision, snapshot_digest, expected_head=None,
+                             decision, snapshot_digest, requester=None,
+                             expected_head=None,
                              committed_at=None) -> dict:
         values = self._validate_commit(
             nonce=nonce, session_digest=session_digest,
             expires_at=expires_at, task_id=task_id,
             repository_id=repository_id, guidance_digest=guidance_digest,
-            decision=decision, snapshot_digest=snapshot_digest)
+            decision=decision, snapshot_digest=snapshot_digest,
+            requester=requester)
         authorization_id = "auth-" + secrets.token_hex(16)
         with self._transaction() as con:
             current = self._head(con)
@@ -331,12 +355,12 @@ class SqliteControlPlane(_SqlControlPlane):
             con.execute(
                 "INSERT INTO authorization_receipt"
                 " (authorization_id, nonce, task_id, repository_id,"
-                "  guidance_digest, decision, snapshot_digest, committed_at)"
-                " VALUES (?,?,?,?,?,?,?,?)",
+                "  guidance_digest, decision, snapshot_digest, requester,"
+                "  committed_at) VALUES (?,?,?,?,?,?,?,?,?)",
                 (authorization_id, values["nonce"], values["task_id"],
                  values["repository_id"], values["guidance_digest"],
                  values["decision"], values["snapshot_digest"],
-                 committed_at or _utcnow()))
+                 values["requester"], committed_at or _utcnow()))
         return self.authorization(authorization_id)
 
     def authorization(self, authorization_id: str) -> dict | None:
@@ -344,12 +368,13 @@ class SqliteControlPlane(_SqlControlPlane):
         with self._transaction() as con:
             row = con.execute(
                 "SELECT authorization_id, nonce, task_id, repository_id,"
-                " guidance_digest, decision, snapshot_digest, committed_at"
+                " guidance_digest, decision, snapshot_digest, requester,"
+                " committed_at"
                 " FROM authorization_receipt WHERE authorization_id=?",
                 (authorization_id,)).fetchone()
         return self._receipt_row(row, (
             "authorization_id", "nonce", "task_id", "repository_id",
-            "guidance_digest", "decision", "snapshot_digest",
+            "guidance_digest", "decision", "snapshot_digest", "requester",
             "committed_at"))
 
     def authorization_for_nonce(self, nonce: str) -> dict | None:
@@ -370,7 +395,8 @@ class SqliteControlPlane(_SqlControlPlane):
         return self.authorization(row[0]) if row is not None else None
 
     def record_outcome(self, *, authorization_id, task_id, served_digest,
-                       receipt_digest, outcome, recorded_at=None) -> dict:
+                       receipt_digest, outcome, requester=None,
+                       recorded_at=None) -> dict:
         _identifier(authorization_id, "authorization_id")
         _identifier(task_id, "task_id")
         _digest(served_digest, "served_digest")
@@ -379,7 +405,8 @@ class SqliteControlPlane(_SqlControlPlane):
             raise ControlPlaneError("outcome_invalid")
         with self._transaction() as con:
             receipt = con.execute(
-                "SELECT task_id, guidance_digest FROM authorization_receipt"
+                "SELECT task_id, guidance_digest, requester"
+                " FROM authorization_receipt"
                 " WHERE authorization_id=?", (authorization_id,)).fetchone()
             if receipt is None:
                 raise ControlPlaneError("authorization_unknown")
@@ -387,6 +414,8 @@ class SqliteControlPlane(_SqlControlPlane):
                 raise ControlPlaneError("authorization_task_mismatch")
             if receipt[1] != served_digest:
                 raise ControlPlaneError("served_guidance_unknown")
+            if receipt[2] != requester:
+                raise ControlPlaneError("outcome_requester_mismatch")
             existing = con.execute(
                 "SELECT 1 FROM guidance_outcome WHERE authorization_id=?",
                 (authorization_id,)).fetchone()
@@ -559,13 +588,15 @@ class PostgresControlPlane(_SqlControlPlane):
 
     def commit_authorization(self, *, nonce, session_digest, expires_at,
                              task_id, repository_id, guidance_digest,
-                             decision, snapshot_digest, expected_head=None,
+                             decision, snapshot_digest, requester=None,
+                             expected_head=None,
                              committed_at=None) -> dict:
         values = self._validate_commit(
             nonce=nonce, session_digest=session_digest,
             expires_at=expires_at, task_id=task_id,
             repository_id=repository_id, guidance_digest=guidance_digest,
-            decision=decision, snapshot_digest=snapshot_digest)
+            decision=decision, snapshot_digest=snapshot_digest,
+            requester=requester)
         authorization_id = "auth-" + secrets.token_hex(16)
         with self._transaction() as con:
             self._lock_authority(con)
@@ -584,12 +615,12 @@ class PostgresControlPlane(_SqlControlPlane):
             con.execute(
                 "INSERT INTO authorization_receipt"
                 " (authorization_id, nonce, task_id, repository_id,"
-                "  guidance_digest, decision, snapshot_digest, committed_at)"
-                " VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
+                "  guidance_digest, decision, snapshot_digest, requester,"
+                "  committed_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                 (authorization_id, values["nonce"], values["task_id"],
                  values["repository_id"], values["guidance_digest"],
                  values["decision"], values["snapshot_digest"],
-                 committed_at or _utcnow()))
+                 values["requester"], committed_at or _utcnow()))
         return self.authorization(authorization_id)
 
     def authorization(self, authorization_id: str) -> dict | None:
@@ -597,12 +628,13 @@ class PostgresControlPlane(_SqlControlPlane):
         with self._transaction() as con:
             row = con.execute(
                 "SELECT authorization_id, nonce, task_id, repository_id,"
-                " guidance_digest, decision, snapshot_digest, committed_at"
+                " guidance_digest, decision, snapshot_digest, requester,"
+                " committed_at"
                 " FROM authorization_receipt WHERE authorization_id=%s",
                 (authorization_id,)).fetchone()
         return self._receipt_row(row, (
             "authorization_id", "nonce", "task_id", "repository_id",
-            "guidance_digest", "decision", "snapshot_digest",
+            "guidance_digest", "decision", "snapshot_digest", "requester",
             "committed_at"))
 
     def authorization_for_nonce(self, nonce: str) -> dict | None:
@@ -623,7 +655,8 @@ class PostgresControlPlane(_SqlControlPlane):
         return self.authorization(row[0]) if row is not None else None
 
     def record_outcome(self, *, authorization_id, task_id, served_digest,
-                       receipt_digest, outcome, recorded_at=None) -> dict:
+                       receipt_digest, outcome, requester=None,
+                       recorded_at=None) -> dict:
         _identifier(authorization_id, "authorization_id")
         _identifier(task_id, "task_id")
         _digest(served_digest, "served_digest")
@@ -632,7 +665,8 @@ class PostgresControlPlane(_SqlControlPlane):
             raise ControlPlaneError("outcome_invalid")
         with self._transaction() as con:
             receipt = con.execute(
-                "SELECT task_id, guidance_digest FROM authorization_receipt"
+                "SELECT task_id, guidance_digest, requester"
+                " FROM authorization_receipt"
                 " WHERE authorization_id=%s", (authorization_id,)).fetchone()
             if receipt is None:
                 raise ControlPlaneError("authorization_unknown")
@@ -640,6 +674,8 @@ class PostgresControlPlane(_SqlControlPlane):
                 raise ControlPlaneError("authorization_task_mismatch")
             if receipt[1] != served_digest:
                 raise ControlPlaneError("served_guidance_unknown")
+            if receipt[2] != requester:
+                raise ControlPlaneError("outcome_requester_mismatch")
             inserted = con.execute(
                 "INSERT INTO guidance_outcome"
                 " (authorization_id, task_id, served_digest, receipt_digest,"

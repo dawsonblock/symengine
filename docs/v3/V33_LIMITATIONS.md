@@ -81,6 +81,16 @@
   attestation to the exact candidate digest, receipts, holdout
   partition and protocol, and re-authenticates it at serve time; it
   cannot independently prove evaluator custody or holdout purity.
+- `baseline_outcome` in `individual_task_receipts` is bound by the
+  certificate signature only — the per-task evaluator receipt covers
+  `task_id` and `outcome`, not the baseline. The validator
+  reconstruction therefore binds the claimed point estimate, interval
+  and regression floor to the *issuer-stated* paired matrix; a
+  certificate issuer is trusted for the baseline column itself.
+- The strict-authority snapshot binding requires the strict gateway to
+  expose `authority_fingerprint()` (`StrictGuidanceGateway` does). A
+  combined gateway wired to a strict authority without it keeps the
+  snapshot→commit revocation window open.
 - The evaluation protocol is pinned, not optional: a registry without
   `expected_evaluation_protocol_digest` cannot qualify and cannot read a
   qualified catalog. Deployments must carry the preregistered protocol
@@ -117,9 +127,12 @@
   clean scan never implies qualification and a flagged bundle is not
   proof of malice.
 - `record_outcome` requires a configured `receipt_authority` and a
-  receipt whose task and outcome match the served task and claim; the
-  durable correlation is still the audit sink. A restart between
-  serving and outcome recording loses the in-memory link, so
+  receipt whose task and outcome match the served task and claim. When
+  a control plane is configured, the durable authorization receipt
+  binds the outcome to the committed task, guidance digest, and
+  requester, and only that requester may attach the outcome. Without a
+  control plane the correlation is still the audit sink and a restart
+  between serving and outcome recording loses the in-memory link, so
   deployments must persist and reconcile the audit stream.
 - Bundle format is vskill-*style* (manifest + payload + SHA256SUMS);
   wire compatibility with an external vskill registry is not claimed.

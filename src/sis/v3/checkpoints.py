@@ -276,6 +276,9 @@ class FileAuthorityCheckpointStore:
                     and _HEX.fullmatch(public_hex)):
                 raise CheckpointVerificationError(
                     "authority_public_key_must_be_sha256_hex")
+            if not signatures.is_valid_public_key(bytes.fromhex(public_hex)):
+                raise CheckpointVerificationError(
+                    "authority_public_key_invalid")
             self._keys[key_id] = public_hex
         self.path = Path(path)
         self._lock_path = self.path.with_name(self.path.name + ".lock")
@@ -442,6 +445,13 @@ class AuthorityStateVerifier:
             raise CheckpointVerificationError("trusted_authority_keys_required")
         if type(expected_epoch) is not int or expected_epoch < 1:
             raise CheckpointVerificationError("expected_epoch_invalid")
+        for key_id, public_hex in trusted_authority_keys.items():
+            if not (isinstance(public_hex, str)
+                    and _HEX.fullmatch(public_hex)
+                    and signatures.is_valid_public_key(
+                        bytes.fromhex(public_hex))):
+                raise CheckpointVerificationError(
+                    "authority_public_key_invalid")
         self.store = store
         self._keys = dict(trusted_authority_keys)
         self.expected_epoch = expected_epoch

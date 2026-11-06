@@ -121,6 +121,12 @@ class ScopeGrantAuthority:
     ) -> None:
         if type(min_transfer_receipts) is not int or min_transfer_receipts < 2:
             raise ContractError("min_transfer_receipts must be at least 2")
+        for key_id, public_hex in trusted_signers.items():
+            if not (isinstance(public_hex, str)
+                    and re.fullmatch(r"[0-9a-f]{64}", public_hex)
+                    and signatures.is_valid_public_key(
+                        bytes.fromhex(public_hex))):
+                raise ScopeGrantError("signer_public_key_invalid")
         self.registry = registry
         self._signers = dict(trusted_signers)
         self._revoked_signers = set(revoked_signers)

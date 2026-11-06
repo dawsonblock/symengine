@@ -125,6 +125,12 @@ class CandidateEvidenceAuthority:
         revoked_evaluator_keys=frozenset(),
         now: str | None = None,
     ) -> None:
+        for public_hex in trusted_evaluator_keys.values():
+            if not (isinstance(public_hex, str)
+                    and re.fullmatch(r"[0-9a-f]{64}", public_hex)
+                    and signatures.is_valid_public_key(
+                        bytes.fromhex(public_hex))):
+                raise ContractError("evaluator_public_key_invalid")
         self._trusted = dict(trusted_evaluator_keys)
         self._revoked = set(revoked_evaluator_keys)
         self._fixed_now = now
@@ -274,6 +280,12 @@ class CandidateDecisionAuthority:
         revoked_operator_keys=frozenset(),
         now: str | None = None,
     ) -> None:
+        for public_hex in trusted_operator_keys.values():
+            if not (isinstance(public_hex, str)
+                    and re.fullmatch(r"[0-9a-f]{64}", public_hex)
+                    and signatures.is_valid_public_key(
+                        bytes.fromhex(public_hex))):
+                raise ContractError("operator_public_key_invalid")
         self._trusted = dict(trusted_operator_keys)
         self._revoked = set(revoked_operator_keys)
         self._fixed_now = now

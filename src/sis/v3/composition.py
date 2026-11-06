@@ -36,7 +36,13 @@ _PROCEDURE_RANK = 0  # qualified ProcedureRecordV1 == symbolic_procedure
 
 _NEGATORS = re.compile(
     r"\b(never|not|don't|do not|avoid|without|no|must not)\b", re.I)
-_AFFIRMERS = re.compile(r"\b(always|must|use|required)\b", re.I)
+# Polarity lexemes are the *conflict signal*, not the subject of a step.
+# Excluding them from key terms is what lets "Always deploy" and "Never
+# deploy" be seen as the same action claimed with opposite polarity.
+_POLARITY_WORDS = frozenset({
+    "never", "not", "don't", "do", "avoid", "without", "no", "must",
+    "always", "use", "required",
+})
 
 
 def _steps_of(item) -> tuple[str, ...]:
@@ -64,7 +70,8 @@ def _key_terms(step: str) -> frozenset:
     words = re.sub(r"[^a-z0-9 ]", " ", step.lower()).split()
     stop = {"the", "a", "an", "and", "or", "to", "of", "for", "in", "on",
             "is", "be", "with", "that", "this", "it", "as", "by", "at"}
-    return frozenset(w for w in words if w not in stop)
+    return frozenset(
+        w for w in words if w not in stop and w not in _POLARITY_WORDS)
 
 
 def _conflicts(a: str, b: str) -> bool:
@@ -76,8 +83,9 @@ def _conflicts(a: str, b: str) -> bool:
     if overlap < 0.5:
         return False
     neg_a, neg_b = bool(_NEGATORS.search(a)), bool(_NEGATORS.search(b))
-    aff_a, aff_b = bool(_AFFIRMERS.search(a)), bool(_AFFIRMERS.search(b))
-    return (neg_a and aff_b) or (neg_b and aff_a)
+    # One negated instruction against an affirming or unqualified one is
+    # a contradiction; two negations of the same action are not.
+    return neg_a != neg_b
 
 
 @dataclass(frozen=True)

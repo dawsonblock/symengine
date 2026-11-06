@@ -67,3 +67,49 @@ Operational steps:
 `GuidanceV1.decision` gains `advisory`. Consumers that assumed only
 `recommend`/`abstain` must handle the new value; `advisory` never grants
 procedure authority and always carries a reason.
+
+## v3.3.2 security hardening
+
+The hardening pass on v3.3.2 closes authorization and custody gaps found
+in external review. Operational impact:
+
+1. **Control-plane schema v2 (automatic).** Opening an existing
+   SQLite/Postgres control plane migrates `authorization_receipt` with an
+   additive `requester` column (`schema_meta.version` becomes 2). No dump
+   or restore is needed; the column is additive and old databases remain
+   usable. Receipts committed before the migration carry
+   `requester=NULL` and only accept an outcome submitted without a
+   requester.
+2. **Signed custody links are required in production.** Production
+   `serve()` now abstains (`evidence_custody_unsigned_links`) when the
+   bound `EvidenceCustodyStore` was built with
+   `require_signed_links=False`. Single-host development profiles are
+   unaffected. Re-link legacy custody before enabling signed links.
+3. **Outcomes bind the authorized requester.** `record_outcome` requires
+   the same `requester` that the authorization was committed for; the
+   HTTP service passes the authenticated key identity automatically.
+   Custom callers must propagate the requester through
+   `serve(requester_identity=...)` and `record_outcome(requester=...)`.
+4. **Trust-key enrollment validates Ed25519 keys.** All trust roots now
+   reject malformed, off-curve, or small-order public keys at
+   construction (`*_public_key_invalid`). A deployment that previously
+   started with such a key now fails fast; regenerate the key and
+   re-issue affected signatures.
+5. **Strict-procedure revocation window closed.** Combined serving
+   includes `StrictGuidanceGateway.authority_fingerprint()` in the
+   authorization snapshot and revalidates it before commit; a procedure
+   revocation landing mid-decision now abstains instead of serving stale
+   authority.
+6. **Paired statistical claims are reconstructed.** Certificate
+   `individual_task_receipts` may carry `baseline_outcome`; when all
+   receipts do, `QualificationValidator` reconstructs the paired point
+   estimate, Newcombe interval, and regression counts and rejects claims
+   narrower than the data. Set
+   `QualificationPolicy.require_paired_outcomes=True` to require the
+   paired matrix outright.
+7. **`_conflicts` polarity heuristic tightened.** A negated instruction
+   conflicts with an affirmative or unqualified instruction on the same
+   terms ("always deploy" vs "never deploy"), so
+   `conflict_policy="abstain"` may abstain in cases the older overlap
+   heuristic silently passed. The heuristic remains lexical, not
+   semantic.

@@ -236,7 +236,7 @@ class V3ServingService:
             self._gateway.record_outcome(
                 task_id=task_id, served_digest=served_digest,
                 receipt_digest=receipt_digest, outcome=outcome,
-                authorization_id=authorization_id)
+                authorization_id=authorization_id, requester=requester)
         except ValueError as exc:
             raise ServingServiceError(str(exc)) from exc
         return 200, {

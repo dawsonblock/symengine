@@ -1202,12 +1202,13 @@ def _validate_record(record: V1Record) -> None:
         receipts = _sequence(d["individual_task_receipts"],
                              "individual_task_receipts", maximum=128)
         for item in receipts:
-            _require(isinstance(item, Mapping) and set(item) == {
+            _require(isinstance(item, Mapping) and set(item) - {
+                "baseline_outcome"} == {
                 "task_id", "receipt_digest", "delivery_digest",
                 "attestation_digest", "outcome"},
                 "individual_task_receipts entries must carry task_id,"
                 " receipt_digest, delivery_digest, attestation_digest"
-                " and outcome")
+                " and outcome (baseline_outcome optional)")
             _identifier(item["task_id"], "individual_task_receipts.task_id")
             _digest(item["receipt_digest"],
                     "individual_task_receipts.receipt_digest")
@@ -1217,6 +1218,9 @@ def _validate_record(record: V1Record) -> None:
                     "individual_task_receipts.attestation_digest")
             _enum(item["outcome"], _OUTCOMES,
                   "individual_task_receipts.outcome")
+            if "baseline_outcome" in item:
+                _enum(item["baseline_outcome"], _OUTCOMES,
+                      "individual_task_receipts.baseline_outcome")
         _require(type(d["sample_count"]) is int and
                  0 <= d["sample_count"] <= 100_000,
                  "sample_count must be an integer in [0,100000]")

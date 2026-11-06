@@ -118,6 +118,8 @@ class ExecutionIdentityAuthority:
         for key_id, public_hex in trusted_harness_keys.items():
             if not (isinstance(public_hex, str) and _HEX.fullmatch(public_hex)):
                 raise ExecutionIdentityError("harness_public_key_invalid")
+            if not signatures.is_valid_public_key(bytes.fromhex(public_hex)):
+                raise ExecutionIdentityError("harness_public_key_invalid")
         if type(max_identity_lifetime_seconds) is not int or \
                 max_identity_lifetime_seconds < 1:
             raise ExecutionIdentityError(

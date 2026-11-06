@@ -233,7 +233,7 @@ class RestartAndStaleWriterTests(unittest.TestCase):
         seed_record(db, _proc(pid="p1", status="draft"))
         stale = PromotionController(
             db, operator_token_digest=operator_token_digest(TEST_TOKEN),
-            trusted_evaluator_keys={kid: sbytes.hex()})
+            trusted_evaluator_keys={kid: signatures.public_key(sbytes).hex()})
         drive(db, controller, "p1", "candidate", token=TEST_TOKEN,
               seed=sbytes, key_id=kid, receipts=[receipt])
         with self.assertRaisesRegex(PromotionRejected, "stale_controller"):

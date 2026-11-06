@@ -72,12 +72,13 @@ the v3.3.2 changes and evidence are in `docs/V332_AUTHORITY_CONSISTENCY.md`.
 - A compromised evaluator key can issue a false certificate; the
   validator checks form and evidence, not the evaluator's honesty.
 - Pattern-based injection scanning is advisory, not proof of safety.
-- `/v3/outcome` authenticates the caller but does not yet bind the
-  requester identity to the stored authorization receipt. Recording an
-  outcome still requires the exact served digest and a matching
-  evaluator-signed receipt, so a different authenticated client cannot
-  invent a result; per-requester binding needs a control-plane schema
-  change.
+- `/v3/outcome` binds the authenticated requester to the stored
+  authorization receipt (control-plane schema v2); a different
+  authenticated client cannot attach an outcome to another requester's
+  authorization. Recording an outcome still requires the exact served
+  digest and a matching evaluator-signed receipt. Authorization records
+  committed before the schema-v2 migration carry no requester and only
+  accept outcomes submitted without one.
 - The powered real-agent efficacy run is not executed in this release;
   no efficacy claim is made.
 

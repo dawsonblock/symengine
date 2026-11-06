@@ -1351,6 +1351,13 @@ class CandidateRegistry:
     def has_evidence_custody(self) -> bool:
         return self._evidence_custody is not None
 
+    @property
+    def evidence_custody_signed_links(self) -> bool:
+        """Whether the bound custody store enforces signed dependency links."""
+        custody = self._evidence_custody
+        return bool(custody is not None
+                    and getattr(custody, "requires_signed_links", False))
+
     def evidence_custody_snapshot(self) -> dict:
         """Current custody heads (genesis when custody is unconfigured)."""
         if self._evidence_custody is None:

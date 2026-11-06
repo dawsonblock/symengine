@@ -181,6 +181,8 @@ class EvidenceCustodyStore:
         for key_id, public_hex in self._keys.items():
             if not (isinstance(public_hex, str) and _HEX.fullmatch(public_hex)):
                 raise EvidenceCustodyError("revocation_public_key_invalid")
+            if not signatures.is_valid_public_key(bytes.fromhex(public_hex)):
+                raise EvidenceCustodyError("revocation_public_key_invalid")
         self._revocations_path = self.root / "revocations.jsonl"
         self._supersessions_path = self.root / "supersessions.jsonl"
         self._lock_path = self.root / "custody.lock"
@@ -197,6 +199,16 @@ class EvidenceCustodyStore:
         self._on_change = None
         self._link_signer = None
         self._require_signed_links = bool(require_signed_links)
+
+    @property
+    def requires_signed_links(self) -> bool:
+        """Whether unsigned dependency manifests are refused at verify time.
+
+        Production serving must check this: a store that accepts unsigned
+        links lets an attacker with link-directory write access strip the
+        revoked dependency set without touching the signed logs.
+        """
+        return self._require_signed_links
 
     # ------------------------------------------------------------------ #
     # immutable objects

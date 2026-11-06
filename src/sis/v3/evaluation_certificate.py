@@ -29,6 +29,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from statistics import NormalDist
 from typing import Callable, Mapping, Sequence
 
 from . import signatures
@@ -40,6 +41,7 @@ from .contracts import (
     canonical_digest,
     canonical_json,
 )
+from .learning_qualification import newcombe_difference_interval
 
 EVIDENCE_CLASSES = ("exploratory", "demonstration", "confirmatory", "invalid")
 PRODUCTION_EVIDENCE_CLASS = "confirmatory"
@@ -175,6 +177,7 @@ class QualificationPolicy:
     max_negative_transfer_rate_milli: int = 0
     max_regressions: int = 0
     require_delivery_attestation: bool = True
+    require_paired_outcomes: bool = False
     authorized_repository_digests: tuple[str, ...] = ()
     authorized_task_ids: tuple[str, ...] = ()
     require_protocol_conformance: bool = True
@@ -184,6 +187,8 @@ class QualificationPolicy:
             raise CertificateError("policy_evidence_class_invalid")
         if self.partition not in {"development", "holdout", "monitoring"}:
             raise CertificateError("policy_partition_invalid")
+        if type(self.require_paired_outcomes) is not bool:
+            raise CertificateError("policy_paired_outcomes_invalid")
         if type(self.min_sample_size) is not int or self.min_sample_size < 1:
             raise CertificateError("policy_min_sample_size_invalid")
         if not (0 <= self.confidence_milli <= 1000):
@@ -224,6 +229,7 @@ class QualificationPolicy:
                 self.max_negative_transfer_rate_milli,
             "max_regressions": self.max_regressions,
             "require_delivery_attestation": self.require_delivery_attestation,
+            "require_paired_outcomes": self.require_paired_outcomes,
             "authorized_repository_digests":
                 list(self.authorized_repository_digests),
             "authorized_task_ids": list(self.authorized_task_ids),
@@ -279,6 +285,8 @@ class EvaluationCertificateAuthority:
             if not (isinstance(public_hex, str)
                     and _SHA256.fullmatch(public_hex)):
                 raise CertificateError("evaluator_public_key_invalid")
+            if not signatures.is_valid_public_key(bytes.fromhex(public_hex)):
+                raise CertificateError("evaluator_public_key_invalid")
         self._keys = dict(trusted_evaluator_keys)
 
     def issue(self, seed: bytes, *, signer_key_id: str, **fields):
@@ -313,6 +321,8 @@ class DeliveryAttestationAuthority:
         for key_id, public_hex in trusted_harness_keys.items():
             if not (isinstance(public_hex, str)
                     and _SHA256.fullmatch(public_hex)):
+                raise CertificateError("harness_public_key_invalid")
+            if not signatures.is_valid_public_key(bytes.fromhex(public_hex)):
                 raise CertificateError("harness_public_key_invalid")
         self._keys = dict(trusted_harness_keys)
 
@@ -490,6 +500,56 @@ class QualificationValidator:
               <= self.policy.max_negative_transfer_rate_milli)
         check("regressions", negative.get("regressions", 1)
               <= self.policy.max_regressions)
+
+        paired = all("baseline_outcome" in item for item in receipts)
+        check("paired_outcomes_required",
+              not self.policy.require_paired_outcomes or paired)
+        if receipts and paired:
+            # The claimed statistics must follow from the paired matrix,
+            # not just from the fields themselves. Reconstruct losses,
+            # the point estimate and the Newcombe interval *at the
+            # claimed confidence level*; a certificate whose claims are
+            # narrower than the data supports, or whose regressions hide
+            # paired losses, does not qualify. baseline_outcome is bound
+            # by the certificate signature, not by a separate evaluator
+            # receipt — the issuer is trusted for the baseline column.
+            losses = 0
+            base_solved = treat_solved = 0
+            for item in receipts:
+                base_ok = item["baseline_outcome"] == "pass"
+                treat_ok = item["outcome"] == "pass"
+                base_solved += base_ok
+                treat_solved += treat_ok
+                losses += base_ok and not treat_ok
+            n = len(receipts)
+            check("paired_point_estimate",
+                  interval.get("point_estimate_milli")
+                  == round(1000 * (treat_solved - base_solved) / n))
+            conf = interval.get("confidence_milli")
+            z = 1.959963984540054
+            if type(conf) is int and 0 <= conf <= 1000:
+                # A certificate labeling its interval "99%" must cover
+                # the reconstructed 99% interval, not merely a 95% one.
+                # Clamped inside (0,1): a 1000-milli claim has no finite
+                # two-sided critical value, so it verifies at the
+                # tightest representable level.
+                z = NormalDist().inv_cdf(
+                    (1 + min(max(conf, 1), 999) / 1000) / 2)
+            lower, upper = newcombe_difference_interval(
+                treat_solved, n, base_solved, n, z=z)
+            check("paired_interval_not_narrower",
+                  interval.get("lower_milli", 1_000_001)
+                  <= round(1000 * lower)
+                  and interval.get("upper_milli", -1_000_001)
+                  >= round(1000 * upper))
+            evaluated = negative.get("evaluated")
+            if type(evaluated) is int:
+                # At most (n - evaluated) paired losses may fall on
+                # tasks the certificate left unevaluated; every other
+                # loss must appear in the claimed regression count.
+                check("paired_regressions",
+                      negative.get("regressions", -1)
+                      >= losses - max(0, n - evaluated))
 
         if self.policy.require_delivery_attestation:
             delivery_ok, delivery_detail = self._verify_deliveries(
