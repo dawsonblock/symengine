@@ -7,7 +7,7 @@ observe–learn–verify–reuse composition.
 ## Evidence
 
 | Item | Result |
-|---|---|
+| --- | --- |
 | Full test suite | 659 passed, 2 skipped |
 | Hard wall-clock enforcement | benchmark arms interrupted at budget (`agent_timeout`) |
 | Usage accounting | token/tool meters; agent-reported usage marked UNVERIFIED |

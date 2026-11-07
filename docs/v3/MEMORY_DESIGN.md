@@ -11,7 +11,7 @@ Immutable, content-addressed. Large artifacts are referenced by digest,
 never embedded.
 
 | field | meaning |
-|---|---|
+| --- | --- |
 | experience_id / episode_id | identity; episode dedup key with fingerprint |
 | repository_registry_id | signed registry identity (trusted, not self-declared) |
 | task_fingerprint | sha256 of the task's identity material |

@@ -1,3 +1,65 @@
+# SIS v3.3.2 development qualification status
+
+Updated: 2026-11-07. Base revision: `39c3be10b46458e3b4d990d8f6c45fc34d6ba110`
+plus uncommitted evidence-qualification, SQLite-test, and release-check repairs.
+Status: **IMPLEMENTED_NOT_EFFICACY_QUALIFIED**. This is an unsigned development
+snapshot, not a newly published or signed release.
+
+## Current scope and limitations
+
+- Qualification now requires paired baseline outcomes by default and agreement
+  between certificate primary metric and qualification policy. The explicit
+  legacy opt-out remains digest-visible. Historical signed certificates are
+  preserved; changed policies require new certificates (see `MIGRATION.md`).
+- Six tests in `tests/v3/test_control_plane_sqlite.py` exercise real SQLite
+  file-lock serialization, replay protection, outcome binding, and shared
+  serving decisions. They are included in the development archive even while
+  untracked in Git. They do not qualify PostgreSQL or multi-host operation.
+- PostgreSQL qualification is still unrun: no disposable DSN is configured,
+  and the earlier private server setup was denied at `shmget`. No workaround
+  or retry was attempted for this repair.
+- Twelve evaluator/campaign tests previously hit `sandbox_apply: Operation
+  not permitted` in this execution context. They are explicitly deselected
+  from this repair's broad test run, not passed or relabelled. The prior
+  Devin run of 1011 passed / 11 skipped predates the SQLite and CI tests and
+  is historical evidence, not a full pass for this snapshot.
+- Real-agent efficacy remains unestablished. A sealed, repository-disjoint,
+  powered study, validated execution isolation, model availability and a
+  precommitted run budget remain prerequisites. No live paid run was made.
+
+## Verification of this development repair
+
+- Broad permitted suite: **1013 passed, 11 skipped, 12 deselected** (48.90s),
+  Python 3.12.0 / pytest 8.4.2 on macOS. The deselections preserve the earlier
+  sandbox denial boundary. Skips: 8 PostgreSQL, 1 Windows ACL, 1 missing skill
+  corpus, 1 unavailable pinned Git baseline.
+- Focused release/CI/SQLite suite: **40 passed** (3.25s).
+- These are local results. The updated GitHub workflow has not been pushed or
+  observed running remotely, and no full current-snapshot pass is claimed.
+
+## Release verification policy
+
+Tags and published GitHub releases run `tools/check_release_ci.py --mode
+release`: stale, missing, malformed, or incomplete inventories fail the job.
+Ordinary branch/PR CI uses explicit development mode, which permits inventory
+drift but labels it **not release verification**. Missing/malformed manifests
+still fail. Neither mode regenerates the manifest to hide a mismatch.
+
+The development ZIP is rebuilt with `tools/build_canonical_zip.py --allow-dirty`,
+then checked internally, against the complete current source tree, and after
+fresh extraction. Its commit and dirty paths are recorded alongside its hash.
+The output and local verification logs are in `build/release-repair-20261107/`;
+`build/` is intentionally excluded from distributed source. The refreshed
+`RELEASE_SHA256.json` is an unsigned inventory, not publisher authentication.
+Historical signed provenance under `release/` is unchanged and does not attest
+this development ZIP.
+
+## Historical v3.3.0 qualification report (retained verbatim below)
+
+The following report records its original release and test environment only.
+Its 804-test count, 306-file archive, gate passes, and release decision are
+not current qualification claims for the development snapshot above.
+
 # SIS v3.3 qualification report
 
 Release designation: **SIS-v3.3.0-GOVERNED-LEARNING**
@@ -11,7 +73,7 @@ planned.
 ## Gate ledger
 
 | Gate | Evidence | Result |
-|---|---|---|
+| --- | --- | --- |
 | Source baseline traceable | `docs/audits/BASELINE_INTEGRITY.md`, `evidence/baseline/` — all four manifest discrepancies traced to pushed commits; manifest was stale, not tampered | **PASS** |
 | Authority transactions | `tests/v3/test_authority_db.py` (WAL, fault-at-each-step, power loss, stale head, concurrent promotion) | **PASS** |
 | Receipt authenticity | `tests/v3/test_receipt_signatures.py` (forged signer, tampered body, replay, wrong key) | **PASS** |
@@ -27,7 +89,7 @@ planned.
 ## Executed verification
 
 | Command | Result |
-|---|---|
+| --- | --- |
 | `PYTHONPATH=src python3 -m pytest tests/ -q` | **804 passed, 2 skipped, 0 failed** |
 | `PYTHONPATH=src python3 tools/governed_campaign.py -o <dir>` | exit 0; A=0 B=2 C=2 D=0 E=2; 5 candidates qualified; revocation demo passed |
 | `PYTHONPATH=src python3 tools/governed_live_campaign.py -o <dir> --wall 120` | exit 0; authenticated `codex exec`; A=2 B=2 C=2 D=2 E=2 (ceiling hit) |

@@ -51,7 +51,7 @@ cyclic, revoked or superseded dependencies make the certificate
 `status(digest)` returns:
 
 | Status | Meaning |
-|---|---|
+| --- | --- |
 | `active` | object and all dependencies present, unrevoked |
 | `revoked` | the object or a dependency is revoked |
 | `superseded` | the object or a dependency is superseded |

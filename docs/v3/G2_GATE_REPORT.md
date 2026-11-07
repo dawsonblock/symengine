@@ -84,7 +84,7 @@ PYTHONPATH=src:. python3 -m pytest -q
 Adversarial coverage (`tests/v3/test_scope_grants.py`):
 
 | Case | Result |
-|---|---|
+| --- | --- |
 | Forged signature / untrusted signer | rejected at verify and commit; never served |
 | Unbound authority commit, missing verifier | rejected |
 | Duplicate registry-id, tree-digest, or commit alias | rejected at register |

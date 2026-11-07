@@ -28,6 +28,7 @@ from sis.v3.evaluation_certificate import (
     sign_certificate,
 )
 from sis.v3.governed_eval import preregister
+from sis.v3.learning_qualification import newcombe_difference_interval
 from sis.v3.control_plane import SqliteControlPlane
 from sis.v3.serving import GovernedServingGateway
 from tests.v3.candidate_testkit import CandidateStack
@@ -131,11 +132,20 @@ class CertificateFixture:
                 "delivery_digest": delivered,
                 "attestation_digest": attestation.digest,
                 "outcome": "pass",
+                "baseline_outcome": "fail",
             })
-        self.ci = ci or {
-            "method": "wilson", "confidence_milli": 950,
-            "lower_milli": 50, "upper_milli": 350,
-            "point_estimate_milli": 200}
+        if ci is None:
+            # Honest default: every treated task passes where the stated
+            # baseline fails, so the claimed interval is stated as the
+            # exact reconstructed Newcombe bounds at 95% confidence.
+            lower, upper = newcombe_difference_interval(
+                len(self.tasks), len(self.tasks), 0, len(self.tasks))
+            ci = {
+                "method": "newcombe", "confidence_milli": 950,
+                "lower_milli": round(1000 * lower),
+                "upper_milli": round(1000 * upper),
+                "point_estimate_milli": 1000}
+        self.ci = ci
         self.negative = negative or {
             "evaluated": len(self.tasks), "regressions": 0,
             "negative_transfer_count": 0, "rate_milli": 0}

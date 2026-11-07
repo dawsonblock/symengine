@@ -36,7 +36,7 @@ Learning pipeline ──► CandidateV1 ──► governed evaluation ──► 
 ## Trust boundaries
 
 | Boundary | Owns | Never trusted from |
-|---|---|---|
+| --- | --- | --- |
 | Candidate database | candidate records, audit chain, materialized state | a local-only database as rollback evidence |
 | Authority process | checkpoint signing key, publication sequence | candidate writers |
 | Checkpoint store | append-only signed checkpoint chain | the candidate database principal |

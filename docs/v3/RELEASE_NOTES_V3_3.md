@@ -1,5 +1,9 @@
 # SIS v3.3.0 — Governed Learning — Release Notes
 
+> **Historical v3.3.0 release notes.** Claims and test results below apply to
+> that release only. See `QUALIFICATION_REPORT.md` for current v3.3.2
+> development status and remaining qualification limits.
+
 Status: **IMPLEMENTED_NOT_EFFICACY_QUALIFIED**
 
 Security/correctness gates pass; learning efficacy on real models is

@@ -34,7 +34,7 @@ the v3.3.2 changes and evidence are in `docs/V332_AUTHORITY_CONSISTENCY.md`.
 ## Threats and mitigations
 
 | Threat | Mitigation |
-|---|---|
+| --- | --- |
 | Delete final revocation / restore old DB | signed external checkpoint binds journal head, sequence and candidate revision; serving rejects stale/unpublished states |
 | Flip `qualified` column | hash-chain projection drift; checkpoint candidate-revision digest |
 | Replay old journal/checkpoint | monotonic journal sequence + authority epoch |

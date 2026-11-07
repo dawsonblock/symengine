@@ -21,7 +21,7 @@ execution or improved coding-agent solve rate.
 ## Principals and authority
 
 | Principal | Intended authority | Explicitly denied |
-|---|---|---|
+| --- | --- | --- |
 | Agent | Read qualified guidance; append observations | Evaluator data, signing, promotion, policy writes, candidate qualification |
 | Runner | Execute only in a future isolated worker; append execution observations | Evaluator keys and hidden labels; promotion |
 | Learner | Write untrusted candidate procedures | Qualified catalog, evaluator secrets, outcome signing |
@@ -38,7 +38,7 @@ legacy demo mode for compatibility.
 ## Threats and M0 controls
 
 | Threat | M0 control | Remaining limit |
-|---|---|---|
+| --- | --- | --- |
 | Unknown record fields smuggle authority or change interpretation | Exact field sets for every v1 record; duplicate JSON keys rejected | No network adapter or external schema-consensus test yet |
 | Oversized or deeply nested record exhausts parser resources | 64 KiB record limit, bounded text, arrays, nodes, and depth | Limits do not replace transport/process quotas |
 | Digest is reused across record types or versions | SHA-256 domain prefix `sis-v3:{type}:{version}\0` | A digest identifies bytes; it does not prove custody or truth |

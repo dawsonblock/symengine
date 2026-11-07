@@ -9,7 +9,7 @@ No efficacy, production-hardening, or cross-repository claims are made.
 ## Provenance (G0) — PASS
 
 | Evidence | Value |
-|---|---|
+| --- | --- |
 | Source archive | `SIS-2026-10-24-FULL-UPGRADED-V2-Authority-Recovery.zip` |
 | SHA-256 (re-verified) | `f62ef2a500fe487cf17fb1b7d19862ab0eb686c411663b89d02011f310a7d077` |
 | Baseline commit | `d79a813` — `git archive d79a813` diffed byte-identical to extracted archive |
@@ -76,7 +76,7 @@ python3 tools/verify_release.py --compile .
 ### Shared adversarial matrix coverage (G1 scope)
 
 | Requirement | Evidence |
-|---|---|
+| --- | --- |
 | Direct catalog insertion / stale write API | `test_direct_qualified_write_rejected`, `test_strict_gateway_rejects_direct_qualified_catalog_seeding` (3 layers: API reject → verify fails → serving abstains) |
 | Uncommitted/missing decision | `test_fail_closed_if_committed_revision_disappears`, `_projection_drift` (`decision_materialization_drift`) |
 | Stale process / writer | `test_stale_controller_cannot_append_after_independent_commit`, `test_second_process_controller_is_stale_after_first_commits`, `test_in_tx_head_recheck_catches_race` |

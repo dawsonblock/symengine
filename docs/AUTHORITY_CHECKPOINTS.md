@@ -72,7 +72,7 @@ serving denies (`local_state_unpublished`) until `recover()` or
 the latest checkpoint and returns a `VerificationResult`. It rejects:
 
 | Condition | Reason |
-|---|---|
+| --- | --- |
 | no checkpoint | `checkpoint_missing` |
 | unsigned/forged checkpoint | `checkpoint_signature_invalid` |
 | old authority epoch | `authority_epoch_mismatch` |

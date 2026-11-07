@@ -16,7 +16,7 @@ regenerated during development.
 ## Baseline and current test coverage
 
 | Check | Baseline expectation/evidence | Current M0 status |
-|---|---|---|
+| --- | --- | --- |
 | Existing unittest suite | 338 tests, 1 skip on the pinned v2.4.0 Git baseline | 363 tests, 1 skip after M0 changes; exact command/result in `STATUS.md` |
 | CLI/HTTP integration smoke | Passed from extracted pinned Git baseline | Passed after M0 changes; exact command/result in `STATUS.md` |
 | Source manifest | 138 source files verified at pinned baseline | Baseline mode verifies pinned Git blobs and reports dev delta separately |

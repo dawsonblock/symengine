@@ -54,7 +54,7 @@ wiring and deployment profiles.
 ## Documentation map
 
 | Document | Contents |
-|---|---|
+| --- | --- |
 | [CHANGELOG.md](CHANGELOG.md) | Release-by-release change history |
 | [docs/V332_AUTHORITY_CONSISTENCY.md](docs/V332_AUTHORITY_CONSISTENCY.md) | v3.3.2 defects, fixes and evidence |
 | [docs/V332_OPERATIONS.md](docs/V332_OPERATIONS.md) | Deployment, recovery and key rotation |

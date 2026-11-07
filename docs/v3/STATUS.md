@@ -5,7 +5,7 @@
 > current release. For the current status see
 > `docs/v3/QUALIFICATION_REPORT.md` and `docs/v3/RELEASE_NOTES_V3_3.md`.
 
-Current classification: **M0 contracts/policy plus SIS3-003 executor,
+Historical classification: **M0 contracts/policy plus SIS3-003 executor,
 SIS3-005 episode store, SIS3-006 signed receipts, SIS3-004 CLI adapter (real
 backend contact, quota-limited), SIS3-007–012 (procedure store + miner,
 source-preserving patcher, hard-gated retrieval, recommend/abstain guidance,

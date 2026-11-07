@@ -177,7 +177,11 @@ class QualificationPolicy:
     max_negative_transfer_rate_milli: int = 0
     max_regressions: int = 0
     require_delivery_attestation: bool = True
-    require_paired_outcomes: bool = False
+    # Paired baseline evidence is required by default. Setting this to
+    # False is the explicit legacy opt-out for certificates minted
+    # before baseline_outcome existed; it is recorded in the policy
+    # digest, so a permissive policy is visible to every consumer.
+    require_paired_outcomes: bool = True
     authorized_repository_digests: tuple[str, ...] = ()
     authorized_task_ids: tuple[str, ...] = ()
     require_protocol_conformance: bool = True
@@ -187,6 +191,12 @@ class QualificationPolicy:
             raise CertificateError("policy_evidence_class_invalid")
         if self.partition not in {"development", "holdout", "monitoring"}:
             raise CertificateError("policy_partition_invalid")
+        if not isinstance(self.policy_version, str) or \
+                not self.policy_version:
+            raise CertificateError("policy_version_invalid")
+        if not isinstance(self.primary_metric, str) or \
+                not self.primary_metric:
+            raise CertificateError("policy_primary_metric_invalid")
         if type(self.require_paired_outcomes) is not bool:
             raise CertificateError("policy_paired_outcomes_invalid")
         if type(self.min_sample_size) is not int or self.min_sample_size < 1:
@@ -484,6 +494,12 @@ class QualificationValidator:
               not (isinstance(security, Mapping)
                    and security.get("auto_qualification_allowed") is False))
 
+        # The improvement metric must agree three ways: the certificate,
+        # the qualification policy and the protocol all name the same
+        # primary metric. A policy rebound for a different metric must
+        # not qualify a certificate issued for another.
+        check("policy_primary_metric",
+              certificate.primary_metric == self.policy.primary_metric)
         interval = certificate.confidence_interval
         check("confidence_level",
               interval.get("confidence_milli", 0)
@@ -504,6 +520,13 @@ class QualificationValidator:
         paired = all("baseline_outcome" in item for item in receipts)
         check("paired_outcomes_required",
               not self.policy.require_paired_outcomes or paired)
+        # A certificate that pairs only some receipts is neither valid
+        # strict evidence nor a clean legacy artifact: under any policy
+        # the paired matrix is all-or-nothing, so selective pairing
+        # cannot skip the reconstruction below.
+        check("paired_outcomes_uniform",
+              paired or not any(
+                  "baseline_outcome" in item for item in receipts))
         if receipts and paired:
             # The claimed statistics must follow from the paired matrix,
             # not just from the fields themselves. Reconstruct losses,

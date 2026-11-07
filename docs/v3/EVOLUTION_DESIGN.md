@@ -45,7 +45,7 @@ seeds (skill payloads)
 ## Development vs qualification
 
 | partition | consumer | visible to optimizer? |
-|---|---|---|
+| --- | --- | --- |
 | induction | episode/memory generation | yes (its inputs) |
 | development | mutation fitness | yes |
 | qualification (holdout) | independent evaluation | **no** — enforced by `assert_partition_disjoint` on repo digests |

@@ -3,7 +3,7 @@
 ## Arms
 
 | arm | configuration |
-|---|---|
+| --- | --- |
 | A | base agent |
 | B | base + qualified experience memory |
 | C | base + evolved skill candidates |

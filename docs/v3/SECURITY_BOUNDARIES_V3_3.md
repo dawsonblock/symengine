@@ -3,7 +3,7 @@
 ## Roles and permissions (policy.py)
 
 | role | permissions relevant to learning plane |
-|---|---|
+| --- | --- |
 | agent | guidance:read, qualified_catalog:read, observation:append |
 | runner | workspace:execute, observation:append, artifact:read |
 | learner | candidate:write, artifact:read |

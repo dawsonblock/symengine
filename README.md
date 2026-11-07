@@ -16,7 +16,7 @@ standard library.
 ## Project status
 
 | Area | State |
-|---|---|
+| --- | --- |
 | Authority controls (M0–M5) | Implemented, covered by adversarial tests |
 | Evaluator isolation (M6) | **Not qualified** |
 | Real-agent efficacy (M9) | **Not demonstrated** |
@@ -74,7 +74,7 @@ rather than stored.
 ## Architecture
 
 | Layer | Module | Responsibility |
-|---|---|---|
+| --- | --- | --- |
 | Symbolic induction | `sis.induction`, `sis.v3.learning.symbolic` | Discover bounded rules from examples |
 | Structural code learning | `sis.code_learning` | Extract constrained operator substitutions from verified changes |
 | Experience memory | `sis.v3.memory`, `sis.v3.episode_store` | Store and retrieve verified episodes |
@@ -107,7 +107,7 @@ recovery are covered in [docs/V332_OPERATIONS.md](docs/V332_OPERATIONS.md).
 ## Optional extras
 
 | Extra | Adds |
-|---|---|
+| --- | --- |
 | `dev` | `pytest` 8.4.2 (pinned and runtime-enforced) |
 | `evaluator` | Pinned test runner for the isolated evaluator |
 | `postgres` | `psycopg` for the multi-replica control plane |
@@ -150,7 +150,7 @@ Known defects and their fixes are recorded in
 ## Documentation
 
 | Document | Contents |
-|---|---|
+| --- | --- |
 | [docs/v3/ARCHITECTURE_V3_3.md](docs/v3/ARCHITECTURE_V3_3.md) | v3 subsystem design |
 | [docs/V332_OPERATIONS.md](docs/V332_OPERATIONS.md) | Deployment, recovery, key rotation |
 | [docs/V332_AUTHORITY_CONSISTENCY.md](docs/V332_AUTHORITY_CONSISTENCY.md) | Authority-consistency defects and fixes |

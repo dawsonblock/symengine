@@ -44,7 +44,7 @@ candidate is imported unchanged; scope flags do not apply to them.
 ## Candidate shape
 
 | field | value |
-|---|---|
+| --- | --- |
 | `candidate_type` | `skill_bundle` |
 | `candidate_id` | `skill-<slug>-<content_digest[:12]>` |
 | `content_digest` | `content_digest("skill_bundle", payload)` |
@@ -63,7 +63,7 @@ extras) and `source` (kind + relative path).
 ## Bounds (fail closed)
 
 | limit | value | error |
-|---|---|---|
+| --- | --- | --- |
 | frontmatter | 8 KiB, ≤ 32 keys, values ≤ 1 024 chars | `skill_frontmatter_*` |
 | body | 24 KiB, ≤ 8 instruction chunks | `skill_body_too_large` |
 | resources | 64 files, 16 MiB hashed total | `skill_too_many_resources` / `skill_resources_too_large` |
@@ -96,7 +96,7 @@ served guidance. Examples live in the `tools/skill_holdouts.py` registry
 (`--list`, `--tier`, `--only`); see `SKILL_HOLDOUTS.md` for the full map.
 
 | example | fixture (buggy state) | private acceptance test |
-|---|---|---|
+| --- | --- | --- |
 | `write-skills` | `SKILL.md` with no frontmatter | frontmatter has `name`/`description`, body has a heading and a bullet |
 | `php2shell-check` | `FROM php:8.4-fpm` (floating, vulnerable) | `Dockerfile` pins `php:8.4.27`, `findings.md` names CVE-2026-109618 |
 | `write-tests` | `calc.py` with no tests | the submitted suite passes on the original and fails on a mutated implementation |

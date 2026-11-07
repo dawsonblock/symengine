@@ -326,7 +326,7 @@ Ledger of the governed-learning build, milestone by milestone, on branch
 ## Defects found and fixed during the build
 
 | defect | fix |
-|---|---|
+| --- | --- |
 | `preregister` crashed on float alpha/min_effect (canonical_json rejects floats) | digest a normalized copy; raw values retained in doc |
 | `report_digest` crashed on float metrics | same normalization |
 | campaign: strict partition rule blocked dev reuse | disjointness relaxed to seal holdout/monitoring while allowing induction↔development overlap (documented) |

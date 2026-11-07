@@ -1,5 +1,12 @@
 ## Unreleased — review corrections
 
+- Evidence-qualification gates hardened: `QualificationPolicy` requires
+  paired baseline outcomes by default (`require_paired_outcomes=True`;
+  `False` remains the explicit, digest-visible legacy opt-out), a
+  certificate that pairs only some receipts never qualifies, claimed
+  intervals must cover the Newcombe interval reconstructed at the
+  claimed confidence level, and `primary_metric` must agree across
+  policy, certificate and protocol.
 - The CLI/HTTP smoke test now reads `sis.__version__` instead of asserting
   the stale `3.3.1` string.
 - SQLite `-wal`, `-shm` and `-journal` sidecars are excluded from the
@@ -13,12 +20,15 @@
 - The v3 contract schemas are included in the wheel and sdist.
 - Release archives use a stable archive-internal project directory
   (`SIS-v<version>-...`) instead of the local checkout directory name.
-- CI enforces the exact release inventory only on release commits and
-  reports development-tree drift instead of failing every post-release push.
+- CI selects the release-inventory gate by event identity: tag pushes
+  and published releases run `tools/check_release_ci.py --mode release`,
+  where stale, missing, malformed or incomplete inventories fail;
+  branch and PR runs use explicit development mode, which permits drift
+  but reports it as not release verification.
 - Documentation: README, release notes, threat model, operations wiring,
   architecture and the top-level doc cross-references now describe v3.3.2.
-- Suite after the review: **986 passed, 8 skipped**; the release bundle is
-  re-bound to this tree.
+- Current suite status and remaining qualification limits are tracked in
+  `docs/v3/QUALIFICATION_REPORT.md`.
 
 ## 2026-10-27 — SIS v3.3.2 authority consistency (M0–M5)
 

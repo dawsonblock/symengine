@@ -36,7 +36,7 @@ ingest_skills.py    --[learner]-->    CandidateRegistry (PROPOSED only)
 ## Components
 
 | module | role |
-|---|---|
+| --- | --- |
 | `candidates.py` | `CandidateRegistry`: WAL sqlite, role-gated state machine, append-only transition audit, digest-verified reads, signed-evidence/decision-gated serving state, audit-derived state projection, verified pre-migration chain reseal (recorded in `registry_migration`) |
 | `candidate_authority.py` | `CandidateEvidenceAuthority` (evaluator-signed receipt→candidate binding) and `CandidateDecisionAuthority` (operator-signed exact-edge decision), both Ed25519 |
 | `contracts.py` | `CandidateV1`, `CandidateEvidenceV1`, `CandidateDecisionV1`, `ExperienceRecordV1` records (canonical digests, bounded validation) |

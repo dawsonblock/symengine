@@ -31,6 +31,7 @@ from sis.v3.control_plane import (SCHEMA_VERSION, ControlPlaneError,
 from sis.v3.evaluation_runtime import (SANDBOX_FAILURE, TASK_PASS,
                                        classify_execution)
 from sis.v3.evidence_custody import EvidenceCustodyStore
+from sis.v3.learning_qualification import newcombe_difference_interval
 from sis.v3 import signatures
 from sis.v3.execution_identity import sign_execution_identity
 from sis.v3.serving import GovernedServingGateway
@@ -1033,84 +1034,90 @@ class PairedStatisticsTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.fixture = CertificateFixture(Path(self.temp.name))
 
-    def _paired_fixture(self):
-        # Every treated task solved where the baseline failed: delta=1.0.
-        for entry in self.fixture.entries:
-            entry["baseline_outcome"] = "fail"
-        return self.fixture
+    def _interval(self, treat_solved, base_solved, n, *,
+                  confidence_milli=950):
+        from statistics import NormalDist
+        z = NormalDist().inv_cdf(
+            (1 + min(max(confidence_milli, 1), 999) / 1000) / 2)
+        lower, upper = newcombe_difference_interval(
+            treat_solved, n, base_solved, n, z=z)
+        return {
+            "method": "newcombe", "confidence_milli": confidence_milli,
+            "lower_milli": round(1000 * lower),
+            "upper_milli": round(1000 * upper),
+            "point_estimate_milli": round(
+                1000 * (treat_solved - base_solved) / n)}
 
     def test_reconstructed_statistics_accept_consistent_claims(self):
-        fixture = self._paired_fixture()
-        certificate = fixture.certificate(confidence_interval={
-            "method": "wilson", "confidence_milli": 950,
-            "lower_milli": 800, "upper_milli": 1000,
-            "point_estimate_milli": 1000})
-        validation = fixture.validator.validate(
-            certificate, fixture.candidate)
+        certificate = self.fixture.certificate()
+        validation = self.fixture.validator.validate(
+            certificate, self.fixture.candidate)
         self.assertTrue(validation.ok, validation.failures)
 
     def test_claimed_point_estimate_must_match_receipts(self):
-        fixture = self._paired_fixture()
-        # Default fixture interval claims point_estimate_milli=200, but
-        # the paired matrix yields delta=1.0.
-        certificate = fixture.certificate()
-        validation = fixture.validator.validate(
-            certificate, fixture.candidate)
+        # The honest point estimate is delta=1.0; claiming anything else
+        # fails even when the interval is stated correctly.
+        ci = {**self._interval(29, 0, 29), "point_estimate_milli": 900}
+        certificate = self.fixture.certificate(confidence_interval=ci)
+        validation = self.fixture.validator.validate(
+            certificate, self.fixture.candidate)
         self.assertFalse(validation.ok)
         self.assertIn("paired_point_estimate", validation.failures)
 
     def test_claimed_interval_cannot_be_narrower_than_data(self):
-        fixture = self._paired_fixture()
-        certificate = fixture.certificate(confidence_interval={
-            "method": "wilson", "confidence_milli": 950,
-            "lower_milli": 900, "upper_milli": 1000,
-            "point_estimate_milli": 1000})
-        validation = fixture.validator.validate(
-            certificate, fixture.candidate)
-        self.assertFalse(validation.ok)
-        self.assertIn("paired_interval_not_narrower", validation.failures)
+        honest = self._interval(29, 0, 29)
+        for ci in (dict(honest, lower_milli=honest["lower_milli"] + 1),
+                   dict(honest, upper_milli=honest["upper_milli"] - 1)):
+            certificate = self.fixture.certificate(confidence_interval=ci)
+            validation = self.fixture.validator.validate(
+                certificate, self.fixture.candidate)
+            self.assertFalse(validation.ok)
+            self.assertIn("paired_interval_not_narrower",
+                          validation.failures)
+
+    def test_wider_conservative_interval_is_accepted(self):
+        # Agreement is coverage at the claimed confidence, not bit
+        # equality: a strictly wider bound remains valid evidence.
+        honest = self._interval(29, 0, 29)
+        ci = dict(honest, lower_milli=honest["lower_milli"] - 1)
+        certificate = self.fixture.certificate(confidence_interval=ci)
+        validation = self.fixture.validator.validate(
+            certificate, self.fixture.candidate)
+        self.assertTrue(validation.ok, validation.failures)
 
     def test_interval_reconstructed_at_claimed_confidence(self):
-        from statistics import NormalDist
-        from sis.v3.learning_qualification import (
-            newcombe_difference_interval)
-        fixture = self._paired_fixture()
-        n = len(fixture.entries)
-        # delta=1.0. A bound one milli inside the reconstructed 99%
-        # interval is honest at 95% but not at the claimed 99%.
-        lower99, _ = newcombe_difference_interval(
-            n, n, 0, n, z=NormalDist().inv_cdf(0.995))
-        too_narrow = round(1000 * lower99) + 1
-        certificate = fixture.certificate(confidence_interval={
-            "method": "wilson", "confidence_milli": 990,
+        n = len(self.fixture.entries)
+        # A bound one milli inside the reconstructed 99% interval is not
+        # the reconstruction, even though it fits a 95% interval.
+        too_narrow = self._interval(
+            n, 0, n, confidence_milli=990)["lower_milli"] + 1
+        certificate = self.fixture.certificate(confidence_interval={
+            "method": "newcombe", "confidence_milli": 990,
             "lower_milli": too_narrow, "upper_milli": 1000,
             "point_estimate_milli": 1000})
-        validation = fixture.validator.validate(
-            certificate, fixture.candidate)
+        validation = self.fixture.validator.validate(
+            certificate, self.fixture.candidate)
         self.assertFalse(validation.ok)
         self.assertIn("paired_interval_not_narrower", validation.failures)
-        certificate = fixture.certificate(confidence_interval={
-            "method": "wilson", "confidence_milli": 990,
+        certificate = self.fixture.certificate(confidence_interval={
+            "method": "newcombe", "confidence_milli": 990,
             "lower_milli": too_narrow - 1, "upper_milli": 1000,
             "point_estimate_milli": 1000})
-        validation = fixture.validator.validate(
-            certificate, fixture.candidate)
+        validation = self.fixture.validator.validate(
+            certificate, self.fixture.candidate)
         self.assertTrue(validation.ok, validation.failures)
 
     def test_partial_evaluation_cannot_hide_paired_losses(self):
-        fixture = self._paired_fixture()
+        fixture = self.fixture
         n = len(fixture.entries)
         # Two claimed losses; only one task is left "unevaluated", so at
         # most one loss may go uncounted and regressions=0 must fail.
         for entry in fixture.entries[:2]:
             entry["baseline_outcome"] = "pass"
             entry["outcome"] = "fail"
-        delta = round(1000 * (n - 2 - 2) / n)
+        ci = self._interval(n - 2, 2, n)
         certificate = fixture.certificate(
-            confidence_interval={
-                "method": "wilson", "confidence_milli": 950,
-                "lower_milli": -1000, "upper_milli": 1000,
-                "point_estimate_milli": delta},
+            confidence_interval=ci,
             negative_transfer_results={
                 "evaluated": n - 1, "regressions": 0,
                 "negative_transfer_count": 0, "rate_milli": 0})
@@ -1121,10 +1128,7 @@ class PairedStatisticsTests(unittest.TestCase):
         # Counting the one accountable loss satisfies the bound (the
         # second loss legitimately falls on the unevaluated task).
         certificate = fixture.certificate(
-            confidence_interval={
-                "method": "wilson", "confidence_milli": 950,
-                "lower_milli": -1000, "upper_milli": 1000,
-                "point_estimate_milli": delta},
+            confidence_interval=ci,
             negative_transfer_results={
                 "evaluated": n - 1, "regressions": 1,
                 "negative_transfer_count": 0, "rate_milli": 0})
@@ -1132,11 +1136,14 @@ class PairedStatisticsTests(unittest.TestCase):
             certificate, fixture.candidate)
         self.assertNotIn("paired_regressions", validation.failures)
 
-    def test_policy_can_require_paired_outcomes(self):
+    def test_policy_primary_metric_must_agree(self):
+        # Reproduced gap: a policy rebound for a different improvement
+        # metric must not qualify a certificate issued for the protocol's
+        # metric. Agreement is three-way: policy = certificate = protocol.
         import dataclasses
         from sis.v3.evaluation_certificate import QualificationValidator
         policy = dataclasses.replace(
-            self.fixture.policy, require_paired_outcomes=True)
+            self.fixture.policy, primary_metric="cost_reduction")
         validator = QualificationValidator(
             policy,
             certificate_authority=self.fixture.cert_authority,
@@ -1149,7 +1156,65 @@ class PairedStatisticsTests(unittest.TestCase):
         validation = validator.validate(
             certificate, self.fixture.candidate)
         self.assertFalse(validation.ok)
+        self.assertIn("policy_primary_metric", validation.failures)
+
+    def test_policy_requires_paired_outcomes_by_default(self):
+        # The default policy refuses a certificate with no paired
+        # matrix; the legacy opt-out must be set explicitly.
+        self.assertTrue(self.fixture.policy.require_paired_outcomes)
+        for entry in self.fixture.entries:
+            del entry["baseline_outcome"]
+        certificate = self.fixture.certificate()
+        validation = self.fixture.validator.validate(
+            certificate, self.fixture.candidate)
+        self.assertFalse(validation.ok)
         self.assertIn("paired_outcomes_required", validation.failures)
+
+    def test_explicit_opt_out_allows_unpaired_certificates(self):
+        import dataclasses
+        from sis.v3.evaluation_certificate import QualificationValidator
+        policy = dataclasses.replace(
+            self.fixture.policy, require_paired_outcomes=False)
+        validator = QualificationValidator(
+            policy,
+            certificate_authority=self.fixture.cert_authority,
+            delivery_authority=self.fixture.delivery_authority,
+            protocol_registry=self.fixture.protocols,
+            receipt_resolver=self.fixture.stack.resolve_receipt,
+            delivery_resolver=self.fixture.deliveries.__getitem__)
+        for entry in self.fixture.entries:
+            del entry["baseline_outcome"]
+        certificate = self.fixture.certificate(
+            qualification_policy_digest=policy.digest)
+        validation = validator.validate(
+            certificate, self.fixture.candidate)
+        self.assertTrue(validation.ok, validation.failures)
+
+    def test_partial_pairing_fails_even_with_opt_out(self):
+        # A certificate that pairs only a subset of receipts is neither
+        # valid strict evidence nor a clean legacy artifact: the opt-out
+        # exists for certificates with no paired matrix at all, so
+        # selective pairing cannot skip the reconstruction checks under
+        # any policy.
+        import dataclasses
+        from sis.v3.evaluation_certificate import QualificationValidator
+        policy = dataclasses.replace(
+            self.fixture.policy, require_paired_outcomes=False)
+        validator = QualificationValidator(
+            policy,
+            certificate_authority=self.fixture.cert_authority,
+            delivery_authority=self.fixture.delivery_authority,
+            protocol_registry=self.fixture.protocols,
+            receipt_resolver=self.fixture.stack.resolve_receipt,
+            delivery_resolver=self.fixture.deliveries.__getitem__)
+        for entry in self.fixture.entries[:3]:
+            del entry["baseline_outcome"]
+        certificate = self.fixture.certificate(
+            qualification_policy_digest=policy.digest)
+        validation = validator.validate(
+            certificate, self.fixture.candidate)
+        self.assertFalse(validation.ok)
+        self.assertIn("paired_outcomes_uniform", validation.failures)
 
 
 if __name__ == "__main__":

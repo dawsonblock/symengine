@@ -56,7 +56,7 @@ PYTHONPATH=src:. python3 -m pytest -q
 ```
 
 | Case | Result |
-|---|---|
+| --- | --- |
 | Forged signature / untrusted signer / missing verifier | rejected in-tx |
 | Unbound authority commit | rejected |
 | Duplicate `(target, kind)` revocation | conflict |

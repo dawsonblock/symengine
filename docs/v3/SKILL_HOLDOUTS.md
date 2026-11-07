@@ -36,7 +36,7 @@ entry.
 ## Registered examples
 
 | skill | tier | fixture (buggy state) | private test asserts | guided artifact |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | `write-skills` | A | `SKILL.md` without frontmatter | `name`/`description` frontmatter, a heading and a bullet | `SKILL.md` |
 | `php2shell-check` | A | `FROM php:8.4-fpm` (floating, vulnerable) | pinned `php:8.4.27` and a findings file naming CVE-2026-109618 | `Dockerfile`, `findings.md` |
 | `write-tests` | A | `calc.py` with no tests | the submitted suite passes on the original **and fails on a mutated implementation** | `test_calc.py` |

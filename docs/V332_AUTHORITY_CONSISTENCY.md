@@ -8,7 +8,7 @@ claims remain unsupported.
 ## Baseline
 
 | Item | Value |
-|---|---|
+| --- | --- |
 | Baseline version | 3.3.1 |
 | Baseline commit | `c6b6ea7eb9f7807ab5c898a20ca229991f90d8cd` |
 | Baseline suite | 926 passed, 3 skipped |

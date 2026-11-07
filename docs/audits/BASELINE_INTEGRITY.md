@@ -18,7 +18,7 @@ level against the embedded `RELEASE_SHA256.json` (263 entries).
 ## Findings (see evidence/baseline/integrity_findings.json)
 
 | File | Finding | Disposition |
-|---|---|---|
+| --- | --- | --- |
 | `src/sis/v3/verifier.py` | hash mismatch | Changed by `07a9174` — `statement_digest` registration + enforcement. Legitimate. |
 | `tests/v3/test_receipt_signatures.py` | hash mismatch | Changed by `07a9174` — statement-binding tests. Legitimate. |
 | `tools/live_study.py` | hash mismatch | Changed by `5c89128`, `d56616c`, `07a9174` — v3.2 capture/kill/metering + review fixes. Legitimate. |

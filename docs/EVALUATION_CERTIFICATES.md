@@ -10,7 +10,7 @@ the candidate's instructions were delivered.
 ## Evidence classes
 
 | Class | Meaning | Production promotion |
-|---|---|---|
+| --- | --- | --- |
 | `exploratory` | research signal, underpowered or off-plan | never |
 | `demonstration` | scripted/machinery evidence | never |
 | `confirmatory` | real agent, hidden holdout, conforming protocol, sufficient sample | may qualify |
@@ -70,6 +70,8 @@ supplied by an optimizer is not delivery evidence.
 - whether the interval's lower bound must be positive;
 - maximum negative-transfer rate and regressions;
 - delivery-attestation requirement;
+- paired baseline outcomes (required by default; `False` is the
+  explicit, digest-visible legacy opt-out);
 - authorized repository digests and task ids;
 - protocol-conformance requirement.
 
@@ -86,10 +88,19 @@ supplied by an optimizer is not delivery evidence.
 9. receipt count, uniqueness and authentication;
 10. protocol conformance (not just a flag: executed count and declared
     sample are recomputed);
-11. statistical acceptance;
-12. negative transfer/regressions;
+11. statistical acceptance: when receipts are paired, the claimed point
+    estimate must equal the paired delta and the claimed interval must
+    cover the Newcombe interval reconstructed at the claimed confidence
+    level;
+12. negative transfer/regressions, including paired losses that may not
+    hide in unevaluated tasks;
 13. certificate revocation/expiry;
-14. repository/task authorization.
+14. repository/task authorization;
+15. primary-metric agreement: the certificate, the qualification policy
+    and the protocol must all name the same improvement metric;
+16. paired baseline outcomes: every receipt must carry
+    `baseline_outcome` unless the policy explicitly opts out, and
+    partial pairing never qualifies.
 
 Any failure blocks production qualification. A forged `conforms=true`
 flag with two receipts and a 29-task protocol fails

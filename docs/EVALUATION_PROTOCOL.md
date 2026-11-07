@@ -3,7 +3,7 @@
 ## Five arms
 
 | Arm | Configuration |
-|---|---|
+| --- | --- |
 | A | baseline coding agent, no SIS guidance |
 | B | baseline + qualified experience memory |
 | C | baseline + qualified evolved skills |

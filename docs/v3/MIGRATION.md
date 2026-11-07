@@ -3,7 +3,7 @@
 ## Compatibility matrix
 
 | Surface | v2.4.0 behavior | M0 change | Migration impact |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Python package | `sis` v2.4 public modules | Additive `sis.v3` namespace and `SCHEMA_VERSION = 1` | Existing imports and function signatures remain unchanged |
 | ToolBridge | Existing read-only tools, including experimental `sis_code_preview` | No new tool is registered in the legacy bridge | Agent behavior remains unchanged unless the v3 module is explicitly called |
 | HTTP | Existing routes and keyed operator separation | Central explicit POST handler/access inventory; unknown policy is denied | Keyed reader/admin behavior remains; unkeyed loopback demo remains for compatibility |
@@ -100,13 +100,22 @@ in external review. Operational impact:
    authorization snapshot and revalidates it before commit; a procedure
    revocation landing mid-decision now abstains instead of serving stale
    authority.
-6. **Paired statistical claims are reconstructed.** Certificate
-   `individual_task_receipts` may carry `baseline_outcome`; when all
-   receipts do, `QualificationValidator` reconstructs the paired point
-   estimate, Newcombe interval, and regression counts and rejects claims
-   narrower than the data. Set
-   `QualificationPolicy.require_paired_outcomes=True` to require the
-   paired matrix outright.
+6. **Paired statistical claims are required and reconstructed.**
+   Certificate `individual_task_receipts` carry `baseline_outcome`;
+   `QualificationPolicy.require_paired_outcomes` now defaults to
+   `True`, so every receipt must name a baseline outcome. The validator
+   reconstructs the paired point estimate, the Newcombe interval at the
+   claimed confidence level, and the regression floor — claims narrower
+   than the data, or a `primary_metric` that does not agree three ways
+   across policy, certificate and protocol, do not qualify. The legacy
+   opt-out is explicit: set `require_paired_outcomes=False` on the
+   policy for certificates minted before `baseline_outcome` existed.
+   The flag is part of the policy digest, so a permissive policy is
+   visible to every consumer. Note the digest changes with the new
+   default: existing signed certificates remain valid historical
+   artifacts, but they cannot be re-bound to a new policy digest —
+   deployments moving to the default must issue *new* signed
+   certificates under the recomputed policy digest.
 7. **`_conflicts` polarity heuristic tightened.** A negated instruction
    conflicts with an affirmative or unqualified instruction on the same
    terms ("always deploy" vs "never deploy"), so
