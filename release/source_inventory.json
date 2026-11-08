@@ -961,8 +961,8 @@
       "sha256": "0ac3109042e70e24b945ac16d66f2077a2b46b9cb89966a5771c07a89893ec18"
     },
     "src/sis/v3/memory.py": {
-      "bytes": 17966,
-      "sha256": "4eb264124781cd95e90364d6ce7e5e1619c18212dd4be2240fb15f936a380c87"
+      "bytes": 23507,
+      "sha256": "30ff9368f46675527ebd02d910a7f1fae23a8cc5510c340c3d6af1e62c6bd015"
     },
     "src/sis/v3/nonce_store.py": {
       "bytes": 2267,
@@ -993,8 +993,8 @@
       "sha256": "82ec6a87205ba0599673e0cc8c29c7fc7f73a6510578b009a39d8b8453cd07af"
     },
     "src/sis/v3/retrieval.py": {
-      "bytes": 9195,
-      "sha256": "6a3fe839f3e8b3e2f0400ece68ff77737008dce63acaae002032d190eb31f969"
+      "bytes": 11034,
+      "sha256": "f15e2a7ae5d11130aff54fb985f2235ad9dd5e7e9794ef61085b88746e5b96bb"
     },
     "src/sis/v3/revocation.py": {
       "bytes": 3833,
@@ -1309,8 +1309,8 @@
       "sha256": "ae1e520c21e18ba30f1af133324677293394eba74e07cc63f0f3d0f8148841e8"
     },
     "tests/v3/test_memory.py": {
-      "bytes": 9260,
-      "sha256": "90b3c3515de29326f3f7daa149f1ab0b574c6473fd3759e05b07cb7941a99180"
+      "bytes": 11337,
+      "sha256": "93898b3a972b9aaba532c99a8588cea7c6479a763c26cf21ec2bc94cb550be0d"
     },
     "tests/v3/test_migrate_authority.py": {
       "bytes": 8689,
@@ -1409,8 +1409,8 @@
       "sha256": "2ffb24bdbbb8d4c7d1f61a853cccc253fd24486e234cb2f8d4e6e2265cd329a0"
     },
     "tests/v3/test_v333_trust_boundary.py": {
-      "bytes": 23728,
-      "sha256": "4c8aea3781a3f38c055fec6c967a84567b83306c504661e1b76a1823f8a286e1"
+      "bytes": 26320,
+      "sha256": "4c99efaf703d129a95d952989dfd7f0b88cc8051dea9d33d46a6373addd31d71"
     },
     "tests/v3/test_verified_episode.py": {
       "bytes": 7702,
@@ -1477,12 +1477,12 @@
       "sha256": "b243d8bb4e3f67370575475be37434b61686d914f67f594950cdee885875458a"
     },
     "tools/governed_campaign.py": {
-      "bytes": 29275,
-      "sha256": "a574a5c71916195fcab2f0663c97ae50b2a80be703da965a1bcd8ae5edd14cad"
+      "bytes": 29331,
+      "sha256": "4662073ec172b623d950c975902b7fd845c20051c3139216628f77b4e82a076e"
     },
     "tools/governed_live_campaign.py": {
-      "bytes": 30188,
-      "sha256": "5ccecfbfb3465104128f4951d740572942d3feead019a5d88275667ff3c2ee5d"
+      "bytes": 30244,
+      "sha256": "c5b34d8ddc0fdb56760208238c0b6e8d705b9cbaa88e27fd9198b49da0cef79d"
     },
     "tools/ingest_skills.py": {
       "bytes": 8380,
@@ -1539,5 +1539,5 @@
   },
   "release": "SIS-v3.3.3",
   "schema_version": 1,
-  "source_commit": "1851191fb30c3ea45f72ebd6ffe1e9e900b43217"
+  "source_commit": "4d70f0dafb3f6ecc4385ea4e54357fb3cca2eff1"
 }
