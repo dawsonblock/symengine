@@ -230,6 +230,7 @@ class RestartAndStaleWriterTests(unittest.TestCase):
 
     def test_stale_controller_rejected_at_chain_head_check(self):
         db, controller, sbytes, kid, receipt = _stack(self.root / "s")
+        self.addCleanup(db.close)
         seed_record(db, _proc(pid="p1", status="draft"))
         stale = PromotionController(
             db, operator_token_digest=operator_token_digest(TEST_TOKEN),
@@ -244,6 +245,7 @@ class RestartAndStaleWriterTests(unittest.TestCase):
         """Even if a controller passes the pre-check, the in-transaction head
         re-check rejects a commit made on a stale view."""
         db, controller, sbytes, kid, receipt = _stack(self.root / "s")
+        self.addCleanup(db.close)
         seed_record(db, _proc(pid="p1", status="draft"))
         controller.transition("p1", "candidate", actor_role="operator",
                               actor_identity="op", operator_token=TEST_TOKEN)
@@ -337,6 +339,7 @@ class DoublePromotionTests(unittest.TestCase):
 
     def test_identical_decision_cannot_commit_twice(self):
         db, controller, sbytes, kid, receipt = _stack(self.root / "s")
+        self.addCleanup(db.close)
         seed_record(db, _proc(pid="p1", status="draft"))
         decision = controller.transition(
             "p1", "candidate", actor_role="operator",
@@ -350,6 +353,7 @@ class DoublePromotionTests(unittest.TestCase):
 
     def test_repeated_transition_is_new_decision_not_replay(self):
         db, controller, sbytes, kid, receipt = _stack(self.root / "s")
+        self.addCleanup(db.close)
         seed_record(db, _proc(pid="p1", status="draft"))
         controller.transition("p1", "candidate", actor_role="operator",
                               actor_identity="op", operator_token=TEST_TOKEN)

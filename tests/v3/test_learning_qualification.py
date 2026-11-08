@@ -212,10 +212,13 @@ class CampaignTests(unittest.TestCase):
         return {"tokens_used": 10, "tools_used": 1}
 
     def _protocol(self, sample_size=2):
+        # A two-task campaign exercises the plumbing and is reported as
+        # demonstration evidence, so the plan is registered as a
+        # diagnostic screen rather than a powered experiment.
         return preregister(
             primary_metric="paired solved_delta E vs A",
             method="mcnemar_exact", alpha=0.05, min_effect=1.0,
-            sample_size=sample_size,
+            sample_size=sample_size, powered=False,
             budget={"wall_seconds": 60, "token_budget": 1000,
                     "tool_budget": 100},
             arms=GOVERNED_ARMS)

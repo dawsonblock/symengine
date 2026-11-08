@@ -105,10 +105,13 @@ def run_demo(output: Path) -> int:
     with tempfile.TemporaryDirectory(prefix="sis-five-arm-demo-") as temp:
         root = Path(temp)
         verifier, tasks, profile = _build_demo(root)
+        # Two scripted tasks exercise the plumbing, not a power claim:
+        # the plan is registered as diagnostic so the demo report does
+        # not pretend to be an underpowered experiment.
         protocol = preregister(
             primary_metric="paired solved_delta E vs A",
             method="mcnemar_exact", alpha=0.05, min_effect=1.0,
-            sample_size=len(tasks),
+            sample_size=len(tasks), powered=False,
             budget={"wall_seconds": 120, "token_budget": 1000,
                     "tool_budget": 100},
             arms=GOVERNED_ARMS)

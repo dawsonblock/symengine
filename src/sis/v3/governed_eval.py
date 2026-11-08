@@ -101,10 +101,37 @@ def preregister(
     expected_baseline: float = 0.6,
     expected_treatment: float = 0.4,
     power: float = 0.8,
+    powered: bool = True,
+    allow_underpowered: bool = False,
 ) -> dict:
-    """Freeze the analysis plan; the digest proves it preceded the run."""
-    required_n = required_sample_size(
-        expected_baseline, expected_treatment, power=power, alpha=alpha)
+    """Freeze the analysis plan; the digest proves it preceded the run.
+
+    ``powered=True`` (the default) freezes a powered-experiment plan: the
+    declared expectations are recomputed into ``power_analysis.required_n``
+    and validators can enforce that the executed run met the floor. A
+    powered plan whose declared ``sample_size`` is below that recomputed
+    floor is refused at registration — a plan that contradicts its own
+    power target is an authoring error, not a finding to discover after
+    the run. ``allow_underpowered=True`` is the explicit, digest-visible
+    opt-out for a deliberately exploratory run; it records
+    ``power_analysis.underpowered_declared`` so the report and any
+    downstream certificate carry the shortfall rather than hide it.
+    ``powered=False`` registers an explicit *diagnostic* plan — a
+    deterministic screen such as a one-task candidate probe — which binds
+    the same fields but carries no power claim. A diagnostic protocol
+    honestly reports what it is: it can never satisfy production
+    qualification because there is no floor for a validator to verify.
+    """
+    if type(powered) is not bool:
+        raise ContractError("powered must be a bool")
+    if type(allow_underpowered) is not bool:
+        raise ContractError("allow_underpowered must be a bool")
+    if not powered and allow_underpowered:
+        raise ContractError("allow_underpowered requires a powered plan")
+    if type(sample_size) is not int:
+        raise ContractError("sample_size must be an int")
+    if sample_size < 1:
+        raise ContractError("sample_size must be positive")
     doc = {
         "schema_version": 1,
         "primary_metric": primary_metric,
@@ -115,13 +142,25 @@ def preregister(
         "budget": dict(budget),
         "arms": list(arms),
         "notes": notes,
-        "power_analysis": {
+    }
+    if powered:
+        required_n = required_sample_size(
+            expected_baseline, expected_treatment, power=power, alpha=alpha)
+        doc["power_analysis"] = {
             "expected_baseline": expected_baseline,
             "expected_treatment": expected_treatment,
             "power": power,
             "required_n": required_n,
-        },
-    }
+        }
+        if sample_size < required_n:
+            if not allow_underpowered:
+                raise ContractError(
+                    f"sample_size={sample_size} is below the recomputed "
+                    f"power floor {required_n}; register a diagnostic plan "
+                    "or pass allow_underpowered=True deliberately")
+            doc["power_analysis"]["underpowered_declared"] = True
+    else:
+        doc["analysis_kind"] = "diagnostic"
     # canonical_json rejects floats; digest a deterministic normalized copy
     normalized = json.loads(
         json.dumps(doc, sort_keys=True),
@@ -138,6 +177,17 @@ def required_sample_size(p1: float = 0.6, p2: float = 0.4, *,
     For discordant-pair share q = p1 - p2 > 0 with discordant rate d:
     n ≈ d * ((z_1-α/2 + z_power) / q)². Z-scores are computed exactly for
     the requested alpha/power — no silent lookup substitution.
+
+    Limitations: this is a planning heuristic, not a guaranteed paired
+    power computation. The discordant rate
+    ``d = p1*(1-p2) + p2*(1-p1)`` treats the two arms' solve outcomes as
+    marginally independent; the actual power of a paired McNemar test
+    depends on the *joint* discordant split (which tasks each arm wins
+    and the other loses), which a two-proportion summary cannot model.
+    True paired analyses can require more or fewer discordant pairs
+    depending on within-task correlation. The normal approximation is
+    also optimistic at small n — the ``max(4, ...)`` floor keeps the
+    returned value from becoming absurd, not from being exact.
     """
     if not (0 < p2 < p1 < 1):
         raise ContractError("expected 0 < p2 < p1 < 1")
@@ -151,6 +201,38 @@ def required_sample_size(p1: float = 0.6, p2: float = 0.4, *,
     d = p1 * (1 - p2) + p2 * (1 - p1)
     q = p1 - p2
     return max(4, math.ceil(d * ((z_a + z_p) / q) ** 2))
+
+
+def protocol_required_sample_size(protocol: Mapping) -> int:
+    """Recompute the registered power floor; reject absent or inconsistent data.
+
+    Powered protocols must carry a ``power_analysis`` block whose
+    ``required_n`` agrees with the value recomputed from the registered
+    expectations and ``alpha`` — a caller cannot weaken the floor by
+    editing the stored result. Diagnostic protocols
+    (``analysis_kind == "diagnostic"``) intentionally have no floor to
+    verify, so they are rejected categorically — a forged block mixing
+    ``power_analysis`` into a diagnostic document cannot smuggle a floor
+    into production qualification.
+    """
+    if protocol.get("analysis_kind") == "diagnostic":
+        raise ContractError("power_analysis_diagnostic")
+    analysis = protocol.get("power_analysis")
+    if not isinstance(analysis, Mapping):
+        raise ContractError("power_analysis_missing")
+    try:
+        values = [analysis["expected_baseline"], analysis["expected_treatment"],
+                  analysis["power"], protocol["alpha"]]
+        if any(type(value) not in (int, float) or not math.isfinite(value)
+               for value in values):
+            raise ContractError("power_analysis_invalid")
+        required = required_sample_size(values[0], values[1],
+                                        power=values[2], alpha=values[3])
+    except (KeyError, TypeError, ValueError, OverflowError) as exc:
+        raise ContractError("power_analysis_invalid") from exc
+    if type(analysis.get("required_n")) is not int or analysis["required_n"] != required:
+        raise ContractError("power_analysis_required_n_mismatch")
+    return required
 
 
 def compute_metrics(report: Mapping, *, served: Mapping | None = None,
@@ -333,11 +415,13 @@ def _protocol_conformance(protocol: Mapping, report: Mapping, *,
     """Check the executed run against the preregistered plan.
 
     The protocol digest proves a plan existed; this block records whether
-    *this* run honored it — budget, arm set, and the declared sample
-    size. ``conforms=False`` is reported, never hidden: an underpowered
-    or off-plan run is still honest evidence. ``arms=None`` skips the arm
-    comparison for a single-candidate probe, which is deliberately not
-    the preregistered arm set.
+    *this* run honored it — budget, arm set, declared sample size, and,
+    for powered protocols, the recomputed power floor. ``conforms=False``
+    is reported, never hidden: an underpowered or off-plan run is still
+    honest evidence. ``arms=None`` skips the arm comparison for a
+    single-candidate probe, which is deliberately not the preregistered
+    arm set. Diagnostic protocols (``analysis_kind="diagnostic"``) carry
+    no power claim, so only the declared-plan checks apply to them.
     """
     mismatches: list[str] = []
     declared_budget = protocol.get("budget") or {}
@@ -354,6 +438,29 @@ def _protocol_conformance(protocol: Mapping, report: Mapping, *,
         mismatches.append(
             f"arms:expected={list(declared_arms)} actual={list(arms)}")
     declared_n = protocol.get("sample_size")
+    if type(declared_n) is not int or declared_n < 1:
+        mismatches.append("sample_size_invalid")
+    # A diagnostic protocol honestly declares a non-powered plan (a
+    # deterministic screen), so there is no floor to check. Powered
+    # protocols — and anything not explicitly marked diagnostic — must
+    # carry a consistent power_analysis and meet its recomputed floor.
+    if protocol.get("analysis_kind") == "diagnostic":
+        if "power_analysis" in protocol:
+            mismatches.append("power_analysis_diagnostic")
+    else:
+        try:
+            required_n = protocol_required_sample_size(protocol)
+        except ContractError as exc:
+            mismatches.append(str(exc))
+        else:
+            if type(declared_n) is int and declared_n < required_n:
+                mismatches.append(
+                    f"power_analysis:preregistered={declared_n}"
+                    f" required={required_n}")
+            if n_tasks < required_n:
+                mismatches.append(
+                    f"power_analysis:required={required_n} ran={n_tasks}"
+                    " (underpowered)")
     if type(declared_n) is int and n_tasks < declared_n:
         mismatches.append(
             f"sample_size:preregistered={declared_n} ran={n_tasks}"

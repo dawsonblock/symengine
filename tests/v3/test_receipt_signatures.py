@@ -1,15 +1,21 @@
+import os
 import shutil
+import stat
 import sys
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 
+from sis.errors import InvalidInput
 from sis.v3 import signatures
+from sis.vault_storage import assert_private_acl, create_private_file
 from sis.v3.contracts import ContractError, OutcomeReceiptV1, TaskEnvelopeV1
 from sis.v3.policy import AuthorizationDenied
 from sis.v3.runner import LocalSubprocessExecutor, ResourceLimits
 from sis.v3.verifier import (
     EvaluationRejected,
+    EvaluatorKeyStore,
     JournalIntegrityError,
     OutcomeVerifier,
     verify_receipt_signature,
@@ -142,6 +148,118 @@ class EvaluatorLimitsTests(unittest.TestCase):
             self.assertEqual(relaxed.limits.wall_seconds, 90)
 
 
+class EvaluatorKeyCustodyTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+
+    def test_existing_empty_or_malformed_seed_fails_closed_unchanged(self):
+        for bad in (b"", b"short"):
+            with self.subTest(bad=bad):
+                key_dir = self.root / f"keys-{len(bad)}"
+                store = EvaluatorKeyStore(key_dir)
+                # An existing seed file — created privately, as the
+                # keystore itself would — is never treated as absent
+                # and never replaced: malformed material fails closed.
+                create_private_file(store.seed_path, bad, "evaluator seed")
+                with self.assertRaises(JournalIntegrityError):
+                    EvaluatorKeyStore(key_dir).load_or_create()
+                self.assertEqual(store.seed_path.read_bytes(), bad)
+
+    def test_losing_creator_cannot_replace_seed(self):
+        winner = EvaluatorKeyStore(self.root / "keys")
+        seed, _ = winner.load_or_create()
+        public_bytes = winner.public_path.read_bytes()
+        # A second keystore losing the exclusive-create race must fail
+        # closed without touching the winner's material or identity.
+        loser = EvaluatorKeyStore(self.root / "keys")
+        with self.assertRaises(FileExistsError):
+            loser._publish_seed(b"x" * 32, b"y" * 32)
+        self.assertEqual(winner.seed_path.read_bytes(), seed)
+        self.assertEqual(winner.public_path.read_bytes(), public_bytes)
+        reloaded = EvaluatorKeyStore(self.root / "keys")
+        self.assertEqual(reloaded.load_or_create()[0], seed)
+
+    def test_missing_public_record_is_recreated_from_the_seed(self):
+        store = EvaluatorKeyStore(self.root / "keys")
+        seed, public = store.load_or_create()
+        # A crash between the seed create and the public write leaves the
+        # export missing. The seed is the authority, so the record is
+        # rebuilt without changing identity.
+        store.public_path.unlink()
+        reloaded = EvaluatorKeyStore(self.root / "keys")
+        self.assertEqual(reloaded.load_or_create(), (seed, public))
+        self.assertEqual(store.public_path.read_bytes(), public)
+
+    def test_existing_public_record_is_never_overwritten(self):
+        store = EvaluatorKeyStore(self.root / "keys")
+        seed, public = store.load_or_create()
+        store.public_path.write_bytes(b"z" * 32)
+        # The repair fills a hole; it never replaces a record that already
+        # holds a full key, so an inconsistency stays visible.
+        reloaded = EvaluatorKeyStore(self.root / "keys")
+        self.assertEqual(reloaded.load_or_create(), (seed, public))
+        self.assertEqual(store.public_path.read_bytes(), b"z" * 32)
+
+    def test_existing_public_key_directory_is_rejected_not_repaired(self):
+        if os.name != "posix":
+            self.skipTest("POSIX permission semantics")
+        key_dir = self.root / "keys"
+        key_dir.mkdir()
+        os.chmod(key_dir, 0o755)
+        with self.assertRaises(InvalidInput):
+            EvaluatorKeyStore(key_dir)
+        # Rejected, never repaired in place: the mode stays as found.
+        self.assertEqual(stat.S_IMODE(key_dir.lstat().st_mode), 0o755)
+
+    def test_symlinked_key_directory_is_rejected(self):
+        if os.name != "posix":
+            self.skipTest("POSIX symlink semantics")
+        real = self.root / "real"
+        real.mkdir(0o700)
+        link = self.root / "keys"
+        link.symlink_to(real, target_is_directory=True)
+        with self.assertRaises(InvalidInput):
+            EvaluatorKeyStore(link)
+        self.assertEqual(real.lstat().st_mode & 0o777, 0o700)
+
+    def test_concurrent_creators_publish_single_identity(self):
+        key_dir = self.root / "keys"
+        barrier = threading.Barrier(3)
+        outcomes = {}
+
+        def create(index):
+            try:
+                barrier.wait(timeout=10)
+                # Construct inside the race: a real second evaluator
+                # creates the key directory as well as the seed.
+                store = EvaluatorKeyStore(key_dir)
+                outcomes[index] = store.load_or_create()[0]
+            except Exception as error:  # surfaced by the assertions below
+                outcomes[index] = error
+
+        threads = [threading.Thread(target=create, args=(i,))
+                   for i in range(2)]
+        for thread in threads:
+            thread.start()
+        barrier.wait(timeout=10)
+        for thread in threads:
+            thread.join(timeout=20)
+        # Both creators succeed and converge on the one published
+        # identity: the loser waits out the winner's payload write
+        # instead of failing on a half-created seed.
+        self.assertEqual(len(outcomes), 2)
+        for index, value in outcomes.items():
+            self.assertIsInstance(
+                value, bytes, f"creator {index} failed: {value!r}")
+        self.assertEqual(len(set(outcomes.values())), 1)
+        self.assertEqual((key_dir / "ed25519.seed").read_bytes(),
+                         outcomes[0])
+        self.assertEqual(EvaluatorKeyStore(key_dir).load_or_create()[0],
+                         outcomes[0])
+
+
 class VerifierCustodyTests(VerifierFixture):
     def test_signed_receipt_round_trips_and_verifies_offline(self):
         receipt = self.evaluate()
@@ -151,7 +269,18 @@ class VerifierCustodyTests(VerifierFixture):
         self.assertEqual(record["key_id"], receipt.signer_key_id)
         self.assertTrue(verify_receipt_signature(receipt, record["public_key"]))
         self.assertTrue((self.key_dir / "ed25519.seed").is_file())
-        self.assertEqual((self.key_dir / "ed25519.seed").stat().st_mode & 0o777, 0o600)
+        if os.name == "posix":
+            self.assertEqual(
+                (self.key_dir / "ed25519.seed").stat().st_mode & 0o777,
+                0o600)
+        else:
+            # POSIX mode bits cannot express Windows privacy: the seed
+            # and its directory must carry a DACL limited to this
+            # user, SYSTEM, and Administrators — the same inspection the
+            # evaluator vault enforces.
+            assert_private_acl(
+                self.key_dir / "ed25519.seed", "evaluator seed")
+            assert_private_acl(self.key_dir, "evaluator key directory")
 
     def test_tampered_receipt_body_fails_verification(self):
         receipt = self.evaluate()

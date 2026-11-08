@@ -12,6 +12,7 @@ from pathlib import Path
 
 from sis.errors import InvalidInput, RuleRejected
 from sis.sealed_eval import EvaluatorVault, _mac, _metrics, _key_from_env
+from sis.vault_storage import private_directory
 from sis.validation import digest
 
 KEY = b'more_than_32_bytes_of_fixture_private_key_for_tests_only_2026'
@@ -27,7 +28,7 @@ def fixture():
 class TestVault(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
-        self.path = Path(self.tmp.name)/'private.sqlite3'
+        self.path = private_directory(Path(self.tmp.name)/'vault')/'private.sqlite3'
         self.vault = EvaluatorVault(self.path,key=KEY)
         self.dataset = fixture()
 
@@ -242,6 +243,7 @@ class TestCli(unittest.TestCase):
     def test_cli_evaluator_full_workflow(self):
         with tempfile.TemporaryDirectory() as td:
             td=Path(td)
+            vault=private_directory(td/'vdir')/'vault.sqlite3'
             (td/'dataset.json').write_text(json.dumps(fixture()),encoding='utf8')
             env={**os.environ,'SIS_EVAL_HMAC_KEY':KEY.decode('utf8'),
                  'PYTHONPATH':str(Path(__file__).resolve().parents[1]/'src')}
@@ -250,19 +252,19 @@ class TestCli(unittest.TestCase):
                 res=subprocess.run(cmd,env=env,cwd=td,capture_output=True,text=True,timeout=20)
                 self.assertEqual(res.returncode,expect,f'{cmd}: {res.stderr}')
                 return res
-            run('eval-seal',str(td/'dataset.json'),str(td/'public.json'),'--vault',str(td/'vault.sqlite3'))
-            run('eval-recover',str(td/'public.json'),'--vault',str(td/'vault.sqlite3'),
+            run('eval-seal',str(td/'dataset.json'),str(td/'public.json'),'--vault',str(vault))
+            run('eval-recover',str(td/'public.json'),'--vault',str(vault),
                 '--receipt',str(td/'early-receipt.json'),expect=2)
             self.assertFalse((td/'early-receipt.json').exists())
             run('eval-candidate',str(td/'public.json'),str(td/'candidate.json'))
-            run('eval-score',str(td/'public.json'),str(td/'candidate.json'),'--vault',str(td/'vault.sqlite3'),'--receipt',str(td/'receipt.json'))
-            run('eval-recover',str(td/'public.json'),'--vault',str(td/'vault.sqlite3'),
+            run('eval-score',str(td/'public.json'),str(td/'candidate.json'),'--vault',str(vault),'--receipt',str(td/'receipt.json'))
+            run('eval-recover',str(td/'public.json'),'--vault',str(vault),
                 '--receipt',str(td/'recovered.json'))
             self.assertEqual(json.loads((td/'recovered.json').read_text()),
                              json.loads((td/'receipt.json').read_text()))
-            output=run('eval-verify',str(td/'public.json'),str(td/'receipt.json'),'--vault',str(td/'vault.sqlite3'))
+            output=run('eval-verify',str(td/'public.json'),str(td/'receipt.json'),'--vault',str(vault))
             self.assertTrue(json.loads(output.stdout)['valid'])
-            run('eval-score',str(td/'public.json'),str(td/'candidate.json'),'--vault',str(td/'vault.sqlite3'),'--receipt',str(td/'receipt2.json'),expect=2)
+            run('eval-score',str(td/'public.json'),str(td/'candidate.json'),'--vault',str(vault),'--receipt',str(td/'receipt2.json'),expect=2)
             self.assertFalse((td/'receipt2.json').exists())
             run('eval-candidate',str(td/'public.json'),str(td/'candidate.json'),expect=2)
 

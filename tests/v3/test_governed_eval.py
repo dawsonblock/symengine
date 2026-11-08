@@ -7,14 +7,25 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from sis.v3.contracts import ContractError, TaskEnvelopeV1
+from sis.v3.contracts import ContractError, TaskEnvelopeV1, canonical_digest
 from sis.v3.governed_eval import (EvaluationPartition,
                                   assert_partition_disjoint,
                                   compute_metrics, preregister,
+                                  protocol_required_sample_size,
                                   required_sample_size, run_candidate_probe,
                                   run_governed_evaluation)
 
 REPO = Path(__file__).resolve().parents[2]
+
+
+def _forge(document):
+    """Re-digest a hand-built protocol document, as an attacker would."""
+    normalized = json.loads(
+        json.dumps({key: value for key, value in document.items()
+                    if key != "protocol_digest"}, sort_keys=True),
+        parse_float=lambda value: f"float:{value}")
+    return document | {"protocol_digest": canonical_digest(
+        "eval_protocol", 1, normalized)}
 
 
 def _task(task_id, digest):
@@ -59,11 +70,12 @@ class ProtocolTests(unittest.TestCase):
     def test_preregistration_freezes_digest(self):
         p = preregister(primary_metric="paired solved_delta E vs A",
                         method="mcnemar_exact", alpha=0.05,
-                        min_effect=1.0, sample_size=8,
+                        min_effect=1.0, sample_size=required_sample_size(),
                         budget={"wall_seconds": 60})
         self.assertEqual(len(p["protocol_digest"]), 64)
         q = preregister(primary_metric="x", method="m", alpha=0.01,
-                        min_effect=1.0, sample_size=4,
+                        min_effect=1.0,
+                        sample_size=required_sample_size(alpha=0.01),
                         budget={"wall_seconds": 60})
         self.assertNotEqual(p["protocol_digest"], q["protocol_digest"])
 
@@ -87,6 +99,128 @@ class ProtocolTests(unittest.TestCase):
             with self.assertRaises(ContractError):
                 required_sample_size(0.7, 0.3, **bad)
 
+    def _powered(self):
+        return preregister(
+            primary_metric="x", method="m", alpha=0.05, min_effect=1.0,
+            sample_size=103, budget={"wall_seconds": 60})
+
+    def test_power_analysis_missing_or_malformed_rejected(self):
+        with self.assertRaisesRegex(ContractError, "power_analysis_missing"):
+            protocol_required_sample_size(self._powered() | {
+                "power_analysis": None})
+        with self.assertRaisesRegex(ContractError, "power_analysis_missing"):
+            protocol_required_sample_size(
+                {"alpha": 0.05, "power_analysis": "opaque"})
+        # A diagnostic protocol declares no floor to verify.
+        diagnostic = self._diagnostic()
+        self.assertNotIn("power_analysis", diagnostic)
+        with self.assertRaisesRegex(ContractError, "power_analysis_diagnostic"):
+            protocol_required_sample_size(diagnostic)
+
+    def _diagnostic(self):
+        return preregister(
+            primary_metric="x", method="m", alpha=0.05, min_effect=1.0,
+            sample_size=1, powered=False, budget={"wall_seconds": 60})
+
+    def test_diagnostic_marker_cannot_smuggle_a_power_floor(self):
+        # A forged mixed document — diagnostic label plus a valid
+        # power_analysis — must not become a powered plan for production.
+        mixed = self._diagnostic() | {
+            "power_analysis": self._powered()["power_analysis"]}
+        with self.assertRaisesRegex(ContractError, "power_analysis_diagnostic"):
+            protocol_required_sample_size(mixed)
+
+    def test_powered_flag_must_be_a_bool(self):
+        for bad in (1, 0, "yes", None):
+            with self.assertRaisesRegex(ContractError, "powered"):
+                preregister(primary_metric="x", method="m", alpha=0.05,
+                            min_effect=1.0, sample_size=1, powered=bad,
+                            budget={"wall_seconds": 60})
+
+    def test_powered_plan_below_its_own_floor_is_refused(self):
+        # A plan that contradicts its own power target is an authoring
+        # error: the declared sample cannot be below the recomputed floor.
+        with self.assertRaisesRegex(ContractError, "below the recomputed"):
+            preregister(primary_metric="x", method="m", alpha=0.05,
+                        min_effect=1.0, sample_size=29,
+                        budget={"wall_seconds": 60})
+        self.assertEqual(preregister(
+            primary_metric="x", method="m", alpha=0.05, min_effect=1.0,
+            sample_size=29, expected_baseline=0.7, expected_treatment=0.3,
+            budget={"wall_seconds": 60})["power_analysis"]["required_n"], 29)
+
+    def test_underpowered_plan_is_registrable_only_when_declared(self):
+        plan = preregister(
+            primary_metric="x", method="m", alpha=0.05, min_effect=1.0,
+            sample_size=29, allow_underpowered=True,
+            budget={"wall_seconds": 60})
+        self.assertTrue(plan["power_analysis"]["underpowered_declared"])
+        self.assertEqual(plan["power_analysis"]["required_n"], 103)
+        self.assertEqual(protocol_required_sample_size(plan), 103)
+        # The declaration is inside the digested document, not beside it.
+        normalized = json.loads(
+            json.dumps({key: value for key, value in plan.items()
+                        if key != "protocol_digest"}, sort_keys=True),
+            parse_float=lambda value: f"float:{value}")
+        self.assertEqual(plan["protocol_digest"],
+                         canonical_digest("eval_protocol", 1, normalized))
+        undeclared = json.loads(json.dumps(normalized, sort_keys=True))
+        del undeclared["power_analysis"]["underpowered_declared"]
+        self.assertNotEqual(plan["protocol_digest"],
+                            canonical_digest("eval_protocol", 1, undeclared))
+
+    def test_allow_underpowered_flag_is_validated(self):
+        with self.assertRaisesRegex(ContractError, "allow_underpowered"):
+            preregister(primary_metric="x", method="m", alpha=0.05,
+                        min_effect=1.0, sample_size=1, powered=False,
+                        allow_underpowered=True,
+                        budget={"wall_seconds": 60})
+        for bad in (1, 0, "yes", None):
+            with self.assertRaisesRegex(ContractError, "allow_underpowered"):
+                preregister(primary_metric="x", method="m", alpha=0.05,
+                            min_effect=1.0, sample_size=1,
+                            allow_underpowered=bad,
+                            budget={"wall_seconds": 60})
+        with self.assertRaisesRegex(ContractError, "sample_size must be an int"):
+            preregister(primary_metric="x", method="m", alpha=0.05,
+                        min_effect=1.0, sample_size="29",
+                        budget={"wall_seconds": 60})
+        with self.assertRaisesRegex(ContractError, "sample_size must be positive"):
+            preregister(primary_metric="x", method="m", alpha=0.05,
+                        min_effect=1.0, sample_size=0, powered=False,
+                        budget={"wall_seconds": 60})
+
+    def test_power_analysis_invalid_values_rejected(self):
+        good = self._powered()["power_analysis"]
+        for corrupted in (
+                {**good, "expected_baseline": "high"},
+                {**good, "expected_treatment": None},
+                {**good, "power": float("nan")},
+                {**good, "power": float("inf")},
+                {**good, "expected_baseline": True},
+                {k: v for k, v in good.items()
+                 if k != "expected_treatment"},
+                {**good, "expected_baseline": 0.3,
+                 "expected_treatment": 0.7}):
+            protocol = self._powered() | {"power_analysis": corrupted}
+            with self.assertRaisesRegex(ContractError,
+                                        "power_analysis_invalid"):
+                protocol_required_sample_size(protocol)
+        with self.assertRaisesRegex(ContractError, "power_analysis_invalid"):
+            protocol_required_sample_size(
+                self._powered() | {"alpha": "0.05"})
+
+    def test_power_analysis_required_n_must_recompute(self):
+        good = self._powered()["power_analysis"]
+        for forged in (1, 104, 103.0, True, "103", None):
+            protocol = self._powered() | {
+                "power_analysis": {**good, "required_n": forged}}
+            with self.assertRaisesRegex(
+                    ContractError, "power_analysis_required_n_mismatch"):
+                protocol_required_sample_size(protocol)
+        self.assertEqual(
+            protocol_required_sample_size(self._powered()), 103)
+
 
 class _StubHarness:
     """Minimal harness double: returns a fixed report, records the call."""
@@ -105,11 +239,11 @@ class ConformanceTests(unittest.TestCase):
                                            "tool_budget": 10},
                 "solved_counts": {}}
 
-    def _run(self, protocol):
+    def _run(self, protocol, n_tasks=1):
         task = _task("h", "c" * 64)
         return run_governed_evaluation(
             _StubHarness(self._report()),
-            [(task, Path("/nonexistent"))],
+            [(task, Path("/nonexistent"))] * n_tasks,
             object(),
             budget=type("B", (), {"wall_seconds": 60})(),
             context_provider=None,
@@ -120,15 +254,67 @@ class ConformanceTests(unittest.TestCase):
     def test_conforming_run_records_conforms_true(self):
         report = self._run(preregister(
             primary_metric="x", method="m", alpha=0.05, min_effect=1.0,
-            sample_size=1, arms=("A", "E"),
-            budget={"wall_seconds": 60, "token_budget": 1000}))
+            sample_size=103, arms=("A", "E"),
+            budget={"wall_seconds": 60, "token_budget": 1000}), n_tasks=103)
         conf = report["governed"]["conformance"]
         self.assertTrue(conf["conforms"], conf["mismatches"])
+
+    def test_declared_sample_cannot_override_power_floor(self):
+        # A hand-built document (correctly re-digested) that declares 29
+        # tasks while carrying the 103-task floor must still be flagged:
+        # conformance recomputes the floor instead of trusting the plan.
+        protocol = _forge(preregister(
+            primary_metric="x", method="m", alpha=0.05, min_effect=1.0,
+            sample_size=103, arms=("A", "E"),
+            budget={"wall_seconds": 60, "token_budget": 1000})
+            | {"sample_size": 29})
+        conf = self._run(protocol, n_tasks=29)["governed"]["conformance"]
+        self.assertFalse(conf["conforms"])
+        self.assertTrue(any("required=103" in m for m in conf["mismatches"]))
+        protocol["power_analysis"]["required_n"] = 1
+        conf = self._run(protocol, n_tasks=29)["governed"]["conformance"]
+        self.assertIn("power_analysis_required_n_mismatch", conf["mismatches"])
+
+    def test_declared_underpowered_plan_still_reports_the_shortfall(self):
+        protocol = preregister(
+            primary_metric="x", method="m", alpha=0.05, min_effect=1.0,
+            sample_size=29, allow_underpowered=True, arms=("A", "E"),
+            budget={"wall_seconds": 60, "token_budget": 1000})
+        conf = self._run(protocol, n_tasks=29)["governed"]["conformance"]
+        self.assertFalse(conf["conforms"])
+        self.assertTrue(any("(underpowered)" in m
+                            for m in conf["mismatches"]))
+
+    def test_powered_protocol_missing_analysis_is_flagged(self):
+        plan = {"primary_metric": "x", "method": "m", "alpha": 0.05,
+                "sample_size": 1, "arms": ("A", "E"),
+                "budget": {"wall_seconds": 60, "token_budget": 1000}}
+        conf = self._run(plan)["governed"]["conformance"]
+        self.assertFalse(conf["conforms"])
+        self.assertIn("power_analysis_missing", conf["mismatches"])
+
+    def test_diagnostic_plan_conforms_without_power_claim(self):
+        protocol = preregister(
+            primary_metric="x", method="m", alpha=0.05, min_effect=1.0,
+            sample_size=1, powered=False, arms=("A", "E"),
+            budget={"wall_seconds": 60, "token_budget": 1000})
+        conf = self._run(protocol)["governed"]["conformance"]
+        self.assertTrue(conf["conforms"], conf["mismatches"])
+
+    def test_mixed_diagnostic_document_is_flagged(self):
+        protocol = preregister(
+            primary_metric="x", method="m", alpha=0.05, min_effect=1.0,
+            sample_size=103, arms=("A", "E"),
+            budget={"wall_seconds": 60, "token_budget": 1000})
+        mixed = protocol | {"analysis_kind": "diagnostic"}
+        conf = self._run(mixed)["governed"]["conformance"]
+        self.assertFalse(conf["conforms"])
+        self.assertIn("power_analysis_diagnostic", conf["mismatches"])
 
     def test_off_plan_run_is_flagged_not_hidden(self):
         report = self._run(preregister(
             primary_metric="x", method="m", alpha=0.05, min_effect=1.0,
-            sample_size=99, arms=("A", "E"),
+            sample_size=99, allow_underpowered=True, arms=("A", "E"),
             budget={"wall_seconds": 30}))
         conf = report["governed"]["conformance"]
         self.assertFalse(conf["conforms"])
@@ -150,13 +336,13 @@ class CandidateProbeTests(unittest.TestCase):
     def _protocol(self):
         return preregister(
             primary_metric="x", method="m", alpha=0.05, min_effect=1.0,
-            sample_size=1, arms=("A", "B", "C", "D", "E"),
+            sample_size=103, arms=("A", "B", "C", "D", "E"),
             budget={"wall_seconds": 60, "token_budget": 1000})
 
     def _probe(self, learned=("a" * 64,)):
         return run_candidate_probe(
             _StubHarness(self._report()),
-            [(_task("h", "c" * 64), Path("/nonexistent"))],
+            [(_task("h", "c" * 64), Path("/nonexistent"))] * 103,
             object(),
             budget=type("B", (), {"wall_seconds": 60})(),
             context_provider=None,
@@ -175,6 +361,27 @@ class CandidateProbeTests(unittest.TestCase):
     def test_probe_still_enforces_repository_disjointness(self):
         with self.assertRaisesRegex(ContractError, "overlap"):
             self._probe(learned=("c" * 64,))
+
+    def test_diagnostic_probe_is_useful_but_not_powered(self):
+        # A one-task screen honestly declares itself diagnostic: the probe
+        # conforms to its plan, but the protocol carries no power floor a
+        # production qualification could ever verify.
+        protocol = preregister(
+            primary_metric="x", method="m", alpha=0.05, min_effect=1.0,
+            sample_size=1, powered=False, arms=("A", "B", "C", "D", "E"),
+            budget={"wall_seconds": 60, "token_budget": 1000})
+        report = run_candidate_probe(
+            _StubHarness(self._report()),
+            [(_task("h", "c" * 64), Path("/nonexistent"))],
+            object(),
+            budget=type("B", (), {"wall_seconds": 60})(),
+            context_provider=None,
+            protocol=protocol,
+            learned_repo_digests=["a" * 64])
+        conf = report["governed"]["conformance"]
+        self.assertTrue(conf["conforms"], conf["mismatches"])
+        with self.assertRaisesRegex(ContractError, "power_analysis_diagnostic"):
+            protocol_required_sample_size(protocol)
 
 
 class MetricsTests(unittest.TestCase):

@@ -263,11 +263,14 @@ def main() -> int:
         return receipt
 
     # The protocol is per candidate: each skill is probed on its own
-    # holdout task, so a conforming probe runs exactly one task.
+    # holdout task, so a conforming probe runs exactly one task. That is
+    # a deterministic screen, not a powered experiment — the protocol is
+    # registered as a diagnostic so the report is honest and the plan can
+    # never back a production qualification certificate.
     protocol = preregister(
         primary_metric="skill holdout pass rate (E vs A)",
         method="mcnemar_exact", alpha=0.05, min_effect=1.0,
-        sample_size=1,
+        sample_size=1, powered=False,
         budget={"wall_seconds": 120, "token_budget": 100_000,
                 "tool_budget": 1000})
     candidates = CandidateRegistry(

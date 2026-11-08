@@ -7,8 +7,9 @@ re-digests the submitted repository itself, replays registered acceptance
 material into a fresh evaluator-owned workspace, and signs the resulting
 ``OutcomeReceiptV1`` over the canonical payload.
 
-Custody model: ``key_dir`` holds the Ed25519 seed (mode 0700/0600) and must be
-a distinct directory from the episode store and the agent workspace. The
+Custody model: ``key_dir`` holds the Ed25519 seed (mode 0700/0600 on POSIX,
+a DACL restricted to the evaluator account and SYSTEM on Windows) and must
+be a distinct directory from the episode store and the agent workspace. The
 public key record is separately exportable, so third parties can verify
 receipts offline without touching the private key.
 
@@ -25,6 +26,7 @@ import os
 import re
 import secrets
 import tempfile
+import time
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -47,8 +49,20 @@ from .evaluation_runtime import (
 )
 from .policy import require_permission
 from .runner import CommandSpec, ResourceLimits, WorkspaceExecutor, tree_digest
+from ..vault_storage import (
+    assert_private_acl,
+    create_private_file,
+    ensure_private_directory,
+)
 
 _SIGNATURE_DOMAIN = b"sis-v3:outcome_receipt:1\0"
+
+# A losing seed creator can observe the exclusively-created file before
+# the winner's 32 bytes are written through it. Waiting briefly for the
+# payload turns that race into a wait instead of a spurious integrity
+# failure; a file that never reaches 32 bytes still fails closed.
+_SEED_READ_ATTEMPTS = 50
+_SEED_READ_DELAY_SECONDS = 0.01
 
 
 class EvaluationRejected(RuntimeError):
@@ -72,8 +86,13 @@ class EvaluatorKeyStore:
 
     def __init__(self, key_dir: str | Path) -> None:
         self.key_dir = Path(key_dir)
-        self.key_dir.mkdir(parents=True, exist_ok=True)
-        os.chmod(self.key_dir, 0o700)
+        # The key directory is created private (0700 on POSIX, a
+        # protected DACL on Windows). A pre-existing directory is only
+        # ever verified, never re-permissioned: repairing the mode of a
+        # location this process did not create would silently claim
+        # custody of someone else's directory. Windows privacy is the
+        # DACL, which chmod/open mode bits cannot express.
+        ensure_private_directory(self.key_dir, "evaluator key directory")
         self.seed_path = self.key_dir / "ed25519.seed"
         self.public_path = self.key_dir / "ed25519.pub"
         self._seed: bytes | None = None
@@ -81,25 +100,80 @@ class EvaluatorKeyStore:
 
     def load_or_create(self) -> tuple[bytes, bytes]:
         """Return ``(seed, public_key)``, generating and persisting if absent."""
-        if self.seed_path.exists():
-            seed = self.seed_path.read_bytes()
-            if len(seed) != 32:
-                raise JournalIntegrityError("evaluator seed file is malformed")
-            public = signatures.public_key(seed)
-        else:
+        try:
             seed, public = signatures.generate_keypair()
-            fd = os.open(self.seed_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-            try:
-                with os.fdopen(fd, "wb") as handle:
-                    handle.write(seed)
-            finally:
-                if self.seed_path.exists() and self.seed_path.stat().st_size != 32:
-                    self.seed_path.unlink()
-            self.public_path.write_bytes(public)
-            os.chmod(self.seed_path, 0o600)
-            os.chmod(self.public_path, 0o644)
+            self._publish_seed(seed, public)
+        except FileExistsError:
+            # An existing seed is only ever read, never created,
+            # replaced, or re-ACL'd: losing an exclusive-create race
+            # must not overwrite another creator's material or
+            # identity, and existing empty or malformed material fails
+            # closed in place.
+            seed, public = self._read_published_seed()
         self._seed, self._public = seed, public
         return seed, public
+
+    def _read_published_seed(self) -> tuple[bytes, bytes]:
+        """Read a seed another creator published, waiting for its payload.
+
+        ``O_EXCL``/``CREATE_NEW`` publish the seed *name* before the
+        bytes land, so a concurrent loser may open a zero-length file.
+        The bounded retry makes simultaneous evaluator starts succeed
+        with one shared identity instead of one of them failing; a file
+        that never reaches 32 bytes (a crash-truncated seed, an empty
+        file) still fails closed.
+        """
+        for attempt in range(_SEED_READ_ATTEMPTS):
+            if self.seed_path.is_file():
+                assert_private_acl(self.seed_path, "evaluator seed")
+                existing = self.seed_path.read_bytes()
+                if len(existing) == 32:
+                    public = signatures.public_key(existing)
+                    self._ensure_public_record(public)
+                    return existing, public
+            elif self.seed_path.exists() or self.seed_path.is_symlink():
+                raise JournalIntegrityError(
+                    "evaluator seed file is malformed")
+            if attempt + 1 < _SEED_READ_ATTEMPTS:
+                time.sleep(_SEED_READ_DELAY_SECONDS)
+        raise JournalIntegrityError("evaluator seed file is malformed")
+
+    def _ensure_public_record(self, public: bytes) -> None:
+        """Recreate the exported public key when a partial publish left it absent.
+
+        A crash between the seed create and the public write leaves
+        receipts working — the public key is derived from the seed —
+        while the export is missing. Recreating it is idempotent and
+        cannot change identity. A record that already holds a full key
+        is never rewritten: this repair fills a hole, it does not
+        overwrite another creator's material.
+        """
+        try:
+            existing = self.public_path.read_bytes()
+        except FileNotFoundError:
+            existing = b""
+        if len(existing) == 32:
+            return
+        self._write_public_record(public)
+
+    def _write_public_record(self, public: bytes) -> None:
+        self.public_path.write_bytes(public)
+        if os.name != "nt":
+            os.chmod(self.public_path, 0o644)
+
+    def _publish_seed(self, seed: bytes, public: bytes) -> None:
+        """Publish a fresh seed; ``FileExistsError`` if the name is taken.
+
+        The seed file is created exclusively — ``O_EXCL`` on POSIX,
+        ``CREATE_NEW`` plus a protected DACL on Windows — so seed bytes
+        only ever land in a file this call created with owner-only
+        access. The name claim is atomic; the payload follows through
+        that same exclusively-created file, and a concurrent reader
+        waits for it (:meth:`_read_published_seed`). Nothing is written
+        to ``public_path`` unless the seed creation itself wins.
+        """
+        create_private_file(self.seed_path, seed, "evaluator seed")
+        self._write_public_record(public)
 
     @property
     def key_id(self) -> str:

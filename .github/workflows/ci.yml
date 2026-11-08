@@ -7,8 +7,8 @@ on:
 jobs:
   tests:
     runs-on: ${{ matrix.os }}
-    # Windows is experimental: the local vault ACL and SQLite lifecycle
-    # tests are POSIX-specific. Linux/macOS POSIX is the supported
+    # Windows is experimental: some evaluator-runtime paths rely on
+    # POSIX process semantics. Linux/macOS POSIX is the supported
     # evaluator platform for this release.
     continue-on-error: ${{ matrix.experimental == true }}
     strategy:
@@ -20,6 +20,8 @@ jobs:
             python-version: '3.12'
           - os: ubuntu-latest
             python-version: '3.13'
+          - os: macos-latest
+            python-version: '3.12'
           - os: windows-latest
             python-version: '3.12'
             experimental: true

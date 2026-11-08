@@ -22,10 +22,24 @@ Same agent, same `BudgetCaps`, paired per task. Arm is opt-in via
 2. **Preregistration** — `preregister` freezes primary metric, method,
    alpha, min effect, sample size, budget, and arms into a
    domain-separated `protocol_digest` committed before the holdout run
-   and embedded in the report.
+   and embedded in the report. Three plan kinds are distinguished:
+   - *powered* (default) — binds `power_analysis.required_n`, recomputed
+     from the declared expectations and `alpha`. A powered plan whose
+     declared `sample_size` is below that floor is refused at
+     registration; `allow_underpowered=True` is the explicit,
+     digest-visible opt-out (`power_analysis.underpowered_declared`) for
+     a deliberately exploratory run, and the conformance block still
+     reports the shortfall.
+   - *diagnostic* (`powered=False`) — a deterministic screen such as a
+     one-task candidate probe. It binds the same fields but makes no
+     power claim and can never satisfy production qualification.
 3. **Sample size** — `required_sample_size(p1, p2)` is a conservative
    normal-approx McNemar calculation; declare the effect size worth
-   detecting and power before running.
+   detecting and power before running. Conformance recomputes the floor
+   from the registered expectations instead of trusting the plan's own
+   `required_n`, so an edited result is reported as
+   `power_analysis_required_n_mismatch` and a run short of the floor is
+   reported as underpowered.
 4. **Hidden labels** — arms receive only their injected guidance context;
    outcomes come only from signed `OutcomeReceiptV1`s issued by the
    evaluator against its own registered criteria.

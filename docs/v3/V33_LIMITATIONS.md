@@ -75,7 +75,11 @@
   `run_candidate_probe`, which enforces repository disjointness and
   records budget/sample-size conformance against the preregistered
   protocol; it is still a 2-task probe, so its conformance block
-  honestly reports `sample_size … (underpowered)`.
+  honestly reports `sample_size … (underpowered)` — and, when the
+  protocol is powered, `power_analysis:required=… ran=… (underpowered)`.
+  A probe plan registered as diagnostic (`powered=False`) carries no
+  power claim at all, so it conforms to its own plan and still cannot
+  back a production qualification.
 - The evaluator is trusted to attest that it evaluated the named
   candidate under the declared protocol/partition. SIS binds the
   attestation to the exact candidate digest, receipts, holdout

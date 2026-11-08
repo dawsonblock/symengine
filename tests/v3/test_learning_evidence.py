@@ -21,8 +21,8 @@ class StructuralEvidenceTests(unittest.TestCase):
         self.before, self.after = root / "b", root / "a"
         for d in (self.before, self.after):
             d.mkdir()
-            (d / "calc.py").write_text(BEFORE)
-        (self.after / "calc.py").write_text(AFTER)
+            (d / "calc.py").write_bytes(BEFORE.encode())
+        (self.after / "calc.py").write_bytes(AFTER.encode())
         self.record, _ = capture_change(
             self.before, self.after, attempt_id="att-1",
             worker_identity="w", now="2026-10-24T00:00:00Z")
@@ -47,7 +47,7 @@ class StructuralEvidenceTests(unittest.TestCase):
                 independently_verified_receipt_digest=RECEIPT)
 
     def test_multi_file_changes_rejected(self):
-        (self.after / "extra.py").write_text("x = 1\n")
+        (self.after / "extra.py").write_bytes(b"x = 1\n")
         record, _ = capture_change(self.before, self.after, attempt_id="a2",
                                    worker_identity="w",
                                    now="2026-10-24T00:00:00Z")
@@ -59,7 +59,7 @@ class StructuralEvidenceTests(unittest.TestCase):
                 independently_verified_receipt_digest=RECEIPT)
 
     def test_non_operator_change_returns_none(self):
-        (self.after / "calc.py").write_text("x = 1\n")
+        (self.after / "calc.py").write_bytes(b"x = 1\n")
         record, _ = capture_change(self.before, self.after, attempt_id="a3",
                                    worker_identity="w",
                                    now="2026-10-24T00:00:00Z")

@@ -33,8 +33,8 @@ class LoopTests(unittest.TestCase):
         self.before, self.after = root / "b", root / "a"
         for d in (self.before, self.after):
             d.mkdir()
-            (d / "calc.py").write_text(BEFORE)
-        (self.after / "calc.py").write_text(AFTER)
+            (d / "calc.py").write_bytes(BEFORE.encode())
+        (self.after / "calc.py").write_bytes(AFTER.encode())
         self.change, _ = capture_change(
             self.before, self.after, attempt_id="att-1",
             worker_identity="w", now="2026-10-24T00:00:00Z")
@@ -53,7 +53,7 @@ class LoopTests(unittest.TestCase):
         self.assertEqual(candidates[0].revision, 1)
 
     def test_unsupported_change_produces_no_candidate(self):
-        (self.after / "calc.py").write_text("x = 1\n")
+        (self.after / "calc.py").write_bytes(b"x = 1\n")
         change, _ = capture_change(self.before, self.after, attempt_id="a2",
                                    worker_identity="w",
                                    now="2026-10-24T00:00:00Z")

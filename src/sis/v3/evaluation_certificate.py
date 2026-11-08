@@ -27,6 +27,7 @@ guidance.
 from __future__ import annotations
 
 import re
+from copy import deepcopy
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from statistics import NormalDist
@@ -258,6 +259,7 @@ class ProtocolRegistry:
         self._by_digest: dict[str, dict] = {}
 
     def register(self, protocol: Mapping) -> str:
+        protocol = deepcopy(dict(protocol))
         digest = protocol.get("protocol_digest")
         if not (isinstance(digest, str) and _HEX.fullmatch(digest)):
             raise CertificateError("protocol_digest_invalid")
@@ -272,7 +274,8 @@ class ProtocolRegistry:
         return digest
 
     def resolve(self, digest: str) -> dict | None:
-        return self._by_digest.get(digest)
+        protocol = self._by_digest.get(digest)
+        return deepcopy(protocol) if protocol is not None else None
 
     def __len__(self) -> int:
         return len(self._by_digest)
@@ -457,6 +460,19 @@ class QualificationValidator:
             check("sample_count_meets_protocol",
                   type(declared) is int
                   and certificate.sample_count >= declared)
+            # Local import on purpose: this module is imported by lean
+            # consumers (candidates), and governed_eval pulls in the
+            # whole harness/verifier stack. No cycle exists either way.
+            from .governed_eval import protocol_required_sample_size
+            try:
+                required_n = protocol_required_sample_size(protocol)
+            except ContractError:
+                required_n = None
+            check("protocol_power_analysis_valid", required_n is not None)
+            check("sample_count_meets_power_analysis",
+                  required_n is not None
+                  and type(declared) is int and declared >= required_n
+                  and certificate.sample_count >= required_n)
             check("protocol_primary_metric",
                   certificate.primary_metric == protocol.get("primary_metric"))
             check("protocol_conformance_declared",

@@ -45,10 +45,28 @@ from tests.v3.test_execution_identity_custody import ProductionFixture
 TOKEN = "v3-serving-token-for-regression-tests-0001"
 
 
+def _grant_writeback(root):
+    """Restore write permission on custody artifacts before removal.
+
+    Evidence custody deliberately writes read-only (0o444) evidence and
+    link manifests. POSIX removes them via directory permission, but
+    Windows refuses to delete read-only files, so test teardown makes
+    them writable first. This changes only test-temp file modes — the
+    production tamper-evidence mode is untouched.
+    """
+    for base, dirs, files in os.walk(root):
+        for name in (*dirs, *files):
+            try:
+                os.chmod(os.path.join(base, name), 0o700)
+            except OSError:
+                pass
+
+
 class _Base(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
+        self.addCleanup(_grant_writeback, self.temp.name)
         self.root = Path(self.temp.name)
         self.fixture = ProductionFixture(self.root / "stack")
         self.addCleanup(self.fixture.close)
@@ -360,6 +378,7 @@ class DependencyGraphTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
+        self.addCleanup(_grant_writeback, self.temp.name)
         self.custody = EvidenceCustodyStore(Path(self.temp.name) / "custody")
 
     def test_diamond_dependency_is_active(self):
@@ -440,6 +459,7 @@ class SignedLinkTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
+        self.addCleanup(_grant_writeback, self.temp.name)
         self.root = Path(self.temp.name)
         self.seed, public = __import__(
             "sis.v3.signatures", fromlist=["generate_keypair"]
@@ -493,8 +513,10 @@ class SignedLinkSubstitutionTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
+        self.addCleanup(_grant_writeback, self.temp.name)
         self.root = Path(self.temp.name)
         self.fixture = CertificateFixture(self.root)
+        self.addCleanup(self.fixture.stack.close)
         self.seed, public, self.key = _keypair("custody")
         self.custody = EvidenceCustodyStore(
             self.root / "custody",
@@ -1032,7 +1054,9 @@ class PairedStatisticsTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
+        self.addCleanup(_grant_writeback, self.temp.name)
         self.fixture = CertificateFixture(Path(self.temp.name))
+        self.addCleanup(self.fixture.stack.close)
 
     def _interval(self, treat_solved, base_solved, n, *,
                   confidence_milli=950):

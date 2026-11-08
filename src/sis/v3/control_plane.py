@@ -307,14 +307,22 @@ class SqliteControlPlane(_SqlControlPlane):
         self._con = sqlite3.connect(
             str(self.path), isolation_level=None, timeout=15.0,
             check_same_thread=False)
-        self._con.execute("PRAGMA journal_mode=WAL")
-        self._con.execute("PRAGMA synchronous=FULL")
-        self._con.execute("PRAGMA busy_timeout=15000")
-        with self._lock:
-            for statement in _SCHEMA:
-                self._con.execute(statement)
-        with self._transaction() as con:
-            self._ensure_schema_version(con)
+        try:
+            self._con.execute("PRAGMA journal_mode=WAL")
+            self._con.execute("PRAGMA synchronous=FULL")
+            self._con.execute("PRAGMA busy_timeout=15000")
+            with self._lock:
+                for statement in _SCHEMA:
+                    self._con.execute(statement)
+            with self._transaction() as con:
+                self._ensure_schema_version(con)
+        except BaseException:
+            con, self._con = self._con, None
+            try:
+                con.close()
+            except sqlite3.Error:
+                pass
+            raise
 
     def schema_version(self) -> int:
         with self._transaction() as con:
@@ -493,7 +501,8 @@ class SqliteControlPlane(_SqlControlPlane):
 
     def close(self) -> None:
         with self._lock:
-            self._con.close()
+            if self._con is not None:
+                self._con.close()
 
 
 class _SqliteTransaction:

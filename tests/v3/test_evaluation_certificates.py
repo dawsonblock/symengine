@@ -9,6 +9,7 @@ is never enough.
 from __future__ import annotations
 
 import hashlib
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -39,10 +40,20 @@ TASKS = tuple(f"task-{i:02d}" for i in range(29))
 PROTOCOL = preregister(
     primary_metric="paired solved_delta E vs A",
     method="mcnemar_exact", alpha=0.05, min_effect=1.0,
-    sample_size=29,
+    sample_size=29, expected_baseline=0.7, expected_treatment=0.3,
     budget={"wall_seconds": 120, "token_budget": 100_000,
             "tool_budget": 1000})
 PROTOCOL_DIGEST = PROTOCOL["protocol_digest"]
+
+
+def _forge(document):
+    """Re-digest a hand-built protocol document, as an attacker would."""
+    normalized = json.loads(
+        json.dumps({key: value for key, value in document.items()
+                    if key != "protocol_digest"}, sort_keys=True),
+        parse_float=lambda value: f"float:{value}")
+    return document | {"protocol_digest": canonical_digest(
+        "eval_protocol", 1, normalized)}
 
 
 def _keypair(prefix):
@@ -209,6 +220,25 @@ class CertificateFixture:
         return evidence, decision
 
 
+class ProtocolRegistryIsolationTests(unittest.TestCase):
+    def test_registration_and_resolution_are_deep_snapshots(self):
+        import copy
+        protocol = copy.deepcopy(PROTOCOL)
+        registry = ProtocolRegistry()
+        digest = registry.register(protocol)
+        protocol["budget"]["wall_seconds"] = 0
+        protocol["arms"].clear()
+        protocol["power_analysis"]["required_n"] = 1
+        resolved = registry.resolve(digest)
+        self.assertEqual(resolved, PROTOCOL)
+        resolved["budget"]["wall_seconds"] = 0
+        resolved["arms"].clear()
+        resolved["power_analysis"]["required_n"] = 1
+        self.assertEqual(registry.resolve(digest), PROTOCOL)
+        self.assertEqual(registry.register(PROTOCOL), digest)
+        self.assertIsNone(registry.resolve("f" * 64))
+
+
 class QualificationTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -232,6 +262,52 @@ class QualificationTests(unittest.TestCase):
         self.assertTrue(fixture.stack.registry.verify()["ok"])
         self.assertEqual(fixture.stack.registry.qualification_mode,
                          "production")
+
+    def test_forged_conformance_cannot_override_power_floor(self):
+        # A hand-built document (correctly re-digested) that declares 29
+        # tasks while carrying the 103-task floor is not registrable and
+        # must not qualify: the validator recomputes the floor instead of
+        # trusting the plan's own declared sample size.
+        protocol = _forge(preregister(
+            primary_metric=PROTOCOL["primary_metric"], method="mcnemar_exact",
+            alpha=0.05, min_effect=1.0, sample_size=103,
+            budget=PROTOCOL["budget"])
+            | {"sample_size": 29})
+        fixture = CertificateFixture(self.root, protocol=protocol)
+        self.addCleanup(fixture.stack.close)
+        validation = fixture.validator.validate(fixture.certificate(), fixture.candidate)
+        self.assertFalse(validation.ok)
+        self.assertIn("sample_count_meets_power_analysis", validation.failures)
+
+    def test_diagnostic_protocol_cannot_qualify_production(self):
+        # A diagnostic protocol is honest about what it is — a screen —
+        # but honesty does not make one-task evidence powered. The
+        # certificate mints correctly and still fails closed.
+        protocol = preregister(
+            primary_metric=PROTOCOL["primary_metric"], method="mcnemar_exact",
+            alpha=0.05, min_effect=1.0, sample_size=1, powered=False,
+            budget=PROTOCOL["budget"])
+        fixture = CertificateFixture(self.root, protocol=protocol)
+        self.addCleanup(fixture.stack.close)
+        validation = fixture.validator.validate(fixture.certificate(), fixture.candidate)
+        self.assertFalse(validation.ok)
+        self.assertIn("protocol_power_analysis_valid", validation.failures)
+        self.assertIn("sample_count_meets_power_analysis", validation.failures)
+        self.assertNotIn("sample_count_meets_protocol", validation.failures)
+
+    def test_mixed_diagnostic_document_cannot_qualify(self):
+        # Even a correctly-digested forgery that mixes a diagnostic label
+        # with a valid power block is rejected categorically.
+        protocol = _forge(preregister(
+            primary_metric=PROTOCOL["primary_metric"], method="mcnemar_exact",
+            alpha=0.05, min_effect=1.0, sample_size=103,
+            budget=PROTOCOL["budget"])
+            | {"analysis_kind": "diagnostic"})
+        fixture = CertificateFixture(self.root, protocol=protocol)
+        self.addCleanup(fixture.stack.close)
+        validation = fixture.validator.validate(fixture.certificate(), fixture.candidate)
+        self.assertFalse(validation.ok)
+        self.assertIn("protocol_power_analysis_valid", validation.failures)
 
     def test_two_task_experiment_cannot_satisfy_29(self):
         fixture = CertificateFixture(

@@ -1,0 +1,6 @@
+# Canonical byte-exact artifacts must check out with LF on every
+# platform: schema round-trip tests and signed fixture verification
+# compare bytes directly, so Windows autocrlf conversion would break
+# them.
+src/sis/v3/schemas/*.json text eol=lf
+tests/v3/fixtures/** text eol=lf

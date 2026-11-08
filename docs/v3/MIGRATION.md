@@ -122,3 +122,28 @@ in external review. Operational impact:
    `conflict_policy="abstain"` may abstain in cases the older overlap
    heuristic silently passed. The heuristic remains lexical, not
    semantic.
+8. **Evaluator key custody is verified, not repaired.** The evaluator key
+   directory must already be private — `0700` on POSIX, a DACL limited
+   to the evaluator account, SYSTEM, and Administrators on Windows. A
+   pre-existing directory is inspected and rejected if it is not,
+   instead of being `chmod`-ed into place, so provision it explicitly
+   (`mkdir -m 700 <key-dir>`) before starting the evaluator. The
+   Ed25519 seed is published with an exclusive create: a concurrent
+   start waits for the winner's payload instead of failing, a losing
+   creator never replaces existing material, and an empty or truncated
+   seed still fails closed in place. A missing `ed25519.pub` left by an
+   interrupted publish is rebuilt from the seed; an existing full
+   record is never rewritten.
+9. **Production qualification recomputes the power floor.** A certificate
+   bound to a protocol whose declared `sample_size` is below the floor
+   recomputed from that protocol's own `expected_baseline`,
+   `expected_treatment`, `power`, and `alpha` no longer qualifies
+   (`sample_count_meets_power_analysis`). Protocol digests are
+   immutable, so such a deployment must register a new powered protocol
+   and issue a new certificate. `preregister` now refuses an
+   underpowered plan at registration unless the caller passes
+   `allow_underpowered=True`; that opt-out is part of the digest, is
+   still reported as underpowered, and never qualifies. A deterministic
+   screen (for example a one-task candidate probe) must be registered
+   with `powered=False`; diagnostic and mixed diagnostic/power
+   protocols never qualify.

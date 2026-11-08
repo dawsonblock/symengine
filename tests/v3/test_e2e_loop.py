@@ -68,6 +68,7 @@ class EndToEndLoopTests(unittest.TestCase):
         db, controller = make_authority(
             self.root / "auth", token=TEST_TOKEN,
             evaluator_key_id=kid, evaluator_public_hex=pub.hex())
+        self.addCleanup(db.close)
         receipt = signed_receipt(seed_b, kid)
         controller._resolve_receipt = {receipt.digest: receipt}.__getitem__
         seed(db, candidate)

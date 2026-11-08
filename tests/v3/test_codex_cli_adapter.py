@@ -7,7 +7,6 @@ import os
 import stat
 import sys
 import tempfile
-import textwrap
 import time
 import unittest
 from pathlib import Path
@@ -15,26 +14,39 @@ from pathlib import Path
 from sis.v3.adapters.codex_cli import CodexCliAdapter, CodexCliError
 
 
-FAKE = textwrap.dedent("""\
-    #!/bin/sh
-    printf '%s\\n' '{"type":"thread.started","thread_id":"th-1"}'
-    printf '%s\\n' '{"type":"turn.started"}'
-    printf '%s\\n' '{"type":"item.completed","item":{"type":"command_execution","exit_code":1,"status":"failed","aggregated_output":"SECRET"}}'
-    printf '%s\\n' '{"type":"item.completed","item":{"type":"file_change","status":"completed","changes":[{"path":"a.py"}]}}'
-    printf '%s\\n' '{"type":"turn.completed","usage":{"input_tokens":10,"output_tokens":5}}'
-    exit 0
-""")
+EVENTS = [
+    '{"type":"thread.started","thread_id":"th-1"}',
+    '{"type":"turn.started"}',
+    '{"type":"item.completed","item":{"type":"command_execution","exit_code":1,"status":"failed","aggregated_output":"SECRET"}}',
+    '{"type":"item.completed","item":{"type":"file_change","status":"completed","changes":[{"path":"a.py"}]}}',
+    '{"type":"turn.completed","usage":{"input_tokens":10,"output_tokens":5}}',
+]
 
-FAKE_SLEEP = textwrap.dedent("""\
-    #!/bin/sh
-    printf '%s\\n' '{"type":"thread.started","thread_id":"th-1"}'
-    sleep 30
-""")
+SLEEP_EVENTS = ['{"type":"thread.started","thread_id":"th-1"}']
 
 
-def _make_fake(tmpdir: Path, body: str) -> Path:
+def _make_fake(tmpdir: Path, lines, *, sleep: bool = False) -> Path:
+    """Write a platform-executable fake ``codex`` emitting canned JSONL.
+
+    The Windows branch emits lines with ``echo``, so fixture lines must
+    stay free of cmd metacharacters (``|``, ``&``, ``<``, ``>``); escape
+    them if a future event ever needs one.
+    """
+    if os.name == "nt":
+        # Windows cannot exec a POSIX script; a .cmd runs via cmd.exe.
+        path = tmpdir / "codex-fake.cmd"
+        script = "".join(f"@echo {line}\r\n" for line in lines)
+        if sleep:
+            script += "@ping -n 31 127.0.0.1 >nul\r\n"
+        path.write_text(script)
+        return path
     path = tmpdir / "codex-fake"
-    path.write_text(body)
+    script = "#!/bin/sh\n" + "".join(
+        f"printf '%s\\n' '{line}'\n" for line in lines)
+    if sleep:
+        script += "sleep 30\n"
+    script += "exit 0\n"
+    path.write_text(script)
     path.chmod(path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
     return path
 
@@ -48,7 +60,7 @@ class CodexCliAdapterTests(unittest.TestCase):
         self.ws.mkdir()
 
     def test_streams_normalized_events(self):
-        fake = _make_fake(self.root, FAKE)
+        fake = _make_fake(self.root, EVENTS)
         adapter = CodexCliAdapter(codex_path=fake, wall_seconds=30)
         turn = adapter.start_task("fix the bug", self.ws, sandbox="workspace_write")
         events = list(turn.events)
@@ -71,7 +83,7 @@ class CodexCliAdapterTests(unittest.TestCase):
             self.assertEqual(cur.prior_event_digest, prev.digest)
 
     def test_timeout_kills_process_group(self):
-        fake = _make_fake(self.root, FAKE_SLEEP)
+        fake = _make_fake(self.root, SLEEP_EVENTS, sleep=True)
         adapter = CodexCliAdapter(codex_path=fake, wall_seconds=1)
         turn = adapter.start_task("work", self.ws, sandbox="read_only")
         start = time.monotonic()
@@ -81,7 +93,7 @@ class CodexCliAdapterTests(unittest.TestCase):
         self.assertTrue(last.payload["summary"].get("timed_out"))
 
     def test_cancel_unknown_turn(self):
-        fake = _make_fake(self.root, FAKE)
+        fake = _make_fake(self.root, EVENTS)
         adapter = CodexCliAdapter(codex_path=fake)
         with self.assertRaises(CodexCliError):
             adapter.cancel("nope")
@@ -91,7 +103,7 @@ class CodexCliAdapterTests(unittest.TestCase):
             CodexCliAdapter(codex_path=self.root / "nonexistent")
 
     def test_bad_sandbox_and_prompt(self):
-        fake = _make_fake(self.root, FAKE)
+        fake = _make_fake(self.root, EVENTS)
         adapter = CodexCliAdapter(codex_path=fake)
         with self.assertRaises(ValueError):
             adapter.start_task("x", self.ws, sandbox="danger-full-access")  # type: ignore
@@ -101,7 +113,7 @@ class CodexCliAdapterTests(unittest.TestCase):
             adapter.start_task("x", self.root / "missing-dir")
 
     def test_resume_and_external_message_unsupported(self):
-        fake = _make_fake(self.root, FAKE)
+        fake = _make_fake(self.root, EVENTS)
         adapter = CodexCliAdapter(codex_path=fake)
         with self.assertRaises(CodexCliError):
             adapter.resume_thread("th-1", self.ws)

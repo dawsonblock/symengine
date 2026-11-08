@@ -14,6 +14,7 @@ from sis.skill_bundle import validate_bundle, predict
 from sis.validation import digest
 from sis.skill_holdout import SkillHoldoutVault
 from sis.distillation import export
+from sis.vault_storage import private_directory
 
 ROOT=Path(__file__).resolve().parents[1]
 KEY=b'custodian-key-only-32-bytes-minimum-XX'
@@ -40,7 +41,8 @@ class HoldoutTests(unittest.TestCase):
         self.assertEqual(r['promotion']['status'],'active')
         self.sid=r['promotion']['id']
         self.bundle=self.s.skill_freeze('list_sum',self.sid)
-        self.vault=SkillHoldoutVault(self.temp.name+'/vault.sqlite3',key=KEY)
+        self.vault_path=str(private_directory(Path(self.temp.name)/'vault')/'vault.sqlite3')
+        self.vault=SkillHoldoutVault(self.vault_path,key=KEY)
         self.dataset=dataset()
 
     def tearDown(self):
@@ -96,7 +98,7 @@ class HoldoutTests(unittest.TestCase):
 
     def test_cross_connection_one_use(self):
         pub,rec=self.evaluated()
-        with SkillHoldoutVault(self.temp.name+'/vault.sqlite3',key=KEY) as other:
+        with SkillHoldoutVault(self.vault_path,key=KEY) as other:
             with self.assertRaises(RuleRejected):other.score(pub,self.bundle)
             self.assertTrue(other.verify(pub,self.bundle,rec)['valid'])
 
@@ -113,7 +115,7 @@ class HoldoutTests(unittest.TestCase):
 
     def test_wrong_evaluator_secret_fails(self):
         pub,rec=self.evaluated()
-        with SkillHoldoutVault(self.temp.name+'/vault.sqlite3',key=b'other-secret-at-least-thirty-two-byte!!') as wrong:
+        with SkillHoldoutVault(self.vault_path,key=b'other-secret-at-least-thirty-two-byte!!') as wrong:
             with self.assertRaises(RuleRejected):wrong.verify(pub,self.bundle,rec)
 
     def test_private_database_tamper_fails(self):
@@ -209,7 +211,7 @@ class HoldoutTests(unittest.TestCase):
         from concurrent.futures import ThreadPoolExecutor
         pub=self.vault.seal(self.dataset,self.bundle)
         def attempt(_):
-            with SkillHoldoutVault(self.temp.name+'/vault.sqlite3',key=KEY) as v:
+            with SkillHoldoutVault(self.vault_path,key=KEY) as v:
                 try: return v.score(pub,self.bundle)['assessment']['status']
                 except RuleRejected: return 'rejected'
         with ThreadPoolExecutor(max_workers=2) as ex:
@@ -230,19 +232,20 @@ class HoldoutTests(unittest.TestCase):
         def run(*args):
             result=subprocess.run([sys.executable,'-m','sis','--db',db,*args],cwd=ROOT,env=env,capture_output=True,text=True)
             self.assertEqual(result.returncode,0,result.stderr+' '+result.stdout)
+        cli_vault=str(private_directory(Path(self.temp.name)/'clivault')/'cli-vault.sqlite')
         run('skill-freeze',self.sid,bundle_path,'--namespace','list_sum')
-        run('skill-eval-seal',private_path,bundle_path,public_path,'--vault',self.temp.name+'/cli-vault.sqlite')
-        run('skill-eval-score',public_path,bundle_path,receipt_path,'--vault',self.temp.name+'/cli-vault.sqlite')
-        run('skill-eval-verify',public_path,bundle_path,receipt_path,'--vault',self.temp.name+'/cli-vault.sqlite')
+        run('skill-eval-seal',private_path,bundle_path,public_path,'--vault',cli_vault)
+        run('skill-eval-score',public_path,bundle_path,receipt_path,'--vault',cli_vault)
+        run('skill-eval-verify',public_path,bundle_path,receipt_path,'--vault',cli_vault)
         recovered=self.temp.name+'/recovered.json'
-        run('skill-eval-recover',public_path,bundle_path,recovered,'--vault',self.temp.name+'/cli-vault.sqlite')
+        run('skill-eval-recover',public_path,bundle_path,recovered,'--vault',cli_vault)
         self.assertEqual(json.loads(Path(recovered).read_text()),json.loads(Path(receipt_path).read_text()))
-        run('skill-distill-export',public_path,bundle_path,receipt_path,inputs_path,output_path,'--vault',self.temp.name+'/cli-vault.sqlite')
+        run('skill-distill-export',public_path,bundle_path,receipt_path,inputs_path,output_path,'--vault',cli_vault)
         self.assertEqual(len(Path(output_path).read_text().splitlines()),1)
         self.assertTrue(Path(output_path+'.manifest.json').exists())
         # Repeated scoring must fail without clobbering prior receipt.
         proc=subprocess.run([sys.executable,'-m','sis','--db',db,'skill-eval-score',public_path,bundle_path,
-                             self.temp.name+'/second.json','--vault',self.temp.name+'/cli-vault.sqlite'],cwd=ROOT,env=env,capture_output=True,text=True)
+                             self.temp.name+'/second.json','--vault',cli_vault],cwd=ROOT,env=env,capture_output=True,text=True)
         self.assertEqual(proc.returncode,2)
 
 

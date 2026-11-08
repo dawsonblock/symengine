@@ -1,5 +1,56 @@
 ## Unreleased — review corrections
 
+- Evaluator key custody: the Ed25519 seed is published with an exclusive
+  create (`O_EXCL` on POSIX, `CREATE_NEW` plus a protected DACL on
+  Windows) and the payload is written through that same validated
+  handle, so a losing creator can never replace or delete another
+  creator's material. A concurrent start waits out the winner's payload
+  write instead of failing on a half-created seed; a seed that never
+  reaches 32 bytes still fails closed. A missing `ed25519.pub` left by
+  an interrupted publish is rebuilt from the seed, while an existing
+  full record is never rewritten.
+- The evaluator key directory is created private and a pre-existing
+  directory is verified, never re-permissioned — POSIX now matches the
+  Windows behaviour instead of silently `chmod`-ing a location the
+  process did not create. Concurrent creation of that directory
+  converges on the verified winner instead of raising
+  `FileExistsError` out of the constructor. The Win32 layer caches its
+  `advapi32`/`kernel32` bindings, derives the ACE trustee allow-list
+  from the caller SID directly instead of re-parsing rendered SDDL, and
+  requests `FILE_READ_ATTRIBUTES` alongside `READ_CONTROL` on the
+  handles it queries with `GetFileInformationByHandleEx`.
+- `preregister` refuses a powered plan whose declared `sample_size` is
+  below the recomputed power floor. `allow_underpowered=True` is the
+  explicit, digest-visible opt-out (`power_analysis.underpowered_declared`)
+  for a deliberately exploratory run; `powered=False` registers a
+  diagnostic screen. Diagnostic plans, and forgeries that mix the
+  diagnostic label with a power block, can never satisfy production
+  qualification.
+- `QualificationValidator` recomputes the power floor and adds
+  `protocol_power_analysis_valid` and `sample_count_meets_power_analysis`;
+  `_protocol_conformance` flags a forged `required_n`
+  (`power_analysis_required_n_mismatch`), an underpowered run, and a
+  non-positive declared sample size.
+- `ProtocolRegistry` stores and returns deep snapshots, so a caller
+  cannot mutate a registered protocol after the digest was computed.
+- New `sis.vault_storage` helpers — `private_directory`,
+  `ensure_private_directory`, `assert_private_acl`, `create_private_file`
+  — replace the ad-hoc POSIX/Windows permission handling in the
+  evaluator key store.
+- `AuthorityDB.backup` and `SqliteControlPlane.__init__` close their
+  SQLite connections on every path, so a failed open no longer leaks a
+  handle (which keeps the file locked on Windows); a close that fails
+  cannot mask the original error, and `close()` is a no-op after a
+  failed open.
+- `.gitattributes` pins LF for the v3 contract schemas and signed test
+  fixtures; CI adds a macOS leg and the Codex CLI adapter test now has a
+  platform-native fake executable.
+- `docs/v3/QUALIFICATION_REPORT.md` refreshed: the SQLite control-plane
+  tests are tracked in Git, the earlier sandbox deselections no longer
+  apply to the current run, and the recorded suite/inventory results
+  match this tree. The historical v3.3.0 report moved verbatim to
+  `docs/v3/QUALIFICATION_REPORT_V3_3_0.md`, so the development report
+  carries a single top-level heading.
 - Evidence-qualification gates hardened: `QualificationPolicy` requires
   paired baseline outcomes by default (`require_paired_outcomes=True`;
   `False` remains the explicit, digest-visible legacy opt-out), a

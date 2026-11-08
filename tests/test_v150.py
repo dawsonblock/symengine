@@ -13,6 +13,7 @@ from sis.expression import evaluate
 from sis.service import Service
 from sis.sealed_eval import EvaluatorVault
 from sis.qualification import DEFAULT_POLICY, assess, check_policy, wilson_lower
+from sis.vault_storage import private_directory
 from sis.transfer import map_expression
 from sis.validation import digest
 
@@ -133,7 +134,8 @@ class TestTransfer(unittest.TestCase):
 class TestQualification(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory()
-        self.vault=EvaluatorVault(Path(self.tmp.name)/'vault.db',key=KEY)
+        self.vault_path=private_directory(Path(self.tmp.name)/'vault')/'vault.db'
+        self.vault=EvaluatorVault(self.vault_path,key=KEY)
 
     def tearDown(self):
         self.vault.close()
@@ -196,7 +198,7 @@ class TestQualification(unittest.TestCase):
     def test_qualification_replay_fails_different_evaluator_key(self):
         public,receipt=self.score()
         q=self.vault.qualify(public,receipt)
-        with EvaluatorVault(Path(self.tmp.name)/'vault.db',key=b'x'*32) as other:
+        with EvaluatorVault(self.vault_path,key=b'x'*32) as other:
             with self.assertRaises(RuleRejected): other.verify_qualification(public,receipt,q)
 
     def test_underpowered_wilson(self):
@@ -231,7 +233,7 @@ class TestQualification(unittest.TestCase):
         public,receipt=self.score()
         qualification=self.vault.qualify(public,receipt)
         self.vault.close()
-        self.vault=EvaluatorVault(Path(self.tmp.name)/'vault.db',key=KEY)
+        self.vault=EvaluatorVault(self.vault_path,key=KEY)
         self.assertTrue(self.vault.verify_qualification(public,receipt,qualification)['valid'])
 
     def test_qualification_does_not_mutate_record(self):
@@ -264,11 +266,12 @@ class TestCLI(unittest.TestCase):
             self.assertEqual(json.loads(p.stdout)['output'],19)
             dataset=base/'private.json';dataset.write_text(json.dumps(eval_dataset()))
             public=base/'public.json';sub=base/'submission.json'; receipt=base/'receipt.json';qual=base/'qual.json'
-            actions=[('eval-seal',str(dataset),str(public),'--vault',str(base/'vault.db')),
+            vault=private_directory(base/'vdir')/'vault.db'
+            actions=[('eval-seal',str(dataset),str(public),'--vault',str(vault)),
                      ('eval-candidate',str(public),str(sub)),
-                     ('eval-score',str(public),str(sub),'--vault',str(base/'vault.db'),'--receipt',str(receipt)),
-                     ('eval-qualify',str(public),str(receipt),'--vault',str(base/'vault.db'),'--qualification',str(qual)),
-                     ('eval-verify-qualification',str(public),str(receipt),str(qual),'--vault',str(base/'vault.db'))]
+                     ('eval-score',str(public),str(sub),'--vault',str(vault),'--receipt',str(receipt)),
+                     ('eval-qualify',str(public),str(receipt),'--vault',str(vault),'--qualification',str(qual)),
+                     ('eval-verify-qualification',str(public),str(receipt),str(qual),'--vault',str(vault))]
             for command in actions:
                 p=run(*command)
                 self.assertEqual(p.returncode,0,command[0]+': '+p.stderr)

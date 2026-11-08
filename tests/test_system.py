@@ -141,7 +141,8 @@ class RegistryTests(unittest.TestCase):
         self.assertEqual(ans['output'],15)
         self.assertEqual(ans['status'],'predicted')
         self.assertTrue(self.service.registry.verify_audit()['valid'])
-        self.assertEqual(len(Registry(self.db).list_rules('arithmetic_demo')),1)
+        with Registry(self.db) as probe:
+            self.assertEqual(len(probe.list_rules('arithmetic_demo')),1)
 
     def test_unvalidated_promotion_rejected(self):
         result=induce(fixture('arithmetic_study.json')['train'])

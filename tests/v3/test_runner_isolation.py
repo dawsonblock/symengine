@@ -96,7 +96,9 @@ class RunnerIsolationTests(RunnerFixture):
     def test_prepare_run_receipt_and_destroy(self):
         workspace = self.executor.prepare(self.base)
         self.assertIsInstance(self.executor, WorkspaceExecutor)
-        receipt = self.executor.run(workspace, self.spec("import pkg.mod; print(pkg.mod.VALUE)"))
+        receipt = self.executor.run(workspace, self.spec(
+            "import pkg.mod,sys;"
+            "sys.stdout.buffer.write(str(pkg.mod.VALUE).encode()+b'\\n')"))
         self.assertIsInstance(receipt, ExecutionReceiptV1)
         self.assertEqual(receipt.exit_status, 0)
         self.assertFalse(receipt.timeout)

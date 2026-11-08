@@ -83,29 +83,43 @@ supplied by an optimizer is not delivery evidence.
 4. evaluator authority;
 5. protocol identity;
 6. preregistration identity;
-7. sample size (policy and protocol);
+7. sample size (policy, declared protocol sample, and the recomputed
+   power floor);
 8. holdout partition and task scope;
 9. receipt count, uniqueness and authentication;
 10. protocol conformance (not just a flag: executed count and declared
     sample are recomputed);
-11. statistical acceptance: when receipts are paired, the claimed point
+11. power-analysis validity: a powered protocol must carry a
+    `power_analysis` block whose `required_n` equals the value
+    recomputed from its registered expectations and `alpha`, so a
+    caller cannot weaken the floor by editing the stored result. A
+    diagnostic protocol (`analysis_kind="diagnostic"`, registered with
+    `powered=False`) carries no floor and is rejected categorically,
+    including a forged document that mixes the diagnostic label with a
+    power block. `allow_underpowered=True` registers a deliberately
+    exploratory plan (`power_analysis.underpowered_declared`); it is
+    still reported as underpowered and never qualifies;
+12. statistical acceptance: when receipts are paired, the claimed point
     estimate must equal the paired delta and the claimed interval must
     cover the Newcombe interval reconstructed at the claimed confidence
     level;
-12. negative transfer/regressions, including paired losses that may not
+13. negative transfer/regressions, including paired losses that may not
     hide in unevaluated tasks;
-13. certificate revocation/expiry;
-14. repository/task authorization;
-15. primary-metric agreement: the certificate, the qualification policy
+14. certificate revocation/expiry;
+15. repository/task authorization;
+16. primary-metric agreement: the certificate, the qualification policy
     and the protocol must all name the same improvement metric;
-16. paired baseline outcomes: every receipt must carry
+17. paired baseline outcomes: every receipt must carry
     `baseline_outcome` unless the policy explicitly opts out, and
     partial pairing never qualifies.
 
 Any failure blocks production qualification. A forged `conforms=true`
 flag with two receipts and a 29-task protocol fails
 `sample_count_meets_protocol`, `sample_count_meets_policy` and
-`receipt_count_matches_sample`.
+`receipt_count_matches_sample`. A correctly re-digested protocol that
+declares 29 tasks while carrying a 103-task floor fails
+`sample_count_meets_power_analysis`; a diagnostic or mixed
+diagnostic/power document fails `protocol_power_analysis_valid`.
 
 ## Registry enforcement
 
@@ -130,6 +144,10 @@ cannot serve production.
 - high-risk skill security blocks production qualification;
 - missing delivery attestation blocks;
 - forged conformance flag cannot override evidence;
+- a correctly re-digested protocol cannot declare less than its own
+  power floor, and a forged `required_n` cannot weaken it;
+- diagnostic and mixed diagnostic/power documents never qualify;
+- `ProtocolRegistry` registration and resolution are deep snapshots;
 - exploratory evidence retained but not production;
 - unknown protocol, policy mismatch, negative transfer, nonpositive
   interval, expiry, revocation, missing certificate and receipt-set

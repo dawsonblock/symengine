@@ -134,6 +134,7 @@ class GateTests(unittest.TestCase):
             {"kind": "language_is", "value": "python"},
             {"kind": "failure_signature_is", "value": "sig-x"},
         )), root=Path(self.temp.name) / "s")
+        self.addCleanup(store.close)
         result = retrieve(_request(), store, files_present=("src/m.py",))
         self.assertEqual(len(result.candidates), 1)
         self.assertEqual(result.candidates[0].record.procedure_id, "p1")
@@ -141,6 +142,7 @@ class GateTests(unittest.TestCase):
     def test_unmet_precondition_rejects(self):
         store = _store(_proc(pre=({"kind": "language_is", "value": "rust"},)),
                        root=Path(self.temp.name) / "s")
+        self.addCleanup(store.close)
         result = retrieve(_request(), store)
         self.assertFalse(result.candidates)
         self.assertEqual(result.rejections[0].reason_code, "precondition_failed")
@@ -149,12 +151,14 @@ class GateTests(unittest.TestCase):
         contra = ({"kind": "failure_signature_is", "value": "sig-x"},)
         store = _store(_proc(contra=contra, cex=("1" * 64,)),
                        root=Path(self.temp.name) / "s")
+        self.addCleanup(store.close)
         result = retrieve(_request(), store)
         self.assertFalse(result.candidates)
         self.assertEqual(result.rejections[0].reason_code, "prior_negative_transfer")
 
     def test_nonqualified_not_retrieved(self):
         store = _store(_proc(status="candidate"), root=Path(self.temp.name) / "s")
+        self.addCleanup(store.close)
         result = retrieve(_request(), store)
         self.assertFalse(result.candidates)
         self.assertEqual(result.rejections[-1].reason_code, "no_qualified_procedure")
@@ -163,6 +167,7 @@ class GateTests(unittest.TestCase):
         weak = _proc(pid="weak", dist={"tasks": 2, "successes": 0, "failures": 2, "regressions": 0})
         strong = _proc(pid="strong", dist={"tasks": 5, "successes": 5, "failures": 0, "regressions": 0})
         store = _store(weak, strong, root=Path(self.temp.name) / "s")
+        self.addCleanup(store.close)
         result = retrieve(_request(), store)
         self.assertEqual(result.candidates[0].record.procedure_id, "strong")
 
@@ -178,6 +183,7 @@ class GuidanceTests(unittest.TestCase):
             {"kind": "language_is", "value": "python"},
             {"kind": "symbol_present", "value": "remaining_balance"},
         )), root=self.root / "s")
+        self.addCleanup(store.close)
         g = sis_recommend(_request(), store, files_present=("src/m.py",))
         self.assertEqual(g.decision, "recommend")
         self.assertEqual(g.procedure_ids, ("p1",))
@@ -187,6 +193,7 @@ class GuidanceTests(unittest.TestCase):
 
     def test_unverified_intent_still_abstains(self):
         store = _store(_proc(), root=self.root / "s")
+        self.addCleanup(store.close)
         g = sis_recommend(_request(semantic_contract_digest=None), store)
         self.assertEqual(g.decision, "abstain")
         self.assertEqual(g.reason_code, "unverified_task_intent")
@@ -205,6 +212,7 @@ class GuidanceTests(unittest.TestCase):
             cex=("2" * 64,),
         )
         store = _store(bad_proc, root=self.root / "s")
+        self.addCleanup(store.close)
         g = sis_recommend(_request(), store)
         self.assertEqual(g.decision, "abstain")
         self.assertEqual(g.reason_code, "prior_negative_transfer")

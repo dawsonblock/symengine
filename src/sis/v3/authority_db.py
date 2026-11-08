@@ -217,8 +217,12 @@ class AuthorityDB:
         """Online consistent backup via the SQLite backup API."""
         target = Path(target)
         target.parent.mkdir(parents=True, exist_ok=True)
-        with self._lock, sqlite3.connect(str(target)) as dest:
-            self._conn().backup(dest)
+        with self._lock:
+            dest = sqlite3.connect(str(target))
+            try:
+                self._conn().backup(dest)
+            finally:
+                dest.close()
         return target
 
     # ------------------------------------------------------------------ #

@@ -302,6 +302,7 @@ def main() -> int:
                     "tool_budget": 1000},
             arms=GOVERNED_ARMS,
             expected_baseline=0.8, expected_treatment=0.2,
+            allow_underpowered=True,
             notes=("Real Codex CLI; eight synthetic repository-disjoint "
                    "tasks; fixed guidance bundles frozen before the run; "
                    "exploratory because the preregistered power target is "
