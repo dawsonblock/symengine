@@ -182,6 +182,49 @@ class RetrievalTests(unittest.TestCase):
         picked = retrieve_memories([cand], self.ctx(failures=("legacy-sig",)))
         self.assertEqual(picked, ())
 
+    def test_paraphrased_counterexample_still_suppresses(self):
+        # Function-word paraphrase of the stored unsafe condition must
+        # still suppress — matching is heuristic text containment, not
+        # semantic verification.
+        cand = induce_candidate(make_experience(
+            counterexamples=("never apply floor division to money",)))
+        picked = retrieve_memories(
+            [cand], self.ctx(failures=(
+                "apply floor division on money in billing",)))
+        self.assertEqual(picked, ())
+
+    def test_negated_counterexample_suppresses_unsafe_condition(self):
+        # The stored warning is negated; the context states the bare
+        # condition — suppression must still fire.
+        cand = induce_candidate(make_experience(
+            counterexamples=("do not ship code without tests",)))
+        picked = retrieve_memories(
+            [cand], self.ctx(failures=("ship code without tests",)))
+        self.assertEqual(picked, ())
+
+    def test_conflicting_action_fixture_suppresses(self):
+        cand = induce_candidate(make_experience(
+            counterexamples=("avoid sql joins on mysql replicas",)))
+        picked = retrieve_memories(
+            [cand], self.ctx(failures=("sql joins on mysql replicas",)))
+        self.assertEqual(picked, ())
+
+    def test_unrelated_counterexample_does_not_suppress(self):
+        cand = induce_candidate(make_experience(
+            counterexamples=("avoid sql joins on mysql replicas",)))
+        picked = retrieve_memories(
+            [cand], self.ctx(failures=("pyflakes lint failure",)))
+        self.assertEqual(len(picked), 1)
+
+    def test_single_content_token_never_fuzzy_suppresses(self):
+        # 'avoid eval' has only one content token; a context that merely
+        # mentions eval must not fuzzy-match the longer needle.
+        cand = induce_candidate(
+            make_experience(counterexamples=("avoid eval",)))
+        picked = retrieve_memories(
+            [cand], self.ctx(failures=("eval crash on input",)))
+        self.assertEqual(len(picked), 1)
+
     def test_short_counterexample_requires_token_match(self):
         # "ai" must not suppress on contexts containing "airflow" —
         # substrings inside longer tokens are not counterexamples.

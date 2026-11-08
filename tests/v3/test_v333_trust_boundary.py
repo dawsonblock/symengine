@@ -455,7 +455,7 @@ class MemoryTamperTests(unittest.TestCase):
             "UPDATE experience SET record_json=?, record_digest=?"
             " WHERE experience_id='exp-1'",
             (forged_row, forged_digest))
-        with self.assertRaisesRegex(MemoryError, "tampered"):
+        with self.assertRaisesRegex(MemoryError, "tampered|chain"):
             store.get("exp-1")
 
     def test_unsigned_v1_rejected_when_keys_configured(self):
@@ -487,6 +487,60 @@ class MemoryTamperTests(unittest.TestCase):
         record = _v1_record()
         store.ingest(record)
         self.assertEqual(store.get("exp-1"), record)
+
+    def test_deleted_row_breaks_chain(self):
+        store = MemoryStore(self.db, trusted_signer_keys=self.keys)
+        self.addCleanup(store.close)
+        store.ingest(_v2_record(self.seed))
+        store.ingest(_v2_record(self.seed, experience_id="exp-2",
+                                episode_id="ep-2"))
+        store._conn().execute(
+            "DELETE FROM experience WHERE experience_id='exp-1'")
+        self.assertFalse(store.verify_chain())
+        with self.assertRaisesRegex(MemoryError, "chain"):
+            store.get("exp-2")
+        with self.assertRaisesRegex(MemoryError, "chain"):
+            store.by_outcome("fail")
+
+    def test_deleted_chain_entry_detected(self):
+        store = MemoryStore(self.db, trusted_signer_keys=self.keys)
+        self.addCleanup(store.close)
+        store.ingest(_v2_record(self.seed))
+        store.ingest(_v2_record(self.seed, experience_id="exp-2",
+                                episode_id="ep-2"))
+        store._conn().execute("DELETE FROM memory_chain WHERE seq=1")
+        self.assertFalse(store.verify_chain())
+        with self.assertRaisesRegex(MemoryError, "chain"):
+            store.get("exp-2")
+
+    def test_snapshot_rewind_detected_by_pinned_head(self):
+        store = MemoryStore(self.db, trusted_signer_keys=self.keys)
+        self.addCleanup(store.close)
+        store.ingest(_v2_record(self.seed))
+        pinned = store.head_digest()
+        self.assertIsNotNone(pinned)
+        self.assertTrue(store.verify_chain(expected_head=pinned))
+        store.ingest(_v2_record(self.seed, experience_id="exp-2",
+                                episode_id="ep-2"))
+        # An older snapshot's head can no longer stand in for current state.
+        self.assertFalse(store.verify_chain(expected_head=pinned))
+        self.assertTrue(store.verify_chain())
+
+    def test_forged_chain_entry_detected(self):
+        store = MemoryStore(self.db, trusted_signer_keys=self.keys,
+                            chain_key=(self.seed, "exp-key-1"))
+        self.addCleanup(store.close)
+        store.ingest(_v2_record(self.seed))
+        store.ingest(_v2_record(self.seed, experience_id="exp-2",
+                                episode_id="ep-2"))
+        # Adversary with file access but no seed cannot forge the chain.
+        forged_head = "f" * 64
+        store._conn().execute(
+            "UPDATE memory_chain SET head=?, signature=? WHERE seq=2",
+            (forged_head, "00" * 64))
+        self.assertFalse(store.verify_chain())
+        with self.assertRaisesRegex(MemoryError, "chain"):
+            store.get("exp-1")
 
 
 class SearchStarvationTests(unittest.TestCase):

@@ -88,22 +88,61 @@ def precondition_holds(condition: Mapping, context: RetrievalContext) -> bool:
     raise ContractError("unknown precondition kind")
 
 
-def suppression_match(haystack: str, needle: str) -> bool:
-    """Boundary-anchored counterexample match.
+_STOPWORDS = frozenset({
+    "a", "an", "the", "do", "does", "did", "not", "never", "always",
+    "use", "uses", "used", "must", "should", "shall", "will", "can",
+    "could", "would", "may", "might", "ought", "on", "in", "for", "of",
+    "to", "at", "by", "from", "with", "without", "when", "if", "is",
+    "are", "was", "were", "be", "been", "being", "this", "that", "these",
+    "those", "and", "or", "as", "it", "its", "all", "any", "each",
+    "every", "no", "so", "such", "than", "then",
+    # Imperative verbs and negation frames: the counterexample describes
+    # an unsafe *condition*; polarity lives in the store, not the match.
+    "run", "runs", "execute", "executes", "call", "calls", "apply",
+    "applies", "perform", "performs", "invoke", "invokes", "avoid",
+    "avoids", "prevent", "prevents", "stop", "stops", "forbid",
+    "forbids", "prohibit", "prohibits", "dont", "don't",
+})
 
-    Plain substring matching lets a 1-2 character counterexample (or a
-    common word inside a longer signature) suppress a candidate on every
-    context. Instead we require token boundaries on both ends; needles
-    shorter than 3 characters must equal a whole whitespace token.
+_TOKEN = re.compile(r"[a-z0-9]+")
+
+
+def _content_tokens(text: str) -> frozenset[str]:
+    """Significant content tokens; function words carry no suppression."""
+    return frozenset(
+        t for t in _TOKEN.findall(text.lower())
+        if t not in _STOPWORDS and len(t) > 1)
+
+
+def suppression_match(haystack: str, needle: str) -> bool:
+    """Boundary-anchored and paraphrase-tolerant counterexample match.
+
+    Two paths, both heuristic text matching — not semantic verification:
+
+    1. Exact boundary-anchored substring (unchanged original rule):
+       needles shorter than 3 characters must equal a whole token.
+    2. Content-token containment: every significant token of the
+       counterexample must appear in the context. Function words —
+       including negation markers — are ignored on both sides, so a
+       stored ``do not run eval on user input`` still suppresses a
+       context phrased ``run eval for user input``, and paraphrases
+       that reorder or substitute function words keep firing. A needle
+       with fewer than two content tokens never matches this path:
+       one generic word must not silence a candidate everywhere.
     """
     needle = needle.strip().lower()
     if not needle:
         return False
     if len(needle) < 3:
         return needle in haystack.split()
-    return re.search(
-        r"(?<![a-z0-9])" + re.escape(needle) + r"(?![a-z0-9])",
-        haystack) is not None
+    if re.search(
+            r"(?<![a-z0-9])" + re.escape(needle) + r"(?![a-z0-9])",
+            haystack) is not None:
+        return True
+    cx_tokens = _content_tokens(needle)
+    if len(cx_tokens) < 2:
+        return False
+    return cx_tokens <= _content_tokens(haystack)
 
 
 @dataclass(frozen=True)

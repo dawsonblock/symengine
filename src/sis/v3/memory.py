@@ -20,6 +20,7 @@ ReasoningBank-style episodic memory, rebuilt inside the v3 trust model:
 """
 from __future__ import annotations
 
+import hashlib
 import sqlite3
 import threading
 from collections.abc import Mapping
@@ -48,7 +49,29 @@ CREATE TABLE IF NOT EXISTS experience (
     captured_at TEXT NOT NULL,
     UNIQUE (episode_id, task_fingerprint)
 );
+CREATE TABLE IF NOT EXISTS memory_chain (
+    seq INTEGER PRIMARY KEY,
+    record_digest TEXT NOT NULL UNIQUE,
+    prev_head TEXT NOT NULL,
+    head TEXT NOT NULL,
+    signer_key_id TEXT NOT NULL,
+    signature TEXT NOT NULL
+);
 """
+
+_CHAIN_DOMAIN = "sis-v3-memory-chain:"
+_CHAIN_DOMAIN_BYTES = _CHAIN_DOMAIN.encode("utf-8")
+
+
+def _chain_head(prev_head: str, record_digest: str, seq: int) -> str:
+    return hashlib.sha256(
+        (_CHAIN_DOMAIN + prev_head + record_digest + str(seq))
+        .encode("utf-8")).hexdigest()
+
+
+def _sign_chain_entry(seed: bytes, payload: Mapping) -> str:
+    return signatures.sign(
+        seed, _CHAIN_DOMAIN_BYTES + canonical_json(payload)).hex()
 
 
 def _utcnow() -> str:
@@ -131,11 +154,13 @@ class MemoryStore:
     """
 
     def __init__(self, path: str | Path, *,
-                 trusted_signer_keys: dict[str, str] | None = None) -> None:
+                 trusted_signer_keys: dict[str, str] | None = None,
+                 chain_key: tuple[bytes, str] | None = None) -> None:
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._signer_keys = (dict(trusted_signer_keys)
                              if trusted_signer_keys is not None else None)
+        self._chain_key = chain_key
         self._lock = threading.RLock()
         self._con = sqlite3.connect(
             str(self.path), isolation_level=None, timeout=15.0,
@@ -223,6 +248,7 @@ class MemoryStore:
                 raise DuplicateEpisode(
                     "episode_replay: episode+fingerprint already recorded")
             try:
+                con.execute("BEGIN IMMEDIATE")
                 con.execute(
                     "INSERT INTO experience"
                     " (experience_id, episode_id, task_fingerprint,"
@@ -233,9 +259,106 @@ class MemoryStore:
                      record.digest,
                      record.canonical_bytes().decode("utf-8"),
                      record.outcome, record.captured_at))
+                self._append_chain(con, record.digest)
+                con.execute("COMMIT")
             except sqlite3.IntegrityError as exc:
+                if con.in_transaction:
+                    con.execute("ROLLBACK")
                 raise DuplicateEpisode(f"ingest_conflict: {exc}") from exc
+            except BaseException:
+                if con.in_transaction:
+                    con.execute("ROLLBACK")
+                raise
             return record.digest
+
+    def _append_chain(self, con: sqlite3.Connection,
+                      record_digest: str) -> None:
+        """Append one entry to the append-only integrity chain.
+
+        Each head commits to the previous head, the record digest and its
+        monotonic sequence position. With ``chain_key`` configured the
+        entry is signed by the memory custodian key, so a database writer
+        cannot extend or rewrite the chain; without it the chain still
+        detects mid-history edits but a writer could recompute heads —
+        callers should pin ``head_digest()`` externally to catch rewinds.
+        """
+        last = con.execute(
+            "SELECT seq, head FROM memory_chain ORDER BY seq DESC"
+            " LIMIT 1").fetchone()
+        seq = 1 if last is None else last[0] + 1
+        prev_head = "" if last is None else last[1]
+        head = _chain_head(prev_head, record_digest, seq)
+        signer_key_id = ""
+        signature = ""
+        if self._chain_key is not None:
+            seed, signer_key_id = self._chain_key
+            signature = _sign_chain_entry(seed, {
+                "seq": seq, "record_digest": record_digest,
+                "prev_head": prev_head, "head": head,
+                "signer_key_id": signer_key_id})
+        con.execute(
+            "INSERT INTO memory_chain"
+            " (seq, record_digest, prev_head, head, signer_key_id,"
+            "  signature) VALUES (?,?,?,?,?,?)",
+            (seq, record_digest, prev_head, head,
+             signer_key_id, signature))
+
+    def head_digest(self) -> str | None:
+        """The current chain head, or ``None`` for an empty store.
+
+        Pin this externally (verifier journal, candidate custody, ops
+        monitoring) — a restored older snapshot yields a different head,
+        so a pinned head is the rewind witness the chain alone cannot be.
+        """
+        row = self._conn().execute(
+            "SELECT head FROM memory_chain ORDER BY seq DESC LIMIT 1"
+        ).fetchone()
+        return row[0] if row else None
+
+    def verify_chain(self, *, expected_head: str | None = None) -> bool:
+        """Re-validate the whole integrity chain and row consistency.
+
+        Catches mid-history row deletion or rewrite (the chain commits
+        every record digest in order), forged entries (signature check,
+        when ``chain_key`` signatures are used), chain/experience table
+        divergence, and — via ``expected_head`` — snapshot rewinds.
+        """
+        entries = self._conn().execute(
+            "SELECT seq, record_digest, prev_head, head, signer_key_id,"
+            " signature FROM memory_chain ORDER BY seq").fetchall()
+        prev_head = ""
+        seen: set[str] = set()
+        for i, (seq, record_digest, p_head, head, key_id, sig) in \
+                enumerate(entries, start=1):
+            if seq != i or p_head != prev_head:
+                return False
+            if head != _chain_head(prev_head, record_digest, seq):
+                return False
+            if self._chain_key is not None:
+                if key_id != self._chain_key[1]:
+                    return False
+                try:
+                    public = signatures.public_key(self._chain_key[0])
+                except (ValueError, TypeError):
+                    return False
+                if not signatures.verify(
+                        bytes.fromhex(sig),
+                        _CHAIN_DOMAIN_BYTES + canonical_json({
+                            "seq": seq, "record_digest": record_digest,
+                            "prev_head": p_head, "head": head,
+                            "signer_key_id": key_id}), public):
+                    return False
+            seen.add(record_digest)
+            prev_head = head
+        if expected_head is not None and prev_head != expected_head:
+            return False
+        # Chain/experience divergence: every chained digest must exist,
+        # every stored row must be chained.
+        rows = self._conn().execute(
+            "SELECT record_digest FROM experience").fetchall()
+        if {r[0] for r in rows} != seen:
+            return False
+        return True
 
     def get(self, experience_id: str):
         row = self._conn().execute(
@@ -244,6 +367,8 @@ class MemoryStore:
         ).fetchone()
         if row is None:
             raise MemoryError("experience_missing")
+        if self._signer_keys is not None and not self.verify_chain():
+            raise MemoryError("memory_chain_invalid")
         record = _parse_record(row[0].encode("utf-8"))
         if record.digest != row[1]:
             raise MemoryError(f"experience_tampered:{experience_id}")
@@ -251,6 +376,8 @@ class MemoryStore:
         return record
 
     def by_outcome(self, outcome: str) -> list:
+        if self._signer_keys is not None and not self.verify_chain():
+            raise MemoryError("memory_chain_invalid")
         rows = self._conn().execute(
             "SELECT record_json, record_digest FROM experience"
             " WHERE outcome=? ORDER BY experience_id", (outcome,),

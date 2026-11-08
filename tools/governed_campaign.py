@@ -236,7 +236,8 @@ def main() -> int:
         expected_evaluation_protocol_digest=protocol["protocol_digest"])
     exp_seed, exp_pub, exp_key = evaluator_keypair()
     memory = MemoryStore(root / "memory.db",
-                         trusted_signer_keys={exp_key: exp_pub.hex()})
+                         trusted_signer_keys={exp_key: exp_pub.hex()},
+                         chain_key=(exp_seed, exp_key))
     audit_log: list[dict] = []
 
     harness = BenchmarkHarness(verifier=verifier, work_root=root / "work")
