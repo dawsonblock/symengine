@@ -115,8 +115,12 @@ class InductionTests(unittest.TestCase):
         self.assertLessEqual(len(samples),256)
 
     def test_search_budget_is_explicit(self):
-        req=fixture('arithmetic_study.json')
-        result=induce(req['train'],req['validation'],max_candidates=100)
+        # Four-field study: stage-1 enumeration exceeds a 100-candidate cap.
+        train=[{'inputs':{'a':x,'b':x+1,'c':x-1,'d':2*x},'output':x}
+               for x in (-2,-1,0,1,3,5)]
+        validation=[{'inputs':{'a':x,'b':x+1,'c':x-1,'d':2*x},'output':x}
+                    for x in (7,11)]
+        result=induce(train,validation,max_candidates=100)
         self.assertEqual(result['status'],'search_incomplete')
         self.assertTrue(result['search_truncated'])
 

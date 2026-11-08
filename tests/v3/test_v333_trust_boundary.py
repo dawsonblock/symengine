@@ -1,0 +1,577 @@
+"""SIS v3.3.3 trust-boundary regression tests (post-3.3.2 audit, gate G0).
+
+Red reproductions of the five audited defects. Each asserts the repaired
+contract, so on the defective tree they fail:
+
+- T1: LocalSubprocessExecutor self-certifies ``isolation:verified`` and a
+  bare marker qualifies a production TASK_PASS without any attestation.
+- T2: verify_experience_evidence authenticates a receipt's signature and
+  outcome but never binds the record's task, repository snapshot, attempt
+  or execution receipt — an unrelated receipt is accepted.
+- T3: a memory-DB writer that changes record_json and record_digest
+  together is not detected; the row-local checksum is unkeyed.
+- T4: the representable 16-input rule ``x14*x15+2`` is starved by fixed
+  enumeration order inside a 50k candidate budget.
+- T5: release/ provenance (375 files, commit 17f6360) describes an older
+  source than the current 382-file tree at HEAD with no check failing.
+"""
+from __future__ import annotations
+
+import hashlib
+import json
+import random
+import subprocess
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+from types import SimpleNamespace
+
+from sis.v3 import signatures
+from sis.v3.contracts import (
+    ContractError,
+    ExperienceRecordV1,
+    canonical_digest,
+)
+from sis.v3.evaluation_runtime import (
+    SANDBOX_FAILURE,
+    TASK_FAIL,
+    TASK_PASS,
+    TIMEOUT,
+    classify_execution,
+)
+from sis.v3.memory import (
+    MemoryError,
+    MemoryStore,
+    verify_experience_evidence,
+)
+from sis.v3.runner import (
+    CommandSpec,
+    LocalSubprocessExecutor,
+    ResourceLimits,
+)
+
+ROOT = Path(__file__).resolve().parents[2]
+NOW = "2026-11-08T12:00:00Z"
+
+
+def _base_tree(root: Path) -> Path:
+    base = root / "base"
+    base.mkdir()
+    (base / "README.txt").write_text("fixture\n")
+    return base
+
+
+def _limits(**kw) -> ResourceLimits:
+    defaults = dict(
+        cpu_seconds=20, wall_seconds=15, memory_bytes=1 << 30,
+        output_bytes=1 << 20, disk_bytes=16 << 20, process_count=64)
+    defaults.update(kw)
+    return ResourceLimits(**defaults)
+
+
+class LocalSelfCertificationTests(unittest.TestCase):
+    """T1: this backend can never mint a verified-isolation claim."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.base = _base_tree(self.root)
+
+    def test_production_constructor_rejects_verified_isolation(self):
+        with self.assertRaises(ContractError):
+            LocalSubprocessExecutor(
+                self.root / "exec", use_seatbelt=False,
+                production=True, verified_isolation=True)
+
+    def test_development_constructor_rejects_verified_isolation(self):
+        # The flag mints the marker on every receipt, not only production
+        # runs, so it is rejected for this backend unconditionally.
+        with self.assertRaises(ContractError):
+            LocalSubprocessExecutor(
+                self.root / "exec", use_seatbelt=False,
+                verified_isolation=True)
+
+    def test_local_receipt_is_always_unverified_local(self):
+        executor = LocalSubprocessExecutor(
+            self.root / "exec", use_seatbelt=False)
+        workspace = executor.prepare(self.base)
+        receipt = executor.run(workspace, CommandSpec(
+            argv=(sys.executable, "-c", "print(1)"), limits=_limits()))
+        markers = set(receipt.security_errors)
+        self.assertIn("isolation:unverified_local", markers)
+        self.assertNotIn("isolation:verified", markers)
+
+    def test_production_still_refuses_local_execution(self):
+        executor = LocalSubprocessExecutor(
+            self.root / "exec", use_seatbelt=False, production=True)
+        workspace = executor.prepare(self.base)
+        with self.assertRaisesRegex(Exception, "verified_isolation_required"):
+            executor.run(workspace, CommandSpec(
+                argv=(sys.executable, "-c", "print(1)"), limits=_limits()))
+
+
+class FabricatedMarkerTests(unittest.TestCase):
+    """T1 classification half: a self-reported marker is not an attestation."""
+
+    def test_bare_verified_marker_is_not_production_qualified(self):
+        receipt = SimpleNamespace(
+            security_errors=("isolation:verified",),
+            timeout=False, exit_status=0)
+        self.assertEqual(
+            classify_execution(receipt, production=True), SANDBOX_FAILURE)
+
+    def test_marker_manipulation_cannot_mint_task_pass(self):
+        for markers in (
+            ("isolation:verified",),
+            ("isolation:verified", "network:seatbelt_denied"),
+            ("isolation:verified", "isolation:seatbelt"),
+        ):
+            with self.subTest(markers=markers):
+                receipt = SimpleNamespace(
+                    security_errors=markers, timeout=False, exit_status=0)
+                self.assertEqual(
+                    classify_execution(receipt, production=True),
+                    SANDBOX_FAILURE)
+
+    def test_marker_manipulation_cannot_mint_task_fail_or_timeout(self):
+        receipt = SimpleNamespace(
+            security_errors=("isolation:verified",),
+            timeout=False, exit_status=1)
+        self.assertEqual(
+            classify_execution(receipt, production=True), SANDBOX_FAILURE)
+        receipt = SimpleNamespace(
+            security_errors=("isolation:verified",),
+            timeout=True, exit_status=-1)
+        self.assertEqual(
+            classify_execution(receipt, production=True), SANDBOX_FAILURE)
+
+    def test_unverified_local_marker_disqualifies_even_when_attested(self):
+        # A receipt self-reporting local execution must never qualify in
+        # production, whatever the caller's attestation flag says.
+        receipt = SimpleNamespace(
+            security_errors=("isolation:unverified_local",),
+            timeout=False, exit_status=0)
+        self.assertEqual(
+            classify_execution(
+                receipt, production=True, isolation_attested=True),
+            SANDBOX_FAILURE)
+
+
+class IsolationAttestationTests(unittest.TestCase):
+    """T1 attestation half: signed, bound, policy-checked isolation proof."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.base = _base_tree(self.root)
+        self.seed, self.public = signatures.generate_keypair()
+        self.keys = {"isolator-1": self.public.hex()}
+        executor = LocalSubprocessExecutor(
+            self.root / "exec", use_seatbelt=False,
+            worker_identity="worker-A")
+        workspace = executor.prepare(self.base)
+        self.spec = CommandSpec(
+            argv=(sys.executable, "-c", "print(1)"), limits=_limits())
+        self.receipt = executor.run(workspace, self.spec)
+
+    def _issue(self, receipt=None, seed=None, key_id="isolator-1",
+               **overrides):
+        from sis.v3.isolation import issue_attestation
+        receipt = receipt or self.receipt
+        fields = dict(
+            attestation_id="att-1",
+            backend="linux-rootless-worker",
+            worker_identity="worker-A",
+            policy_digest="aa" * 32,
+            image_digest="bb" * 32,
+            command_spec_digest=receipt.command_spec_digest,
+            workspace_input_digest=receipt.before_tree_digest,
+            execution_receipt_digest=receipt.digest,
+            properties=("fs:workspace_confined", "net:denied",
+                        "proc:namespaced"),
+            issued_at=NOW, expires_at="2027-01-01T00:00:00Z",
+            nonce="nonce-1")
+        fields.update(overrides)
+        return issue_attestation(
+            seed or self.seed, key_id=key_id, **fields)
+
+    def _verify(self, attestation, receipt=None, **kw):
+        from sis.v3.isolation import verify_isolation_attestation
+        kw.setdefault("trusted_keys", self.keys)
+        kw.setdefault("allowed_backends", ("linux-rootless-worker",))
+        kw.setdefault("at_time", "2026-11-08T13:00:00Z")
+        return verify_isolation_attestation(
+            attestation, receipt or self.receipt, **kw)
+
+    def test_correctly_bound_attestation_verifies(self):
+        self.assertTrue(self._verify(self._issue()))
+
+    def test_attestation_for_other_receipt_rejected(self):
+        executor = LocalSubprocessExecutor(
+            self.root / "exec2", use_seatbelt=False,
+            worker_identity="worker-A")
+        workspace = executor.prepare(self.base)
+        other = executor.run(workspace, CommandSpec(
+            argv=(sys.executable, "-c", "print(2)"), limits=_limits()))
+        attestation = self._issue(execution_receipt_digest=other.digest)
+        self.assertFalse(self._verify(attestation))
+
+    def test_attestation_for_other_command_rejected(self):
+        self.assertFalse(self._verify(
+            self._issue(command_spec_digest="f" * 64)))
+
+    def test_attestation_for_other_tree_rejected(self):
+        self.assertFalse(self._verify(
+            self._issue(workspace_input_digest="f" * 64)))
+
+    def test_attestation_for_other_worker_rejected(self):
+        self.assertFalse(self._verify(
+            self._issue(worker_identity="worker-B")))
+
+    def test_expired_attestation_rejected(self):
+        attestation = self._issue(expires_at="2026-11-08T12:30:00Z")
+        self.assertFalse(self._verify(
+            attestation, at_time="2026-11-08T13:00:00Z"))
+        self.assertTrue(self._verify(
+            attestation, at_time="2026-11-08T12:15:00Z"))
+
+    def test_wrong_signer_rejected(self):
+        seed, _public = signatures.generate_keypair()
+        self.assertFalse(self._verify(self._issue(seed=seed)))
+        self.assertFalse(self._verify(
+            self._issue(key_id="isolator-unknown")))
+
+    def test_unallowlisted_backend_rejected(self):
+        attestation = self._issue(backend="local-subprocess")
+        self.assertFalse(self._verify(attestation))
+        self.assertFalse(self._verify(
+            self._issue(), allowed_backends=("microvm",)))
+
+    def test_policy_mismatch_rejected(self):
+        self.assertFalse(self._verify(
+            self._issue(), required_policy_digest="cc" * 32))
+        self.assertTrue(self._verify(
+            self._issue(), required_policy_digest="aa" * 32))
+
+    def test_attested_production_classification(self):
+        receipt = SimpleNamespace(
+            security_errors=("net:denied",), timeout=False, exit_status=0)
+        self.assertEqual(
+            classify_execution(
+                receipt, production=True, isolation_attested=True),
+            TASK_PASS)
+        receipt = SimpleNamespace(
+            security_errors=("net:denied",), timeout=False, exit_status=1)
+        self.assertEqual(
+            classify_execution(
+                receipt, production=True, isolation_attested=True),
+            TASK_FAIL)
+        receipt = SimpleNamespace(
+            security_errors=("net:denied",), timeout=True, exit_status=-1)
+        self.assertEqual(
+            classify_execution(
+                receipt, production=True, isolation_attested=True),
+            TIMEOUT)
+
+
+def _v1_record(**over):
+    fields = dict(
+        schema_version=1,
+        experience_id="exp-1", episode_id="ep-1",
+        repository_registry_id="repo-a",
+        task_fingerprint=hashlib.sha256(b"fp:ep-1").hexdigest(),
+        task_category="convention-fix",
+        agent_config_digest="a" * 64,
+        trace_digest="b" * 64,
+        outcome_receipt_digest="c" * 64,
+        outcome="fail", failure_category="convention_unknown",
+        lesson="Use ROUND_HALF_UP for money",
+        facts=("baseline failed without guidance",),
+        hypotheses=("guidance prevents this class",),
+        applicability=({"kind": "language_is", "value": "python"},),
+        counterexamples=(),
+        provenance={"generator": "test", "method": "unit"},
+        captured_at=NOW)
+    fields.update(over)
+    return ExperienceRecordV1(**fields)
+
+
+def _v2_record(seed, key_id="exp-key-1", **over):
+    from sis.v3.memory import issue_experience_record
+    fields = dict(
+        experience_id="exp-1", episode_id="ep-1",
+        repository_registry_id="repo-a",
+        task_id="task-A", attempt_id="att-1",
+        repo_snapshot_digest="d" * 64,
+        task_fingerprint=hashlib.sha256(b"fp:ep-1").hexdigest(),
+        task_category="convention-fix",
+        agent_config_digest="a" * 64,
+        execution_receipt_digest="e" * 64,
+        trace_digest="b" * 64,
+        outcome_receipt_digest="c" * 64,
+        outcome="fail", failure_category="convention_unknown",
+        lesson="Use ROUND_HALF_UP for money",
+        facts=("baseline failed without guidance",),
+        hypotheses=("guidance prevents this class",),
+        applicability=({"kind": "language_is", "value": "python"},),
+        counterexamples=(),
+        provenance={"generator": "test", "method": "unit"},
+        captured_at=NOW)
+    fields.update(over)
+    return issue_experience_record(seed, key_id, **fields)
+
+
+class _Envelope:
+    """Outcome-envelope-shaped test artifact (task+repo+attempt+exec)."""
+
+    def __init__(self, task_id="task-A", repo="d" * 64, attempt="att-1",
+                 execution="e" * 64, outcome="fail"):
+        self.task_id = task_id
+        self.evaluated_repo_digest = repo
+        self.attempt_id = attempt
+        self.execution_receipt_digest = execution
+        self.outcome = outcome
+
+
+class _Verifier:
+    """Minimal verifier double: authenticates and resolves one artifact."""
+
+    def __init__(self, artifact, *, valid=True, journal_exec=None):
+        self.artifact = artifact
+        self.valid = valid
+        self.journal_exec = journal_exec
+
+    def load_receipt(self, digest):
+        if self.artifact is None:
+            raise MemoryError("receipt_missing")
+        return self.artifact
+
+    def verify_receipt(self, artifact):
+        return self.valid
+
+    def execution_digest_for(self, receipt_digest):
+        return self.journal_exec
+
+
+class ExperienceLineageTests(unittest.TestCase):
+    """T2: evidence must bind task, repo snapshot, attempt and execution."""
+
+    def setUp(self):
+        self.seed, _public = signatures.generate_keypair()
+
+    def test_authenticated_matching_lineage_passes(self):
+        record = _v2_record(self.seed)
+        verifier = _Verifier(_Envelope())
+        self.assertTrue(verify_experience_evidence(record, verifier))
+
+    def test_receipt_for_other_task_rejected(self):
+        record = _v2_record(self.seed, task_id="task-A")
+        verifier = _Verifier(_Envelope(task_id="task-B"))
+        with self.assertRaisesRegex(MemoryError, "task_mismatch"):
+            verify_experience_evidence(record, verifier)
+
+    def test_receipt_for_other_repository_rejected(self):
+        record = _v2_record(self.seed)
+        verifier = _Verifier(_Envelope(repo="f" * 64))
+        with self.assertRaisesRegex(MemoryError, "repo_mismatch"):
+            verify_experience_evidence(record, verifier)
+
+    def test_receipt_for_other_attempt_rejected(self):
+        record = _v2_record(self.seed)
+        verifier = _Verifier(_Envelope(attempt="att-9"))
+        with self.assertRaisesRegex(MemoryError, "attempt_mismatch"):
+            verify_experience_evidence(record, verifier)
+
+    def test_receipt_for_other_execution_rejected(self):
+        record = _v2_record(self.seed)
+        verifier = _Verifier(_Envelope(execution="9" * 64))
+        with self.assertRaisesRegex(MemoryError, "execution_mismatch"):
+            verify_experience_evidence(record, verifier)
+
+    def test_outcome_mismatch_still_rejected(self):
+        record = _v2_record(self.seed, outcome="fail")
+        verifier = _Verifier(_Envelope(outcome="pass"))
+        with self.assertRaisesRegex(MemoryError, "outcome_mismatch"):
+            verify_experience_evidence(record, verifier)
+
+    def test_unauthenticated_receipt_still_rejected(self):
+        record = _v2_record(self.seed)
+        verifier = _Verifier(_Envelope(), valid=False)
+        with self.assertRaisesRegex(MemoryError, "unauthenticated"):
+            verify_experience_evidence(record, verifier)
+
+    def test_v1_receipt_without_execution_linkage_rejected(self):
+        # A V1-shaped receipt carries task/repo/outcome but no attempt or
+        # execution digest; without a corroborating journal the claimed
+        # execution_receipt_digest is unverifiable -> fail closed.
+        record = _v2_record(self.seed)
+        receipt = SimpleNamespace(
+            task_id="task-A", evaluated_repo_digest="d" * 64,
+            outcome="fail")
+        verifier = _Verifier(receipt, journal_exec=None)
+        verifier.execution_digest_for = None
+        with self.assertRaisesRegex(MemoryError, "execution_unverifiable"):
+            verify_experience_evidence(record, verifier)
+        verifier = _Verifier(receipt, journal_exec="9" * 64)
+        with self.assertRaisesRegex(MemoryError, "execution_mismatch"):
+            verify_experience_evidence(record, verifier)
+        verifier = _Verifier(receipt, journal_exec="e" * 64)
+        self.assertTrue(verify_experience_evidence(record, verifier))
+
+    def test_v1_records_are_legacy_not_verified_evidence(self):
+        record = _v1_record()
+        verifier = _Verifier(_Envelope())
+        with self.assertRaisesRegex(MemoryError, "legacy_unverifiable"):
+            verify_experience_evidence(record, verifier)
+
+
+class MemoryTamperTests(unittest.TestCase):
+    """T3: DB-row checksums are not provenance signatures."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.db = Path(self.temp.name) / "m.db"
+        self.seed, self.public = signatures.generate_keypair()
+        self.keys = {"exp-key-1": self.public.hex()}
+
+    def test_coordinated_json_and_digest_rewrite_detected(self):
+        store = MemoryStore(self.db, trusted_signer_keys=self.keys)
+        self.addCleanup(store.close)
+        original = _v2_record(self.seed)
+        store.ingest(original)
+        # The adversary edits the lesson and rewrites both columns. The
+        # signature field it copies no longer covers the body.
+        forged = dict(original.to_dict())
+        forged["lesson"] = "Always floor monetary division"
+        forged_row = json.dumps(
+            forged, sort_keys=True, separators=(",", ":"))
+        forged_digest = canonical_digest(
+            "experience_record_v2", 1, json.loads(forged_row))
+        store._conn().execute(
+            "UPDATE experience SET record_json=?, record_digest=?"
+            " WHERE experience_id='exp-1'",
+            (forged_row, forged_digest))
+        with self.assertRaisesRegex(MemoryError, "tampered"):
+            store.get("exp-1")
+
+    def test_unsigned_v1_rejected_when_keys_configured(self):
+        store = MemoryStore(self.db, trusted_signer_keys=self.keys)
+        self.addCleanup(store.close)
+        with self.assertRaisesRegex(MemoryError, "untrusted"):
+            store.ingest(_v1_record())
+
+    def test_v2_signed_by_untrusted_key_rejected(self):
+        store = MemoryStore(self.db, trusted_signer_keys=self.keys)
+        self.addCleanup(store.close)
+        other_seed, other_pub = signatures.generate_keypair()
+        with self.assertRaisesRegex(MemoryError, "untrusted"):
+            store.ingest(_v2_record(other_seed, key_id="other-key"))
+        with self.assertRaisesRegex(MemoryError, "tampered"):
+            store.ingest(_v2_record(other_seed))
+
+    def test_signed_v2_roundtrip(self):
+        store = MemoryStore(self.db, trusted_signer_keys=self.keys)
+        self.addCleanup(store.close)
+        record = _v2_record(self.seed)
+        self.assertEqual(store.ingest(record), record.digest)
+        self.assertEqual(store.get("exp-1"), record)
+        self.assertEqual(store.by_outcome("fail"), [record])
+
+    def test_legacy_store_keeps_v1_rows(self):
+        store = MemoryStore(self.db)
+        self.addCleanup(store.close)
+        record = _v1_record()
+        store.ingest(record)
+        self.assertEqual(store.get("exp-1"), record)
+
+
+class SearchStarvationTests(unittest.TestCase):
+    """T4: representable rules must not starve on late features."""
+
+    def _study(self, seed=0, features=16, train_n=6, val_n=3):
+        rng = random.Random(seed)
+        names = [f"x{i}" for i in range(features)]
+        seen = set()
+        rows = []
+        while len(rows) < train_n + val_n:
+            inputs = {name: rng.randint(0, 9) for name in names}
+            key = tuple(inputs[n] for n in names)
+            if key in seen:
+                continue
+            seen.add(key)
+            rows.append({
+                "inputs": inputs,
+                "output": inputs["x14"] * inputs["x15"] + 2})
+        return rows[:train_n], rows[train_n:]
+
+    def test_late_feature_rule_within_budget(self):
+        from sis.induction import induce
+        from sis.expression import evaluate
+        train, validation = self._study()
+        result = induce(train, validation, max_candidates=50000)
+        self.assertIsNotNone(result["rule"], result["status"])
+        self.assertEqual(
+            result["validation_passed"], len(validation), result["status"])
+        # The recovered rule must generalize to unseen oracle points.
+        rng = random.Random(1)
+        for _ in range(10):
+            inputs = {f"x{i}": rng.randint(0, 9) for i in range(16)}
+            self.assertEqual(
+                evaluate(result["rule"], inputs),
+                inputs["x14"] * inputs["x15"] + 2)
+
+    def test_two_feature_analogue_still_found(self):
+        from sis.induction import induce
+        train = [
+            {"inputs": {"x0": a, "x1": b}, "output": a * b + 2}
+            for a, b in ((1, 2), (3, 4), (5, 6), (2, 7), (0, 3), (4, 4))]
+        validation = [
+            {"inputs": {"x0": 2, "x1": 5}, "output": 12},
+            {"inputs": {"x0": 6, "x1": 1}, "output": 8}]
+        result = induce(train, validation, max_candidates=12000)
+        self.assertIsNotNone(result["rule"], result["status"])
+        self.assertEqual(result["validation_passed"], 2, result["status"])
+
+
+class ReleaseIdentityTests(unittest.TestCase):
+    """T5: release/ provenance must describe the source it ships."""
+
+    def test_release_inventory_matches_current_manifest(self):
+        manifest = json.loads(
+            (ROOT / "RELEASE_SHA256.json").read_text())["files"]
+        inventory = json.loads(
+            (ROOT / "release" / "source_inventory.json").read_text())
+        self.assertEqual(
+            set(inventory["files"]), set(manifest),
+            "release source_inventory covers a different file set")
+        for relative, digest in manifest.items():
+            self.assertEqual(
+                inventory["files"][relative]["sha256"], digest,
+                f"release inventory hash drifted at {relative}")
+
+    def test_release_commit_covers_current_source(self):
+        release = json.loads(
+            (ROOT / "release" / "release_manifest.json").read_text())
+        commit = release["source_commit"]
+        subprocess.run(
+            ["git", "-C", str(ROOT), "cat-file", "-e", f"{commit}^{{commit}}"],
+            check=True, capture_output=True)
+        head = subprocess.check_output(
+            ["git", "-C", str(ROOT), "rev-parse", "HEAD"]).decode().strip()
+        manifest = json.loads(
+            (ROOT / "RELEASE_SHA256.json").read_text())["files"]
+        changed = subprocess.check_output(
+            ["git", "-C", str(ROOT), "diff", "--name-only",
+             commit, head, "--", *sorted(manifest)]).decode().split()
+        self.assertEqual(
+            changed, [],
+            "release source_commit predates manifest-covered changes "
+            f"{changed[:5]}")
+
+
+if __name__ == "__main__":
+    unittest.main()

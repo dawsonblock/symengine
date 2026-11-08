@@ -101,9 +101,24 @@ class ExperienceEvidenceTests(unittest.TestCase):
     class _Receipt:
         def __init__(self, outcome):
             self.outcome = outcome
+            self.task_id = "task-1"
+            self.evaluated_repo_digest = "d" * 64
+            self.execution_receipt_digest = "e" * 64
+
+    def _v2(self, outcome="fail"):
+        from sis.v3 import signatures
+        from sis.v3.memory import issue_experience_record
+        seed, _pub = signatures.generate_keypair()
+        base = make_experience(outcome=outcome).to_dict()
+        base.pop("schema_version")
+        return issue_experience_record(
+            seed, "test-key", **base,
+            task_id="task-1", attempt_id="att-1",
+            repo_snapshot_digest="d" * 64,
+            execution_receipt_digest="e" * 64)
 
     def test_authenticated_receipt_must_match_outcome(self):
-        rec = make_experience(outcome="fail")
+        rec = self._v2(outcome="fail")
         self.assertTrue(verify_experience_evidence(
             rec, self._Verifier(self._Receipt("fail"))))
         with self.assertRaisesRegex(MemoryError, "outcome_mismatch"):
@@ -114,6 +129,11 @@ class ExperienceEvidenceTests(unittest.TestCase):
                 rec, self._Verifier(self._Receipt("fail"), valid=False))
         with self.assertRaisesRegex(MemoryError, "receipt_missing"):
             verify_experience_evidence(rec, self._Verifier(None))
+
+    def test_v1_records_are_legacy_unverifiable(self):
+        with self.assertRaisesRegex(MemoryError, "legacy_unverifiable"):
+            verify_experience_evidence(
+                make_experience(), self._Verifier(self._Receipt("fail")))
 
 
 class InductionTests(unittest.TestCase):

@@ -457,6 +457,18 @@ class OutcomeVerifier:
         except OSError as exc:
             raise JournalIntegrityError("receipt_missing") from exc
 
+    def execution_digest_for(self, receipt_digest: str) -> str | None:
+        """The execution receipt digest journaled for one outcome receipt.
+
+        The journal entry is written by this evaluator at receipt issue,
+        so it binds an outcome receipt to the exact execution that
+        produced it — the linkage experience-evidence verification needs.
+        """
+        for entry in self._journal:
+            if entry["receipt_digest"] == receipt_digest:
+                return entry["execution_digest"]
+        return None
+
     def _record(self, receipt: OutcomeReceiptV1, nonce: str,
                 execution_digest: str, *, outcome_class: str | None = None,
                 runtime_digest: str | None = None,

@@ -357,6 +357,36 @@ class ExecutionReceiptV1(V1Record):
 
 
 @dataclass(frozen=True, kw_only=True)
+class IsolationAttestationV1(V1Record):
+    """Isolation attestation (v3.3.3): an independent isolator's signed
+    proof that one execution ran inside attested containment.
+
+    A worker reports raw receipt facts only; containment is qualified by
+    this separately trusted signer binding the executor backend, worker
+    identity, sandbox policy and image, command spec, workspace input
+    tree, and the exact execution receipt. A receipt's own
+    ``isolation:*`` markers are self-reported and never qualify it.
+    """
+
+    attestation_id: str
+    backend: str
+    worker_identity: str
+    policy_digest: str
+    image_digest: str
+    command_spec_digest: str
+    workspace_input_digest: str
+    execution_receipt_digest: str
+    properties: tuple[str, ...]
+    issued_at: str
+    expires_at: str | None
+    nonce: str
+    signer_key_id: str
+    signature: str
+
+    RECORD_TYPE: ClassVar[str] = "isolation_attestation"
+
+
+@dataclass(frozen=True, kw_only=True)
 class OutcomeReceiptV1(V1Record):
     receipt_id: str
     evaluator_identity: str
@@ -862,6 +892,45 @@ class ExperienceRecordV1(V1Record):
 
 
 @dataclass(frozen=True, kw_only=True)
+class ExperienceRecordV2(V1Record):
+    """Task-bound verified experience episode (v3.3.3 memory plane).
+
+    V2 binds the exact evaluation lineage V1 could not: ``task_id``,
+    ``attempt_id``, ``repo_snapshot_digest`` and
+    ``execution_receipt_digest`` are checked against the resolved,
+    authenticated outcome artifact, and the record body itself is signed
+    by an evaluator-custodied key so a store-level JSON rewrite is
+    detected instead of adopted.
+    """
+
+    experience_id: str
+    episode_id: str
+    repository_registry_id: str
+    task_id: str
+    attempt_id: str
+    repo_snapshot_digest: str
+    task_fingerprint: str
+    task_category: str
+    agent_config_digest: str
+    execution_receipt_digest: str
+    trace_digest: str
+    outcome_receipt_digest: str
+    outcome: str
+    failure_category: str | None
+    lesson: str
+    facts: tuple[str, ...]
+    hypotheses: tuple[str, ...]
+    applicability: tuple[Mapping[str, Any], ...]
+    counterexamples: tuple[str, ...]
+    provenance: Mapping[str, Any]
+    captured_at: str
+    signer_key_id: str
+    signature: str
+
+    RECORD_TYPE: ClassVar[str] = "experience_record_v2"
+
+
+@dataclass(frozen=True, kw_only=True)
 class GuidanceRequestV1(V1Record):
     task_id: str
     repo_snapshot_digest: str
@@ -951,6 +1020,18 @@ def _validate_record(record: V1Record) -> None:
         _require(type(d["timeout"]) is bool, "timeout must be Boolean")
         for message in _sequence(d["security_errors"], "security_errors", maximum=32):
             _text(message, "security_errors[]", maximum=512)
+    elif isinstance(record, IsolationAttestationV1):
+        for name in ("attestation_id", "backend", "worker_identity", "nonce", "signer_key_id"):
+            _identifier(d[name], name)
+        for name in ("policy_digest", "image_digest", "command_spec_digest",
+                     "workspace_input_digest", "execution_receipt_digest"):
+            _digest(d[name], name)
+        for prop in _sequence(d["properties"], "properties", maximum=32):
+            _text(prop, "properties[]", maximum=128)
+        _timestamp(d["issued_at"], "issued_at")
+        if d["expires_at"] is not None:
+            _timestamp(d["expires_at"], "expires_at")
+        _require(isinstance(d["signature"], str) and bool(re.fullmatch(r"[0-9a-f]{128}", d["signature"])), "signature must be a 64-byte lowercase hexadecimal Ed25519 signature")
     elif isinstance(record, OutcomeReceiptV1):
         _identifier(d["receipt_id"], "receipt_id")
         _identifier(d["evaluator_identity"], "evaluator_identity")
@@ -1321,6 +1402,31 @@ def _validate_record(record: V1Record) -> None:
         for key, value in prov.items():
             _text(value, f"provenance.{key}", maximum=256)
         _timestamp(d["captured_at"], "captured_at")
+    elif isinstance(record, ExperienceRecordV2):
+        for name in ("experience_id", "episode_id", "repository_registry_id",
+                     "task_id", "attempt_id", "signer_key_id"):
+            _identifier(d[name], name)
+        for name in ("repo_snapshot_digest", "task_fingerprint",
+                     "agent_config_digest", "execution_receipt_digest",
+                     "trace_digest", "outcome_receipt_digest"):
+            _digest(d[name], name)
+        _text(d["task_category"], "task_category", maximum=128)
+        _enum(d["outcome"], _OUTCOMES, "outcome")
+        _text(d["failure_category"], "failure_category", maximum=128) \
+            if d["failure_category"] is not None else None
+        _text(d["lesson"], "lesson", maximum=MAX_TEXT_CHARS)
+        for name in ("facts", "hypotheses", "counterexamples"):
+            for item in _sequence(d[name], name, maximum=64):
+                _text(item, f"{name}[]", maximum=1024)
+        for condition in _sequence(d["applicability"], "applicability"):
+            _precondition(condition, "applicability[]")
+        prov = d["provenance"]
+        _require(isinstance(prov, Mapping) and set(prov) <= {"generator", "method", "source", "migrated_from"},
+                 "provenance has unsupported fields")
+        for key, value in prov.items():
+            _text(value, f"provenance.{key}", maximum=256)
+        _timestamp(d["captured_at"], "captured_at")
+        _require(isinstance(d["signature"], str) and bool(re.fullmatch(r"[0-9a-f]{128}", d["signature"])), "signature must be a 64-byte lowercase hexadecimal Ed25519 signature")
     elif isinstance(record, GuidanceRequestV1):
         _identifier(d["task_id"], "task_id")
         _digest(d["repo_snapshot_digest"], "repo_snapshot_digest")

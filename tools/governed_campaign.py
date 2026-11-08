@@ -30,7 +30,7 @@ from sis.v3.benchmark import BenchmarkHarness, BudgetCaps, report_digest
 from sis.v3.candidate_authority import (CandidateDecisionAuthority,
                                         CandidateEvidenceAuthority)
 from sis.v3.candidates import CandidateRegistry
-from sis.v3.contracts import (ExperienceRecordV1, GuidanceRequestV1,
+from sis.v3.contracts import (GuidanceRequestV1,
                               GuidanceV1, ProcedureRecordV1,
                               TaskEnvelopeV1, canonical_digest)
 from sis.v3.composition import compose_guidance
@@ -44,6 +44,7 @@ from sis.v3.governed_eval import (EvaluationPartition,
                                   run_governed_evaluation,
                                   required_sample_size)
 from sis.v3.memory import (MemoryStore, induce_candidate,
+                           issue_experience_record,
                            verify_experience_evidence)
 from sis.v3.promotion import PromotionController, operator_token_digest
 from sis.v3.runner import LocalSubprocessExecutor, tree_digest
@@ -233,7 +234,9 @@ def main() -> int:
         evidence_authority=evidence_authority,
         decision_authority=decision_authority,
         expected_evaluation_protocol_digest=protocol["protocol_digest"])
-    memory = MemoryStore(root / "memory.db")
+    exp_seed, exp_pub, exp_key = evaluator_keypair()
+    memory = MemoryStore(root / "memory.db",
+                         trusted_signer_keys={exp_key: exp_pub.hex()})
     audit_log: list[dict] = []
 
     harness = BenchmarkHarness(verifier=verifier, work_root=root / "work")
@@ -253,11 +256,14 @@ def main() -> int:
         if not arm.get("receipt_digest"):
             continue
         receipt = verifier.load_receipt(arm["receipt_digest"])
+        execution_digest = verifier.execution_digest_for(receipt.digest)
+        if execution_digest is None:
+            continue
         task_id = entry["task_id"]
         name = task_id.split("-", 1)[1]
         statement, keyword = statements[task_id]
-        rec = ExperienceRecordV1(
-            schema_version=1,
+        rec = issue_experience_record(
+            exp_seed, exp_key,
             experience_id="exp-" + name,
             episode_id="ep-" + name,
             repository_registry_id="eval-" + name,
@@ -281,7 +287,11 @@ def main() -> int:
             counterexamples=(),
             provenance={"generator": "campaign-induction",
                         "method": "deterministic"},
-            captured_at=_utcnow())
+            captured_at=_utcnow(),
+            task_id=receipt.task_id,
+            attempt_id=receipt.receipt_id,
+            repo_snapshot_digest=receipt.evaluated_repo_digest,
+            execution_receipt_digest=execution_digest)
         memory.ingest(
             rec, evidence_check=lambda r: verify_experience_evidence(r, verifier))
         episodes.append(rec)

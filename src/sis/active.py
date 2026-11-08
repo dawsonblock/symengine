@@ -23,10 +23,12 @@ def suggest_queries(train, *, max_candidates=12000, max_hypotheses=48,
         raise InvalidInput('max_probes must be between 1 and 256')
     if type(limit) is not int or not 1 <= limit <= 32:
         raise InvalidInput('limit must be between 1 and 32')
+    probes = list(generated_probes(train[0]['inputs'], max_probes))
     seen = set()
     hypotheses = []
     exhausted = False
-    for ast, _, _, exceeded in candidates(train, max_candidates):
+    for ast, _, _, exceeded in candidates(train, max_candidates,
+                                          observed_inputs=probes):
         if exceeded or ast is None:
             exhausted = True
             break
@@ -43,7 +45,7 @@ def suggest_queries(train, *, max_candidates=12000, max_hypotheses=48,
     if len(input_keys) != len(train):
         raise InvalidInput('training examples must have distinct input records')
     ranked = []
-    for p in generated_probes(train[0]['inputs'], max_probes):
+    for p in probes:
         if canonical(p) in input_keys:
             continue
         predictions = {}

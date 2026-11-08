@@ -447,12 +447,15 @@ class ProductionIsolationTests(unittest.TestCase):
         self.assertEqual(
             classify_execution(receipt, production=True), SANDBOX_FAILURE)
 
-    def test_production_classification_accepts_verified_marker(self):
+    def test_production_classification_rejects_bare_verified_marker(self):
+        # A self-reported marker is not an attestation: only an
+        # independently verified IsolationAttestationV1 qualifies a
+        # production outcome (see tests/v3/test_v333_trust_boundary.py).
         receipt = SimpleNamespace(
             security_errors=("isolation:verified",),
             timeout=False, exit_status=0)
         self.assertEqual(
-            classify_execution(receipt, production=True), TASK_PASS)
+            classify_execution(receipt, production=True), SANDBOX_FAILURE)
 
 
 class SignedLinkTests(unittest.TestCase):

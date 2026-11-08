@@ -61,9 +61,25 @@ class PromotionRecomputeTests(unittest.TestCase):
             self.s.registry.promote(self.induced, train=changed['train'], validation=changed['validation'])
 
     def test_altered_search_budget_denied(self):
+        # A four-field study that truncates at a small cap but validates at
+        # the default budget: replaying with the altered budget must deny.
+        # Field values decorrelate comparisons so 'a' is the only fitting rule.
+        rows = [(5, -3, 8, 2), (-2, 4, -1, 9), (0, 3, -7, 1),
+                (3, 10, 0, -5), (7, 2, 11, 4), (11, -6, 5, 13),
+                (-5, 7, 0, 12)]
+        vrows = [(13, 1, 2, 6), (17, -5, 9, 3)]
+        case = {
+            'train': [{'inputs': {'a': a, 'b': b, 'c': c, 'd': d}, 'output': a}
+                      for a, b, c, d in rows],
+            'validation': [{'inputs': {'a': a, 'b': b, 'c': c, 'd': d}, 'output': a}
+                           for a, b, c, d in vrows],
+            'namespace': 'budget_denied_study',
+        }
+        induced = induce(case['train'], case['validation'], namespace=case['namespace'])
+        self.assertEqual(induced['status'], 'locally_validated')
         with self.assertRaises(RuleRejected):
-            self.s.registry.promote(self.induced, train=self.case['train'],
-                                    validation=self.case['validation'], max_candidates=100)
+            self.s.registry.promote(induced, train=case['train'],
+                                    validation=case['validation'], max_candidates=100)
 
     def test_service_study_can_promote_verified_result(self):
         req = study()

@@ -275,18 +275,30 @@ def classify_execution(
     stderr_tail: str = "",
     require_verified_isolation: bool = False,
     production: bool = False,
+    isolation_attested: bool = False,
     infrastructure_error: str | None = None,
 ) -> str:
-    """Map an execution receipt to exactly one outcome class."""
+    """Map an execution receipt to exactly one outcome class.
+
+    ``isolation_attested`` is the verdict of
+    :func:`sis.v3.isolation.verify_isolation_attestation`, computed by the
+    harness over a separately signed attestation. A receipt's own
+    ``isolation:*`` markers are self-reported facts and never qualify it;
+    a self-reported ``isolation:unverified_local`` always disqualifies it
+    in production.
+    """
     if infrastructure_error:
         return INFRASTRUCTURE_ERROR
     if not bootstrap_ok:
         return EVALUATOR_BOOTSTRAP_ERROR
     errors = set(getattr(receipt, "security_errors", ()) or ())
-    if production and "isolation:verified" not in errors:
-        # No independently validated containment marker: a production
-        # outcome may not be derived from this execution.
-        return SANDBOX_FAILURE
+    if production:
+        if "isolation:unverified_local" in errors:
+            return SANDBOX_FAILURE
+        if not isolation_attested:
+            # No independently authenticated containment proof: a
+            # production outcome may not be derived from this execution.
+            return SANDBOX_FAILURE
     if require_verified_isolation and "isolation:unverified_local" in errors:
         return SANDBOX_FAILURE
     if getattr(receipt, "timeout", False):

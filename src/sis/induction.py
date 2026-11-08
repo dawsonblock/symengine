@@ -15,21 +15,94 @@ def leaf_expressions(inputs):
     return values
 
 
-def candidates(train, max_candidates=12000):
-    """Yield shallow first; deepen only if shallow is inadequate."""
+_EVAL_ERR = ("__sis_eval_error__",)
+
+
+def _signature(ast, all_inputs):
+    """Observational fingerprint: per-input (type, value) evaluation tuple."""
+    sig = []
+    for inputs in all_inputs:
+        try:
+            v = evaluate(ast, inputs)
+            sig.append((type(v).__name__, v))
+        except (InvalidInput, KeyError, IndexError, TypeError, ValueError, OverflowError):
+            sig.append(_EVAL_ERR)
+    return tuple(sig)
+
+
+def _combine(op, a, b):
+    """Evaluate binary op over two signature vectors; None on any error."""
+    out = []
+    for x, y in zip(a, b):
+        if x is _EVAL_ERR or y is _EVAL_ERR:
+            return None
+        x, y = x[1], y[1]
+        if type(x) is not int or type(y) is not int:
+            return None
+        try:
+            if op == "add":
+                v = x + y
+            elif op == "sub":
+                v = x - y
+            elif op == "mul":
+                v = x * y
+            elif op == "min":
+                v = min(x, y)
+            elif op == "max":
+                v = max(x, y)
+            else:
+                v = abs(x - y)
+            if abs(v) > 1_000_000_000:
+                return None
+            out.append(v)
+        except (TypeError, ValueError, OverflowError):
+            return None
+    return tuple(out)
+
+
+def candidates(train, max_candidates=12000, observed_inputs=(), stats=None):
+    """Yield shallow first; deepen only if shallow is inadequate.
+
+    Stage 2 is signature-directed: instead of enumerating every
+    (mid, terminal, op) combination and evaluating each, it compares
+    evaluation signatures over the training inputs and only emits the
+    combinations guaranteed to fit, plus constant completions for
+    constant offsets/quotients. Relevant mids are visited first by
+    residual-variance ranking; the full search space remains covered
+    (dedup only removes observational equivalents and AST duplicates).
+    """
     leaves = leaf_expressions(train[0]["inputs"])
     numeric = [expr for expr, v in leaves if type(v) is int]
     string = [expr for expr, v in leaves if type(v) is str]
-    seen = set()
+    train_inputs = [e["inputs"] for e in train]
+    all_inputs = train_inputs + list(observed_inputs)
+    n_train = len(train_inputs)
+    seen_fp = set()
+    seen_sig = set()
+    sigs = {}
     count = 0
+    if stats is None:
+        stats = {}
+    stats["signature_checks"] = 0
+
+    def signature(ast):
+        key = fingerprint(ast)
+        if key not in sigs:
+            sigs[key] = _signature(ast, all_inputs)
+        return sigs[key]
 
     def unique(stream):
         nonlocal count
         for ast in stream:
-            sig = fingerprint(ast)
-            if sig in seen:
+            fp = fingerprint(ast)
+            if fp in seen_fp:
                 continue
-            seen.add(sig)
+            seen_fp.add(fp)
+            stats["signature_checks"] += 1
+            sig = signature(ast)
+            if sig in seen_sig:
+                continue
+            seen_sig.add(sig)
             if count >= max_candidates:
                 yield None
                 return
@@ -68,18 +141,73 @@ def candidates(train, max_candidates=12000):
     if exceeded:
         return
     # Deepening is bounded and only requested if no shallow rule fits the training set.
-    output = [e["output"] for e in train]
-    if any(_matches(ast, train, output) for ast in first_results):
+    outputs = tuple(e["output"] for e in train)
+    if any(_matches(ast, train, outputs) for ast in first_results):
         return
-    shallow = [x for x in first_results if x["op"] in {"add", "sub", "mul", "min", "max", "absdiff", "neg", "abs"}]
+    if not all(type(o) is int for o in outputs):
+        # Stage 2 only covers numeric operators.
+        return
+    shallow = [x for x in first_results
+               if x["op"] in {"add", "sub", "mul", "min", "max", "absdiff", "neg", "abs"}]
+
+    def resid_var(ast):
+        sig = signature(ast)
+        if any(s is _EVAL_ERR for s in sig[:n_train]):
+            return None
+        res = []
+        for o, s in zip(outputs, sig[:n_train]):
+            if s[0] != "int":
+                return None
+            res.append(o - s[1])
+        mean = sum(res) / len(res)
+        return sum((v - mean) ** 2 for v in res) / len(res)
+
+    # Deterministic relevance ordering: mids whose residual over the
+    # observed outputs is most structured are visited first, but every
+    # mid is still covered (residual None → last, fingerprint tiebreak).
+    shallow.sort(key=lambda m: ((lambda v: (v is None, v or 0.0))(resid_var(m)), fingerprint(m)))
+
     terminals = numeric + [{"op": "const", "value": v} for v in (-2, -1, 0, 1, 2, 3)]
+    term_sigs = []
+    seen_term = set()
+    for tast in terminals:
+        ts = signature(tast)
+        if ts in seen_term:
+            continue
+        seen_term.add(ts)
+        term_sigs.append((tast, ts))
+
+    def const_completions(ms):
+        res = tuple(o - s[1] for o, s in zip(outputs, ms))
+        if len(set(res)) == 1 and res[0] != 0 and abs(res[0]) <= 1_000_000_000:
+            yield {"op": "add", "args": [None, {"op": "const", "value": res[0]}]}
+        back = tuple(s[1] - o for s, o in zip(ms, outputs))
+        if len(set(back)) == 1 and back[0] != 0 and abs(back[0]) <= 1_000_000_000:
+            yield {"op": "sub", "args": [None, {"op": "const", "value": back[0]}]}
+        if all(s[1] != 0 for s in ms) and all(o % s[1] == 0 for o, s in zip(outputs, ms)):
+            quot = tuple(o // s[1] for o, s in zip(outputs, ms))
+            if len(set(quot)) == 1 and quot[0] not in (0, 1) and abs(quot[0]) <= 1_000_000_000:
+                yield {"op": "mul", "args": [None, {"op": "const", "value": quot[0]}]}
+
     def second():
         for mid in shallow:
-            for leaf in terminals:
+            ms = signature(mid)
+            if any(s is _EVAL_ERR for s in ms[:n_train]):
+                continue
+            ms = ms[:n_train]
+            if not all(s[0] == "int" for s in ms):
+                continue
+            for ast in const_completions(ms):
+                ast["args"][0] = mid
+                yield ast
+            for tast, ts in term_sigs:
+                ts = ts[:n_train]
                 for op in ("add", "sub", "mul", "min", "max", "absdiff"):
-                    yield {"op": op, "args": [mid, leaf]}
-                    if op == "sub":
-                        yield {"op": op, "args": [leaf, mid]}
+                    stats["signature_checks"] += 1
+                    if _combine(op, ms, ts) == outputs:
+                        yield {"op": op, "args": [mid, tast]}
+                    if op == "sub" and _combine(op, ts, ms) == outputs:
+                        yield {"op": op, "args": [tast, mid]}
     for ast in unique(second()):
         yield ast, 2, count, ast is None
 
@@ -190,7 +318,15 @@ def induce(train, validation=None, *, namespace="default", max_candidates=12000,
     tested = 0
     truncated = False
     stage = 1
-    for ast, stage, examined, exceeds in candidates(train, max_candidates):
+    stats = {}
+    probe_list = list(generated_probes(train[0]["inputs"]))
+    # Dedup distinguishes over every observable input: train, validation and
+    # the deterministic unlabeled probes. Rivals that differ only off the
+    # observed set still collapse — but observational equivalence over the
+    # full probe space keeps ambiguity detection and signature checks sound.
+    observed = [x["inputs"] for x in validation] + probe_list
+    for ast, stage, examined, exceeds in candidates(
+            train, max_candidates, observed_inputs=observed, stats=stats):
         if exceeds or ast is None:
             truncated = True
             break
@@ -206,7 +342,6 @@ def induce(train, validation=None, *, namespace="default", max_candidates=12000,
             continue
     fits.sort(key=lambda x: (cost(x), fingerprint(x)))
     best = fits[0] if fits else None
-    probe_list = list(generated_probes(train[0]["inputs"]))
     ambiguous = None
     if best is not None:
         for rival in fits[1:]:
@@ -241,6 +376,7 @@ def induce(train, validation=None, *, namespace="default", max_candidates=12000,
         "train_digest": digest(train),
         "validation_digest": digest(validation),
         "candidates_evaluated": tested,
+        "signature_checks": stats.get("signature_checks", 0),
         "fitting_hypotheses": len(fits),
         "search_depth": stage,
         "search_truncated": truncated,

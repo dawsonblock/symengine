@@ -22,15 +22,19 @@ from __future__ import annotations
 
 import sqlite3
 import threading
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
+from . import signatures
 from .candidates import content_digest
 from .contracts import (CandidateV1, ContractError, ExperienceRecordV1,
-                        loads_json)
+                        ExperienceRecordV2, canonical_json, loads_json)
 from .retrieval import (RetrievalContext, precondition_holds,
                         suppression_match)
+
+_SIGNATURE_DOMAIN = b"sis-v3:experience_record_v2:1\0"
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS experience (
@@ -59,16 +63,79 @@ class DuplicateEpisode(MemoryError):
     """The same episode + task fingerprint was already ingested."""
 
 
+def sign_experience_record(unsigned: Mapping, seed: bytes) -> str:
+    """Sign a V2 experience body (all fields except ``signature``)."""
+    return signatures.sign(
+        seed, _SIGNATURE_DOMAIN + canonical_json(unsigned)).hex()
+
+
+def issue_experience_record(
+    seed: bytes,
+    key_id: str,
+    **fields,
+) -> ExperienceRecordV2:
+    """Issue a signed ``ExperienceRecordV2`` under an evaluator key."""
+    unsigned = {"schema_version": 1, **fields, "signer_key_id": key_id}
+    signature = sign_experience_record(unsigned, seed)
+    return ExperienceRecordV2.from_dict({**unsigned, "signature": signature})
+
+
+def verify_experience_signature(
+    record: ExperienceRecordV2 | Mapping,
+    public_key_hex: str,
+) -> bool:
+    """Check a V2 record's signature against a trusted public key."""
+    try:
+        parsed = (record if isinstance(record, ExperienceRecordV2)
+                  else ExperienceRecordV2.from_dict(record))
+    except (ContractError, TypeError, KeyError):
+        return False
+    if not isinstance(public_key_hex, str):
+        return False
+    try:
+        public = bytes.fromhex(public_key_hex)
+    except ValueError:
+        return False
+    if not signatures.is_valid_public_key(public):
+        return False
+    unsigned = parsed.to_dict()
+    unsigned.pop("signature")
+    return signatures.verify(
+        bytes.fromhex(parsed.signature),
+        _SIGNATURE_DOMAIN + canonical_json(unsigned),
+        public)
+
+
+def _parse_record(raw: bytes) -> ExperienceRecordV1 | ExperienceRecordV2:
+    """Dispatch on the signed V2 shape; everything else parses as V1."""
+    value = loads_json(raw)
+    if isinstance(value, dict) and "signature" in value:
+        return ExperienceRecordV2.from_dict(value)
+    return ExperienceRecordV1.from_dict(value)
+
+
 class MemoryStore:
     """Durable, deduplicating store of verified experience records.
 
     The store holds evidence-pointers only: it never executes, never
     interprets content as instructions, and never grants authority.
+
+    With ``trusted_signer_keys`` configured the store only accepts and
+    serves evaluator-signed ``ExperienceRecordV2`` rows, re-verifying the
+    signature on every read so a database writer that edits both
+    ``record_json`` and ``record_digest`` is detected — the row-local
+    digest is an integrity checksum, never a provenance signature.
+    Without trusted keys rows are read as untrusted legacy data: V1
+    records carry no signature at all and can never be promoted to
+    verified evidence through this store.
     """
 
-    def __init__(self, path: str | Path) -> None:
+    def __init__(self, path: str | Path, *,
+                 trusted_signer_keys: dict[str, str] | None = None) -> None:
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._signer_keys = (dict(trusted_signer_keys)
+                             if trusted_signer_keys is not None else None)
         self._lock = threading.RLock()
         self._con = sqlite3.connect(
             str(self.path), isolation_level=None, timeout=15.0,
@@ -76,6 +143,22 @@ class MemoryStore:
         self._con.execute("PRAGMA journal_mode=WAL")
         self._con.execute("PRAGMA synchronous=FULL")
         self._con.executescript(_SCHEMA)
+
+    @property
+    def trust_configured(self) -> bool:
+        return self._signer_keys is not None
+
+    def _record_integrity(self, record) -> None:
+        """Fail closed on rows a database writer could have forged."""
+        if self._signer_keys is None:
+            return
+        if not isinstance(record, ExperienceRecordV2):
+            raise MemoryError("experience_untrusted: legacy_v1_record")
+        public_hex = self._signer_keys.get(record.signer_key_id)
+        if public_hex is None:
+            raise MemoryError("experience_untrusted: unknown_signer")
+        if not verify_experience_signature(record, public_hex):
+            raise MemoryError("experience_tampered")
 
     def close(self) -> None:
         with self._lock:
@@ -99,7 +182,7 @@ class MemoryStore:
             raise MemoryError("memory_store_closed")
         return self._con
 
-    def ingest(self, record: ExperienceRecordV1, *,
+    def ingest(self, record, *,
                evidence_check=None) -> str:
         """Store a verified experience; identical re-ingest is idempotent.
 
@@ -112,8 +195,11 @@ class MemoryStore:
         evaluator, so a record cannot claim a receipt it does not have.
         It runs before any write and fails closed.
         """
-        if not isinstance(record, ExperienceRecordV1):
-            record = ExperienceRecordV1.from_dict(record)
+        if not isinstance(record, (ExperienceRecordV1, ExperienceRecordV2)):
+            record = (ExperienceRecordV2.from_dict(record)
+                      if isinstance(record, Mapping) and "signature" in record
+                      else ExperienceRecordV1.from_dict(record))
+        self._record_integrity(record)
         if evidence_check is not None and not evidence_check(record):
             raise MemoryError("experience_evidence_rejected")
         with self._lock:
@@ -151,51 +237,84 @@ class MemoryStore:
                 raise DuplicateEpisode(f"ingest_conflict: {exc}") from exc
             return record.digest
 
-    def get(self, experience_id: str) -> ExperienceRecordV1:
+    def get(self, experience_id: str):
         row = self._conn().execute(
             "SELECT record_json, record_digest FROM experience"
             " WHERE experience_id=?", (experience_id,),
         ).fetchone()
         if row is None:
             raise MemoryError("experience_missing")
-        record = ExperienceRecordV1.from_dict(loads_json(row[0].encode("utf-8")))
+        record = _parse_record(row[0].encode("utf-8"))
         if record.digest != row[1]:
             raise MemoryError(f"experience_tampered:{experience_id}")
+        self._record_integrity(record)
         return record
 
-    def by_outcome(self, outcome: str) -> list[ExperienceRecordV1]:
+    def by_outcome(self, outcome: str) -> list:
         rows = self._conn().execute(
             "SELECT record_json, record_digest FROM experience"
             " WHERE outcome=? ORDER BY experience_id", (outcome,),
         ).fetchall()
         out = []
         for raw, digest in rows:
-            record = ExperienceRecordV1.from_dict(loads_json(raw.encode("utf-8")))
+            record = _parse_record(raw.encode("utf-8"))
             if record.digest != digest:
                 raise MemoryError("experience_tampered")
+            self._record_integrity(record)
             out.append(record)
         return out
 
 
-def verify_experience_evidence(record: ExperienceRecordV1, verifier) -> bool:
-    """Authenticate the receipt an experience record points at.
+def verify_experience_evidence(record, verifier) -> bool:
+    """Bind an experience record to the authenticated evaluation lineage.
 
     Resolves ``outcome_receipt_digest`` through the evaluator's own
-    receipt journal and verifies its signature against the trusted key
-    registry. The record's claimed outcome must match the signed receipt;
-    anything else is rejected rather than stored as "verified" experience.
+    receipt journal, verifies its signature against the trusted key
+    registry, then compares the record's claimed task, repository
+    snapshot, attempt and execution against the resolved artifact — an
+    authentic receipt for a *different* task, repository or attempt can
+    no longer back this experience.
+
+    The resolved artifact may be an ``OutcomeReceiptV1`` (task, repo and
+    outcome bound; execution corroborated through the verifier's
+    ``execution_digest_for`` journal lookup) or an ``OutcomeEnvelopeV2``
+    (which additionally binds the attempt and the execution receipt in
+    the signed body). When neither artifact nor journal can authenticate
+    the claimed ``execution_receipt_digest``, the check fails closed.
+
+    ``ExperienceRecordV1`` lacks every lineage field, so it is readable
+    as legacy/untrusted memory only and is rejected here.
     """
-    if not isinstance(record, ExperienceRecordV1):
-        raise ContractError("evidence check requires an ExperienceRecordV1")
-    receipt = verifier.load_receipt(record.outcome_receipt_digest)
-    if not verifier.verify_receipt(receipt):
+    if isinstance(record, ExperienceRecordV1):
+        raise MemoryError("experience_legacy_unverifiable")
+    if not isinstance(record, ExperienceRecordV2):
+        raise ContractError(
+            "evidence check requires an ExperienceRecordV2")
+    artifact = verifier.load_receipt(record.outcome_receipt_digest)
+    if not verifier.verify_receipt(artifact):
         raise MemoryError("experience_receipt_unauthenticated")
-    if receipt.outcome != record.outcome:
+    if getattr(artifact, "outcome", None) != record.outcome:
         raise MemoryError("experience_outcome_mismatch")
+    if getattr(artifact, "task_id", None) != record.task_id:
+        raise MemoryError("experience_task_mismatch")
+    if getattr(artifact, "evaluated_repo_digest", None) != record.repo_snapshot_digest:
+        raise MemoryError("experience_repo_mismatch")
+    attempt = getattr(artifact, "attempt_id", None)
+    if attempt is not None and attempt != record.attempt_id:
+        raise MemoryError("experience_attempt_mismatch")
+    execution = getattr(artifact, "execution_receipt_digest", None)
+    if execution is None:
+        resolver = getattr(verifier, "execution_digest_for", None)
+        if callable(resolver):
+            execution = resolver(record.outcome_receipt_digest)
+    if execution is None:
+        raise MemoryError("experience_execution_unverifiable")
+    if execution != record.execution_receipt_digest:
+        raise MemoryError("experience_execution_mismatch")
     return True
 
 
-def induce_candidate(record: ExperienceRecordV1, *,
+def induce_candidate(record, *,
                      candidate_id: str | None = None,
                      generator_identity: str = "sis-v3-memory-induction",
                      repository_scope: dict | None = None,
@@ -206,8 +325,8 @@ def induce_candidate(record: ExperienceRecordV1, *,
     hypotheses stay separated — hypotheses are carried for evaluation
     but are never silently promoted to accepted causal truth.
     """
-    if not isinstance(record, ExperienceRecordV1):
-        raise ContractError("induce requires an ExperienceRecordV1")
+    if not isinstance(record, (ExperienceRecordV1, ExperienceRecordV2)):
+        raise ContractError("induce requires an ExperienceRecordV1/V2")
     payload = {
         "lesson": record.lesson,
         "facts": list(record.facts),
@@ -218,6 +337,13 @@ def induce_candidate(record: ExperienceRecordV1, *,
         "outcome_receipt_digest": record.outcome_receipt_digest,
         "trace_digest": record.trace_digest,
     }
+    if isinstance(record, ExperienceRecordV2):
+        payload.update({
+            "task_id": record.task_id,
+            "attempt_id": record.attempt_id,
+            "repo_snapshot_digest": record.repo_snapshot_digest,
+            "execution_receipt_digest": record.execution_receipt_digest,
+        })
     cid = candidate_id or (
         "mem-" + record.experience_id.replace(" ", "-")[:32])
     return CandidateV1(
