@@ -1,9 +1,9 @@
 {
-  "base_commit": "4d70f0dafb3f6ecc4385ea4e54357fb3cca2eff1",
+  "base_commit": "22d2cdf01343c50996b62f92ec2855915c46767f",
   "branch": "main",
   "builder": "tools/package_release.py -> tools/build_canonical_zip.py",
   "commit_binding": "every archive member is re-hashed against the working tree at build time (verify_against_tree); the source commit and dirty state are recorded in release/verification.json",
-  "generated_at": "2026-11-08T23:08:21Z",
+  "generated_at": "2026-11-08T23:36:00Z",
   "kind": "release_build_record",
   "manifest_scope": "all _included() source/evidence files; release/ and evidence/release/build_record.json are out-of-band and never inventoried into the archive",
   "post_build_verification": "release/verification.json \u2014 outside the archive by construction",

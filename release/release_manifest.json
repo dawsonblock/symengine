@@ -2,7 +2,7 @@
   "archive": {
     "inner_project_dir": "SIS-v3.3.3",
     "path": "release/SIS-v3.3.3.zip",
-    "sha256": "b615084e2c939c4c0e2ec73d91e51c865030332b96077c8fe40e98ee067b70c6",
+    "sha256": "594e563d7505c45cee090412d8c83d626ff3101488f95345416983c7d0421402",
     "source_files": 384
   },
   "branch": "main",
@@ -53,23 +53,23 @@
   ],
   "notes": "release/ artifacts are out-of-band provenance and are intentionally absent from the archive manifest",
   "provenance": {
-    "key_id": "release-v333-key-1",
+    "key_id": "release-v333-key-2",
     "path": "release/provenance.dsse.json",
     "public_key_path": "release/provenance_public_key.hex",
     "signed": true,
-    "statement_sha256": "c138fde2ce2e98a4556722a19481f56a896dabb75d692a6a785494b53b57ce54",
-    "subject_sha256": "b615084e2c939c4c0e2ec73d91e51c865030332b96077c8fe40e98ee067b70c6",
+    "statement_sha256": "9410f0f321248bc0ad4a6419da0244b63d24daef88e704d48425a588cb5ff6a9",
+    "subject_sha256": "594e563d7505c45cee090412d8c83d626ff3101488f95345416983c7d0421402",
     "trust_root": "qualification-only"
   },
   "release": "SIS-v3.3.3",
   "schema_version": 1,
-  "source_commit": "4d70f0dafb3f6ecc4385ea4e54357fb3cca2eff1",
+  "source_commit": "22d2cdf01343c50996b62f92ec2855915c46767f",
   "source_commit_note": "archive members are byte-identical to this commit for every manifest-covered file; the release commit itself touches only out-of-band release/ provenance",
   "status": "ENGINEERING_VERIFIED",
   "test_result": {
     "command": "PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONNOUSERSITE=1 PYTHONPATH=src python3 -m pytest -q",
     "failed": 0,
-    "passed": 1113,
+    "passed": 1122,
     "skipped": 12
   }
 }

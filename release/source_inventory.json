@@ -17,8 +17,8 @@
       "sha256": "f4e9590f3ebad5ffec1d03da3db058375438693dbcd93f2738ff3ea66da17b8d"
     },
     "CHANGELOG.md": {
-      "bytes": 31245,
-      "sha256": "d04bf6e9d87d13ea85cf3493ec3ff74b2351e60b5576bda89bab643acd71f819"
+      "bytes": 34030,
+      "sha256": "0b8a627280fdb57aaf207001a3d780ac3131964eb512ab6fee1ee82ed4a095b8"
     },
     "LICENSE": {
       "bytes": 1083,
@@ -30,7 +30,7 @@
     },
     "UPGRADE_README.md": {
       "bytes": 4266,
-      "sha256": "5fb75b44f4dcb6566704d9db06c85f9735f028b69b7bbc686d4291e29fc60a64"
+      "sha256": "114110c43dc88bb7d0be73a7056ec35bf4f2f1e8adebd58baa03d054ec4c43ee"
     },
     "UPGRADE_RELEASE_NOTES_2026-10-24.md": {
       "bytes": 4370,
@@ -81,8 +81,8 @@
       "sha256": "607d68637f60043f1bef59463291c794804085dc33e1d60ae87d6611d8b5be3e"
     },
     "docs/RELEASE_NOTES.md": {
-      "bytes": 8229,
-      "sha256": "b1eeee0f8c493753e75b2e8b307698b3e3d812d824c8a9e609bcbb1b3bd8e985"
+      "bytes": 11063,
+      "sha256": "fa5cc5668ca5057fbcb44643cf6e96d18190021be567c8edb08f5f37dfdb709a"
     },
     "docs/ROADMAP.md": {
       "bytes": 4369,
@@ -309,8 +309,8 @@
       "sha256": "6d8910b93461f85dcd8a7f871200920d7b417451108f5b34a8aec1627483b199"
     },
     "docs/v3/TRUST_BOUNDARIES.md": {
-      "bytes": 4557,
-      "sha256": "72754891b6d98e53c9d76bd012c81a0788f19d50e82eb391d47993d2c12c01c3"
+      "bytes": 5445,
+      "sha256": "8cc298d062443f7a1d4e9f4ba407857498289b01b4152990e0978a108db2d98a"
     },
     "docs/v3/UPGRADE_2026_10_24.md": {
       "bytes": 3736,
@@ -325,8 +325,8 @@
       "sha256": "fb17f4c796829129cbcf2acdfd9cfb9ed92454bba6470c93997293212cda615a"
     },
     "docs/v3/V33_LIMITATIONS.md": {
-      "bytes": 9315,
-      "sha256": "e3cb741375cb1fa3eed4c5b02f3976f1a06ab2a2b4b3e4804605f715066a2f7c"
+      "bytes": 9584,
+      "sha256": "e5935b1f1e9ca66e8c38fd7012b7c55fb8faea340ad5b5e465c87fa41d9debe9"
     },
     "docs/v3/episodes/live-001/README.md": {
       "bytes": 1310,
@@ -869,8 +869,8 @@
       "sha256": "7dc5357a7f591c045ac3de32cc63a9f301174f14df46454c968f0c1b8a9446ec"
     },
     "src/sis/v3/contracts.py": {
-      "bytes": 65534,
-      "sha256": "fc4a9e5dc993e463a4bb45805bd95bba6ea4ab229ebfc1a5de67114e98045588"
+      "bytes": 65659,
+      "sha256": "e614bf25f44458fea4f5d5a47d3e746efab185688113c1c8911ba392b88de128"
     },
     "src/sis/v3/control_plane.py": {
       "bytes": 35554,
@@ -929,8 +929,8 @@
       "sha256": "73f20c62eb511ea82e0951780d50a87dd9acb3fec685b215a5839def2b0ed577"
     },
     "src/sis/v3/isolation.py": {
-      "bytes": 5178,
-      "sha256": "5cbbc2ffe2ab08252f8d000cb4339a80cf5878a32a07ee7b6477204426654957"
+      "bytes": 5603,
+      "sha256": "4ec615d1c60e8afa9633d45d7666e65d297a118e687250c46dc8089e476505d5"
     },
     "src/sis/v3/learning/__init__.py": {
       "bytes": 560,
@@ -961,8 +961,8 @@
       "sha256": "0ac3109042e70e24b945ac16d66f2077a2b46b9cb89966a5771c07a89893ec18"
     },
     "src/sis/v3/memory.py": {
-      "bytes": 23507,
-      "sha256": "30ff9368f46675527ebd02d910a7f1fae23a8cc5510c340c3d6af1e62c6bd015"
+      "bytes": 30342,
+      "sha256": "dd2e4d511bb0f880127e9f188d1d0916123e9a5c81a1b6fd17eb16552e1ed226"
     },
     "src/sis/v3/nonce_store.py": {
       "bytes": 2267,
@@ -1005,8 +1005,8 @@
       "sha256": "7706850c3d66c2ee5c88c63393fb320b88933b931cad614deffb6f6be35c9457"
     },
     "src/sis/v3/runner.py": {
-      "bytes": 26355,
-      "sha256": "621e3a89e35ef3d2b7cb6cec3a966c6e17ddd8822628917f4268e4381cbebb20"
+      "bytes": 26422,
+      "sha256": "69183861b8f6d13b0affc5699a9ed1e399a144602b5907b1e792fed87a46c951"
     },
     "src/sis/v3/schemas/execution_receipt_v1.json": {
       "bytes": 675,
@@ -1309,8 +1309,8 @@
       "sha256": "ae1e520c21e18ba30f1af133324677293394eba74e07cc63f0f3d0f8148841e8"
     },
     "tests/v3/test_memory.py": {
-      "bytes": 11337,
-      "sha256": "93898b3a972b9aaba532c99a8588cea7c6479a763c26cf21ec2bc94cb550be0d"
+      "bytes": 12250,
+      "sha256": "c3d314fd22a5cfeaf855495808798ec7688a85043c96c8fd60f1e5e405e43430"
     },
     "tests/v3/test_migrate_authority.py": {
       "bytes": 8689,
@@ -1405,12 +1405,12 @@
       "sha256": "b6a8954d14a954a531df379ae2a0e92e8596ca9f1cada6087dcfebdf7d86605e"
     },
     "tests/v3/test_v332_security_regressions.py": {
-      "bytes": 56115,
-      "sha256": "2ffb24bdbbb8d4c7d1f61a853cccc253fd24486e234cb2f8d4e6e2265cd329a0"
+      "bytes": 56112,
+      "sha256": "16fc7535cf1537c99c0940d08d7b321a828716bce3c194951399c14f71951b6f"
     },
     "tests/v3/test_v333_trust_boundary.py": {
-      "bytes": 26320,
-      "sha256": "4c99efaf703d129a95d952989dfd7f0b88cc8051dea9d33d46a6373addd31d71"
+      "bytes": 32220,
+      "sha256": "85043eac645a1d607fa1c10d7ee0962615b7506120f8a3e8a0ab769d0afef3d4"
     },
     "tests/v3/test_verified_episode.py": {
       "bytes": 7702,
@@ -1477,12 +1477,12 @@
       "sha256": "b243d8bb4e3f67370575475be37434b61686d914f67f594950cdee885875458a"
     },
     "tools/governed_campaign.py": {
-      "bytes": 29331,
-      "sha256": "4662073ec172b623d950c975902b7fd845c20051c3139216628f77b4e82a076e"
+      "bytes": 29807,
+      "sha256": "9c927bbb96ca50e823d24c067f8e2a4628fba3638a5c69261cf19cfb68f6dc2b"
     },
     "tools/governed_live_campaign.py": {
-      "bytes": 30244,
-      "sha256": "c5b34d8ddc0fdb56760208238c0b6e8d705b9cbaa88e27fd9198b49da0cef79d"
+      "bytes": 30720,
+      "sha256": "ead817261b8571e5045f1d276248d36a18ddffdb1726d9081082ac24b8030c3b"
     },
     "tools/ingest_skills.py": {
       "bytes": 8380,
@@ -1539,5 +1539,5 @@
   },
   "release": "SIS-v3.3.3",
   "schema_version": 1,
-  "source_commit": "4d70f0dafb3f6ecc4385ea4e54357fb3cca2eff1"
+  "source_commit": "22d2cdf01343c50996b62f92ec2855915c46767f"
 }
