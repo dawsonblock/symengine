@@ -13,6 +13,15 @@ nonce, policy or receipt does not verify, and neither does an expired or
 untrusted signature. Callers feed the boolean verdict to
 ``classify_execution(production=True, isolation_attested=...)`` — the
 receipt's own markers are never consulted as evidence of isolation.
+
+The ``nonce`` is a uniqueness tag bound into the signed body, not a
+freshness challenge: replay resistance comes from binding the attestation
+to ``execution_receipt_digest``, so a captured attestation only ever
+describes the one execution it was issued for.
+
+No in-tree backend or signer produces attestations — issuance belongs to
+an independently trusted isolator, so production execution stays closed
+until one exists.
 """
 from __future__ import annotations
 

@@ -65,7 +65,7 @@ _CHAIN_DOMAIN_BYTES = _CHAIN_DOMAIN.encode("utf-8")
 
 def _chain_head(prev_head: str, record_digest: str, seq: int) -> str:
     return hashlib.sha256(
-        (_CHAIN_DOMAIN + prev_head + record_digest + str(seq))
+        (_CHAIN_DOMAIN + prev_head + ":" + record_digest + ":" + str(seq))
         .encode("utf-8")).hexdigest()
 
 
@@ -98,7 +98,7 @@ def issue_experience_record(
     **fields,
 ) -> ExperienceRecordV2:
     """Issue a signed ``ExperienceRecordV2`` under an evaluator key."""
-    unsigned = {"schema_version": 1, **fields, "signer_key_id": key_id}
+    unsigned = {**fields, "schema_version": 1, "signer_key_id": key_id}
     signature = sign_experience_record(unsigned, seed)
     return ExperienceRecordV2.from_dict({**unsigned, "signature": signature})
 
@@ -151,6 +151,12 @@ class MemoryStore:
     Without trusted keys rows are read as untrusted legacy data: V1
     records carry no signature at all and can never be promoted to
     verified evidence through this store.
+
+    Stores created before the ``memory_chain`` table existed hold
+    unchained rows: trusted-mode access raises ``memory_unmigrated``
+    until ``repair_chain`` backfills the chain (or ``rebuild=True``
+    rewrites a corrupt one). ``verify_chain`` failures report their
+    cause through ``last_chain_failure``.
     """
 
     def __init__(self, path: str | Path, *,
@@ -161,6 +167,7 @@ class MemoryStore:
         self._signer_keys = (dict(trusted_signer_keys)
                              if trusted_signer_keys is not None else None)
         self._chain_key = chain_key
+        self._chain_failure: str | None = None
         self._lock = threading.RLock()
         self._con = sqlite3.connect(
             str(self.path), isolation_level=None, timeout=15.0,
@@ -228,6 +235,7 @@ class MemoryStore:
         if evidence_check is not None and not evidence_check(record):
             raise MemoryError("experience_evidence_rejected")
         with self._lock:
+            self._require_chain()
             con = self._conn()
             row = con.execute(
                 "SELECT record_digest FROM experience WHERE experience_id=?",
@@ -315,50 +323,171 @@ class MemoryStore:
         ).fetchone()
         return row[0] if row else None
 
+    @property
+    def last_chain_failure(self) -> str | None:
+        """Reason of the most recent failed chain check, else ``None``."""
+        return self._chain_failure
+
+    def _chain_state(self) -> tuple[str, str]:
+        """Classify the chain/table pair: ``ok``, ``unmigrated``, ``corrupt``.
+
+        ``ok`` — chain is contiguous, internally consistent, signed where
+        required, and covers exactly the experience rows present.
+        ``unmigrated`` — the chain itself is valid but at least one
+        experience row was never chained (a store predating the chain,
+        or rows appended by an untrusted write); ``repair_chain`` fixes
+        this without rewriting integrity history.
+        ``corrupt`` — broken contiguity/linkage, a failed signature, or a
+        chained digest with no matching row: integrity history itself is
+        in doubt and repair requires ``rebuild=True``.
+        """
+        entries = self._conn().execute(
+            "SELECT seq, record_digest, prev_head, head, signer_key_id,"
+            " signature FROM memory_chain ORDER BY seq").fetchall()
+        public = None
+        if self._chain_key is not None:
+            try:
+                public = signatures.public_key(self._chain_key[0])
+            except (ValueError, TypeError):
+                return "corrupt", "chain_key_invalid"
+        prev_head = ""
+        seen: set[str] = set()
+        for i, (seq, record_digest, p_head, head, key_id, sig) in \
+                enumerate(entries, start=1):
+            if seq != i or p_head != prev_head:
+                return "corrupt", "chain_not_contiguous"
+            if head != _chain_head(prev_head, record_digest, seq):
+                return "corrupt", "head_recompute_mismatch"
+            if self._chain_key is not None:
+                if key_id != self._chain_key[1]:
+                    # Entries predating key adoption are unsigned, not
+                    # forged — but they still cannot verify, so adopting
+                    # a custodian key mid-stream requires a rebuild.
+                    if not key_id and not sig:
+                        return "corrupt", "unsigned_entries"
+                    return "corrupt", "signer_mismatch"
+                try:
+                    signature = bytes.fromhex(sig)
+                except ValueError:
+                    return "corrupt", "signature_malformed"
+                if not signatures.verify(
+                        signature,
+                        _CHAIN_DOMAIN_BYTES + canonical_json({
+                            "seq": seq, "record_digest": record_digest,
+                            "prev_head": p_head, "head": head,
+                            "signer_key_id": key_id}), public):
+                    return "corrupt", "signature_invalid"
+            seen.add(record_digest)
+            prev_head = head
+        rows = {r[0] for r in self._conn().execute(
+            "SELECT record_digest FROM experience").fetchall()}
+        if rows == seen:
+            return "ok", ""
+        if seen <= rows:
+            return "unmigrated", "unchained_rows"
+        return "corrupt", "row_deleted_or_digest_rewritten"
+
+    def _require_chain(self) -> None:
+        """Fail reads and writes on a corrupt or un-migrated chain.
+
+        Enforced whenever a trust root is configured — record signer keys
+        or the chain custodian key — so chain integrity gates the path
+        even where per-record signature checks are not configured.
+        """
+        if self._signer_keys is None and self._chain_key is None:
+            return
+        state, reason = self._chain_state()
+        self._chain_failure = None if state == "ok" else reason
+        if state == "corrupt":
+            raise MemoryError(f"memory_chain_invalid:{reason}")
+        if state == "unmigrated":
+            raise MemoryError("memory_unmigrated")
+
     def verify_chain(self, *, expected_head: str | None = None) -> bool:
         """Re-validate the whole integrity chain and row consistency.
 
         Catches mid-history row deletion or rewrite (the chain commits
         every record digest in order), forged entries (signature check,
         when ``chain_key`` signatures are used), chain/experience table
-        divergence, and — via ``expected_head`` — snapshot rewinds.
+        divergence, and — via ``expected_head`` — snapshot rewinds. On
+        ``False`` the machine-readable cause is in ``last_chain_failure``.
         """
-        entries = self._conn().execute(
-            "SELECT seq, record_digest, prev_head, head, signer_key_id,"
-            " signature FROM memory_chain ORDER BY seq").fetchall()
-        prev_head = ""
-        seen: set[str] = set()
-        for i, (seq, record_digest, p_head, head, key_id, sig) in \
-                enumerate(entries, start=1):
-            if seq != i or p_head != prev_head:
-                return False
-            if head != _chain_head(prev_head, record_digest, seq):
-                return False
-            if self._chain_key is not None:
-                if key_id != self._chain_key[1]:
-                    return False
-                try:
-                    public = signatures.public_key(self._chain_key[0])
-                except (ValueError, TypeError):
-                    return False
-                if not signatures.verify(
-                        bytes.fromhex(sig),
-                        _CHAIN_DOMAIN_BYTES + canonical_json({
-                            "seq": seq, "record_digest": record_digest,
-                            "prev_head": p_head, "head": head,
-                            "signer_key_id": key_id}), public):
-                    return False
-            seen.add(record_digest)
-            prev_head = head
-        if expected_head is not None and prev_head != expected_head:
+        state, reason = self._chain_state()
+        self._chain_failure = None if state == "ok" else reason
+        if state != "ok":
             return False
-        # Chain/experience divergence: every chained digest must exist,
-        # every stored row must be chained.
-        rows = self._conn().execute(
-            "SELECT record_digest FROM experience").fetchall()
-        if {r[0] for r in rows} != seen:
+        if expected_head is not None \
+                and self.head_digest() != expected_head:
+            self._chain_failure = "expected_head_mismatch"
             return False
         return True
+
+    def repair_chain(self, *, rebuild: bool = False) -> int:
+        """Backfill chain entries for unchained rows (migration path).
+
+        Rows already covered by a valid chain prefix are kept; every
+        unchained experience row is appended in original insertion order
+        and signed when ``chain_key`` is configured. Chaining attests a
+        row's membership in the store, never its provenance — per-record
+        signature checks on read are unchanged. Returns the number of
+        entries appended.
+
+        Refuses on a corrupt existing chain: rewriting broken integrity
+        evidence requires the explicit ``rebuild=True`` operator
+        decision, which deletes the chain and re-commits every row.
+        Rebuild only after the experience table itself has been verified
+        trustworthy, then pin ``head_digest()`` externally.
+        """
+        with self._lock:
+            con = self._conn()
+            appended = 0
+            try:
+                con.execute("BEGIN IMMEDIATE")
+                state, reason = self._chain_state()
+                if state == "corrupt":
+                    if not rebuild:
+                        raise MemoryError(
+                            f"memory_chain_corrupt:{reason}")
+                    con.execute("DELETE FROM memory_chain")
+                last = con.execute(
+                    "SELECT seq, head FROM memory_chain ORDER BY seq DESC"
+                    " LIMIT 1").fetchone()
+                seq = 1 if last is None else last[0] + 1
+                prev_head = "" if last is None else last[1]
+                chained = {r[0] for r in con.execute(
+                    "SELECT record_digest FROM memory_chain").fetchall()}
+                rows = con.execute(
+                    "SELECT record_digest FROM experience ORDER BY rowid"
+                ).fetchall()
+                for (record_digest,) in rows:
+                    if record_digest in chained:
+                        continue
+                    head = _chain_head(prev_head, record_digest, seq)
+                    signer_key_id = ""
+                    signature = ""
+                    if self._chain_key is not None:
+                        seed, signer_key_id = self._chain_key
+                        signature = _sign_chain_entry(seed, {
+                            "seq": seq, "record_digest": record_digest,
+                            "prev_head": prev_head, "head": head,
+                            "signer_key_id": signer_key_id})
+                    con.execute(
+                        "INSERT INTO memory_chain"
+                        " (seq, record_digest, prev_head, head,"
+                        "  signer_key_id, signature)"
+                        " VALUES (?,?,?,?,?,?)",
+                        (seq, record_digest, prev_head, head,
+                         signer_key_id, signature))
+                    prev_head = head
+                    seq += 1
+                    appended += 1
+                con.execute("COMMIT")
+            except BaseException:
+                if con.in_transaction:
+                    con.execute("ROLLBACK")
+                raise
+            self._chain_failure = None
+            return appended
 
     def get(self, experience_id: str):
         row = self._conn().execute(
@@ -367,8 +496,7 @@ class MemoryStore:
         ).fetchone()
         if row is None:
             raise MemoryError("experience_missing")
-        if self._signer_keys is not None and not self.verify_chain():
-            raise MemoryError("memory_chain_invalid")
+        self._require_chain()
         record = _parse_record(row[0].encode("utf-8"))
         if record.digest != row[1]:
             raise MemoryError(f"experience_tampered:{experience_id}")
@@ -376,8 +504,7 @@ class MemoryStore:
         return record
 
     def by_outcome(self, outcome: str) -> list:
-        if self._signer_keys is not None and not self.verify_chain():
-            raise MemoryError("memory_chain_invalid")
+        self._require_chain()
         rows = self._conn().execute(
             "SELECT record_json, record_digest FROM experience"
             " WHERE outcome=? ORDER BY experience_id", (outcome,),
@@ -406,8 +533,11 @@ def verify_experience_evidence(record, verifier) -> bool:
     outcome bound; execution corroborated through the verifier's
     ``execution_digest_for`` journal lookup) or an ``OutcomeEnvelopeV2``
     (which additionally binds the attempt and the execution receipt in
-    the signed body). When neither artifact nor journal can authenticate
-    the claimed ``execution_receipt_digest``, the check fails closed.
+    the signed body). The stock ``OutcomeVerifier.verify_receipt``
+    authenticates ``OutcomeReceiptV1`` only — envelope artifacts verify
+    through a verifier extended to accept them. When neither artifact
+    nor journal can authenticate the claimed
+    ``execution_receipt_digest``, the check fails closed.
 
     ``ExperienceRecordV1`` lacks every lineage field, so it is readable
     as legacy/untrusted memory only and is rejected here.
@@ -506,6 +636,7 @@ def retrieve_memories(
     min_score: int = 10,
     token_budget: int = 600,
     limit: int = 5,
+    on_suppress=None,
 ) -> tuple[RetrievedMemory, ...]:
     """Select applicable qualified memory candidates; abstain via empty tuple.
 
@@ -515,6 +646,12 @@ def retrieve_memories(
     deterministic: matched-gate count, then content digest. Greedy
     token-budget packing; exact-duplicate lessons are deduplicated by
     ``content_digest``.
+
+    ``on_suppress(candidate, counterexample)`` is an audit hook invoked
+    for every candidate a counterexample suppresses — paraphrase-tolerant
+    matching deliberately over-fires toward suppression, so deployments
+    that care about recall should record these decisions rather than let
+    them stay silent.
     """
     if type(min_score) is not int or min_score < 0:
         raise ContractError("min_score must be a nonnegative integer")
@@ -522,6 +659,8 @@ def retrieve_memories(
         raise ContractError("token_budget must be a positive integer")
     if type(limit) is not int or not 1 <= limit <= 32:
         raise ContractError("limit must be in [1,32]")
+    if on_suppress is not None and not callable(on_suppress):
+        raise ContractError("on_suppress must be callable")
 
     context_text = " ".join(sorted(
         context.failure_signatures | context.symbols_present
@@ -536,10 +675,14 @@ def retrieve_memories(
         if any(not precondition_holds(cond, context)
                for cond in cand.applicability_predicate):
             continue
-        suppressed = any(
-            isinstance(cx, str) and suppression_match(context_text, cx)
-            for cx in cand.known_counterexamples)
-        if suppressed:
+        suppressed_by = next(
+            (cx for cx in cand.known_counterexamples
+             if isinstance(cx, str)
+             and suppression_match(context_text, cx)),
+            None)
+        if suppressed_by is not None:
+            if on_suppress is not None:
+                on_suppress(cand, suppressed_by)
             continue
         matched = sum(1 for cond in cand.applicability_predicate
                       if precondition_holds(cond, context))

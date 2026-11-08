@@ -1,8 +1,70 @@
-# SIS v3.3.2 — Authority Consistency & Runtime Closure
+# SIS v3.3.3 — Trust-Boundary Repair
 
 Status: **IMPLEMENTED_NOT_EFFICACY_QUALIFIED**
 
-This is the current release. The detailed engineering record is in
+This is the current release. It closes five externally audited
+trust-boundary defects; the red-to-green reproductions are in
+`tests/v3/test_v333_trust_boundary.py`.
+
+## What changed
+
+- Local execution can no longer self-certify isolation:
+  `LocalSubprocessExecutor` never mints `isolation:verified` and refuses
+  `verified_isolation=True`; production classification requires an
+  independently signed `IsolationAttestationV1` (`sis.v3.isolation`),
+  never a self-reported marker.
+- Experience evidence binds the full evaluation lineage: evaluator-signed
+  `ExperienceRecordV2` records are checked against task, attempt,
+  repository snapshot and execution receipt (via the evaluator journal)
+  before they can enter memory; V1 records are legacy/untrusted reads.
+- `MemoryStore` integrity: trusted-signer mode accepts and serves only
+  signed V2 records, re-verifying on every access, and an append-only
+  `memory_chain` (custodian-signed when `chain_key` is configured)
+  detects mid-history deletion, rewrites and forged entries.
+  `repair_chain` migrates pre-chain databases, `last_chain_failure`
+  reports the check that failed, and `head_digest` is the external
+  rewind witness — pinned into campaign evidence by the governed tools.
+- Paraphrase-tolerant counterexample suppression: content-token
+  containment ignores function words and negation framing so rephrased
+  unsafe conditions still suppress memory transfer (heuristic;
+  over-fires toward suppression, auditable via `on_suppress`).
+- Signature-directed stage-2 search: induction compares evaluation
+  signatures over train+validation+probe inputs and emits only
+  combinations guaranteed to fit, closing the enumeration-order
+  starvation that hid representable rules inside the candidate budget.
+- Release provenance is bound to the shipped source: a suite test fails
+  when manifest-covered files changed after `source_commit`.
+
+## Test evidence
+
+- Default suite: **1122 passed, 12 skipped, 0 failed**
+  (`PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONNOUSERSITE=1 PYTHONPATH=src
+  python3 -m pytest -q`).
+- Five audited defects reproduced on the prior tree and closed on this
+  one; chain migration/repair, key adoption and suppression-audit paths
+  are covered in the same suite.
+
+## Not qualified
+
+- Evaluator isolation (M6): the attestation contract is implemented and
+  verified, but no in-tree backend or isolator signer produces
+  attestations — the production gate stays closed until a qualified
+  isolator exists.
+- Real-agent efficacy (M9): unchanged; no improvement is claimed.
+
+## Artifacts
+
+- `release/SIS-v3.3.3.zip` (384 files), verified against
+  `RELEASE_SHA256.json`.
+- `release/provenance.dsse.json`, signed with a `qualification-only` key.
+
+---
+
+# SIS v3.3.2 — Authority Consistency & Runtime Closure (previous release)
+
+Status: **IMPLEMENTED_NOT_EFFICACY_QUALIFIED**
+
+Superseded by v3.3.3. The detailed engineering record is in
 `docs/V332_AUTHORITY_CONSISTENCY.md`; deployment and recovery are in
 `docs/V332_OPERATIONS.md`; executed acceptance scenarios are in
 `docs/V332_ACCEPTANCE_MATRIX.md`.

@@ -437,7 +437,7 @@ class ProductionIsolationTests(unittest.TestCase):
                 output_bytes=1 << 20, disk_bytes=16 << 20,
                 process_count=64))
         with self.assertRaisesRegex(RunnerError,
-                                    "verified_isolation_required"):
+                                    "not_production_qualified"):
             executor.run(workspace, spec)
 
     def test_production_classification_rejects_unverified_receipt(self):

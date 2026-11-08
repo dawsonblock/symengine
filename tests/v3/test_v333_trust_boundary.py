@@ -107,7 +107,8 @@ class LocalSelfCertificationTests(unittest.TestCase):
         executor = LocalSubprocessExecutor(
             self.root / "exec", use_seatbelt=False, production=True)
         workspace = executor.prepare(self.base)
-        with self.assertRaisesRegex(Exception, "verified_isolation_required"):
+        with self.assertRaisesRegex(
+                Exception, "not_production_qualified"):
             executor.run(workspace, CommandSpec(
                 argv=(sys.executable, "-c", "print(1)"), limits=_limits()))
 
@@ -541,6 +542,131 @@ class MemoryTamperTests(unittest.TestCase):
         self.assertFalse(store.verify_chain())
         with self.assertRaisesRegex(MemoryError, "chain"):
             store.get("exp-1")
+
+
+class ChainMigrationTests(unittest.TestCase):
+    """Pre-chain databases: reads fail named, repair restores them."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.db = Path(self.temp.name) / "m.db"
+        self.seed, self.public = signatures.generate_keypair()
+        self.keys = {"exp-key-1": self.public.hex()}
+
+    def test_unchained_rows_report_unmigrated(self):
+        store = MemoryStore(self.db)
+        store.ingest(_v1_record())
+        # A database written before the chain existed: rows present, no
+        # chain entries (the table arrives empty via schema upgrade).
+        store._conn().execute("DELETE FROM memory_chain")
+        store.close()
+        store = MemoryStore(self.db, trusted_signer_keys=self.keys)
+        self.addCleanup(store.close)
+        with self.assertRaisesRegex(MemoryError, "memory_unmigrated"):
+            store.get("exp-1")
+        with self.assertRaisesRegex(MemoryError, "memory_unmigrated"):
+            store.by_outcome("fail")
+        with self.assertRaisesRegex(MemoryError, "memory_unmigrated"):
+            store.ingest(_v2_record(self.seed))
+        self.assertEqual(store.last_chain_failure, "unchained_rows")
+        self.assertFalse(store.verify_chain())
+
+    def test_repair_chain_backfills_then_serves(self):
+        store = MemoryStore(self.db)
+        store.ingest(_v1_record())
+        store.ingest(_v1_record(experience_id="exp-2", episode_id="ep-2"))
+        store._conn().execute("DELETE FROM memory_chain")
+        store.close()
+        store = MemoryStore(self.db, trusted_signer_keys=self.keys,
+                            chain_key=(self.seed, "exp-key-1"))
+        self.addCleanup(store.close)
+        self.assertEqual(store.repair_chain(), 2)
+        self.assertTrue(store.verify_chain())
+        self.assertIsNone(store.last_chain_failure)
+        # Chaining attests membership, not provenance: the V1 row stays
+        # legacy-untrusted on read while new signed records serve.
+        with self.assertRaisesRegex(MemoryError, "untrusted"):
+            store.get("exp-1")
+        record = _v2_record(self.seed, experience_id="exp-3",
+                            episode_id="ep-3")
+        store.ingest(record)
+        self.assertEqual(store.get("exp-3"), record)
+
+    def test_key_adoption_over_unsigned_chain_requires_rebuild(self):
+        # Entries written before the custodian key existed are unsigned,
+        # not forged — but they cannot verify, so adopting chain_key
+        # mid-stream is an explicit rebuild decision, not a backfill.
+        store = MemoryStore(self.db)
+        store.ingest(_v1_record())
+        store.close()
+        store = MemoryStore(self.db, chain_key=(self.seed, "exp-key-1"))
+        self.addCleanup(store.close)
+        self.assertFalse(store.verify_chain())
+        self.assertEqual(store.last_chain_failure, "unsigned_entries")
+        with self.assertRaisesRegex(MemoryError, "chain_corrupt"):
+            store.repair_chain()
+        self.assertEqual(store.repair_chain(rebuild=True), 1)
+        self.assertTrue(store.verify_chain())
+
+    def test_repair_refuses_corrupt_without_rebuild(self):
+        store = MemoryStore(self.db, trusted_signer_keys=self.keys,
+                            chain_key=(self.seed, "exp-key-1"))
+        self.addCleanup(store.close)
+        store.ingest(_v2_record(self.seed))
+        store.ingest(_v2_record(self.seed, experience_id="exp-2",
+                                episode_id="ep-2"))
+        store._conn().execute("DELETE FROM memory_chain WHERE seq=1")
+        with self.assertRaisesRegex(MemoryError, "chain_corrupt"):
+            store.repair_chain()
+        self.assertEqual(store.repair_chain(rebuild=True), 2)
+        self.assertTrue(store.verify_chain())
+        self.assertEqual(store.get("exp-1"), _v2_record(self.seed))
+
+    def test_malformed_chain_signature_fails_closed(self):
+        store = MemoryStore(self.db, trusted_signer_keys=self.keys,
+                            chain_key=(self.seed, "exp-key-1"))
+        self.addCleanup(store.close)
+        store.ingest(_v2_record(self.seed))
+        store._conn().execute(
+            "UPDATE memory_chain SET signature='zz' WHERE seq=1")
+        self.assertFalse(store.verify_chain())
+        self.assertEqual(store.last_chain_failure, "signature_malformed")
+        with self.assertRaisesRegex(MemoryError, "chain_invalid"):
+            store.get("exp-1")
+
+    def test_chain_key_only_store_verifies_reads(self):
+        # Chain custody without record trust: V1 ingests stay allowed but
+        # a tampered chain still fails closed on read.
+        store = MemoryStore(self.db, chain_key=(self.seed, "exp-key-1"))
+        self.addCleanup(store.close)
+        store.ingest(_v1_record())
+        store._conn().execute(
+            "UPDATE memory_chain SET head=? WHERE seq=1", ("f" * 64,))
+        with self.assertRaisesRegex(MemoryError, "chain_invalid"):
+            store.get("exp-1")
+        self.assertEqual(store.last_chain_failure,
+                         "head_recompute_mismatch")
+
+
+class IssuanceTests(unittest.TestCase):
+    """Issuance pins protocol identity; caller fields cannot override."""
+
+    def test_schema_version_pinned(self):
+        from sis.v3.memory import (
+            issue_experience_record, verify_experience_signature)
+        seed, public = signatures.generate_keypair()
+        base = _v1_record().to_dict()
+        base.pop("schema_version")
+        record = issue_experience_record(
+            seed, "exp-key-1", **base,
+            task_id="task-A", attempt_id="att-1",
+            repo_snapshot_digest="d" * 64,
+            execution_receipt_digest="e" * 64,
+            schema_version=99)
+        self.assertEqual(record.to_dict()["schema_version"], 1)
+        self.assertTrue(
+            verify_experience_signature(record, public.hex()))
 
 
 class SearchStarvationTests(unittest.TestCase):

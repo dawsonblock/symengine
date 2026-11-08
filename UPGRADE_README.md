@@ -1,7 +1,7 @@
 # Upgrade guide for the reviewed v2.4.0 source
 
 > **Historical.** This guide describes the v2.4.0 source line. The current
-> package version is 3.3.2; see `docs/v3/MIGRATION.md` and
+> package version is 3.3.3; see `docs/v3/MIGRATION.md` and
 > `docs/V332_OPERATIONS.md` for the current upgrade path.
 
 This guide covers the repository updates made after the v2.4.0 review. The Python package version remains `2.4.0`; the changes harden evaluation custody, improve task instructions sent to model arms, and make release verification stricter.

@@ -26,6 +26,10 @@
 - Execution isolation remains `isolation:unverified_local`; the
   runner reports what it can enforce, no more. Network denial via
   seatbelt is best-effort on macOS only.
+- v3.3.3 adds the `IsolationAttestationV1` contract and verifier, but no
+  in-tree backend or isolator signer produces attestations — production
+  execution stays closed until a qualified isolator exists, and a
+  receipt's own `isolation:*` markers never qualify it.
 - Usage accounting remains `reported`-grade for agent-supplied counters;
   only `UsageMeter`-instrumented paths are `verified`.
 

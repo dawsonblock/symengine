@@ -365,7 +365,9 @@ class IsolationAttestationV1(V1Record):
     this separately trusted signer binding the executor backend, worker
     identity, sandbox policy and image, command spec, workspace input
     tree, and the exact execution receipt. A receipt's own
-    ``isolation:*`` markers are self-reported and never qualify it.
+    ``isolation:*`` markers are self-reported and never qualify it. The
+    ``nonce`` is a uniqueness tag, not a freshness challenge — replay
+    resistance is the execution-receipt binding.
     """
 
     attestation_id: str

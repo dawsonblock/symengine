@@ -74,6 +74,19 @@ key revocation, or task-admission service is deployed.
 - `sis.v3.signatures`: stdlib-only Ed25519 (RFC 8032 vectors verified;
   non-constant-time reference implementation; swappable for a vetted provider
   behind the same API).
+- `sis.v3.isolation`: `IsolationAttestationV1` issuance and verification —
+  independently signed containment proofs bound to the executor backend,
+  worker identity, policy and image digests, command spec, workspace input
+  tree and the exact execution receipt. No in-tree backend or signer
+  produces attestations; local receipts still report
+  `isolation:unverified_local` only, so the production gate stays closed
+  until a qualified isolator exists.
+- `sis.v3.memory.MemoryStore` integrity chain: append-only `memory_chain`
+  commits every record digest in order, custodian-signed when `chain_key`
+  is configured. Trusted-mode access re-verifies record signatures and
+  chain integrity on every read and write; `repair_chain` is the migration
+  path for pre-chain databases and `head_digest` is the external rewind
+  witness (pinned into campaign evidence by the governed tools).
 
 ## Separation requirements for later phases
 

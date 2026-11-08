@@ -1,3 +1,52 @@
+## 2026-11-08 — SIS v3.3.3 trust-boundary repair
+
+Closes the five externally audited defects reproduced in
+`tests/v3/test_v333_trust_boundary.py`:
+
+- Isolation self-attestation removed. `LocalSubprocessExecutor` can no
+  longer mint `isolation:verified` (the `verified_isolation` flag is
+  rejected for this backend) and production runs always refuse. New
+  `IsolationAttestationV1` plus `sis.v3.isolation`: an independently
+  trusted isolator signs the backend, worker identity, policy/image
+  digests, command spec, workspace input tree and the exact execution
+  receipt; `classify_execution(production=True)` requires that verified
+  verdict, never a self-reported marker.
+- Experience evidence binds the full evaluation lineage.
+  `ExperienceRecordV2` is evaluator-signed and binds task, attempt,
+  repository snapshot and execution receipt; `verify_experience_evidence`
+  re-checks every binding against the authenticated artifact plus the
+  evaluator journal (`execution_digest_for`). V1 records are
+  legacy/untrusted reads only.
+- Memory-store tamper resistance. With `trusted_signer_keys` the store
+  accepts and serves only signed V2 records, re-verifying on every
+  access; the append-only `memory_chain` (custodian-signed via
+  `chain_key`) commits every record digest in order so deletion,
+  rewrites and forged entries fail closed. `repair_chain` migrates
+  pre-chain databases (`rebuild=True` for a corrupt chain or mid-stream
+  key adoption), `last_chain_failure` reports the cause, and
+  `head_digest` is the external rewind witness — now pinned into the
+  governed campaign evidence.
+- Paraphrase-tolerant suppression. `suppression_match` adds
+  content-token containment over function-word filtering, so negated or
+  rephrased counterexamples still suppress unsafe memory transfer —
+  heuristic text matching that deliberately over-fires toward
+  suppression; `retrieve_memories(on_suppress=...)` audits each firing.
+- Signature-directed symbolic search. Stage-2 induction compares
+  evaluation signatures over train+validation+probe inputs and emits
+  only combinations guaranteed to fit, closing the enumeration-order
+  starvation that hid representable rules inside the candidate budget.
+- Release provenance bound to source. Inventory, manifest and DSSE
+  envelope regenerated for the 384-file tree; a suite test now fails
+  when release metadata predates covered source.
+- Hardening fixes in this line: malformed `memory_chain` signatures and
+  caller-supplied `schema_version` in record issuance fail closed;
+  chain custody without record trust still verifies chain integrity on
+  reads; the production-refusal error is named
+  `local_backend_not_production_qualified`.
+
+The previously unreleased review corrections below are included in this
+archive.
+
 ## Unreleased — review corrections
 
 - Evaluator key custody: the Ed25519 seed is published with an exclusive

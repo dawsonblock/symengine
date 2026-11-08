@@ -225,6 +225,26 @@ class RetrievalTests(unittest.TestCase):
             [cand], self.ctx(failures=("eval crash on input",)))
         self.assertEqual(len(picked), 1)
 
+    def test_suppression_audit_hook_reports_decisions(self):
+        # Suppression is deliberately fail-safe and silent; the hook lets
+        # a deployment record which counterexample fired.
+        cand = induce_candidate(make_experience(
+            counterexamples=("avoid sql joins on mysql replicas",)))
+        seen = []
+        picked = retrieve_memories(
+            [cand], self.ctx(failures=("sql joins on mysql replicas",)),
+            on_suppress=lambda c, cx: seen.append((c, cx)))
+        self.assertEqual(picked, ())
+        self.assertEqual(len(seen), 1)
+        self.assertIs(seen[0][0], cand)
+        self.assertIn("sql joins", seen[0][1])
+
+    def test_suppression_hook_must_be_callable(self):
+        cand = induce_candidate(make_experience())
+        with self.assertRaises(ContractError):
+            retrieve_memories(
+                [cand], self.ctx(failures=()), on_suppress="nope")
+
     def test_short_counterexample_requires_token_match(self):
         # "ai" must not suppress on contexts containing "airflow" —
         # substrings inside longer tokens are not counterexamples.

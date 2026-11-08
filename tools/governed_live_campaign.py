@@ -619,6 +619,15 @@ def main() -> int:
         "served": served,
         "served_after_revocation": served_post,
         "serving_audit": audit_log,
+        "memory": {
+            # External rewind witness: a restored older memory.db yields a
+            # different chain head, so pinning it here — inside the
+            # persisted campaign evidence — is what lets the chain prove
+            # freshness rather than just internal consistency.
+            "chain_head": memory.head_digest(),
+            "chain_verified": memory.verify_chain(),
+            "last_chain_failure": memory.last_chain_failure,
+        },
         "skill_bundle": str(bundle_dir) if bundle_dir else None,
         "status_note": ("real codex-exec agent, 2-task unseen-repo holdout "
                         "— authentic machinery evidence; a 2-task sample "

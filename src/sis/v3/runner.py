@@ -399,8 +399,9 @@ class LocalSubprocessExecutor:
         if self._production:
             # Hostile-code execution stays disabled in production until
             # an OS-enforced containment has been independently
-            # validated. This backend is explicitly not that.
-            raise RunnerError("verified_isolation_required")
+            # validated. This backend is explicitly not that — no flag or
+            # attestation can qualify it.
+            raise RunnerError("local_backend_not_production_qualified")
         with self._lock:
             if workspace.workspace_id not in self._workspaces:
                 raise RunnerError("workspace is not managed by this executor")
