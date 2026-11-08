@@ -1,33 +1,33 @@
 {
-  "archive": "SIS-v3.3.2-AUTHORITY-CONSISTENCY.zip",
+  "archive": "SIS-v3.3.3.zip",
   "fresh_extraction": {
     "compileall_src": true,
     "extracted_test_smoke": {
       "command": "pytest -q tests/v3/test_candidates.py",
       "returncode": 0,
-      "tail": "39 passed in 0.48s"
+      "tail": "39 passed in 0.63s"
     },
     "verify_tree": {
-      "files": 375
+      "files": 384
     }
   },
   "kind": "release_verification",
   "schema_version": 1,
   "source": {
-    "commit": "17f6360fcb2bf9e47ee68ee5060e3df3a0470a66",
+    "commit": "008acc313658bf3b7bfd150510491f8bd0ce86da",
     "dirty": false,
     "dirty_paths": []
   },
   "source_binding": {
-    "files": 375,
-    "project": "SIS-v3.3.2-AUTHORITY-CONSISTENCY",
+    "files": 384,
+    "project": "SIS-v3.3.3",
     "source_bound": true
   },
   "zip_verify": {
     "manifest": "RELEASE_SHA256.json",
-    "project": "SIS-v3.3.2-AUTHORITY-CONSISTENCY",
-    "source_files": 375,
+    "project": "SIS-v3.3.3",
+    "source_files": 384,
     "valid": true,
-    "zip_sha256": "ecb8486c3036fb20868618dbcc9e5615183ec8ed6c6dcf7f84fd3a86d7cd5fac"
+    "zip_sha256": "dc9579e610789acab5c5dc39e1d84cc398d0f62cd6cef8ed3ba66b49cddcf9d0"
   }
 }

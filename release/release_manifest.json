@@ -1,11 +1,11 @@
 {
   "archive": {
-    "inner_project_dir": "SIS-v3.3.2-AUTHORITY-CONSISTENCY",
-    "path": "release/SIS-v3.3.2-AUTHORITY-CONSISTENCY.zip",
-    "sha256": "ecb8486c3036fb20868618dbcc9e5615183ec8ed6c6dcf7f84fd3a86d7cd5fac",
-    "source_files": 375
+    "inner_project_dir": "SIS-v3.3.3",
+    "path": "release/SIS-v3.3.3.zip",
+    "sha256": "dc9579e610789acab5c5dc39e1d84cc398d0f62cd6cef8ed3ba66b49cddcf9d0",
+    "source_files": 384
   },
-  "branch": "codex/sis-v3.3.1-authority-closure",
+  "branch": "main",
   "docs": [
     "docs/v3/ARCHITECTURE_V3_3.md",
     "docs/v3/CODEX_ADAPTER.md",
@@ -21,6 +21,7 @@
     "docs/v3/MIGRATION.md",
     "docs/v3/OPERATIONS.md",
     "docs/v3/QUALIFICATION_REPORT.md",
+    "docs/v3/QUALIFICATION_REPORT_V3_3_0.md",
     "docs/v3/RELEASE_NOTES_V3_3.md",
     "docs/v3/SECURITY_BOUNDARIES_V3_3.md",
     "docs/v3/SKILL_HOLDOUTS.md",
@@ -52,23 +53,23 @@
   ],
   "notes": "release/ artifacts are out-of-band provenance and are intentionally absent from the archive manifest",
   "provenance": {
-    "key_id": "review-release-key-1",
+    "key_id": "release-v333-key-1",
     "path": "release/provenance.dsse.json",
     "public_key_path": "release/provenance_public_key.hex",
     "signed": true,
-    "statement_sha256": "ab15965b83a5df094c0e2896d6eb268da855fa8365932a3af4da7324d8d9d214",
-    "subject_sha256": "ecb8486c3036fb20868618dbcc9e5615183ec8ed6c6dcf7f84fd3a86d7cd5fac",
+    "statement_sha256": "1c46e56d0f506efd62dcef2dde7eb660166021703f874e600ae762b9c5588eb4",
+    "subject_sha256": "dc9579e610789acab5c5dc39e1d84cc398d0f62cd6cef8ed3ba66b49cddcf9d0",
     "trust_root": "qualification-only"
   },
-  "release": "SIS-v3.3.2-AUTHORITY-CONSISTENCY",
+  "release": "SIS-v3.3.3",
   "schema_version": 1,
-  "source_commit": "17f6360fcb2bf9e47ee68ee5060e3df3a0470a66",
+  "source_commit": "008acc313658bf3b7bfd150510491f8bd0ce86da",
   "source_commit_note": "archive members are byte-identical to this commit for every manifest-covered file; the release commit itself touches only out-of-band release/ provenance",
-  "status": "IMPLEMENTED_NOT_EFFICACY_QUALIFIED",
+  "status": "ENGINEERING_VERIFIED",
   "test_result": {
     "command": "PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONNOUSERSITE=1 PYTHONPATH=src python3 -m pytest -q",
-    "failed": 0,
-    "passed": 986,
-    "skipped": 8
+    "failed": 2,
+    "passed": 1102,
+    "skipped": 12
   }
 }
