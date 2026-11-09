@@ -116,8 +116,15 @@ Gate G2 — production isolation boundary:
   It exits 2 off Linux; a passing run is platform evidence, not a
   qualification claim.
 - 9 scaffold tests cover argv confinement, config validation,
-  fail-closed behavior, and the absence of evaluator key access. The
-  containment itself is unvalidated until the probe runs on Linux.
+  fail-closed behavior, and the absence of evaluator key access.
+- The probe was run on Debian 12 (bubblewrap 0.8.0, Python 3.11.2,
+  LinuxKit 7.0.14) under a privileged Docker container: 10/10 probes
+  passed. The privileged container was required because that kernel
+  denied unprivileged user namespaces; the result validates the
+  bubblewrap configuration, not the container's containment. Evidence:
+  `evidence/sandbox/v334_linux_worker_probe.json` and `_env.json`. The
+  fork bound was enforced by the wall clock, not `RLIMIT_NPROC`, so a
+  hard fork limit still needs a cgroup pids limit.
 
 Suite: 1240 passed, 12 skipped. One release-seal test
 (`ReleaseIdentityTests.test_release_commit_covers_current_source`)

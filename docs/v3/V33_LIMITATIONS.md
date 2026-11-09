@@ -38,10 +38,18 @@
   without bwrap and never holds evaluator keys. The local subprocess
   executor still reports `isolation:unverified_local`, so it can never
   mint a production pass even with a signed attestation.
-- The scaffold's containment is **unvalidated on this host**. It must be
-  probed on the target Linux host with `tools/linux_worker_probe.py`
-  before any deployment treats it as a boundary. A passing probe is
-  platform evidence for the isolator, not a production qualification.
+- The scaffold's containment was probed on Debian 12 / bubblewrap
+  0.8.0 / Python 3.11.2 / LinuxKit 7.0.14 under a **privileged** Docker
+  container: 10/10 probes passed (network denial, read/write
+  confinement, memory limit, wall-clock kill, process-group kill,
+  environment scrubbing). The privileged container was required because
+  that kernel denied unprivileged user namespaces; this validates the
+  bubblewrap configuration, not the container's own containment. It
+  remains unvalidated on a production Linux host or microVM, and must
+  not be deployed from a privileged container.
+- `RLIMIT_NPROC` did not bound the fork probe; the wall-clock kill
+  stopped it. A hard fork bound needs a cgroup pids limit. The probe
+  does not test cgroup memory limits, seccomp, or microVM isolation.
 - The default system binds are a usable scaffold, not a hardened image.
   Merged-/usr distributions, interpreters outside `/usr`, and minimal
   images may need `system_binds` adjusted; the probe reports what

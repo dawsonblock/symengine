@@ -101,10 +101,14 @@ key revocation, or task-admission service is deployed.
   backend: user/PID/network/IPC/UTS/cgroup namespaces, read-only system
   binds, one writable workspace, resource limits, wall-clock kill of the
   whole process group, bounded output, and a factual receipt. It fails
-  closed off Linux or without bwrap and holds no evaluator keys. Its
-  containment is unvalidated until `tools/linux_worker_probe.py` passes
-  on the target Linux host; a passing probe is platform evidence for the
-  isolator, not a qualification claim.
+  closed off Linux or without bwrap and holds no evaluator keys. The
+  probe passed 10/10 checks on Debian 12 / bubblewrap 0.8.0 under a
+  privileged Docker container; that validates the bubblewrap namespace
+  configuration, not the container's own containment. It remains
+  unvalidated on a production Linux host or microVM, and the fork bound
+  needs a cgroup pids limit (`RLIMIT_NPROC` did not hold). A passing
+  probe is platform evidence for the isolator, not a qualification
+  claim.
 - `sis.v3.memory.MemoryStore` integrity chain: append-only `memory_chain`
   commits every record digest in order, custodian-signed when `chain_key`
   is configured. Trusted-mode access re-verifies record signatures and

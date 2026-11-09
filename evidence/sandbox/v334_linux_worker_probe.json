@@ -1,0 +1,142 @@
+{
+  "bwrap": "bwrap",
+  "kind": "linux_worker_probe",
+  "ok": true,
+  "platform": "linux",
+  "probes": {
+    "environment_scrubbed": {
+      "errors": [
+        "backend:linux-rootless-bwrap",
+        "net:denied",
+        "proc:namespaced",
+        "fs:workspace_confined"
+      ],
+      "exit_status": 0,
+      "ok": true,
+      "stderr": "",
+      "stdout": "{\"HOME\": \"/workspace\", \"LANG\": \"C.UTF-8\", \"LC_ALL\": \"C.UTF-8\", \"PATH\": \"/usr/local/bin:/usr/bin:/bin\", \"PYTHONDONTWRITEBYTECODE\": \"1\", \"PYTHONHASHSEED\": \"0\", \"PYTHONNOUSERSITE\": \"1\", \"TMPDIR\": \"/tmp\", \"TZ\": \"UTC\", \"PWD\": \"/workspace\"}\n",
+      "timeout": false
+    },
+    "execute": {
+      "errors": [
+        "backend:linux-rootless-bwrap",
+        "net:denied",
+        "proc:namespaced",
+        "fs:workspace_confined"
+      ],
+      "exit_status": 0,
+      "ok": true,
+      "stderr": "",
+      "stdout": "alive\n",
+      "timeout": false
+    },
+    "fork_bounded": {
+      "errors": [
+        "backend:linux-rootless-bwrap",
+        "net:denied",
+        "proc:namespaced",
+        "fs:workspace_confined",
+        "process:wall_clock_killed"
+      ],
+      "exit_status": -1,
+      "ok": true,
+      "stderr": "",
+      "stdout": "",
+      "timeout": true
+    },
+    "memory_bounded": {
+      "errors": [
+        "backend:linux-rootless-bwrap",
+        "net:denied",
+        "proc:namespaced",
+        "fs:workspace_confined"
+      ],
+      "exit_status": 1,
+      "ok": true,
+      "stderr": "Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\nMemoryError\n",
+      "stdout": "",
+      "timeout": false
+    },
+    "network_denied": {
+      "errors": [
+        "backend:linux-rootless-bwrap",
+        "net:denied",
+        "proc:namespaced",
+        "fs:workspace_confined"
+      ],
+      "exit_status": 1,
+      "ok": true,
+      "stderr": "",
+      "stdout": "DENIED OSError\n",
+      "timeout": false
+    },
+    "process_group_killed": {
+      "errors": [
+        "backend:linux-rootless-bwrap",
+        "net:denied",
+        "proc:namespaced",
+        "fs:workspace_confined",
+        "process:wall_clock_killed"
+      ],
+      "exit_status": -1,
+      "ok": true,
+      "stderr": "",
+      "stdout": "",
+      "timeout": true
+    },
+    "read_outside_denied": {
+      "errors": [
+        "backend:linux-rootless-bwrap",
+        "net:denied",
+        "proc:namespaced",
+        "fs:workspace_confined"
+      ],
+      "exit_status": 1,
+      "ok": true,
+      "stderr": "Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\nFileNotFoundError: [Errno 2] No such file or directory: '/tmp/sis-worker-probe-88vi_h3d/host-secret.txt'\n",
+      "stdout": "",
+      "timeout": false
+    },
+    "wall_clock_killed": {
+      "errors": [
+        "backend:linux-rootless-bwrap",
+        "net:denied",
+        "proc:namespaced",
+        "fs:workspace_confined",
+        "process:wall_clock_killed"
+      ],
+      "exit_status": -1,
+      "ok": true,
+      "stderr": "",
+      "stdout": "",
+      "timeout": true
+    },
+    "workspace_writable": {
+      "errors": [
+        "backend:linux-rootless-bwrap",
+        "net:denied",
+        "proc:namespaced",
+        "fs:workspace_confined"
+      ],
+      "exit_status": 0,
+      "ok": true,
+      "stderr": "",
+      "stdout": "",
+      "timeout": false
+    },
+    "write_outside_denied": {
+      "errors": [
+        "backend:linux-rootless-bwrap",
+        "net:denied",
+        "proc:namespaced",
+        "fs:workspace_confined"
+      ],
+      "exit_status": 1,
+      "ok": true,
+      "stderr": "Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\nOSError: [Errno 30] Read-only file system: '/etc/sis-probe-escape'\n",
+      "stdout": "",
+      "timeout": false
+    }
+  },
+  "worker_identity": "linux-rootless-bwrap"
+}

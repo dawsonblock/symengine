@@ -1,0 +1,17 @@
+{
+  "kind": "linux_worker_probe_environment",
+  "generated_at": "2026-11-09T22:42:00Z",
+  "image": "debian:bookworm-slim",
+  "os": "Debian GNU/Linux 12 (bookworm)",
+  "kernel": "7.0.14-linuxkit (Colima Docker VM, arm64)",
+  "bubblewrap": "0.8.0",
+  "python": "3.11.2",
+  "container": "docker run --rm --privileged",
+  "result": "10/10 probes passed; see v334_linux_worker_probe.json",
+  "caveat": "The privileged container was required because this Docker kernel denied unprivileged user namespaces. This validates the bubblewrap namespace configuration, not the container's own containment. A production deployment must run the worker on a host or microVM where unprivileged user namespaces (or a rootless container runtime with the required namespaces) are enabled, and must not rely on --privileged.",
+  "findings": [
+    "fork_bounded was stopped by the wall-clock kill rather than RLIMIT_NPROC; a hard fork bound needs a cgroup pids limit.",
+    "The probe does not test cgroup memory limits, seccomp, or microVM isolation.",
+    "The default system binds expose read-only /etc; a hardened image should minimize them."
+  ]
+}
