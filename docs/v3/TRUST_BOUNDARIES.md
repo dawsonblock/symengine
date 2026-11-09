@@ -97,6 +97,14 @@ key revocation, or task-admission service is deployed.
   containment properties the worker enforced. The local subprocess
   backend still reports `isolation:unverified_local` only, so production
   execution stays closed until a qualified worker backend exists.
+- `sis.v3.linux_worker` is a rootless bubblewrap scaffold for that
+  backend: user/PID/network/IPC/UTS/cgroup namespaces, read-only system
+  binds, one writable workspace, resource limits, wall-clock kill of the
+  whole process group, bounded output, and a factual receipt. It fails
+  closed off Linux or without bwrap and holds no evaluator keys. Its
+  containment is unvalidated until `tools/linux_worker_probe.py` passes
+  on the target Linux host; a passing probe is platform evidence for the
+  isolator, not a qualification claim.
 - `sis.v3.memory.MemoryStore` integrity chain: append-only `memory_chain`
   commits every record digest in order, custodian-signed when `chain_key`
   is configured. Trusted-mode access re-verifies record signatures and

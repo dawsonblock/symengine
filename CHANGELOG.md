@@ -104,7 +104,22 @@ Gate G2 — production isolation boundary:
   Executor red-team cases (symlink, network, environment, fork, resource
   exhaustion) remain in `test_runner_isolation.py`.
 
-Suite: 1231 passed, 12 skipped. One release-seal test
+- `sis.v3.linux_worker` is a rootless bubblewrap scaffold: user/PID/
+  network/IPC/UTS/cgroup namespaces, read-only system binds, one
+  writable workspace, address-space/CPU/file-size/descriptor/process
+  limits, wall-clock kill of the whole process group, bounded output,
+  and a factual receipt. It fails closed off Linux or without bwrap and
+  never holds evaluator keys.
+- `tools/linux_worker_probe.py` tests the target host for namespace
+  availability, network denial, filesystem confinement, fork/memory
+  limits, wall-clock and process-group kill, and environment scrubbing.
+  It exits 2 off Linux; a passing run is platform evidence, not a
+  qualification claim.
+- 9 scaffold tests cover argv confinement, config validation,
+  fail-closed behavior, and the absence of evaluator key access. The
+  containment itself is unvalidated until the probe runs on Linux.
+
+Suite: 1240 passed, 12 skipped. One release-seal test
 (`ReleaseIdentityTests.test_release_commit_covers_current_source`)
 remains red until `release/` is re-signed with the release key in
 Phase 5; the source change itself is covered by the baseline record in

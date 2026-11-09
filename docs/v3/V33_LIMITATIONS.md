@@ -31,12 +31,21 @@
   The production gate is now closed by policy rather than by convention:
   a missing allowlist, pinned image/policy digest, required containment
   property, expiry, or exact receipt binding rejects the evaluation.
-- No qualified worker backend ships in this tree. The local subprocess
+- `sis.v3.linux_worker` is a rootless bubblewrap scaffold: user/PID/
+  network/IPC/UTS/cgroup namespaces, read-only system binds, one
+  writable workspace, resource limits, wall-clock kill of the whole
+  process group, and a factual receipt. It fails closed off Linux or
+  without bwrap and never holds evaluator keys. The local subprocess
   executor still reports `isolation:unverified_local`, so it can never
-  mint a production pass even with a signed attestation. A Linux
-  microVM/container worker that enforces filesystem confinement, network
-  denial, process isolation, resource limits and process-group
-  termination remains the blocker for executing untrusted code.
+  mint a production pass even with a signed attestation.
+- The scaffold's containment is **unvalidated on this host**. It must be
+  probed on the target Linux host with `tools/linux_worker_probe.py`
+  before any deployment treats it as a boundary. A passing probe is
+  platform evidence for the isolator, not a production qualification.
+- The default system binds are a usable scaffold, not a hardened image.
+  Merged-/usr distributions, interpreters outside `/usr`, and minimal
+  images may need `system_binds` adjusted; the probe reports what
+  actually held.
 - The isolator is trusted. The policy verifies the isolator's signed
   claims, not the operating system's enforcement; an isolator that signs
   false properties defeats the gate. Key custody and worker
