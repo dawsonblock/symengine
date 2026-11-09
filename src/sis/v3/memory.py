@@ -527,7 +527,9 @@ def verify_experience_evidence(record, verifier) -> bool:
     registry, then compares the record's claimed task, repository
     snapshot, attempt and execution against the resolved artifact — an
     authentic receipt for a *different* task, repository or attempt can
-    no longer back this experience.
+    no longer back this experience. The resolved artifact must itself
+    hash to ``outcome_receipt_digest``; a resolver returning some other
+    valid receipt fails closed instead of being trusted on its say-so.
 
     The resolved artifact may be an ``OutcomeReceiptV1`` (task, repo and
     outcome bound; execution corroborated through the verifier's
@@ -548,6 +550,11 @@ def verify_experience_evidence(record, verifier) -> bool:
         raise ContractError(
             "evidence check requires an ExperienceRecordV2")
     artifact = verifier.load_receipt(record.outcome_receipt_digest)
+    # Defense in depth: never let a storage resolver's choice of artifact
+    # stand in for the one this record names. A receipt that is valid
+    # under its own digest is still not evidence for a different one.
+    if getattr(artifact, "digest", None) != record.outcome_receipt_digest:
+        raise MemoryError("experience_receipt_digest_mismatch")
     if not verifier.verify_receipt(artifact):
         raise MemoryError("experience_receipt_unauthenticated")
     if getattr(artifact, "outcome", None) != record.outcome:

@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "kind": "phase0_baseline",
+  "release": "SIS-v3.3.4 (planned)",
+  "revision": "85151476c81d0d2eee9e4ea44d85084eef9e3e8f",
+  "recorded_at": "2026-11-09T22:30:45Z",
+  "environment": {
+    "platform": "macOS 26.2 (Darwin 25.2.0, arm64)",
+    "cpu": "Apple M2 Pro",
+    "python": "3.12.0",
+    "dependencies": {
+      "pytest": "8.4.2",
+      "setuptools": "82.0.1",
+      "cryptography": "48.0.1"
+    }
+  },
+  "test_suite": {
+    "command": "PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONNOUSERSITE=1 PYTHONPATH=src python3 -m pytest -q",
+    "passed": 1122,
+    "skipped": 12,
+    "failed": 0,
+    "duration_seconds": 70.26
+  },
+  "release_checks": {
+    "check_release_ci": {
+      "command": "python3 tools/check_release_ci.py --mode release",
+      "result": "release inventory verified: 384 files"
+    },
+    "verify_release": {
+      "command": "python3 tools/verify_release.py --compile .",
+      "result": "release verified: 384 files, all SHA-256 matched; compile check passed"
+    },
+    "smoke_integration": {
+      "command": "PYTHONPATH=src python3 tools/smoke_integration.py",
+      "result": "success"
+    }
+  },
+  "baseline_hashes": {
+    "release_sha256_manifest_sha256": "2d4fd2bb4f15bac2f7e902bcb6f2050967e7503de7d2df00944e23ff699ef6f0",
+    "release_archive": "release/SIS-v3.3.3.zip",
+    "release_archive_sha256": "594e563d7505c45cee090412d8c83d626ff3101488f95345416983c7d0421402",
+    "provenance_envelope_sha256": "4584df262808ff1b201b88a1e86e93356472b96a69d38672dda0d60ed33f1c22",
+    "release_manifest_sha256": "0f34bb0dce4a52e7df78adab59b24cb0f99cbd45db436e4586702294a43892c4"
+  },
+  "phase1_after": {
+    "command": "PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONNOUSERSITE=1 PYTHONPATH=src python3 -m pytest -q",
+    "passed": 1135,
+    "skipped": 12,
+    "failed": 0,
+    "duration_seconds": 76.88
+  },
+  "note": "Baseline measured on the pristine v3.3.3 tree (8515147) before any Phase 1 edit; the release checks were re-run in a clean git worktree of that revision. The after count adds 13 receipt-identity and journal-binding regressions. RELEASE_SHA256.json is intentionally stale after the Phase 1 source edits and must be re-sealed with the release signing key during Phase 5."
+}

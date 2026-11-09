@@ -99,7 +99,8 @@ class ExperienceEvidenceTests(unittest.TestCase):
             return self.valid
 
     class _Receipt:
-        def __init__(self, outcome):
+        def __init__(self, outcome, digest="c" * 64):
+            self.digest = digest
             self.outcome = outcome
             self.task_id = "task-1"
             self.evaluated_repo_digest = "d" * 64

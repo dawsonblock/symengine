@@ -57,6 +57,19 @@ from ..vault_storage import (
 
 _SIGNATURE_DOMAIN = b"sis-v3:outcome_receipt:1\0"
 
+_DIGEST = re.compile(r"[0-9a-f]{64}")
+
+# Fields every journal line must carry before it can corroborate anything.
+# Entries written by older evaluators may lack the newer optional keys;
+# those are handled as unverified rather than rejected.
+_JOURNAL_REQUIRED_FIELDS = frozenset({
+    "receipt_digest", "receipt_id", "task_id", "evaluated_repo_digest",
+    "criterion_version", "outcome", "execution_digest", "nonce", "issued_at",
+})
+_JOURNAL_STRING_FIELDS = (
+    "receipt_id", "task_id", "criterion_version", "outcome", "nonce", "issued_at",
+)
+
 # A losing seed creator can observe the exclusively-created file before
 # the winner's 32 bytes are written through it. Waiting briefly for the
 # payload turns that race into a wait instead of a spurious integrity
@@ -244,6 +257,10 @@ class OutcomeVerifier:
         self._tasks: dict[str, RegisteredTask] = {}
         self._nonces: set[str] = set()
         self._evaluated: set[tuple[str, str, str]] = set()
+        # Journal entries whose persisted receipt was re-authenticated on
+        # load. Only these may corroborate an execution digest.
+        self._verified_receipts: set[str] = set()
+        self._journal_digests: set[str] = set()
         for public_hex in (trusted_keys or {}).values():
             if not (isinstance(public_hex, str)
                     and re.fullmatch(r"[0-9a-f]{64}", public_hex)
@@ -448,14 +465,26 @@ class OutcomeVerifier:
         return [entry["receipt_digest"] for entry in self._journal]
 
     def load_receipt(self, receipt_digest: str) -> OutcomeReceiptV1:
-        """Reload a persisted signed receipt by its canonical digest."""
-        if not isinstance(receipt_digest, str) or not re.fullmatch(r"[0-9a-f]{64}", receipt_digest):
+        """Reload a persisted signed receipt by its canonical digest.
+
+        The artifact must hash to the address it was stored under. A
+        signature that verifies over a *different* evaluation proves
+        nothing about this one, so a mismatch means the receipt store
+        returned the wrong artifact and fails closed as journal
+        corruption.
+        """
+        if not isinstance(receipt_digest, str) or not _DIGEST.fullmatch(receipt_digest):
             raise ContractError("receipt reference must be a lowercase SHA-256 digest")
         path = self.registry_dir / "receipts" / f"{receipt_digest}.json"
         try:
-            return OutcomeReceiptV1.from_json(path.read_bytes())
+            receipt = OutcomeReceiptV1.from_json(path.read_bytes())
         except OSError as exc:
             raise JournalIntegrityError("receipt_missing") from exc
+        except ContractError as exc:
+            raise JournalIntegrityError("receipt_malformed") from exc
+        if receipt.digest != receipt_digest:
+            raise JournalIntegrityError("receipt_digest_mismatch")
+        return receipt
 
     def execution_digest_for(self, receipt_digest: str) -> str | None:
         """The execution receipt digest journaled for one outcome receipt.
@@ -463,7 +492,12 @@ class OutcomeVerifier:
         The journal entry is written by this evaluator at receipt issue,
         so it binds an outcome receipt to the exact execution that
         produced it — the linkage experience-evidence verification needs.
+        An entry whose persisted receipt could not be re-authenticated on
+        load (missing artifact, untrusted signer, or a format that never
+        recorded the linkage) is unverified and yields ``None``.
         """
+        if receipt_digest not in self._verified_receipts:
+            return None
         for entry in self._journal:
             if entry["receipt_digest"] == receipt_digest:
                 return entry["execution_digest"]
@@ -481,6 +515,7 @@ class OutcomeVerifier:
             "criterion_version": receipt.criterion_version,
             "outcome": receipt.outcome,
             "execution_digest": execution_digest,
+            "signer_key_id": receipt.signer_key_id,
             "nonce": nonce,
             "issued_at": _utcnow(),
             "outcome_class": outcome_class or (
@@ -513,6 +548,10 @@ class OutcomeVerifier:
             (receipt.task_id, receipt.evaluated_repo_digest, receipt.criterion_version)
         )
         self._journal.append(entry)
+        self._journal_digests.add(entry["receipt_digest"])
+        # This evaluator signed the receipt and wrote the artifact, so the
+        # entry it just journaled is bound to an authenticated artifact.
+        self._verified_receipts.add(entry["receipt_digest"])
 
     def _load_state(self) -> None:
         self._journal: list[dict] = []
@@ -541,11 +580,90 @@ class OutcomeVerifier:
                         entry = json.loads(raw.rstrip(b"\n"))
                     except json.JSONDecodeError as exc:
                         raise JournalIntegrityError(f"receipt journal line {position} is corrupt") from exc
+                    entry = self._validate_journal_entry(entry, position)
+                    if entry["receipt_digest"] in self._journal_digests:
+                        raise JournalIntegrityError(
+                            f"receipt journal line {position} duplicates a receipt")
+                    if entry["nonce"] in self._nonces:
+                        raise JournalIntegrityError(
+                            f"receipt journal line {position} replays a nonce")
                     self._journal.append(entry)
+                    self._journal_digests.add(entry["receipt_digest"])
                     self._nonces.add(entry["nonce"])
                     self._evaluated.add(
                         (entry["task_id"], entry["evaluated_repo_digest"], entry["criterion_version"])
                     )
+                    if self._bind_journal_entry(entry, position):
+                        self._verified_receipts.add(entry["receipt_digest"])
+
+    def _validate_journal_entry(self, entry: object, position: int) -> dict:
+        """Reject a journal line that is not a well-formed receipt record."""
+        if not isinstance(entry, dict):
+            raise JournalIntegrityError(
+                f"receipt journal line {position} is not an object")
+        missing = sorted(_JOURNAL_REQUIRED_FIELDS - set(entry))
+        if missing:
+            raise JournalIntegrityError(
+                f"receipt journal line {position} is missing {missing[0]}")
+        for field in ("receipt_digest", "evaluated_repo_digest", "execution_digest"):
+            value = entry[field]
+            if not isinstance(value, str) or not _DIGEST.fullmatch(value):
+                raise JournalIntegrityError(
+                    f"receipt journal line {position} has an invalid {field}")
+        for field in _JOURNAL_STRING_FIELDS:
+            value = entry[field]
+            if not isinstance(value, str) or not value:
+                raise JournalIntegrityError(
+                    f"receipt journal line {position} has an invalid {field}")
+        signer = entry.get("signer_key_id")
+        if signer is not None and (not isinstance(signer, str) or not signer):
+            raise JournalIntegrityError(
+                f"receipt journal line {position} has an invalid signer_key_id")
+        return entry
+
+    def _bind_journal_entry(self, entry: dict, position: int) -> bool:
+        """Bind one journal line to its persisted, signed receipt.
+
+        Returns ``True`` only when the journaled identity and the signed
+        artifact agree and the artifact authenticates under a currently
+        trusted key. A missing artifact (a crash between the journal
+        append and the receipt write) or a rotated-out signer is left
+        unverified; it is still listed, but it can never corroborate an
+        execution digest. A present-but-inconsistent artifact is
+        corruption and fails closed.
+        """
+        path = self.registry_dir / "receipts" / f"{entry['receipt_digest']}.json"
+        try:
+            artifact = OutcomeReceiptV1.from_json(path.read_bytes())
+        except FileNotFoundError:
+            return False
+        except (OSError, ContractError) as exc:
+            raise JournalIntegrityError(
+                f"receipt journal line {position} has an unreadable receipt") from exc
+        if artifact.digest != entry["receipt_digest"]:
+            raise JournalIntegrityError("receipt_digest_mismatch")
+        for field in (
+            "receipt_id", "task_id", "evaluated_repo_digest",
+            "criterion_version", "outcome",
+        ):
+            if getattr(artifact, field) != entry[field]:
+                raise JournalIntegrityError("receipt_journal_mismatch")
+        signer = entry.get("signer_key_id")
+        if signer is not None and signer != artifact.signer_key_id:
+            raise JournalIntegrityError("receipt_journal_mismatch")
+        attempt = getattr(artifact, "attempt_id", None)
+        if attempt is not None and entry.get("attempt_id") not in (None, attempt):
+            raise JournalIntegrityError("receipt_journal_mismatch")
+        execution = getattr(artifact, "execution_receipt_digest", None)
+        if execution is not None and execution != entry["execution_digest"]:
+            raise JournalIntegrityError("receipt_journal_mismatch")
+        public_hex = self._trusted.get(artifact.signer_key_id)
+        if public_hex is None:
+            return False
+        if not verify_receipt_signature(artifact, public_hex):
+            raise JournalIntegrityError(
+                f"receipt journal line {position} has an unauthentic receipt")
+        return True
 
     def _persist_tasks(self) -> None:
         document = {

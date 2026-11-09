@@ -31,6 +31,7 @@ from sis.v3 import signatures
 from sis.v3.contracts import (
     ContractError,
     ExperienceRecordV1,
+    TaskEnvelopeV1,
     canonical_digest,
 )
 from sis.v3.evaluation_runtime import (
@@ -50,6 +51,12 @@ from sis.v3.runner import (
     LocalSubprocessExecutor,
     ResourceLimits,
 )
+from sis.v3.verifier import (
+    EvaluationRejected,
+    JournalIntegrityError,
+    OutcomeVerifier,
+    verify_receipt_signature,
+)
 
 ROOT = Path(__file__).resolve().parents[2]
 NOW = "2026-11-08T12:00:00Z"
@@ -68,6 +75,24 @@ def _limits(**kw) -> ResourceLimits:
         output_bytes=1 << 20, disk_bytes=16 << 20, process_count=64)
     defaults.update(kw)
     return ResourceLimits(**defaults)
+
+
+ACCEPTANCE = (
+    b"import calc\n"
+    b"assert calc.scale(3, 4) == 12\n"
+    b"print('ok')\n"
+)
+
+
+def _task_envelope(task_id="task-scale") -> TaskEnvelopeV1:
+    return TaskEnvelopeV1(
+        schema_version=1, task_id=task_id,
+        repo_snapshot_digest="0" * 64, base_commit=None,
+        task_statement_digest="1" * 64,
+        permitted_commands=("run-tests",), isolation_profile="unverified_local",
+        time_budget_seconds=300, token_budget=10_000, tool_budget=50,
+        actor_id="agent-1", evaluator_task_ref=task_id,
+    )
 
 
 class LocalSelfCertificationTests(unittest.TestCase):
@@ -329,7 +354,8 @@ class _Envelope:
     """Outcome-envelope-shaped test artifact (task+repo+attempt+exec)."""
 
     def __init__(self, task_id="task-A", repo="d" * 64, attempt="att-1",
-                 execution="e" * 64, outcome="fail"):
+                 execution="e" * 64, outcome="fail", digest="c" * 64):
+        self.digest = digest
         self.task_id = task_id
         self.evaluated_repo_digest = repo
         self.attempt_id = attempt
@@ -410,6 +436,7 @@ class ExperienceLineageTests(unittest.TestCase):
         # execution_receipt_digest is unverifiable -> fail closed.
         record = _v2_record(self.seed)
         receipt = SimpleNamespace(
+            digest="c" * 64,
             task_id="task-A", evaluated_repo_digest="d" * 64,
             outcome="fail")
         verifier = _Verifier(receipt, journal_exec=None)
@@ -427,6 +454,238 @@ class ExperienceLineageTests(unittest.TestCase):
         verifier = _Verifier(_Envelope())
         with self.assertRaisesRegex(MemoryError, "legacy_unverifiable"):
             verify_experience_evidence(record, verifier)
+
+
+class ReceiptIdentityTests(unittest.TestCase):
+    """G1: a receipt reference resolves to exactly one authenticated artifact.
+
+    A signature that verifies over some other evaluation is never evidence
+    for the address it was stored under, so every substitution below must
+    fail closed at both the verifier and the memory boundary.
+    """
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.submission = self.root / "submission"
+        self.submission.mkdir()
+        (self.submission / "calc.py").write_text(
+            "def scale(a, b):\n    return a * b\n", encoding="utf-8")
+        (self.submission / "README.txt").write_text("variant-1\n")
+        self.verifier = self._verifier("registry-1", "keys-1")
+        self.verifier.register_task(
+            actor_role="evaluator", task_id="task-scale",
+            criterion_version="acceptance-v1",
+            argv=(sys.executable, "acceptance.py"),
+            files={"acceptance.py": ACCEPTANCE})
+        self.receipt_a = self._evaluate(self.verifier, "nonce-a")
+
+    def _verifier(self, registry, keys, criterion="acceptance-v1"):
+        verifier = OutcomeVerifier(
+            executor=LocalSubprocessExecutor(
+                self.root / ("exec-" + registry), use_seatbelt=False),
+            key_dir=self.root / keys,
+            registry_dir=self.root / registry)
+        verifier.register_task(
+            actor_role="evaluator", task_id="task-scale",
+            criterion_version=criterion,
+            argv=(sys.executable, "acceptance.py"),
+            files={"acceptance.py": ACCEPTANCE})
+        return verifier
+
+    def _evaluate(self, verifier, nonce):
+        return verifier.evaluate(
+            actor_role="evaluator", task=_task_envelope(),
+            submission_dir=self.submission, evaluation_nonce=nonce)
+
+    def _second_receipt(self):
+        (self.submission / "README.txt").write_text("variant-2\n")
+        return self._evaluate(self.verifier, "nonce-b")
+
+    def _receipt_path(self, registry, digest):
+        return self.root / registry / "receipts" / f"{digest}.json"
+
+    def _substitute(self, other_digest, source="registry-1"):
+        self._receipt_path("registry-1", self.receipt_a.digest).write_bytes(
+            self._receipt_path(source, other_digest).read_bytes())
+
+    def _restart(self, registry="registry-1", keys="keys-1"):
+        return OutcomeVerifier(
+            executor=LocalSubprocessExecutor(
+                self.root / "exec-restart", use_seatbelt=False),
+            key_dir=self.root / keys,
+            registry_dir=self.root / registry)
+
+    def _rewrite_journal(self, **changes):
+        path = self.root / "registry-1" / "receipts.jsonl"
+        lines = [json.loads(line) for line in path.read_bytes().splitlines()]
+        for entry in lines:
+            if entry["receipt_digest"] == self.receipt_a.digest:
+                entry.update(changes)
+        path.write_bytes(b"".join(
+            json.dumps(entry).encode() + b"\n" for entry in lines))
+
+    def test_valid_receipt_for_another_evaluation_rejected(self):
+        b = self._second_receipt()
+        self.assertNotEqual(self.receipt_a.digest, b.digest)
+        self.assertNotEqual(self.receipt_a.receipt_id, b.receipt_id)
+        self.assertNotEqual(
+            self.receipt_a.evaluated_repo_digest, b.evaluated_repo_digest)
+        self._substitute(b.digest)
+        with self.assertRaisesRegex(
+                JournalIntegrityError, "receipt_digest_mismatch"):
+            self.verifier.load_receipt(self.receipt_a.digest)
+
+    def test_substitution_detected_on_restart(self):
+        b = self._second_receipt()
+        self._substitute(b.digest)
+        with self.assertRaisesRegex(
+                JournalIntegrityError, "receipt_digest_mismatch"):
+            self._restart()
+
+    def test_valid_receipt_under_another_signer_rejected(self):
+        other = self._verifier("registry-2", "keys-2")
+        receipt_c = self._evaluate(other, "nonce-c")
+        self.assertTrue(verify_receipt_signature(
+            receipt_c, other.public_key_record()["public_key"]))
+        self.assertFalse(verify_receipt_signature(
+            receipt_c, self.verifier.public_key_record()["public_key"]))
+        self._substitute(receipt_c.digest, source="registry-2")
+        with self.assertRaisesRegex(
+                JournalIntegrityError, "receipt_digest_mismatch"):
+            self.verifier.load_receipt(self.receipt_a.digest)
+
+    def test_same_task_different_protocol_rejected(self):
+        other = self._verifier("registry-2", "keys-2", criterion="acceptance-v2")
+        receipt_d = self._evaluate(other, "nonce-d")
+        self.assertEqual(receipt_d.task_id, self.receipt_a.task_id)
+        self.assertEqual(
+            receipt_d.evaluated_repo_digest, self.receipt_a.evaluated_repo_digest)
+        self.assertEqual(receipt_d.outcome, self.receipt_a.outcome)
+        self.assertNotEqual(
+            receipt_d.criterion_version, self.receipt_a.criterion_version)
+        self.assertNotEqual(
+            receipt_d.test_suite_commitment, self.receipt_a.test_suite_commitment)
+        self._substitute(receipt_d.digest, source="registry-2")
+        with self.assertRaisesRegex(
+                JournalIntegrityError, "receipt_digest_mismatch"):
+            self.verifier.load_receipt(self.receipt_a.digest)
+
+    def test_missing_receipt_fails_closed(self):
+        with self.assertRaisesRegex(JournalIntegrityError, "receipt_missing"):
+            self.verifier.load_receipt("0" * 64)
+
+    def test_altered_receipt_contents_fail_closed(self):
+        path = self._receipt_path("registry-1", self.receipt_a.digest)
+        document = json.loads(path.read_bytes())
+        document["outcome"] = "pass" if document["outcome"] != "pass" else "fail"
+        path.write_bytes(json.dumps(document).encode())
+        with self.assertRaisesRegex(
+                JournalIntegrityError, "receipt_digest_mismatch"):
+            self.verifier.load_receipt(self.receipt_a.digest)
+
+        path.write_bytes(b"{not-json")
+        with self.assertRaisesRegex(
+                JournalIntegrityError, "receipt_malformed"):
+            self.verifier.load_receipt(self.receipt_a.digest)
+
+    def test_replayed_receipt_rejected(self):
+        with self.assertRaisesRegex(EvaluationRejected, "replayed_nonce"):
+            self._evaluate(self.verifier, "nonce-a")
+        with self.assertRaisesRegex(EvaluationRejected, "duplicate_evaluation"):
+            self._evaluate(self.verifier, "nonce-replay")
+
+        journal = self.root / "registry-1" / "receipts.jsonl"
+        first_line = journal.read_bytes().splitlines()[0]
+        journal.write_bytes(journal.read_bytes() + first_line + b"\n")
+        with self.assertRaisesRegex(JournalIntegrityError, "duplicates a receipt"):
+            self._restart()
+
+    def test_corrupted_journal_fails_closed(self):
+        for field, value in (
+                ("task_id", "task-other"),
+                ("criterion_version", "acceptance-v9"),
+                ("outcome", "pass" if self.receipt_a.outcome != "pass" else "fail"),
+                ("signer_key_id", "key-other"),
+        ):
+            with self.subTest(field=field):
+                journal = self.root / "registry-1" / "receipts.jsonl"
+                original = journal.read_bytes()
+                self._rewrite_journal(**{field: value})
+                with self.assertRaisesRegex(
+                        JournalIntegrityError, "receipt_journal_mismatch"):
+                    self._restart()
+                journal.write_bytes(original)
+
+    def test_legacy_journal_without_signer_field_still_loads(self):
+        journal = self.root / "registry-1" / "receipts.jsonl"
+        lines = [json.loads(line) for line in journal.read_bytes().splitlines()]
+        for entry in lines:
+            entry.pop("signer_key_id", None)
+        journal.write_bytes(b"".join(
+            json.dumps(entry).encode() + b"\n" for entry in lines))
+        restarted = self._restart()
+        self.assertIsNotNone(
+            restarted.execution_digest_for(self.receipt_a.digest))
+
+    def test_journal_entry_missing_required_field_fails_closed(self):
+        journal = self.root / "registry-1" / "receipts.jsonl"
+        original = journal.read_bytes()
+        lines = [json.loads(line) for line in original.splitlines()]
+        for entry in lines:
+            entry.pop("execution_digest", None)
+        journal.write_bytes(b"".join(
+            json.dumps(entry).encode() + b"\n" for entry in lines))
+        with self.assertRaisesRegex(JournalIntegrityError, "is missing"):
+            self._restart()
+        journal.write_bytes(original)
+
+    def test_unverified_journal_entry_cannot_corroborate_execution(self):
+        self.assertIsNotNone(
+            self.verifier.execution_digest_for(self.receipt_a.digest))
+        self._receipt_path("registry-1", self.receipt_a.digest).unlink()
+        restarted = self._restart()
+        self.assertIsNone(restarted.execution_digest_for(self.receipt_a.digest))
+
+    def test_memory_rejects_resolver_substitution(self):
+        b = self._second_receipt()
+        seed, _public = signatures.generate_keypair()
+        record = _v2_record(
+            seed,
+            outcome_receipt_digest=self.receipt_a.digest,
+            task_id=b.task_id,
+            repo_snapshot_digest=b.evaluated_repo_digest,
+            execution_receipt_digest=self.verifier.execution_digest_for(b.digest),
+            outcome=b.outcome,
+        )
+
+        class _SubstitutingResolver:
+            def load_receipt(self, digest):
+                return b
+
+            def verify_receipt(self, artifact):
+                return True
+
+            def execution_digest_for(self, digest):
+                return None
+
+        with self.assertRaisesRegex(
+                MemoryError, "experience_receipt_digest_mismatch"):
+            verify_experience_evidence(record, _SubstitutingResolver())
+
+    def test_memory_accepts_authentic_lineage(self):
+        seed, _public = signatures.generate_keypair()
+        record = _v2_record(
+            seed,
+            outcome_receipt_digest=self.receipt_a.digest,
+            task_id=self.receipt_a.task_id,
+            repo_snapshot_digest=self.receipt_a.evaluated_repo_digest,
+            execution_receipt_digest=self.verifier.execution_digest_for(
+                self.receipt_a.digest),
+            outcome=self.receipt_a.outcome,
+        )
+        self.assertTrue(verify_experience_evidence(record, self.verifier))
 
 
 class MemoryTamperTests(unittest.TestCase):
