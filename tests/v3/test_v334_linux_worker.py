@@ -13,6 +13,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from sis.v3.cgroups import CgroupUnavailable, CgroupV2Controller
 from sis.v3.contracts import ContractError
 from sis.v3.linux_worker import (
     LinuxRootlessWorker,
@@ -33,6 +34,10 @@ class WorkerConfigTests(unittest.TestCase):
                 {"environment": (("A",),)},
                 {"share_network": "yes"},
                 {"max_output_bytes": 0},
+                {"require_cgroups": "yes"},
+                {"require_seccomp": 1},
+                {"bind_etc_files": "no"},
+                {"cgroup_root": "relative"},
         ):
             with self.subTest(**{k: str(v)[:20] for k, v in kwargs.items()}):
                 with self.assertRaises(ContractError):
@@ -67,6 +72,33 @@ class BwrapArgvTests(unittest.TestCase):
         self.assertNotIn("--privileged", argv)
         self.assertEqual(argv[argv.index("--") + 1:], list(self.spec.argv))
 
+    def test_etc_is_hardened_to_individual_files(self):
+        argv = build_bwrap_argv(
+            LinuxWorkerConfig(), self.workspace, self.spec)
+        self.assertIn("--tmpfs", argv)
+        self.assertEqual(argv[argv.index("--tmpfs") + 1], "/etc")
+        self.assertIn("--remount-ro", argv)
+        self.assertEqual(argv[argv.index("--remount-ro") + 1], "/etc")
+        binds = [
+            (argv[i + 1], argv[i + 2])
+            for i, item in enumerate(argv) if item == "--ro-bind"
+        ]
+        self.assertNotIn("/etc", [destination for _source, destination in binds])
+        for _source, destination in binds:
+            if destination.startswith("/etc/"):
+                self.assertIn(destination, {
+                    "/etc/ld.so.cache", "/etc/localtime", "/etc/passwd",
+                    "/etc/group", "/etc/nsswitch.conf"})
+
+    def test_etc_can_be_disabled(self):
+        argv = build_bwrap_argv(
+            LinuxWorkerConfig(bind_etc_files=False), self.workspace,
+            self.spec)
+        tmpfs_targets = [
+            argv[i + 1] for i, item in enumerate(argv) if item == "--tmpfs"]
+        self.assertNotIn("/etc", tmpfs_targets)
+        self.assertNotIn("--remount-ro", argv)
+
     def test_network_share_is_explicit(self):
         argv = build_bwrap_argv(
             LinuxWorkerConfig(share_network=True), self.workspace, self.spec)
@@ -92,6 +124,67 @@ class BwrapArgvTests(unittest.TestCase):
             self.spec)
         index = argv.index("--ro-bind")
         self.assertEqual(argv[index + 2], "/usr")
+
+
+class CgroupControllerTests(unittest.TestCase):
+    """cgroup v2 leaf behavior; real enforcement is probed on Linux."""
+
+    def test_requires_cgroup_v2(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaisesRegex(
+                    CgroupUnavailable, "cgroup_v2_required"):
+                CgroupV2Controller(tmp)
+
+    def test_existing_leaf_name_is_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "cgroup.controllers").write_text("pids memory\n")
+            (root / "cgroup.subtree_control").write_text("+pids +memory\n")
+            (root / "sis-test").mkdir()
+            controller = CgroupV2Controller(root, name="sis-test")
+            with self.assertRaisesRegex(
+                    CgroupUnavailable, "cgroup_name_conflict"):
+                controller.create()
+
+    def test_missing_controller_reports_unavailable(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "cgroup.controllers").write_text("pids memory\n")
+            (root / "cgroup.subtree_control").write_text("")
+            controller = CgroupV2Controller(root, name="sis-test")
+            with self.assertRaisesRegex(
+                    CgroupUnavailable, "cgroup_controller_unavailable"):
+                controller.create(pids_max=8)
+            self.assertFalse(controller.path.exists())
+
+    def test_attach_rejects_invalid_pid(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "cgroup.controllers").write_text("pids\n")
+            (root / "cgroup.subtree_control").write_text("+pids\n")
+            controller = CgroupV2Controller(root, name="sis-test")
+            controller.path.mkdir()
+            controller._created = True
+            with self.assertRaises(ValueError):
+                controller.attach(0)
+            controller.remove()
+
+    def test_real_leaf_if_host_provides_one(self):
+        if not Path("/sys/fs/cgroup/cgroup.controllers").exists():
+            self.skipTest("cgroup v2 not present on this host")
+        try:
+            controller = CgroupV2Controller()
+            controller.create(pids_max=8, memory_max=1 << 28)
+        except CgroupUnavailable as exc:
+            self.skipTest(f"cgroup leaf unavailable: {exc}")
+        try:
+            self.assertEqual(
+                (controller.path / "pids.max").read_text().strip(), "8")
+            self.assertEqual(
+                (controller.path / "memory.max").read_text().strip(),
+                str(1 << 28))
+        finally:
+            controller.remove()
 
 
 class FailClosedTests(unittest.TestCase):

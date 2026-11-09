@@ -115,18 +115,22 @@ Gate G2 — production isolation boundary:
   limits, wall-clock and process-group kill, and environment scrubbing.
   It exits 2 off Linux; a passing run is platform evidence, not a
   qualification claim.
-- 9 scaffold tests cover argv confinement, config validation,
-  fail-closed behavior, and the absence of evaluator key access.
+- 16 scaffold tests cover argv confinement, the hardened /etc mount,
+  cgroup leaf behavior, config validation, fail-closed behavior, and the
+  absence of evaluator key access (one real-cgroup test skips off Linux).
 - The probe was run on Debian 12 (bubblewrap 0.8.0, Python 3.11.2,
-  LinuxKit 7.0.14) under a privileged Docker container: 10/10 probes
-  passed. The privileged container was required because that kernel
+  LinuxKit 7.0.14) with a host-mounted cgroup v2 hierarchy: 13/13
+  probes passed. cgroup v2 `pids.max`/`memory.max` enforce the fork and
+  memory bounds without the wall clock, and `/etc` is a read-only tmpfs
+  of individual files (a plain `--dir /etc` was writable and failed the
+  write-escape probe). The container was privileged because that kernel
   denied unprivileged user namespaces; the result validates the
-  bubblewrap configuration, not the container's containment. Evidence:
-  `evidence/sandbox/v334_linux_worker_probe.json` and `_env.json`. The
-  fork bound was enforced by the wall clock, not `RLIMIT_NPROC`, so a
-  hard fork limit still needs a cgroup pids limit.
+  bubblewrap configuration, not the container's containment. Seccomp
+  reports `0` (disabled) in that container, so an inner filter remains a
+  deployment requirement. Evidence:
+  `evidence/sandbox/v334_linux_worker_probe.json` and `_env.json`.
 
-Suite: 1240 passed, 12 skipped. One release-seal test
+Suite: 1246 passed, 13 skipped. One release-seal test
 (`ReleaseIdentityTests.test_release_commit_covers_current_source`)
 remains red until `release/` is re-signed with the release key in
 Phase 5; the source change itself is covered by the baseline record in

@@ -64,7 +64,10 @@ def _workspace(worker, base):
 
 def _probe(worker, base, name, code, *, limits, predicate,
            extra_env=None, settle=0.0):
-    workspace = _workspace(worker, base)
+    try:
+        workspace = _workspace(worker, base)
+    except WorkerBackendUnavailable as exc:
+        return {"ok": False, "reason": str(exc)}
     try:
         result = _run(worker, workspace, code, limits=limits,
                       extra_env=extra_env)
@@ -72,6 +75,8 @@ def _probe(worker, base, name, code, *, limits, predicate,
             time.sleep(settle)
         result["ok"] = bool(predicate(result, workspace))
         return result
+    except WorkerBackendUnavailable as exc:
+        return {"ok": False, "reason": str(exc)}
     finally:
         worker.destroy(workspace)
 
@@ -154,6 +159,34 @@ def main(argv=None) -> int:
         "b = bytearray(4 * 1024 ** 3)\n",
         limits=_limits(memory_bytes=256 << 20),
         predicate=lambda r, w: r["exit_status"] != 0)
+
+    probes["cgroup_pids"] = _probe(
+        worker, base, "cgroup_pids",
+        "import os\n"
+        "for _ in range(100):\n"
+        "    os.fork()\n",
+        limits=_limits(process_count=8, wall_seconds=5),
+        predicate=lambda r, w: (
+            r["exit_status"] != 0
+            and "cgroup:v2" in r["errors"]
+            and not r["timeout"]))
+
+    probes["cgroup_memory"] = _probe(
+        worker, base, "cgroup_memory",
+        "b = bytearray(4 * 1024 ** 3)\n",
+        limits=_limits(memory_bytes=256 << 20, wall_seconds=5),
+        predicate=lambda r, w: (
+            r["exit_status"] != 0 and "cgroup:v2" in r["errors"]))
+
+    probes["seccomp_mode"] = _probe(
+        worker, base, "seccomp_mode",
+        "for line in open('/proc/self/status'):\n"
+        "    if line.startswith('Seccomp:'):\n"
+        "        print(line.strip())\n",
+        limits=_limits(),
+        predicate=lambda r, w: any(
+            f"seccomp:{mode}" in r["errors"]
+            for mode in ("disabled", "strict", "filter")))
 
     probes["wall_clock_killed"] = _probe(
         worker, base, "wall_clock_killed",

@@ -4,12 +4,44 @@
   "ok": true,
   "platform": "linux",
   "probes": {
+    "cgroup_memory": {
+      "errors": [
+        "backend:linux-rootless-bwrap",
+        "net:denied",
+        "proc:namespaced",
+        "fs:workspace_confined",
+        "seccomp:disabled",
+        "cgroup:v2"
+      ],
+      "exit_status": 1,
+      "ok": true,
+      "stderr": "Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\nMemoryError\n",
+      "stdout": "",
+      "timeout": false
+    },
+    "cgroup_pids": {
+      "errors": [
+        "backend:linux-rootless-bwrap",
+        "net:denied",
+        "proc:namespaced",
+        "fs:workspace_confined",
+        "seccomp:disabled",
+        "cgroup:v2"
+      ],
+      "exit_status": 1,
+      "ok": true,
+      "stderr": "Traceback (most recent call last):\n  File \"<string>\", line 3, in <module>\nBlockingIOError: [Errno 11] Resource temporarily unavailable\nTraceback (most recent call last):\nTraceback (most recent call last):\n  File \"<string>\", line 3, in <module>\n  File \"<string>\", line 3, in <module>\nBlockingIOError: [Errno 11] Resource temporarily unavailable\nBlockingIOError: [Errno 11] Resource temporarily unavailable\nTraceback (most recent call last):\nTraceback (most recent call last):\nTraceback (most recent call last):\n  File \"<string>\", line 3, in <module>\n  File \"<string>\", line 3, in <module>\n  File \"<str",
+      "stdout": "",
+      "timeout": false
+    },
     "environment_scrubbed": {
       "errors": [
         "backend:linux-rootless-bwrap",
         "net:denied",
         "proc:namespaced",
-        "fs:workspace_confined"
+        "fs:workspace_confined",
+        "seccomp:disabled",
+        "cgroup:v2"
       ],
       "exit_status": 0,
       "ok": true,
@@ -22,7 +54,9 @@
         "backend:linux-rootless-bwrap",
         "net:denied",
         "proc:namespaced",
-        "fs:workspace_confined"
+        "fs:workspace_confined",
+        "seccomp:disabled",
+        "cgroup:v2"
       ],
       "exit_status": 0,
       "ok": true,
@@ -36,20 +70,23 @@
         "net:denied",
         "proc:namespaced",
         "fs:workspace_confined",
-        "process:wall_clock_killed"
+        "seccomp:disabled",
+        "cgroup:v2"
       ],
-      "exit_status": -1,
+      "exit_status": 1,
       "ok": true,
-      "stderr": "",
+      "stderr": "Traceback (most recent call last):\nTraceback (most recent call last):\n  File \"<string>\", line 3, in <module>\n  File \"<string>\", line 3, in <module>\nBlockingIOError: [Errno 11] Resource temporarily unavailable\nBlockingIOError: [Errno 11] Resource temporarily unavailable\nTraceback (most recent call last):\n  File \"<string>\", line 3, in <module>\nTraceback (most recent call last):\nBlockingIOError: [Errno 11] Resource temporarily unavailable\n  File \"<string>\", line 3, in <module>\nBlockingIOError: [Errno 11] Resource temporarily unavailable\nTraceback (most recent call last):\nTraceback (most recent ca",
       "stdout": "",
-      "timeout": true
+      "timeout": false
     },
     "memory_bounded": {
       "errors": [
         "backend:linux-rootless-bwrap",
         "net:denied",
         "proc:namespaced",
-        "fs:workspace_confined"
+        "fs:workspace_confined",
+        "seccomp:disabled",
+        "cgroup:v2"
       ],
       "exit_status": 1,
       "ok": true,
@@ -62,7 +99,9 @@
         "backend:linux-rootless-bwrap",
         "net:denied",
         "proc:namespaced",
-        "fs:workspace_confined"
+        "fs:workspace_confined",
+        "seccomp:disabled",
+        "cgroup:v2"
       ],
       "exit_status": 1,
       "ok": true,
@@ -76,6 +115,8 @@
         "net:denied",
         "proc:namespaced",
         "fs:workspace_confined",
+        "seccomp:disabled",
+        "cgroup:v2",
         "process:wall_clock_killed"
       ],
       "exit_status": -1,
@@ -89,12 +130,29 @@
         "backend:linux-rootless-bwrap",
         "net:denied",
         "proc:namespaced",
-        "fs:workspace_confined"
+        "fs:workspace_confined",
+        "seccomp:disabled",
+        "cgroup:v2"
       ],
       "exit_status": 1,
       "ok": true,
-      "stderr": "Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\nFileNotFoundError: [Errno 2] No such file or directory: '/tmp/sis-worker-probe-88vi_h3d/host-secret.txt'\n",
+      "stderr": "Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\nFileNotFoundError: [Errno 2] No such file or directory: '/tmp/sis-worker-probe-rn6d8s2n/host-secret.txt'\n",
       "stdout": "",
+      "timeout": false
+    },
+    "seccomp_mode": {
+      "errors": [
+        "backend:linux-rootless-bwrap",
+        "net:denied",
+        "proc:namespaced",
+        "fs:workspace_confined",
+        "seccomp:disabled",
+        "cgroup:v2"
+      ],
+      "exit_status": 0,
+      "ok": true,
+      "stderr": "",
+      "stdout": "Seccomp:\t0\n",
       "timeout": false
     },
     "wall_clock_killed": {
@@ -103,6 +161,8 @@
         "net:denied",
         "proc:namespaced",
         "fs:workspace_confined",
+        "seccomp:disabled",
+        "cgroup:v2",
         "process:wall_clock_killed"
       ],
       "exit_status": -1,
@@ -116,7 +176,9 @@
         "backend:linux-rootless-bwrap",
         "net:denied",
         "proc:namespaced",
-        "fs:workspace_confined"
+        "fs:workspace_confined",
+        "seccomp:disabled",
+        "cgroup:v2"
       ],
       "exit_status": 0,
       "ok": true,
@@ -129,7 +191,9 @@
         "backend:linux-rootless-bwrap",
         "net:denied",
         "proc:namespaced",
-        "fs:workspace_confined"
+        "fs:workspace_confined",
+        "seccomp:disabled",
+        "cgroup:v2"
       ],
       "exit_status": 1,
       "ok": true,

@@ -40,6 +40,7 @@ try:
 except ImportError:  # Windows: the backend is unavailable, not import-broken
     resource = None
 
+from .cgroups import CgroupUnavailable, CgroupV2Controller
 from .contracts import ContractError, ExecutionReceiptV1, canonical_digest
 from .runner import (
     CommandSpec,
@@ -51,7 +52,14 @@ from .runner import (
 )
 
 _DEFAULT_SYSTEM_BINDS = (
-    "/usr", "/bin", "/sbin", "/lib", "/lib64", "/etc",
+    "/usr", "/bin", "/sbin", "/lib", "/lib64",
+)
+# Individual /etc files instead of the whole directory: the loader cache,
+# timezone, and identity files are all a normal interpreter needs, and
+# nothing else from the host's /etc is exposed.
+_DEFAULT_ETC_BINDS = (
+    "/etc/ld.so.cache", "/etc/localtime", "/etc/passwd", "/etc/group",
+    "/etc/nsswitch.conf",
 )
 _DEFAULT_ENV = {
     "PATH": "/usr/local/bin:/usr/bin:/bin",
@@ -88,6 +96,10 @@ class LinuxWorkerConfig:
     use_pid_namespace: bool = True
     die_with_parent: bool = True
     max_output_bytes: int = 1 << 20
+    require_cgroups: bool = True
+    cgroup_root: str = "/sys/fs/cgroup"
+    require_seccomp: bool = False
+    bind_etc_files: bool = True
 
     def __post_init__(self) -> None:
         if (not isinstance(self.worker_identity, str)
@@ -105,12 +117,16 @@ class LinuxWorkerConfig:
                 and isinstance(item[0], str) and isinstance(item[1], str)
                 for item in self.environment):
             raise ContractError("environment must be (name, value) pairs")
-        for flag in ("share_network", "use_pid_namespace", "die_with_parent"):
+        for flag in ("share_network", "use_pid_namespace", "die_with_parent",
+                     "require_cgroups", "require_seccomp", "bind_etc_files"):
             if type(getattr(self, flag)) is not bool:
                 raise ContractError(f"{flag} must be boolean")
         if (type(self.max_output_bytes) is not int
                 or not 1 <= self.max_output_bytes <= (1 << 30)):
             raise ContractError("max_output_bytes must be in [1,1 GiB]")
+        if (not isinstance(self.cgroup_root, str)
+                or not self.cgroup_root.startswith("/")):
+            raise ContractError("cgroup_root must be an absolute path")
 
     @property
     def digest(self) -> str:
@@ -121,6 +137,9 @@ class LinuxWorkerConfig:
             "share_network": self.share_network,
             "use_pid_namespace": self.use_pid_namespace,
             "die_with_parent": self.die_with_parent,
+            "require_cgroups": self.require_cgroups,
+            "require_seccomp": self.require_seccomp,
+            "bind_etc_files": self.bind_etc_files,
         })
 
 
@@ -143,6 +162,16 @@ def build_bwrap_argv(config: LinuxWorkerConfig, workspace_path: Path,
         source = Path(path)
         if source.exists():
             argv += ["--ro-bind", str(source.resolve()), path]
+    if config.bind_etc_files and "/etc" not in config.system_binds:
+        # A plain --dir /etc would leave the directory writable. Make it
+        # a tmpfs mount, bind the individual files read-only, then remount
+        # the whole directory read-only so new files cannot be created.
+        argv += ["--tmpfs", "/etc"]
+        for path in _DEFAULT_ETC_BINDS:
+            source = Path(path)
+            if source.exists():
+                argv += ["--ro-bind", str(source.resolve()), path]
+        argv += ["--remount-ro", "/etc"]
     argv += ["--proc", "/proc", "--dev", "/dev", "--tmpfs", "/tmp"]
     argv += ["--bind", str(Path(workspace_path).resolve()), "/workspace"]
     argv += ["--chdir", "/workspace"]
@@ -155,6 +184,19 @@ def build_bwrap_argv(config: LinuxWorkerConfig, workspace_path: Path,
     argv.append("--")
     argv.extend(spec.argv)
     return argv
+
+
+def _seccomp_mode() -> str:
+    """Observe the inherited seccomp mode; never assume a filter exists."""
+    try:
+        for line in Path("/proc/self/status").read_text(
+                encoding="utf-8").splitlines():
+            if line.startswith("Seccomp:"):
+                return {"0": "disabled", "1": "strict", "2": "filter"}.get(
+                    line.split()[1], "unknown")
+    except (OSError, IndexError):
+        pass
+    return "unknown"
 
 
 def _apply_limits(limits: ResourceLimits):
@@ -248,51 +290,85 @@ class LinuxRootlessWorker:
         if self.config.use_pid_namespace:
             security_errors.append("proc:namespaced")
         security_errors.append("fs:workspace_confined")
+        seccomp = _seccomp_mode()
+        security_errors.append(f"seccomp:{seccomp}")
+        if self.config.require_seccomp and seccomp != "filter":
+            raise WorkerBackendUnavailable("seccomp_filter_required")
 
-        with tempfile.TemporaryDirectory(
-                dir=self.root, prefix=".worker-") as temp:
-            stdout_path = Path(temp) / "stdout"
-            stderr_path = Path(temp) / "stderr"
-            started = time.monotonic()
-            timed_out = False
-            exit_status = -1
-            with open(stdout_path, "wb") as out, open(stderr_path, "wb") as err:
-                try:
-                    process = subprocess.Popen(
-                        argv,
-                        stdin=subprocess.PIPE,
-                        stdout=out,
-                        stderr=err,
-                        start_new_session=True,
-                        preexec_fn=_apply_limits(spec.limits),
-                        env={},
-                    )
-                except OSError as exc:
-                    raise RunnerError("worker_launch_failed") from exc
-                with self._lock:
-                    self._live[execution_id] = process
-                try:
-                    process.communicate(
-                        input=spec.stdin, timeout=spec.limits.wall_seconds)
-                    exit_status = process.returncode
-                except subprocess.TimeoutExpired:
-                    timed_out = True
-                    security_errors.append("process:wall_clock_killed")
-                    _kill_group(process)
-                    process.wait()
-                finally:
-                    _kill_group(process)
+        cgroup = None
+        if self.config.require_cgroups:
+            try:
+                cgroup = CgroupV2Controller(self.config.cgroup_root)
+                cgroup.create(
+                    pids_max=spec.limits.process_count,
+                    memory_max=spec.limits.memory_bytes)
+            except CgroupUnavailable as exc:
+                raise WorkerBackendUnavailable(str(exc)) from exc
+            security_errors.append("cgroup:v2")
+
+        try:
+            with tempfile.TemporaryDirectory(
+                    dir=self.root, prefix=".worker-") as temp:
+                stdout_path = Path(temp) / "stdout"
+                stderr_path = Path(temp) / "stderr"
+                started = time.monotonic()
+                timed_out = False
+                exit_status = -1
+                with open(stdout_path, "wb") as out, open(
+                        stderr_path, "wb") as err:
+                    try:
+                        process = subprocess.Popen(
+                            argv,
+                            stdin=subprocess.PIPE,
+                            stdout=out,
+                            stderr=err,
+                            start_new_session=True,
+                            preexec_fn=_apply_limits(spec.limits),
+                            env={},
+                        )
+                    except OSError as exc:
+                        raise RunnerError("worker_launch_failed") from exc
                     with self._lock:
-                        self._live.pop(execution_id, None)
-            elapsed = time.monotonic() - started
-            output_cap = min(
-                self.config.max_output_bytes, spec.limits.output_bytes)
-            stdout, stdout_cut = _read_capped(stdout_path, output_cap)
-            stderr, stderr_cut = _read_capped(stderr_path, output_cap)
-            if stdout_cut:
-                security_errors.append("output:stdout_truncated")
-            if stderr_cut:
-                security_errors.append("output:stderr_truncated")
+                        self._live[execution_id] = process
+                    if cgroup is not None:
+                        try:
+                            cgroup.attach(process.pid)
+                        except OSError as exc:
+                            _kill_group(process)
+                            process.wait()
+                            raise WorkerBackendUnavailable(
+                                f"cgroup_attach_failed:{exc}") from exc
+                    try:
+                        process.communicate(
+                            input=spec.stdin,
+                            timeout=spec.limits.wall_seconds)
+                        exit_status = process.returncode
+                    except subprocess.TimeoutExpired:
+                        timed_out = True
+                        security_errors.append("process:wall_clock_killed")
+                        if cgroup is not None:
+                            cgroup.kill()
+                        _kill_group(process)
+                        process.wait()
+                    finally:
+                        if cgroup is not None:
+                            cgroup.kill()
+                        _kill_group(process)
+                        with self._lock:
+                            self._live.pop(execution_id, None)
+                elapsed = time.monotonic() - started
+                output_cap = min(
+                    self.config.max_output_bytes, spec.limits.output_bytes)
+                stdout, stdout_cut = _read_capped(stdout_path, output_cap)
+                stderr, stderr_cut = _read_capped(stderr_path, output_cap)
+                if stdout_cut:
+                    security_errors.append("output:stdout_truncated")
+                if stderr_cut:
+                    security_errors.append("output:stderr_truncated")
+        finally:
+            if cgroup is not None:
+                cgroup.kill()
+                cgroup.remove()
 
         after = scan_tree(workspace.path)
         if after.external_symlinks:

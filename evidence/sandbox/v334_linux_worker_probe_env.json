@@ -1,17 +1,18 @@
 {
   "kind": "linux_worker_probe_environment",
-  "generated_at": "2026-11-09T22:42:00Z",
+  "generated_at": "2026-11-09T22:52:00Z",
   "image": "debian:bookworm-slim",
   "os": "Debian GNU/Linux 12 (bookworm)",
   "kernel": "7.0.14-linuxkit (Colima Docker VM, arm64)",
   "bubblewrap": "0.8.0",
   "python": "3.11.2",
-  "container": "docker run --rm --privileged",
-  "result": "10/10 probes passed; see v334_linux_worker_probe.json",
-  "caveat": "The privileged container was required because this Docker kernel denied unprivileged user namespaces. This validates the bubblewrap namespace configuration, not the container's own containment. A production deployment must run the worker on a host or microVM where unprivileged user namespaces (or a rootless container runtime with the required namespaces) are enabled, and must not rely on --privileged.",
+  "container": "docker run --rm --privileged --cgroupns=host -v /sys/fs/cgroup:/sys/fs/cgroup:rw",
+  "result": "13/13 probes passed; see v334_linux_worker_probe.json",
+  "caveat": "The privileged container was required because this Docker kernel denied unprivileged user namespaces. This validates the bubblewrap configuration, not the container's own containment. A production deployment must run the worker on a host or microVM where unprivileged user namespaces (or a rootless container runtime with the required namespaces) are enabled, and must not rely on --privileged.",
   "findings": [
-    "fork_bounded was stopped by the wall-clock kill rather than RLIMIT_NPROC; a hard fork bound needs a cgroup pids limit.",
-    "The probe does not test cgroup memory limits, seccomp, or microVM isolation.",
-    "The default system binds expose read-only /etc; a hardened image should minimize them."
+    "cgroup v2 pids.max and memory.max enforced the fork and memory probes without relying on the wall clock; the host cgroup hierarchy had to be mounted read-write because the default container cgroup fs is read-only.",
+    "The privileged container reports Seccomp: 0 (disabled); no inner seccomp filter is applied. A production deployment must supply one at the container/microVM layer and require seccomp:filter in the isolation policy.",
+    "/etc is a tmpfs with individual read-only file binds and a read-only remount. A plain --dir /etc left the directory writable and failed the write-escape probe.",
+    "The probe does not test microVM isolation."
   ]
 }
