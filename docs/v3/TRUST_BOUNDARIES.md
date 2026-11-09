@@ -85,8 +85,17 @@ key revocation, or task-admission service is deployed.
   commits every record digest in order, custodian-signed when `chain_key`
   is configured. Trusted-mode access re-verifies record signatures and
   chain integrity on every read and write; `repair_chain` is the migration
-  path for pre-chain databases and `head_digest` is the external rewind
-  witness (pinned into campaign evidence by the governed tools).
+  path for pre-chain databases.
+- `sis.v3.memory.MemoryTrustProfile.production()` requires signed V2
+  records, a custodian chain key, an evaluator verifier, and a
+  `sis.v3.memory_witness.MemoryWitness` stored outside the database
+  directory. The witness is an append-only, separately signed sequence
+  of `(sequence, memory_head_digest)` observations; every production
+  read requires the store to match the newest witness, so restoring an
+  older snapshot is `memory_rollback_detected` rather than a silent
+  rewind. `reconcile_witness()` advances a stale witness only after the
+  chain verifies and cannot re-anchor a rollback. `head_digest` remains
+  the cheap pin for campaign evidence.
 
 ## Separation requirements for later phases
 

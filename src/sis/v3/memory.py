@@ -32,6 +32,7 @@ from . import signatures
 from .candidates import content_digest
 from .contracts import (CandidateV1, ContractError, ExperienceRecordV1,
                         ExperienceRecordV2, canonical_json, loads_json)
+from .memory_witness import MemoryWitness, WitnessError
 from .retrieval import (RetrievalContext, precondition_holds,
                         suppression_match)
 
@@ -84,6 +85,48 @@ class MemoryError(RuntimeError):
 
 class DuplicateEpisode(MemoryError):
     """The same episode + task fingerprint was already ingested."""
+
+
+@dataclass(frozen=True)
+class MemoryTrustProfile:
+    """Explicit development/production memory trust configuration (3.1).
+
+    Development keeps legacy rows readable and makes every trust
+    decision caller-visible: nothing is reported as trusted. Production
+    requires signed V2 records, evaluator evidence bound to a
+    registered task, a custodian-signed chain, and an external witness;
+    a store that cannot meet those requirements refuses to construct
+    rather than silently downgrading.
+    """
+
+    name: str
+    require_signed_records: bool
+    require_evaluator_evidence: bool
+    require_chain_signature: bool
+    require_witness: bool
+    require_registered_task: bool
+
+    @classmethod
+    def development(cls) -> "MemoryTrustProfile":
+        return cls(
+            name="development",
+            require_signed_records=False,
+            require_evaluator_evidence=False,
+            require_chain_signature=False,
+            require_witness=False,
+            require_registered_task=False,
+        )
+
+    @classmethod
+    def production(cls) -> "MemoryTrustProfile":
+        return cls(
+            name="production",
+            require_signed_records=True,
+            require_evaluator_evidence=True,
+            require_chain_signature=True,
+            require_witness=True,
+            require_registered_task=True,
+        )
 
 
 def sign_experience_record(unsigned: Mapping, seed: bytes) -> str:
@@ -157,16 +200,48 @@ class MemoryStore:
     until ``repair_chain`` backfills the chain (or ``rebuild=True``
     rewrites a corrupt one). ``verify_chain`` failures report their
     cause through ``last_chain_failure``.
+
+    ``profile`` selects the explicit trust configuration.
+    ``MemoryTrustProfile.production()`` requires trusted signer keys, a
+    custodian chain key, an external :class:`MemoryWitness` stored
+    outside this database's directory, and an evaluator ``verifier``;
+    every read then re-checks lineage, and every write advances the
+    witness. ``MemoryTrustProfile.development()`` is the default and
+    keeps legacy behavior, but reports every record as untrusted.
     """
 
     def __init__(self, path: str | Path, *,
                  trusted_signer_keys: dict[str, str] | None = None,
-                 chain_key: tuple[bytes, str] | None = None) -> None:
+                 chain_key: tuple[bytes, str] | None = None,
+                 profile: MemoryTrustProfile | None = None,
+                 witness: MemoryWitness | None = None,
+                 verifier=None) -> None:
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._signer_keys = (dict(trusted_signer_keys)
                              if trusted_signer_keys is not None else None)
         self._chain_key = chain_key
+        self._profile = profile or MemoryTrustProfile.development()
+        if not isinstance(self._profile, MemoryTrustProfile):
+            raise ContractError("profile must be a MemoryTrustProfile")
+        if self._profile.require_signed_records and not self._signer_keys:
+            raise ContractError("production_requires_trusted_signer_keys")
+        if self._profile.require_chain_signature and self._chain_key is None:
+            raise ContractError("production_requires_chain_key")
+        if self._profile.require_witness and witness is None:
+            raise ContractError("production_requires_witness")
+        if self._profile.require_evaluator_evidence and verifier is None:
+            raise ContractError("production_requires_verifier")
+        if witness is not None:
+            if not isinstance(witness, MemoryWitness):
+                raise ContractError("witness must be a MemoryWitness")
+            store_path = self.path.resolve()
+            witness_path = witness.path.resolve()
+            if (witness_path == store_path
+                    or witness_path.is_relative_to(store_path.parent)):
+                raise ContractError("witness_must_live_outside_store_directory")
+        self._witness = witness
+        self._verifier = verifier
         self._chain_failure: str | None = None
         self._lock = threading.RLock()
         self._con = sqlite3.connect(
@@ -191,6 +266,43 @@ class MemoryStore:
             raise MemoryError("experience_untrusted: unknown_signer")
         if not verify_experience_signature(record, public_hex):
             raise MemoryError("experience_tampered")
+        if self._profile.require_evaluator_evidence:
+            self._verify_lineage(record)
+
+    def _verify_lineage(self, record) -> None:
+        """Require the authenticated outcome/execution/task lineage."""
+        if self._verifier is None:
+            raise MemoryError("production_verifier_required")
+        try:
+            verify_experience_evidence(
+                record, self._verifier,
+                require_registered_task=self._profile.require_registered_task)
+        except MemoryError:
+            raise
+        except (RuntimeError, ContractError) as exc:
+            raise MemoryError(f"experience_evidence_rejected:{exc}") from exc
+
+    def trust_status(self, record) -> str:
+        """Classify a record as ``trusted`` or name the failed condition.
+
+        Development stores never report trust: local persistence is not
+        evidence. Production reports trust only after the chain, the
+        external witness, the record signature, and the evaluation
+        lineage all check out.
+        """
+        if not isinstance(record, (ExperienceRecordV1, ExperienceRecordV2)):
+            return "untrusted:not_an_experience_record"
+        if self._profile.name != "production":
+            return "untrusted:development_profile"
+        try:
+            self._require_chain()
+            self._record_integrity(record)
+        except MemoryError as exc:
+            return f"untrusted:{exc}"
+        return "trusted"
+
+    def is_trusted(self, record) -> bool:
+        return self.trust_status(record) == "trusted"
 
     def close(self) -> None:
         with self._lock:
@@ -277,6 +389,7 @@ class MemoryStore:
                 if con.in_transaction:
                     con.execute("ROLLBACK")
                 raise
+            self._advance_witness()
             return record.digest
 
     def _append_chain(self, con: sqlite3.Connection,
@@ -387,14 +500,67 @@ class MemoryStore:
             return "unmigrated", "unchained_rows"
         return "corrupt", "row_deleted_or_digest_rewritten"
 
+    def _chain_position(self) -> tuple[int, str | None]:
+        """The current chain sequence and head; ``(0, None)`` when empty."""
+        row = self._conn().execute(
+            "SELECT seq, head FROM memory_chain ORDER BY seq DESC LIMIT 1"
+        ).fetchone()
+        return (0, None) if row is None else (row[0], row[1])
+
+    def _verify_witness(self) -> None:
+        """Require the store's chain position to match the external witness."""
+        if self._witness is None:
+            return
+        sequence, head = self._chain_position()
+        try:
+            self._witness.verify_against(
+                sequence=sequence, memory_head_digest=head)
+        except WitnessError as exc:
+            self._chain_failure = f"witness:{exc.reason}"
+            raise MemoryError(
+                f"memory_witness_invalid:{exc.reason}") from exc
+
+    def _advance_witness(self) -> None:
+        """Record the current chain position in the external witness."""
+        if self._witness is None:
+            return
+        sequence, head = self._chain_position()
+        try:
+            self._witness.advance(
+                sequence=sequence, memory_head_digest=head)
+        except WitnessError as exc:
+            raise MemoryError(
+                f"memory_witness_advance_failed:{exc.reason}") from exc
+
+    def reconcile_witness(self) -> int | None:
+        """Advance a stale witness to the current verified chain head.
+
+        Operator action for the crash window between the database commit
+        and the witness append. Refuses unless the chain itself verifies,
+        and cannot re-anchor a database that is behind the witness — that
+        is a detected rollback, not a stale witness.
+        """
+        if self._witness is None:
+            return None
+        with self._lock:
+            state, reason = self._chain_state()
+            if state != "ok":
+                self._chain_failure = reason
+                raise MemoryError(f"memory_chain_invalid:{reason}")
+            self._advance_witness()
+            return self._chain_position()[0]
+
     def _require_chain(self) -> None:
         """Fail reads and writes on a corrupt or un-migrated chain.
 
         Enforced whenever a trust root is configured — record signer keys
         or the chain custodian key — so chain integrity gates the path
-        even where per-record signature checks are not configured.
+        even where per-record signature checks are not configured. When
+        an external witness is configured, the store's position must
+        match it before any read or write proceeds.
         """
         if self._signer_keys is None and self._chain_key is None:
+            self._verify_witness()
             return
         state, reason = self._chain_state()
         self._chain_failure = None if state == "ok" else reason
@@ -402,6 +568,7 @@ class MemoryStore:
             raise MemoryError(f"memory_chain_invalid:{reason}")
         if state == "unmigrated":
             raise MemoryError("memory_unmigrated")
+        self._verify_witness()
 
     def verify_chain(self, *, expected_head: str | None = None) -> bool:
         """Re-validate the whole integrity chain and row consistency.
@@ -420,6 +587,10 @@ class MemoryStore:
                 and self.head_digest() != expected_head:
             self._chain_failure = "expected_head_mismatch"
             return False
+        try:
+            self._verify_witness()
+        except MemoryError:
+            return False
         return True
 
     def repair_chain(self, *, rebuild: bool = False) -> int:
@@ -437,7 +608,15 @@ class MemoryStore:
         decision, which deletes the chain and re-commits every row.
         Rebuild only after the experience table itself has been verified
         trustworthy, then pin ``head_digest()`` externally.
+
+        A production store refuses to chain legacy or untrusted rows —
+        membership in a trusted chain is not provenance — and a rebuild
+        over an existing witness requires a fresh witness epoch under
+        the separate witness authority.
         """
+        if (rebuild and self._witness is not None
+                and self._witness.latest() is not None):
+            raise MemoryError("memory_witness_rebuild_requires_new_epoch")
         with self._lock:
             con = self._conn()
             appended = 0
@@ -459,6 +638,10 @@ class MemoryStore:
                 rows = con.execute(
                     "SELECT record_digest FROM experience ORDER BY rowid"
                 ).fetchall()
+                if self._profile.require_signed_records:
+                    for (raw,) in con.execute(
+                            "SELECT record_json FROM experience"):
+                        self._record_integrity(_parse_record(raw.encode("utf-8")))
                 for (record_digest,) in rows:
                     if record_digest in chained:
                         continue
@@ -487,6 +670,7 @@ class MemoryStore:
                     con.execute("ROLLBACK")
                 raise
             self._chain_failure = None
+            self._advance_witness()
             return appended
 
     def get(self, experience_id: str):
@@ -519,7 +703,8 @@ class MemoryStore:
         return out
 
 
-def verify_experience_evidence(record, verifier) -> bool:
+def verify_experience_evidence(record, verifier, *,
+                               require_registered_task: bool = False) -> bool:
     """Bind an experience record to the authenticated evaluation lineage.
 
     Resolves ``outcome_receipt_digest`` through the evaluator's own
@@ -543,6 +728,11 @@ def verify_experience_evidence(record, verifier) -> bool:
 
     ``ExperienceRecordV1`` lacks every lineage field, so it is readable
     as legacy/untrusted memory only and is rejected here.
+
+    ``require_registered_task`` additionally requires the outcome to
+    point at a task the evaluator registered and at the exact suite
+    commitment that registration recorded, closing the
+    experience → outcome → execution → registered-task chain.
     """
     if isinstance(record, ExperienceRecordV1):
         raise MemoryError("experience_legacy_unverifiable")
@@ -561,6 +751,17 @@ def verify_experience_evidence(record, verifier) -> bool:
         raise MemoryError("experience_outcome_mismatch")
     if getattr(artifact, "task_id", None) != record.task_id:
         raise MemoryError("experience_task_mismatch")
+    if require_registered_task:
+        lookup = getattr(verifier, "registered_task", None)
+        if not callable(lookup):
+            raise MemoryError("experience_task_registration_unverifiable")
+        registration = lookup(record.task_id)
+        if registration is None:
+            raise MemoryError("experience_task_unregistered")
+        commitment = getattr(artifact, "test_suite_commitment", None)
+        if (commitment is not None
+                and getattr(registration, "suite_commitment", None) != commitment):
+            raise MemoryError("experience_protocol_mismatch")
     if getattr(artifact, "evaluated_repo_digest", None) != record.repo_snapshot_digest:
         raise MemoryError("experience_repo_mismatch")
     attempt = getattr(artifact, "attempt_id", None)
@@ -644,21 +845,33 @@ def retrieve_memories(
     token_budget: int = 600,
     limit: int = 5,
     on_suppress=None,
+    trust_check=None,
+    on_reject=None,
 ) -> tuple[RetrievedMemory, ...]:
-    """Select applicable qualified memory candidates; abstain via empty tuple.
+    """Select applicable, trustworthy memory candidates; abstain via empty.
 
-    Gates (all must pass): applicability predicates hold against the
-    caller-supplied context; no known counterexample text appears in the
-    task context; candidate is ``experience_memory`` type. Ranking is
-    deterministic: matched-gate count, then content digest. Greedy
-    token-budget packing; exact-duplicate lessons are deduplicated by
-    ``content_digest``.
+    The three decisions are separate and ordered, and a later decision
+    can never rescue an earlier failure:
+
+    1. *Trustworthy* — ``trust_check(candidate)`` must return true when
+       supplied. Without it the pool is treated as caller-vouched;
+       callers that have not already filtered by trust must pass one.
+    2. *Applicable* — every applicability predicate holds against the
+       caller-supplied context.
+    3. *Useful* — no known counterexample appears in the task context,
+       the deterministic score meets ``min_score``, and the candidate
+       fits the token budget and limit.
+
+    Ranking is deterministic: matched-gate count, then content digest.
+    Exact-duplicate lessons are deduplicated by ``content_digest``.
 
     ``on_suppress(candidate, counterexample)`` is an audit hook invoked
     for every candidate a counterexample suppresses — paraphrase-tolerant
     matching deliberately over-fires toward suppression, so deployments
     that care about recall should record these decisions rather than let
-    them stay silent.
+    them stay silent. ``on_reject(candidate, stage, detail)`` reports
+    every candidate a hard gate removes, with ``stage`` one of
+    ``untrusted``, ``inapplicable``, ``suppressed`` or ``low_score``.
     """
     if type(min_score) is not int or min_score < 0:
         raise ContractError("min_score must be a nonnegative integer")
@@ -668,6 +881,14 @@ def retrieve_memories(
         raise ContractError("limit must be in [1,32]")
     if on_suppress is not None and not callable(on_suppress):
         raise ContractError("on_suppress must be callable")
+    if trust_check is not None and not callable(trust_check):
+        raise ContractError("trust_check must be callable")
+    if on_reject is not None and not callable(on_reject):
+        raise ContractError("on_reject must be callable")
+
+    def reject(cand, stage: str, detail: str) -> None:
+        if on_reject is not None:
+            on_reject(cand, stage, detail)
 
     context_text = " ".join(sorted(
         context.failure_signatures | context.symbols_present
@@ -679,8 +900,12 @@ def retrieve_memories(
             continue
         if cand.content_digest in seen_digests:
             continue
+        if trust_check is not None and not trust_check(cand):
+            reject(cand, "untrusted", "the memory is not trusted evidence")
+            continue
         if any(not precondition_holds(cond, context)
                for cond in cand.applicability_predicate):
+            reject(cand, "inapplicable", "an applicability predicate failed")
             continue
         suppressed_by = next(
             (cx for cx in cand.known_counterexamples
@@ -690,11 +915,13 @@ def retrieve_memories(
         if suppressed_by is not None:
             if on_suppress is not None:
                 on_suppress(cand, suppressed_by)
+            reject(cand, "suppressed", suppressed_by)
             continue
         matched = sum(1 for cond in cand.applicability_predicate
                       if precondition_holds(cond, context))
         score = matched * 10 + len(cand.source_episode_ids)
         if score < min_score:
+            reject(cand, "low_score", f"{score} < {min_score}")
             continue
         scored.append(RetrievedMemory(candidate=cand, score=score))
         seen_digests.add(cand.content_digest)

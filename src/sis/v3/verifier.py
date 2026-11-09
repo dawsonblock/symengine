@@ -260,7 +260,7 @@ class OutcomeVerifier:
         # Journal entries whose persisted receipt was re-authenticated on
         # load. Only these may corroborate an execution digest.
         self._verified_receipts: set[str] = set()
-        self._journal_digests: set[str] = set()
+        self._journal_by_digest: dict[str, dict] = {}
         for public_hex in (trusted_keys or {}).values():
             if not (isinstance(public_hex, str)
                     and re.fullmatch(r"[0-9a-f]{64}", public_hex)
@@ -322,6 +322,17 @@ class OutcomeVerifier:
         self._tasks[task_id] = task
         self._persist_tasks()
         return task
+
+    def registered_task(self, task_id: str) -> RegisteredTask | None:
+        """The evaluator's private registration for a task identity, if any.
+
+        Memory lineage uses this to prove an experience points at a task
+        this evaluator actually registered, not just at a receipt that
+        names a task ID.
+        """
+        if not isinstance(task_id, str):
+            return None
+        return self._tasks.get(task_id)
 
     def bootstrap(self):
         """Run the evaluator bootstrap probe once (cached)."""
@@ -498,10 +509,8 @@ class OutcomeVerifier:
         """
         if receipt_digest not in self._verified_receipts:
             return None
-        for entry in self._journal:
-            if entry["receipt_digest"] == receipt_digest:
-                return entry["execution_digest"]
-        return None
+        entry = self._journal_by_digest.get(receipt_digest)
+        return entry["execution_digest"] if entry is not None else None
 
     def _record(self, receipt: OutcomeReceiptV1, nonce: str,
                 execution_digest: str, *, outcome_class: str | None = None,
@@ -548,7 +557,7 @@ class OutcomeVerifier:
             (receipt.task_id, receipt.evaluated_repo_digest, receipt.criterion_version)
         )
         self._journal.append(entry)
-        self._journal_digests.add(entry["receipt_digest"])
+        self._journal_by_digest[entry["receipt_digest"]] = entry
         # This evaluator signed the receipt and wrote the artifact, so the
         # entry it just journaled is bound to an authenticated artifact.
         self._verified_receipts.add(entry["receipt_digest"])
@@ -581,14 +590,14 @@ class OutcomeVerifier:
                     except json.JSONDecodeError as exc:
                         raise JournalIntegrityError(f"receipt journal line {position} is corrupt") from exc
                     entry = self._validate_journal_entry(entry, position)
-                    if entry["receipt_digest"] in self._journal_digests:
+                    if entry["receipt_digest"] in self._journal_by_digest:
                         raise JournalIntegrityError(
                             f"receipt journal line {position} duplicates a receipt")
                     if entry["nonce"] in self._nonces:
                         raise JournalIntegrityError(
                             f"receipt journal line {position} replays a nonce")
                     self._journal.append(entry)
-                    self._journal_digests.add(entry["receipt_digest"])
+                    self._journal_by_digest[entry["receipt_digest"]] = entry
                     self._nonces.add(entry["nonce"])
                     self._evaluated.add(
                         (entry["task_id"], entry["evaluated_repo_digest"], entry["criterion_version"])

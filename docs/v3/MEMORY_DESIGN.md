@@ -34,14 +34,55 @@ never embedded.
   `(episode_id, task_fingerprint)` with different content raises
   `DuplicateEpisode` — a replayed episode cannot masquerade as a second
   independent attempt.
-- `ingest(record, evidence_check=...)` is the trust-boundary hook.
-  Production ingestion passes `verify_experience_evidence(record,
-  verifier)`, which resolves `outcome_receipt_digest` in the evaluator's
-  own journal, verifies the signature, and requires the signed outcome
-  to equal the record's claimed outcome. A record that names a receipt
-  it does not have is rejected before any write.
+- `ingest(record, evidence_check=...)` accepts an optional trust-boundary
+  hook. A production store does not rely on the caller: it runs
+  `verify_experience_evidence(record, verifier,
+  require_registered_task=True)` itself, which resolves
+  `outcome_receipt_digest` in the evaluator's own journal, verifies the
+  signature, requires the signed outcome to equal the record's claimed
+  outcome, and requires the task to be registered with the exact suite
+  commitment the receipt names. A record that names a receipt it does
+  not have is rejected before any write.
 - `get`/`by_outcome` re-verify the stored digest on every read; tampered
   rows raise `experience_tampered` and fail closed.
+
+## Trust profiles — `MemoryTrustProfile`
+
+The store's trust configuration is explicit; there is no silent
+downgrade.
+
+| profile | requirements | trust report |
+| --- | --- | --- |
+| `development()` (default) | none beyond the configured roots | `untrusted:development_profile` |
+| `production()` | trusted signer keys, custodian `chain_key`, external `MemoryWitness`, evaluator verifier | `trusted` only after chain + witness + signature + lineage |
+
+A production store refuses to construct when any root is missing.
+Production reads re-check lineage on every row, and `repair_chain`
+refuses to chain legacy or untrusted rows — membership in a trusted
+chain is not provenance. `trust_status(record)` returns either
+`trusted` or `untrusted:<reason>`; `is_trusted` is its Boolean form.
+
+## External witness — `MemoryWitness`
+
+The chain detects mid-history edits but cannot detect that its newest
+entries were deleted by restoring an older snapshot. `MemoryWitness`
+records the observed `(sequence, memory_head_digest)` in an append-only
+file signed under a separate custodian key, stored outside the memory
+database's directory (the store enforces the path separation). Every
+record commits to the previous witness digest, so interior deletion is
+also detectable.
+
+Every production read requires the store's position to equal the newest
+witness. A restored snapshot is `memory_rollback_detected`; a database
+that advanced without the witness append is `memory_witness_stale` and
+requires the operator's `reconcile_witness()` after the chain verifies.
+Reconciliation cannot re-anchor a rollback. A rebuild over an existing
+witness requires a fresh witness epoch under the separate authority.
+
+The witness key and path must be controlled by a different principal
+from the memory database; if one principal controls both, it can forge
+a consistent pair.
+
 
 ## Induction — `induce_candidate`
 
@@ -57,19 +98,25 @@ One record → one `experience_memory` `CandidateV1`:
 
 ## Retrieval — `retrieve_memories`
 
-Hard gates before ranking (all must pass):
+Hard gates before ranking (all must pass, in order):
 
 1. `candidate_type == "experience_memory"`
-2. every `applicability` predicate holds against the caller's
+2. trust: `trust_check(candidate)` must return true when supplied —
+   without it the pool is caller-vouched. Trust is decided before
+   applicability and can never be rescued by a high score.
+3. every `applicability` predicate holds against the caller's
    `RetrievalContext`
-3. no `known_counterexamples` string appears in the task's
+4. no `known_counterexamples` string appears in the task's
    failure/symbol/file context (negative-transfer suppression)
-4. deterministic score = matched-gates×10 + source-episode count,
+5. deterministic score = matched-gates×10 + source-episode count,
    floor `min_score`
 
 Then: content-digest dedup, score ordering, greedy `token_budget`
 packing, `limit`. Abstains by returning `()` — an empty result is a
 first-class answer, never a fallback to ungated text.
+`on_reject(candidate, stage, detail)` reports every hard-gate removal
+with `stage` one of `untrusted`, `inapplicable`, `suppressed`,
+`low_score`.
 
 Unqualified candidates are filtered out before this function is ever
 reached: serving passes only `registry.qualified()` into retrieval.

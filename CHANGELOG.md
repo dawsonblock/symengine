@@ -1,3 +1,55 @@
+## 2026-11-09 — SIS v3.3.4 G1/G3 hardening (development line)
+
+Gate G1 — receipt identity:
+
+- `OutcomeVerifier.load_receipt` recomputes the canonical digest and
+  fails as `receipt_digest_mismatch` when the stored artifact does not
+  hash to the address it was read from; unparseable artifacts fail as
+  `receipt_malformed`. A valid signature over a different evaluation is
+  no longer evidence for this one.
+- `verify_experience_evidence` independently requires the resolved
+  artifact to hash to `record.outcome_receipt_digest`, so a storage
+  resolver cannot substitute another valid receipt.
+- Journal load validates entry shape, rejects duplicate receipt lines
+  and replayed nonces, and binds each entry to its persisted receipt on
+  digest, receipt ID, task, repository, criterion, outcome, signer and
+  attempt/execution where the artifact carries them. Only entries
+  re-authenticated under a trusted key corroborate an execution digest;
+  missing artifacts and rotated-out signers are unverified. Journal
+  entries now record `signer_key_id`; legacy journals still load.
+- 13 adversarial regressions cover substitution, cross-signer replay,
+  protocol swap, missing/altered/replayed receipts, and a corrupted
+  journal.
+
+Gate G3 — memory trust:
+
+- `MemoryTrustProfile.development()` / `.production()` make the trust
+  configuration explicit. Production refuses to construct without
+  signed-record keys, a custodian chain key, an external witness, and
+  an evaluator verifier; development reports every record as
+  `untrusted:development_profile`.
+- `sis.v3.memory_witness.MemoryWitness` is an append-only, separately
+  signed witness of `(sequence, memory_head_digest)` stored outside the
+  database directory. Production reads require the store to match the
+  newest witness; a restored snapshot is `memory_rollback_detected` and
+  `reconcile_witness()` cannot re-anchor it. A rebuild over an existing
+  witness requires a fresh epoch.
+- Production ingest and reads run the full
+  experience → outcome → execution → registered-task lineage,
+  including the exact suite commitment; `repair_chain` refuses to
+  chain legacy rows.
+- `retrieve_memories` separates trust, applicability and usefulness,
+  with `trust_check` as a hard gate before scoring and `on_reject`
+  reporting each stage.
+- 34 regressions cover profile enforcement, rollback, stale and
+  tampered witnesses, database rewrites, lineage, and retrieval gates.
+
+Suite: 1168 passed, 12 skipped. One release-seal test
+(`ReleaseIdentityTests.test_release_commit_covers_current_source`)
+remains red until `release/` is re-signed with the release key in
+Phase 5; the source change itself is covered by the baseline record in
+`evidence/baseline/v334_baseline.json`.
+
 ## 2026-11-08 — SIS v3.3.3 trust-boundary repair
 
 Closes the five externally audited defects reproduced in

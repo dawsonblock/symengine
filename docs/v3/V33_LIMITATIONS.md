@@ -44,13 +44,25 @@
   for this release.
 - Hypotheses inside memory payloads are carried for evaluation only;
   nothing upgrades them to causal truth automatically.
-- Ingest-time evidence checking is opt-in: `MemoryStore.ingest` accepts
-  an `evidence_check` hook and both campaigns pass
-  `verify_experience_evidence`, but a caller that omits it can store a
-  record whose receipt is not authenticated. Qualification is still the
-  hard serving gate — such a record cannot reach trusted guidance
-  without a signed pass receipt *and* an evaluator-signed evidence
-  binding naming that exact candidate *and* an operator-signed decision.
+- Development stores still permit legacy rows and leave ingest-time
+  evidence checking to the caller: `MemoryTrustProfile.development()`
+  is the default, and `trust_status` always reports
+  `untrusted:development_profile`. A production store
+  (`MemoryTrustProfile.production()`) refuses to construct without
+  signed-record keys, a custodian chain key, an external witness, and
+  an evaluator verifier, and it runs the registered-task lineage check
+  itself on every ingest and read. Qualification is still the hard
+  serving gate — a record cannot reach trusted guidance without a
+  signed pass receipt *and* an evaluator-signed evidence binding naming
+  that exact candidate *and* an operator-signed decision.
+- The external witness is only as independent as its key custody. A
+  principal that controls both the memory database and the witness key
+  can forge a consistent pair; deployments must keep the witness path
+  and signing key under a different authority.
+- V1 outcome receipts cannot prove *attempt* identity, so production
+  memory accepts the attempt binding only when the resolved artifact
+  carries `attempt_id` (`OutcomeEnvelopeV2`). V1 receipts remain
+  historical evidence, not the production path.
 
 ## Evolution
 
