@@ -36,16 +36,24 @@ from . import signatures
 from .contracts import (
     ContractError,
     OutcomeReceiptV1,
+    OutcomeReceiptV2,
     TaskEnvelopeV1,
     canonical_digest,
     canonical_json,
+    loads_json,
 )
 from .evaluation_runtime import (
     EVALUATOR_BOOTSTRAP_ERROR,
     INFRASTRUCTURE_ERROR,
+    SANDBOX_FAILURE,
     EvaluationRuntimeProfile,
     bootstrap_check,
     classify_execution,
+)
+from .isolation import (
+    IsolationVerification,
+    ProductionIsolationPolicy,
+    verify_production_isolation,
 )
 from .policy import require_permission
 from .runner import CommandSpec, ResourceLimits, WorkspaceExecutor, tree_digest
@@ -56,6 +64,7 @@ from ..vault_storage import (
 )
 
 _SIGNATURE_DOMAIN = b"sis-v3:outcome_receipt:1\0"
+_SIGNATURE_DOMAIN_V2 = b"sis-v3:outcome_receipt:2\0"
 
 _DIGEST = re.compile(r"[0-9a-f]{64}")
 
@@ -92,6 +101,27 @@ class JournalIntegrityError(RuntimeError):
 
 def _utcnow() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
+def _parse_receipt(value) -> OutcomeReceiptV1 | OutcomeReceiptV2:
+    """Dispatch a stored receipt on its signed field set.
+
+    V2 carries ``execution_receipt_digest``; V1 never does. A V1 body
+    with an injected V2 field therefore fails V2 schema validation
+    instead of being silently downgraded.
+    """
+    if isinstance(value, (OutcomeReceiptV1, OutcomeReceiptV2)):
+        return value
+    if not isinstance(value, Mapping):
+        raise ContractError("receipt must be a JSON object")
+    if "execution_receipt_digest" in value:
+        return OutcomeReceiptV2.from_dict(value)
+    return OutcomeReceiptV1.from_dict(value)
+
+
+def _receipt_domain(record) -> bytes:
+    return (_SIGNATURE_DOMAIN_V2 if isinstance(record, OutcomeReceiptV2)
+            else _SIGNATURE_DOMAIN)
 
 
 class EvaluatorKeyStore:
@@ -226,10 +256,16 @@ class OutcomeVerifier:
         limits: ResourceLimits | None = None,
         runtime_profile: EvaluationRuntimeProfile | None = None,
         protected_paths=(),
+        isolation_policy: ProductionIsolationPolicy | None = None,
     ) -> None:
         self.executor = executor
         self.identity = identity
         self.runtime_profile = runtime_profile or EvaluationRuntimeProfile()
+        if (isolation_policy is not None
+                and not isinstance(isolation_policy, ProductionIsolationPolicy)):
+            raise ContractError(
+                "isolation_policy must be a ProductionIsolationPolicy")
+        self.isolation_policy = isolation_policy
         # Acceptance-suite resource envelope. The 2 GiB default covers
         # pytest plus plugin imports; a meta-test that runs the submitted
         # suite in a nested process needs process_count=None on platforms
@@ -358,8 +394,27 @@ class OutcomeVerifier:
         task: TaskEnvelopeV1,
         submission_dir: str | Path,
         evaluation_nonce: str,
-    ) -> OutcomeReceiptV1:
-        """Independently evaluate a submission tree and sign the outcome."""
+        isolation_attestation=None,
+        isolation_attestation_resolver=None,
+    ) -> OutcomeReceiptV1 | OutcomeReceiptV2:
+        """Independently evaluate a submission tree and sign the outcome.
+
+        A verifier constructed with a ``ProductionIsolationPolicy``
+        requires a separately signed ``IsolationAttestationV1`` for the
+        exact execution receipt. The attestation is issued after the
+        execution, so callers either pass it explicitly or supply
+        ``isolation_attestation_resolver(receipt)``, which fetches it by
+        the receipt the worker actually produced. Missing or invalid
+        containment evidence rejects the evaluation instead of issuing a
+        pass/fail receipt, and the signed outcome is an
+        ``OutcomeReceiptV2`` binding the execution, attestation, runtime,
+        protocol, worker and sandbox policy digests. Development
+        verifiers keep issuing V1.
+        """
+        if (isolation_attestation_resolver is not None
+                and not callable(isolation_attestation_resolver)):
+            raise ContractError(
+                "isolation_attestation_resolver must be callable")
         require_permission(actor_role, "outcome:evaluate")
         if not isinstance(task, TaskEnvelopeV1):
             task = TaskEnvelopeV1.from_dict(task)
@@ -372,6 +427,10 @@ class OutcomeVerifier:
         if (registration.statement_digest is not None and
                 registration.statement_digest != task.task_statement_digest):
             raise EvaluationRejected("statement_mismatch", task.task_id)
+        if (self.isolation_policy is not None
+                and task.isolation_profile == "unverified_local"):
+            raise EvaluationRejected(
+                "production_requires_qualified_task_profile")
         if not isinstance(evaluation_nonce, str) or not evaluation_nonce.strip() or len(evaluation_nonce) > 128:
             raise EvaluationRejected("missing_nonce")
         if evaluation_nonce in self._nonces:
@@ -422,8 +481,30 @@ class OutcomeVerifier:
                 stderr_tail = stderr.decode("utf-8", "replace")[-800:]
             except Exception:
                 pass
+        verification = None
+        if self.isolation_policy is not None:
+            attestation = isolation_attestation
+            if attestation is None and isolation_attestation_resolver is not None:
+                try:
+                    attestation = isolation_attestation_resolver(receipt_exec)
+                except Exception as exc:
+                    self.last_outcome_class = SANDBOX_FAILURE
+                    raise EvaluationRejected(
+                        "isolation_attestation_unavailable",
+                        f"{type(exc).__name__}: {exc}") from exc
+            if attestation is None:
+                self.last_outcome_class = SANDBOX_FAILURE
+                raise EvaluationRejected("isolation_attestation_required")
+            verification = verify_production_isolation(
+                attestation, receipt_exec, self.isolation_policy)
+            if not verification.ok:
+                self.last_outcome_class = SANDBOX_FAILURE
+                raise EvaluationRejected(
+                    "isolation_unverified", verification.reason)
         outcome_class = classify_execution(
-            receipt_exec, bootstrap_ok=True, stderr_tail=stderr_tail)
+            receipt_exec, bootstrap_ok=True, stderr_tail=stderr_tail,
+            production=self.isolation_policy is not None,
+            isolation_verification=verification)
         self.last_outcome_class = outcome_class
         if outcome_class == "TASK_PASS":
             outcome = "pass"
@@ -434,7 +515,7 @@ class OutcomeVerifier:
             # are not evidence that the candidate is ineffective.
             outcome = "error"
 
-        unsigned = {
+        common = {
             "schema_version": 1,
             "receipt_id": "rcpt-" + secrets.token_hex(12),
             "evaluator_identity": self.identity,
@@ -446,22 +527,45 @@ class OutcomeVerifier:
             "regression_evidence": [],
             "signer_key_id": self.keystore.key_id,
         }
-        signature = signatures.sign(
-            self.keystore._seed or self.keystore.load_or_create()[0],
-            _SIGNATURE_DOMAIN + canonical_json(unsigned),
-        ).hex()
-        receipt = OutcomeReceiptV1.from_dict({**unsigned, "signature": signature})
+        seed = self.keystore._seed or self.keystore.load_or_create()[0]
+        if self.isolation_policy is not None:
+            protocol_digest = canonical_digest("evaluation_protocol", 1, {
+                "task_id": registration.task_id,
+                "criterion_version": registration.criterion_version,
+                "test_suite_commitment": registration.suite_commitment,
+                "base_commit": registration.base_commit,
+                "statement_digest": registration.statement_digest,
+                "evaluator_identity": self.identity,
+            })
+            unsigned = {
+                **common,
+                "execution_receipt_digest": receipt_exec.digest,
+                "isolation_attestation_digest": verification.attestation_digest,
+                "evaluator_runtime_digest": self.runtime_profile.digest,
+                "evaluation_protocol_digest": protocol_digest,
+                "worker_identity": receipt_exec.worker_identity,
+                "sandbox_policy_digest": verification.policy_digest,
+            }
+            signature = signatures.sign(
+                seed, _SIGNATURE_DOMAIN_V2 + canonical_json(unsigned)).hex()
+            receipt = OutcomeReceiptV2.from_dict(
+                {**unsigned, "signature": signature})
+        else:
+            signature = signatures.sign(
+                seed, _SIGNATURE_DOMAIN + canonical_json(common)).hex()
+            receipt = OutcomeReceiptV1.from_dict(
+                {**common, "signature": signature})
         self._record(receipt, evaluation_nonce, receipt_exec.digest,
                      outcome_class=outcome_class,
                      runtime_digest=self.runtime_profile.digest,
                      bootstrap_digest=bootstrap.import_receipt_digest)
         return receipt
 
-    def verify_receipt(self, receipt: OutcomeReceiptV1 | Mapping) -> bool:
+    def verify_receipt(self, receipt: OutcomeReceiptV1 | OutcomeReceiptV2 | Mapping) -> bool:
         """Verify a receipt's signature against the trusted key registry."""
         try:
-            record = receipt if isinstance(receipt, OutcomeReceiptV1) else OutcomeReceiptV1.from_dict(receipt)
-        except ContractError:
+            record = _parse_receipt(receipt)
+        except (ContractError, TypeError, KeyError):
             return False
         public_hex = self._trusted.get(record.signer_key_id)
         if public_hex is None:
@@ -475,7 +579,7 @@ class OutcomeVerifier:
     def issued_receipts(self) -> list[str]:
         return [entry["receipt_digest"] for entry in self._journal]
 
-    def load_receipt(self, receipt_digest: str) -> OutcomeReceiptV1:
+    def load_receipt(self, receipt_digest: str) -> OutcomeReceiptV1 | OutcomeReceiptV2:
         """Reload a persisted signed receipt by its canonical digest.
 
         The artifact must hash to the address it was stored under. A
@@ -488,7 +592,7 @@ class OutcomeVerifier:
             raise ContractError("receipt reference must be a lowercase SHA-256 digest")
         path = self.registry_dir / "receipts" / f"{receipt_digest}.json"
         try:
-            receipt = OutcomeReceiptV1.from_json(path.read_bytes())
+            receipt = _parse_receipt(loads_json(path.read_bytes()))
         except OSError as exc:
             raise JournalIntegrityError("receipt_missing") from exc
         except ContractError as exc:
@@ -524,6 +628,7 @@ class OutcomeVerifier:
             "criterion_version": receipt.criterion_version,
             "outcome": receipt.outcome,
             "execution_digest": execution_digest,
+            "worker_identity": getattr(receipt, "worker_identity", None),
             "signer_key_id": receipt.signer_key_id,
             "nonce": nonce,
             "issued_at": _utcnow(),
@@ -643,7 +748,7 @@ class OutcomeVerifier:
         """
         path = self.registry_dir / "receipts" / f"{entry['receipt_digest']}.json"
         try:
-            artifact = OutcomeReceiptV1.from_json(path.read_bytes())
+            artifact = _parse_receipt(loads_json(path.read_bytes()))
         except FileNotFoundError:
             return False
         except (OSError, ContractError) as exc:
@@ -665,6 +770,9 @@ class OutcomeVerifier:
             raise JournalIntegrityError("receipt_journal_mismatch")
         execution = getattr(artifact, "execution_receipt_digest", None)
         if execution is not None and execution != entry["execution_digest"]:
+            raise JournalIntegrityError("receipt_journal_mismatch")
+        worker = getattr(artifact, "worker_identity", None)
+        if worker is not None and entry.get("worker_identity") not in (None, worker):
             raise JournalIntegrityError("receipt_journal_mismatch")
         public_hex = self._trusted.get(artifact.signer_key_id)
         if public_hex is None:
@@ -703,11 +811,14 @@ class OutcomeVerifier:
                 os.unlink(tmp)
 
 
-def verify_receipt_signature(receipt: OutcomeReceiptV1 | Mapping, public_key_hex: str) -> bool:
+def verify_receipt_signature(
+    receipt: OutcomeReceiptV1 | OutcomeReceiptV2 | Mapping,
+    public_key_hex: str,
+) -> bool:
     """Offline receipt check: signature over canonical payload, public key only."""
     try:
-        record = receipt if isinstance(receipt, OutcomeReceiptV1) else OutcomeReceiptV1.from_dict(receipt)
-    except ContractError:
+        record = _parse_receipt(receipt)
+    except (ContractError, TypeError, KeyError):
         return False
     if not isinstance(public_key_hex, str) or len(public_key_hex) != 64:
         return False
@@ -718,7 +829,8 @@ def verify_receipt_signature(receipt: OutcomeReceiptV1 | Mapping, public_key_hex
         return False
     unsigned = record.to_dict()
     unsigned.pop("signature")
-    return signatures.verify(signature, _SIGNATURE_DOMAIN + canonical_json(unsigned), public)
+    return signatures.verify(
+        signature, _receipt_domain(record) + canonical_json(unsigned), public)
 
 
 @dataclass(frozen=True)
@@ -763,7 +875,7 @@ def verify_and_resolve_receipt(
     except (RuntimeError, ContractError, OSError) as exc:
         raise EvaluationRejected("receipt_unresolvable", digest) from exc
     try:
-        receipt = raw if isinstance(raw, OutcomeReceiptV1) else OutcomeReceiptV1.from_dict(raw)
+        receipt = _parse_receipt(raw)
     except (ContractError, TypeError, KeyError) as exc:
         raise EvaluationRejected("receipt_malformed", digest) from exc
     if receipt.digest != digest:

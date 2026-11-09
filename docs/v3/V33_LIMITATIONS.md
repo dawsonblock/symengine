@@ -26,10 +26,21 @@
 - Execution isolation remains `isolation:unverified_local`; the
   runner reports what it can enforce, no more. Network denial via
   seatbelt is best-effort on macOS only.
-- v3.3.3 adds the `IsolationAttestationV1` contract and verifier, but no
-  in-tree backend or isolator signer produces attestations — production
-  execution stays closed until a qualified isolator exists, and a
-  receipt's own `isolation:*` markers never qualify it.
+- v3.3.4 adds the mandatory `ProductionIsolationPolicy`, typed
+  verification, V2 outcome receipts, and an isolator-side issuance CLI.
+  The production gate is now closed by policy rather than by convention:
+  a missing allowlist, pinned image/policy digest, required containment
+  property, expiry, or exact receipt binding rejects the evaluation.
+- No qualified worker backend ships in this tree. The local subprocess
+  executor still reports `isolation:unverified_local`, so it can never
+  mint a production pass even with a signed attestation. A Linux
+  microVM/container worker that enforces filesystem confinement, network
+  denial, process isolation, resource limits and process-group
+  termination remains the blocker for executing untrusted code.
+- The isolator is trusted. The policy verifies the isolator's signed
+  claims, not the operating system's enforcement; an isolator that signs
+  false properties defeats the gate. Key custody and worker
+  independence are deployment properties.
 - Usage accounting remains `reported`-grade for agent-supplied counters;
   only `UsageMeter`-instrumented paths are `verified`.
 

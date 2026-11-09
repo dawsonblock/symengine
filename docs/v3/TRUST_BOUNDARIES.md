@@ -77,10 +77,26 @@ key revocation, or task-admission service is deployed.
 - `sis.v3.isolation`: `IsolationAttestationV1` issuance and verification —
   independently signed containment proofs bound to the executor backend,
   worker identity, policy and image digests, command spec, workspace input
-  tree and the exact execution receipt. No in-tree backend or signer
-  produces attestations; local receipts still report
-  `isolation:unverified_local` only, so the production gate stays closed
-  until a qualified isolator exists.
+  tree and the exact execution receipt. `ProductionIsolationPolicy` makes
+  every requirement mandatory (allowlist, trusted keys, pinned policy and
+  image, required properties, expiry/freshness, exact binding), and
+  `verify_production_isolation` returns a typed `IsolationVerification`
+  naming what was checked. `classify_execution` accepts only that object
+  for production; a boolean is not evidence.
+- `sis.v3.verifier` production mode requires an `isolation_policy` and a
+  signed attestation for the exact execution receipt, supplied directly
+  or fetched by a post-execution resolver. Missing or invalid evidence
+  rejects the evaluation; it never issues a pass/fail receipt. New
+  production outcomes are `OutcomeReceiptV2`, binding the execution,
+  attestation, evaluator runtime, evaluation protocol, worker identity
+  and sandbox policy digests under a separate signature domain. V1
+  receipts remain readable for historical verification.
+- `tools/issue_worker_attestation.py` is the isolator-side issuance path:
+  it reads the receipt the worker produced, refuses a receipt that
+  self-reports `isolation:unverified_local`, and signs only the
+  containment properties the worker enforced. The local subprocess
+  backend still reports `isolation:unverified_local` only, so production
+  execution stays closed until a qualified worker backend exists.
 - `sis.v3.memory.MemoryStore` integrity chain: append-only `memory_chain`
   commits every record digest in order, custodian-signed when `chain_key`
   is configured. Trusted-mode access re-verifies record signatures and

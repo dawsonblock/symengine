@@ -405,6 +405,38 @@ class OutcomeReceiptV1(V1Record):
 
 
 @dataclass(frozen=True, kw_only=True)
+class OutcomeReceiptV2(V1Record):
+    """V2 outcome receipt: binds the execution and its isolation proof.
+
+    Adds the execution receipt, isolation attestation, evaluator runtime,
+    evaluation protocol, worker identity and sandbox policy digests to
+    the V1 outcome fields, so a production outcome cannot be separated
+    from the containment evidence it was produced under. V1 receipts
+    remain valid for historical verification; new production evaluations
+    require V2.
+    """
+
+    receipt_id: str
+    evaluator_identity: str
+    task_id: str
+    evaluated_repo_digest: str
+    test_suite_commitment: str
+    criterion_version: str
+    outcome: str
+    regression_evidence: tuple[str, ...]
+    execution_receipt_digest: str
+    isolation_attestation_digest: str
+    evaluator_runtime_digest: str
+    evaluation_protocol_digest: str
+    worker_identity: str
+    sandbox_policy_digest: str
+    signer_key_id: str
+    signature: str
+
+    RECORD_TYPE: ClassVar[str] = "outcome_receipt_v2"
+
+
+@dataclass(frozen=True, kw_only=True)
 class OutcomeEnvelopeV2(V1Record):
     """V2 outcome envelope: binds attempt, environment, execution receipt,
     nonce and expiry without altering the V1 receipt serialization."""
@@ -1044,6 +1076,22 @@ def _validate_record(record: V1Record) -> None:
         _enum(d["outcome"], _OUTCOMES, "outcome")
         for ref in _sequence(d["regression_evidence"], "regression_evidence"):
             _digest(ref, "regression_evidence[]")
+        _identifier(d["signer_key_id"], "signer_key_id")
+        _require(isinstance(d["signature"], str) and bool(re.fullmatch(r"[0-9a-f]{128}", d["signature"])), "signature must be a 64-byte lowercase hexadecimal Ed25519 signature")
+    elif isinstance(record, OutcomeReceiptV2):
+        _identifier(d["receipt_id"], "receipt_id")
+        _identifier(d["evaluator_identity"], "evaluator_identity")
+        _identifier(d["task_id"], "task_id")
+        for name in ("evaluated_repo_digest", "test_suite_commitment",
+                     "execution_receipt_digest", "isolation_attestation_digest",
+                     "evaluator_runtime_digest", "evaluation_protocol_digest",
+                     "sandbox_policy_digest"):
+            _digest(d[name], name)
+        _text(d["criterion_version"], "criterion_version", maximum=128)
+        _enum(d["outcome"], _OUTCOMES, "outcome")
+        for ref in _sequence(d["regression_evidence"], "regression_evidence"):
+            _digest(ref, "regression_evidence[]")
+        _identifier(d["worker_identity"], "worker_identity")
         _identifier(d["signer_key_id"], "signer_key_id")
         _require(isinstance(d["signature"], str) and bool(re.fullmatch(r"[0-9a-f]{128}", d["signature"])), "signature must be a 64-byte lowercase hexadecimal Ed25519 signature")
     elif isinstance(record, OutcomeEnvelopeV2):

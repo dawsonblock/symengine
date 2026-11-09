@@ -72,7 +72,39 @@ Gate G4 — bounded symbolic induction:
 - 19 regressions cover budget validation, each limit, development-guided
   deepening, sealed-holdout status, oracle refinement, and wide fields.
 
-Suite: 1187 passed, 12 skipped. One release-seal test
+Gate G2 — production isolation boundary:
+
+- `ProductionIsolationPolicy` makes every containment requirement
+  mandatory: backend allowlist, trusted isolator keys, pinned policy and
+  image digests, required properties, expiry and freshness, and the
+  exact receipt/command/workspace/worker binding. A policy with any
+  omitted requirement refuses to construct.
+- `verify_production_isolation` returns a typed
+  `IsolationVerification` naming the receipt, attestation, policy,
+  backend, worker, signer and verified properties.
+  `classify_execution` accepts only that object for production; the
+  caller-supplied `isolation_attested` boolean is gone.
+- `OutcomeVerifier` accepts an `isolation_policy` and, for production,
+  requires a signed attestation for the exact execution — passed
+  directly or fetched by a post-execution resolver. Missing, expired,
+  reused, or property-incomplete evidence rejects the evaluation
+  instead of issuing a pass/fail receipt.
+- `OutcomeReceiptV2` binds `execution_receipt_digest`,
+  `isolation_attestation_digest`, `evaluator_runtime_digest`,
+  `evaluation_protocol_digest`, `worker_identity` and
+  `sandbox_policy_digest` under a separate signature domain. V1 remains
+  readable for historical verification; production evaluations issue V2.
+- `issue_attestation_for_receipt` and
+  `tools/issue_worker_attestation.py` give an independent isolator a real
+  issuance path; both refuse a receipt that self-reports
+  `isolation:unverified_local`.
+- 44 regressions cover policy validation, every rejection reason, typed
+  classification, V2 issuance/reload/restart, V1/V2 coexistence,
+  attestation reuse, and the local backend's permanent disqualification.
+  Executor red-team cases (symlink, network, environment, fork, resource
+  exhaustion) remain in `test_runner_isolation.py`.
+
+Suite: 1231 passed, 12 skipped. One release-seal test
 (`ReleaseIdentityTests.test_release_commit_covers_current_source`)
 remains red until `release/` is re-signed with the release key in
 Phase 5; the source change itself is covered by the baseline record in

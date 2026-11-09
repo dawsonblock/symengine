@@ -22,6 +22,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .contracts import canonical_digest
+from .isolation import IsolationVerification
 from .runner import CommandSpec, ResourceLimits, WorkspaceExecutor
 
 TASK_PASS = "TASK_PASS"
@@ -275,17 +276,18 @@ def classify_execution(
     stderr_tail: str = "",
     require_verified_isolation: bool = False,
     production: bool = False,
-    isolation_attested: bool = False,
+    isolation_verification: IsolationVerification | None = None,
     infrastructure_error: str | None = None,
 ) -> str:
     """Map an execution receipt to exactly one outcome class.
 
-    ``isolation_attested`` is the verdict of
-    :func:`sis.v3.isolation.verify_isolation_attestation`, computed by the
-    harness over a separately signed attestation. A receipt's own
-    ``isolation:*`` markers are self-reported facts and never qualify it;
-    a self-reported ``isolation:unverified_local`` always disqualifies it
-    in production.
+    ``isolation_verification`` is the typed verdict of
+    :func:`sis.v3.isolation.verify_production_isolation`, computed by the
+    harness over a separately signed attestation and the exact execution
+    receipt. A boolean "attested" flag is not accepted: production
+    requires the verification object to name this receipt and to carry
+    every mandatory property. A receipt's own ``isolation:*`` markers are
+    self-reported facts and never qualify it.
     """
     if infrastructure_error:
         return INFRASTRUCTURE_ERROR
@@ -295,9 +297,11 @@ def classify_execution(
     if production:
         if "isolation:unverified_local" in errors:
             return SANDBOX_FAILURE
-        if not isolation_attested:
-            # No independently authenticated containment proof: a
-            # production outcome may not be derived from this execution.
+        if not isinstance(isolation_verification, IsolationVerification):
+            return SANDBOX_FAILURE
+        if not isolation_verification.ok:
+            return SANDBOX_FAILURE
+        if isolation_verification.receipt_digest != getattr(receipt, "digest", None):
             return SANDBOX_FAILURE
     if require_verified_isolation and "isolation:unverified_local" in errors:
         return SANDBOX_FAILURE
