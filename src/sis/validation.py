@@ -9,6 +9,7 @@ NAME = re.compile(r"^[A-Za-z_][A-Za-z_0-9]{0,63}$")
 MAX_TEXT = 128
 MAX_MAGNITUDE = 1_000_000_000
 MAX_EXAMPLES = 256
+MAX_INPUT_FIELDS = 64
 
 
 def canonical(value):
@@ -43,8 +44,9 @@ def check_scalar(value):
 
 
 def check_inputs(inputs):
-    if not isinstance(inputs, dict) or not inputs or len(inputs) > 16:
-        raise InvalidInput("inputs must be a nonempty object with at most 16 fields")
+    if not isinstance(inputs, dict) or not inputs or len(inputs) > MAX_INPUT_FIELDS:
+        raise InvalidInput(
+            f"inputs must be a nonempty object with at most {MAX_INPUT_FIELDS} fields")
     clean = {}
     for name, value in inputs.items():
         if not isinstance(name, str) or not NAME.fullmatch(name):

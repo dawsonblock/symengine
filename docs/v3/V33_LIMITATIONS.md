@@ -172,6 +172,22 @@
   example a greeting style) has nothing a holdout test can honestly assert
   and should not be qualified.
 
+## Symbolic induction
+
+- Search limits are explicit but they are still limits: when
+  `search_outcome` is `truncated` or `resource_exhausted`, a rule may
+  exist outside the explored space. The result says so and never claims
+  completeness.
+- A rule that passes a sealed holdout is locally validated, not proven.
+  Ambiguity between observationally equivalent rules is reported as
+  `ambiguous` with a distinguishing probe.
+- The 64-field stress case truncates at the default candidate budget
+  before reaching the relevant pair. Wider feature spaces need either a
+  larger declared budget or feature-selection prefiltering.
+- The oracle refinement loop requires an authoritative labelling
+  function. Generated probes are unlabeled and are never treated as
+  ground truth.
+
 ## Not in scope (per charter)
 
 No neural fine-tuning, no LoRA/weight adaptation, no live-registry

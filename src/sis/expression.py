@@ -108,5 +108,17 @@ def cost(ast):
     return 4 + sum(cost(ast[x]) for x in ("left", "right", "then", "else"))
 
 
+def depth(ast):
+    """Nesting depth of a validated AST; leaves are depth 1."""
+    op = ast["op"]
+    if op in ("field", "item", "const"):
+        return 1
+    if op in UNARY:
+        return 1 + depth(ast["arg"])
+    if op in BINARY:
+        return 1 + max(depth(ast["args"][0]), depth(ast["args"][1]))
+    return 1 + max(depth(ast[key]) for key in ("left", "right", "then", "else"))
+
+
 def fingerprint(ast):
     return canonical(ast)

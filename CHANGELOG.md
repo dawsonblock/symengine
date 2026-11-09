@@ -44,7 +44,35 @@ Gate G3 — memory trust:
 - 34 regressions cover profile enforcement, rollback, stale and
   tampered witnesses, database rewrites, lineage, and retrieval gates.
 
-Suite: 1168 passed, 12 skipped. One release-seal test
+Gate G4 — bounded symbolic induction:
+
+- Early stopping now consults development data. A shallow rule that fits
+  only the training rows no longer stops deepening; `dev` decides
+  selection and a sealed `holdout` decides the final status. The result
+  reports `holdout_sealed` and never presents selection data as
+  independent generalization evidence.
+- `SearchBudget` makes five limits explicit: `max_candidates`,
+  `max_signature_checks`, `max_wall_seconds`, `max_memory_bytes`, and
+  `max_expression_depth`. Results report `search_outcome`
+  (completed/truncated/resource_exhausted) and `limits_hit`; the memory
+  limit is opt-in because tracing costs about 5x on wide searches.
+- Enumeration uses a cheap train+development signature and computes the
+  full probe signature only for fitting candidates, preserving ambiguity
+  rivals while cutting the 16-field regression from 12.5s to 2.0s.
+- Candidate ordering ranks development fit, ambiguity, complexity, and
+  fingerprint; stage-2 mids rank residual variance then complexity.
+- Counterexample-guided refinement uses an optional labelled oracle,
+  bounded rounds, and never treats generated probes as ground truth.
+- `validation.check_inputs` accepts up to 64 fields (was 16) so the
+  scalability matrix can run; 65 fields still fail closed.
+- `tools/benchmark_induction.py` records the 2/4/8/16/32/64-field matrix:
+  2-16 recover with a sealed holdout pass, 32 recovers at the
+  signature-check limit, 64 truncates at the candidate cap. Evidence:
+  `evidence/benchmark/v334_induction_scalability.json`.
+- 19 regressions cover budget validation, each limit, development-guided
+  deepening, sealed-holdout status, oracle refinement, and wide fields.
+
+Suite: 1187 passed, 12 skipped. One release-seal test
 (`ReleaseIdentityTests.test_release_commit_covers_current_source`)
 remains red until `release/` is re-signed with the release key in
 Phase 5; the source change itself is covered by the baseline record in

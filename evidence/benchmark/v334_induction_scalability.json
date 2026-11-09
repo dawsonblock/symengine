@@ -1,0 +1,232 @@
+{
+  "budget": {
+    "max_candidates": 12000,
+    "max_expression_depth": 5,
+    "max_memory_bytes": null,
+    "max_signature_checks": 500000,
+    "max_wall_seconds": 30.0
+  },
+  "generated_at": "2026-11-09T22:52:44Z",
+  "kind": "induction_scalability",
+  "partition": {
+    "dev": 3,
+    "holdout": 3,
+    "train": 6
+  },
+  "platform": "macOS-26.2-arm64-arm-64bit",
+  "python": "3.12.0",
+  "results": [
+    {
+      "candidates_evaluated": 61,
+      "false_positive": false,
+      "fields": 2,
+      "holdout_correct": 3,
+      "holdout_count": 3,
+      "holdout_passed": 3,
+      "limits_hit": [],
+      "peak_traced_bytes": 242515,
+      "rule": {
+        "args": [
+          {
+            "args": [
+              {
+                "name": "x0",
+                "op": "field"
+              },
+              {
+                "name": "x1",
+                "op": "field"
+              }
+            ],
+            "op": "mul"
+          },
+          {
+            "op": "const",
+            "value": -2
+          }
+        ],
+        "op": "absdiff"
+      },
+      "rule_recovered": true,
+      "runtime_seconds": 0.064,
+      "search_depth": 2,
+      "search_outcome": "completed",
+      "signature_checks": 2801,
+      "status": "ambiguous"
+    },
+    {
+      "candidates_evaluated": 144,
+      "false_positive": false,
+      "fields": 4,
+      "holdout_correct": 3,
+      "holdout_count": 3,
+      "holdout_passed": 3,
+      "limits_hit": [],
+      "peak_traced_bytes": 382206,
+      "rule": {
+        "args": [
+          {
+            "args": [
+              {
+                "name": "x2",
+                "op": "field"
+              },
+              {
+                "name": "x3",
+                "op": "field"
+              }
+            ],
+            "op": "mul"
+          },
+          {
+            "op": "const",
+            "value": -2
+          }
+        ],
+        "op": "absdiff"
+      },
+      "rule_recovered": true,
+      "runtime_seconds": 0.155,
+      "search_depth": 2,
+      "search_outcome": "completed",
+      "signature_checks": 8355,
+      "status": "ambiguous"
+    },
+    {
+      "candidates_evaluated": 398,
+      "false_positive": false,
+      "fields": 8,
+      "holdout_correct": 3,
+      "holdout_count": 3,
+      "holdout_passed": 3,
+      "limits_hit": [],
+      "peak_traced_bytes": 1006272,
+      "rule": {
+        "args": [
+          {
+            "args": [
+              {
+                "name": "x6",
+                "op": "field"
+              },
+              {
+                "name": "x7",
+                "op": "field"
+              }
+            ],
+            "op": "mul"
+          },
+          {
+            "op": "const",
+            "value": -2
+          }
+        ],
+        "op": "absdiff"
+      },
+      "rule_recovered": true,
+      "runtime_seconds": 0.482,
+      "search_depth": 2,
+      "search_outcome": "completed",
+      "signature_checks": 32051,
+      "status": "ambiguous"
+    },
+    {
+      "candidates_evaluated": 1251,
+      "false_positive": false,
+      "fields": 16,
+      "holdout_correct": 3,
+      "holdout_count": 3,
+      "holdout_passed": 3,
+      "limits_hit": [],
+      "peak_traced_bytes": 3086655,
+      "rule": {
+        "args": [
+          {
+            "args": [
+              {
+                "name": "x14",
+                "op": "field"
+              },
+              {
+                "name": "x15",
+                "op": "field"
+              }
+            ],
+            "op": "mul"
+          },
+          {
+            "op": "const",
+            "value": -2
+          }
+        ],
+        "op": "absdiff"
+      },
+      "rule_recovered": true,
+      "runtime_seconds": 1.971,
+      "search_depth": 2,
+      "search_outcome": "completed",
+      "signature_checks": 160707,
+      "status": "ambiguous"
+    },
+    {
+      "candidates_evaluated": 4267,
+      "false_positive": false,
+      "fields": 32,
+      "holdout_correct": 3,
+      "holdout_count": 3,
+      "holdout_passed": 3,
+      "limits_hit": [
+        "max_signature_checks"
+      ],
+      "peak_traced_bytes": 10138429,
+      "rule": {
+        "args": [
+          {
+            "args": [
+              {
+                "name": "x30",
+                "op": "field"
+              },
+              {
+                "name": "x31",
+                "op": "field"
+              }
+            ],
+            "op": "mul"
+          },
+          {
+            "op": "const",
+            "value": -2
+          }
+        ],
+        "op": "absdiff"
+      },
+      "rule_recovered": true,
+      "runtime_seconds": 7.299,
+      "search_depth": 2,
+      "search_outcome": "truncated",
+      "signature_checks": 500001,
+      "status": "search_incomplete"
+    },
+    {
+      "candidates_evaluated": 12000,
+      "false_positive": false,
+      "fields": 64,
+      "holdout_correct": 0,
+      "holdout_count": 3,
+      "holdout_passed": 0,
+      "limits_hit": [
+        "max_candidates"
+      ],
+      "peak_traced_bytes": 21399728,
+      "rule": null,
+      "rule_recovered": false,
+      "runtime_seconds": 12.195,
+      "search_depth": 1,
+      "search_outcome": "truncated",
+      "signature_checks": 13228,
+      "status": "search_incomplete"
+    }
+  ],
+  "target": "x[n-2] * x[n-1] + 2"
+}
