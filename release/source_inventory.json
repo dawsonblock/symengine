@@ -69,8 +69,8 @@
       "sha256": "5ade449de6ecd789e0210f0a5be43d362e6a297eb80305edc3b228a2f67d0ed1"
     },
     "docs/LEGACY_README.md": {
-      "bytes": 27753,
-      "sha256": "496621c49e61145117fb082532d9e8f5c1dd4924e194818d8cfb788b77f3da92"
+      "bytes": 27768,
+      "sha256": "a99d96a77bfca708898d94dc0c8195ec60c650cf96e70887f11e523ab462deda"
     },
     "docs/LIMITATIONS.md": {
       "bytes": 2301,
@@ -81,8 +81,8 @@
       "sha256": "607d68637f60043f1bef59463291c794804085dc33e1d60ae87d6611d8b5be3e"
     },
     "docs/RELEASE_NOTES.md": {
-      "bytes": 11063,
-      "sha256": "fa5cc5668ca5057fbcb44643cf6e96d18190021be567c8edb08f5f37dfdb709a"
+      "bytes": 11080,
+      "sha256": "521fe27a039414bf50dfa4fbc6a206d3c3bf74c9af753e631b3ffce1aacec8e7"
     },
     "docs/ROADMAP.md": {
       "bytes": 4369,
@@ -1695,5 +1695,5 @@
   },
   "release": "SIS-v3.3.6",
   "schema_version": 1,
-  "source_commit": "e9041970abae3286a2be404fa786fbbda7ae585a"
+  "source_commit": "5c0e59fcdb05c4784dd001e6a426a04f4fd5309e"
 }
