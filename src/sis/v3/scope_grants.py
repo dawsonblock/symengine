@@ -155,8 +155,8 @@ class ScopeGrantAuthority:
         """Mint a signed grant after full policy verification.
 
         ``record`` is the qualified procedure revision the grant binds to;
-        ``evidence_receipts`` are already-verified ``OutcomeReceiptV1``
-        objects whose evaluated trees must resolve to distinct registry
+        ``evidence_receipts`` are already-verified ``OutcomeReceiptV1`` or
+        ``OutcomeReceiptV2`` objects whose evaluated trees must resolve to distinct registry
         identities including the grant's source repository.
         """
         require_permission(actor_role, "promotion:approve")
