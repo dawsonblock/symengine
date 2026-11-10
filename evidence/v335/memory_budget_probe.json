@@ -1,0 +1,84 @@
+{
+  "budget": {
+    "max_candidates": 12000,
+    "max_expression_depth": 5,
+    "max_memory_bytes": 1048576,
+    "max_signature_checks": 500000,
+    "max_wall_seconds": 30.0
+  },
+  "generated_at": "2026-11-10T06:46:06Z",
+  "kind": "induction_scalability",
+  "partition": {
+    "dev": 3,
+    "holdout": 3,
+    "train": 6
+  },
+  "platform": "macOS-26.2-arm64-arm-64bit",
+  "python": "3.12.0",
+  "results": [
+    {
+      "candidates_evaluated": 397,
+      "false_positive": false,
+      "fields": 8,
+      "holdout_correct": 3,
+      "holdout_count": 3,
+      "holdout_passed": 3,
+      "limits_hit": [
+        "max_memory_bytes"
+      ],
+      "memory_limit_source": "tracemalloc_incremental",
+      "observed_peak_bytes": 1050369,
+      "peak_traced_bytes": 1119436,
+      "rule": {
+        "args": [
+          {
+            "args": [
+              {
+                "name": "x6",
+                "op": "field"
+              },
+              {
+                "name": "x7",
+                "op": "field"
+              }
+            ],
+            "op": "mul"
+          },
+          {
+            "op": "const",
+            "value": 2
+          }
+        ],
+        "op": "add"
+      },
+      "rule_recovered": true,
+      "runtime_seconds": 0.259,
+      "search_depth": 2,
+      "search_outcome": "resource_exhausted",
+      "signature_checks": 684,
+      "status": "search_incomplete"
+    },
+    {
+      "candidates_evaluated": 623,
+      "false_positive": false,
+      "fields": 16,
+      "holdout_correct": 0,
+      "holdout_count": 3,
+      "holdout_passed": 0,
+      "limits_hit": [
+        "max_memory_bytes"
+      ],
+      "memory_limit_source": "tracemalloc_incremental",
+      "observed_peak_bytes": 1049020,
+      "peak_traced_bytes": 1130070,
+      "rule": null,
+      "rule_recovered": false,
+      "runtime_seconds": 0.303,
+      "search_depth": 1,
+      "search_outcome": "resource_exhausted",
+      "signature_checks": 774,
+      "status": "search_incomplete"
+    }
+  ],
+  "target": "x[n-2] * x[n-1] + 2"
+}

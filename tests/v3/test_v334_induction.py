@@ -150,7 +150,7 @@ class BudgetEnforcementTests(unittest.TestCase):
         self.assertEqual(result["search_outcome"], "truncated")
         self.assertIn("max_signature_checks", result["limits_hit"])
         self.assertEqual(result["status"], "search_incomplete")
-        self.assertLessEqual(result["signature_checks"], 2)
+        self.assertLessEqual(result["signature_checks"], 1)
 
     def test_wall_clock_limit(self):
         result = induce(
@@ -253,7 +253,7 @@ class ScalabilityTests(unittest.TestCase):
                 self.assertEqual(result["status"], "search_incomplete")
                 self.assertTrue(result["limits_hit"])
                 self.assertLessEqual(result["candidates_evaluated"], 500)
-                self.assertLessEqual(result["signature_checks"], 5001)
+                self.assertLessEqual(result["signature_checks"], 5000)
 
     def test_sixty_five_fields_rejected(self):
         inputs = {f"x{i}": 1 for i in range(65)}

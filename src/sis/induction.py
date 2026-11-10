@@ -83,10 +83,13 @@ class SearchBudget:
 
     ``max_candidates`` bounds unique observational candidates yielded.
     ``max_signature_checks`` bounds the actual comparison work, which
-    candidate counting alone does not. ``max_wall_seconds`` and
-    ``max_memory_bytes`` bound resources; ``None`` disables the memory
-    check, and enabling it starts ``tracemalloc`` for the duration of the
-    search (a measurable overhead, so it is opt-in).
+    candidate counting alone does not. ``max_wall_seconds`` bounds wall
+    time. ``max_memory_bytes`` is an incremental soft budget over Python
+    allocations traced from search start; ``None`` disables it. It is not
+    an OS RSS limit, does not see native-extension allocations, and is
+    sampled at resource-check points. Enabling it starts ``tracemalloc``
+    when no tracer is running; a caller-owned tracer is measured from its
+    current baseline and is never stopped by the search.
     ``max_expression_depth`` excludes expressions deeper than the
     declared nesting level.
     """
@@ -129,7 +132,15 @@ class SearchBudget:
 
 @dataclass
 class SearchState:
-    """Mutable budget consumption shared across refinement rounds."""
+    """Mutable budget consumption shared across refinement rounds.
+
+    Memory accounting is an incremental soft budget over Python
+    allocations traced from ``start()``: ``observed_peak_bytes`` is the
+    largest sampled growth above the baseline, not process RSS. It cannot
+    see native-extension allocations or enforce a hard OS limit; use a
+    subprocess/cgroup/microVM limit for that. A caller-owned tracer is
+    never stopped; a tracer this search started is stopped by ``close()``.
+    """
 
     budget: SearchBudget
     started: float = field(default_factory=time.monotonic)
@@ -137,26 +148,54 @@ class SearchState:
     candidates: int = 0
     depth_excluded: int = 0
     limits_hit: list[str] = field(default_factory=list)
-    tracing_started: bool = False
+    memory_check_enabled: bool = False
+    owns_tracer: bool = False
+    baseline_traced_bytes: int = 0
+    observed_peak_bytes: int = 0
 
     def hit(self, reason: str) -> None:
         if reason not in self.limits_hit:
             self.limits_hit.append(reason)
 
+    def start(self) -> None:
+        """Begin accounting; enable the memory cap regardless of tracer owner."""
+        self.started = time.monotonic()
+        if self.budget.max_memory_bytes is None:
+            return
+        self.memory_check_enabled = True
+        if tracemalloc.is_tracing():
+            # A caller-owned tracer: measure growth from here, never
+            # reset or stop the caller's tracer.
+            self.baseline_traced_bytes = tracemalloc.get_traced_memory()[0]
+        else:
+            tracemalloc.start()
+            self.owns_tracer = True
+            self.baseline_traced_bytes = 0
+        self.observed_peak_bytes = 0
+
+    def close(self) -> None:
+        """Stop tracing only when this search started it."""
+        if self.owns_tracer:
+            tracemalloc.stop()
+            self.owns_tracer = False
+
     def spend_signature(self) -> bool:
-        self.signature_checks += 1
-        if self.signature_checks > self.budget.max_signature_checks:
+        if self.signature_checks >= self.budget.max_signature_checks:
             self.hit("max_signature_checks")
             return False
+        self.signature_checks += 1
         return True
 
     def check_resources(self) -> bool:
         if time.monotonic() - self.started > self.budget.max_wall_seconds:
             self.hit("max_wall_seconds")
             return False
-        if self.tracing_started:
+        if self.memory_check_enabled:
             current, _peak = tracemalloc.get_traced_memory()
-            if current > self.budget.max_memory_bytes:
+            growth = max(0, current - self.baseline_traced_bytes)
+            if growth > self.observed_peak_bytes:
+                self.observed_peak_bytes = growth
+            if growth > self.budget.max_memory_bytes:
                 self.hit("max_memory_bytes")
                 return False
         return True
@@ -583,9 +622,7 @@ def induce(train, validation=None, *, namespace="default", max_candidates=12000,
     probe_list = list(generated_probes(original_train[0]["inputs"]))
     observed = [x["inputs"] for x in dev_examples] + probe_list
     state = SearchState(budget)
-    if budget.max_memory_bytes is not None and not tracemalloc.is_tracing():
-        tracemalloc.start()
-        state.tracing_started = True
+    state.start()
     try:
         examples = list(original_train)
         rounds = 0
@@ -666,8 +703,7 @@ def induce(train, validation=None, *, namespace="default", max_candidates=12000,
                     break
             break
     finally:
-        if state.tracing_started:
-            tracemalloc.stop()
+        state.close()
 
     best = reported["best"]
     ambiguous = reported["ambiguous"]
@@ -720,6 +756,9 @@ def induce(train, validation=None, *, namespace="default", max_candidates=12000,
         "search_truncated": truncated,
         "search_outcome": outcome,
         "limits_hit": list(state.limits_hit),
+        "observed_peak_bytes": state.observed_peak_bytes,
+        "memory_limit_source": (
+            "tracemalloc_incremental" if state.memory_check_enabled else None),
         "budget": budget.as_dict(),
         "refinement_rounds": rounds,
         "counterexamples_added": counterexamples_added,

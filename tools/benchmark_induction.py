@@ -93,6 +93,8 @@ def run_case(features: int, args) -> dict:
         "signature_checks": result["signature_checks"],
         "runtime_seconds": round(elapsed, 3),
         "peak_traced_bytes": peak,
+        "observed_peak_bytes": result.get("observed_peak_bytes"),
+        "memory_limit_source": result.get("memory_limit_source"),
         "rule_recovered": rule is not None,
         "holdout_passed": result["holdout_passed"],
         "holdout_count": result["holdout_count"],
