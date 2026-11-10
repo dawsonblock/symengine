@@ -53,9 +53,12 @@ V336-03 — benchmark semantics:
 
 V336-04 — release seal:
 
-- Package version 3.3.6; full suite 1314 passed / 13 skipped in a clean
-  environment with pinned pytest 8.4.2. Release packaging and independent
-  artifact verification are recorded in
+- Package version 3.3.6. The system interpreter (psycopg and z3 4.15.4)
+  runs 1319 passed / 13 skipped; a fresh venv with pytest 8.4.2 and
+  optional z3-solver 4.16.0 (no PostgreSQL driver) runs 1318 passed /
+  14 skipped. Without z3 the same venv skips four equivalence tests
+  (1315 passed / 17 skipped). No failures in any configuration. Release
+  packaging and independent artifact verification are recorded in
   `docs/v3/QUALIFICATION_REPORT_V3_3_6.md` and `release/`.
 - Provenance signing still requires an externally trusted key; without
   one the bundle is explicitly unsigned qualification evidence, not an
