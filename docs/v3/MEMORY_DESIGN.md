@@ -83,7 +83,6 @@ The witness key and path must be controlled by a different principal
 from the memory database; if one principal controls both, it can forge
 a consistent pair.
 
-
 ## Induction — `induce_candidate`
 
 One record → one `experience_memory` `CandidateV1`:

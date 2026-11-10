@@ -1,3 +1,5 @@
+# Changelog
+
 ## 2026-11-09 — SIS v3.3.4 G1/G3 hardening (development line)
 
 Gate G1 — receipt identity:
@@ -590,8 +592,6 @@ archive.
 - Added local tests, synthetic fixtures, and explicit limitations of local experiment evidence.
 - No changes to prior SQLite storage schema, evidence claims, or promotion authority.
 
-# Changelog
-
 ## 1.5.0 — October 20, 2026
 
 - Add explicit, one-to-one schema-map transfer of active source rules with strict type/list constraints; no automatic assertion of cross-domain validity.
@@ -601,7 +601,6 @@ archive.
 - Require meaningful holdout sample counts, overall accuracy/coverage, shifted-test performance, descriptive baseline margin, and 95% Wilson lower-bound screening.
 - Preserve v1.4 sealed evaluation compatibility but refuse retroactive qualification of uncommitted legacy test policies.
 - Add dedicated local integration and adversarial tests; explicitly deny that synthetic datasets or signed local policy passes establish independent effectiveness.
-
 
 ## 1.4.0 — October 20, 2026
 
