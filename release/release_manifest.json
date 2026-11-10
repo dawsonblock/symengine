@@ -59,19 +59,19 @@
     "path": "release/provenance.dsse.json",
     "public_key_path": "release/provenance_public_key.hex",
     "signed": true,
-    "statement_sha256": "327cdd0e17b2de3218d3f3deb47f684f1e32cd3a9021211e09bdbf928cb74541",
+    "statement_sha256": "b2094539ce89a210d28a63fc65c20c0090044cc1c0ab79ac4c9c752d5ece7fcb",
     "subject_sha256": "e43951ad4913eaeac9ac6145a2c928ef34e5b0501b0595201e7ff38f84b18465",
     "trust_root": "qualification-only"
   },
   "release": "SIS-v3.3.4",
   "schema_version": 1,
-  "source_commit": "d1674c2e9b5c71ba6f6374e1dda4ece1aca6a689",
+  "source_commit": "28122956ac723c59bd580aa10e5547dd2bc643ab",
   "source_commit_note": "archive members are byte-identical to this commit for every manifest-covered file; the release commit itself touches only out-of-band release/ provenance",
   "status": "ENGINEERING_VERIFIED",
   "test_result": {
     "command": "PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONNOUSERSITE=1 PYTHONPATH=src python3 -m pytest -q",
-    "failed": 2,
-    "passed": 1253,
+    "failed": 0,
+    "passed": 1255,
     "skipped": 13
   }
 }
