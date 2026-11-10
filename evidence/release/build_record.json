@@ -1,9 +1,9 @@
 {
-  "base_commit": "e94d447f53b1c67dc52032aeb6a63dd7a0a45f77",
+  "base_commit": "b315eae609a052f3305c372af45b8c705e51961c",
   "branch": "repair/v335-resource-security",
   "builder": "tools/package_release.py -> tools/build_canonical_zip.py",
   "commit_binding": "every archive member is re-hashed against the working tree at build time (verify_against_tree); the source commit and dirty state are recorded in release/verification.json",
-  "generated_at": "2026-11-10T22:15:41Z",
+  "generated_at": "2026-11-10T22:24:17Z",
   "kind": "release_build_record",
   "manifest_scope": "all _included() source/evidence files; release/ and evidence/release/build_record.json are out-of-band and never inventoried into the archive",
   "post_build_verification": "release/verification.json \u2014 outside the archive by construction",

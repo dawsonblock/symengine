@@ -17,8 +17,8 @@
       "sha256": "f4e9590f3ebad5ffec1d03da3db058375438693dbcd93f2738ff3ea66da17b8d"
     },
     "CHANGELOG.md": {
-      "bytes": 48491,
-      "sha256": "87e96cb23ab82f9a0fb672645d386012ce3c1ca4e41153be851325e70d7e7aac"
+      "bytes": 48721,
+      "sha256": "bae252401e6ad1ea99bc33c72c28d2d9f44c9323a077daec2d1e8c041fbeb150"
     },
     "LICENSE": {
       "bytes": 1083,
@@ -289,8 +289,8 @@
       "sha256": "30c984f0f432ea092ccc70922a1d4a958c8dbc96d875b7064f2fa1a7b41615d5"
     },
     "docs/v3/QUALIFICATION_REPORT_V3_3_6.md": {
-      "bytes": 8580,
-      "sha256": "72401ea7039ec88b7f3b70ce3ab7208bfb2309d5ca7c00252e3893158f17db46"
+      "bytes": 9102,
+      "sha256": "847df1de6b7f8355931346fb09ade9884efa421eda5f662c6e67426f62012189"
     },
     "docs/v3/RELEASE_NOTES_V3_3.md": {
       "bytes": 7466,
@@ -583,6 +583,10 @@
     "evidence/v336/test_summary.txt": {
       "bytes": 1564,
       "sha256": "876965e20354e98049513bff96b2b27b8a5fcf611e96c294403bdf6e6746dbeb"
+    },
+    "evidence/v336/test_summary_clean_venv.txt": {
+      "bytes": 1565,
+      "sha256": "447b00a733f4729d45c4173ea0604add3a85a5d82633ee0445b3cdf97f1fe4b4"
     },
     "evidence/v336/trust_profile_bypass_repro.json": {
       "bytes": 969,
@@ -1691,5 +1695,5 @@
   },
   "release": "SIS-v3.3.6",
   "schema_version": 1,
-  "source_commit": "e94d447f53b1c67dc52032aeb6a63dd7a0a45f77"
+  "source_commit": "b315eae609a052f3305c372af45b8c705e51961c"
 }
