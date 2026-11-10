@@ -1,0 +1,35 @@
+{
+  "hard_memory_verified": true,
+  "kind": "enforced_induction_receipt",
+  "note": "macOS cannot lower RLIMIT_AS below the interpreter's current address space; this run exercises the receipt protocol with the smallest limit the host accepts. A meaningful hard cap belongs to the Linux worker qualification gate.",
+  "platform": "macOS-26.2-arm64-arm-64bit",
+  "python": "3.12.0",
+  "receipt": {
+    "child_exit_status": 0,
+    "child_pid": 46219,
+    "child_signal": null,
+    "completed": true,
+    "memory_limit_hit": false,
+    "mode": "posix_rlimit_as",
+    "observed_hard_limit_bytes": 549755813888,
+    "observed_soft_limit_bytes": 549755813888,
+    "platform": "macOS-26.2-arm64-arm-64bit",
+    "python": "3.12.0",
+    "receipt_digest": "fec56feb9f3f6e64c3e7adb1278c5d138fd2d8b08284c970f64c881fbd830394",
+    "requested_limit_bytes": 549755813888,
+    "result_digest": "cc62738948ad9849a2ab7db18d9d9542b6872c0528ade5328f0fd34996e7a771",
+    "schema_version": 1,
+    "stderr_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "stdout_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "timed_out": false,
+    "valid": true
+  },
+  "requested_limit_bytes": 549755813888,
+  "result_summary": {
+    "holdout_count": 0,
+    "holdout_passed": 0,
+    "limits_hit": [],
+    "search_outcome": "completed",
+    "status": "ambiguous"
+  }
+}

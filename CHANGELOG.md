@@ -1,5 +1,66 @@
 # Changelog
 
+## 2026-11-10 — SIS v3.3.6 trust, memory-enforcement and benchmark repair (V336-01…V336-04)
+
+V336-01 — memory trust profiles are a closed enumeration:
+
+- `MemoryTrustProfile` validates at construction. Only `development` and
+  `production` modes exist; a production profile must enable every
+  control (signed records, evaluator evidence, chain signature, witness,
+  registered-task verification), and a development profile must enable
+  none. The v3.3.5 bypass — `name="production"` with every flag false —
+  now raises `production_profile_requires_every_trust_control`.
+- `trust_status()` derives trust from `production_trust` plus the
+  controls the store actually holds (signer keys, chain key, witness,
+  verifier), not from the profile-name string. Renaming or flag-forging
+  a profile object cannot manufacture trust.
+- A production store refuses construction when the verifier lacks
+  `registered_task`, so missing registered-task verification fails
+  before any record is accepted.
+- 18 regressions in `tests/v3/test_v336_trust_profile.py`, including the
+  exact audit bypass, unsigned legacy records, partial custom profiles,
+  forged profile objects and removed controls.
+
+V336-02 — process-level hard-memory enforcement:
+
+- `sis.enforced_induction.run_induction_enforced` runs `induce` in a
+  separate Python process capped by `RLIMIT_AS` before the interpreter
+  starts. The in-process `tracemalloc` budget remains explicitly soft
+  and diagnostic; it is not the hard claim.
+- `MemoryEnforcementReceipt` is valid only when the child observed the
+  exact requested soft and hard limit. `EnforcedInduction.hard_memory_verified`
+  requires a valid receipt, a completed child and no memory kill; a
+  timeout, forged report, mismatched limit or signal death never reports
+  hard success.
+- 18 regressions in `tests/v3/test_v336_memory_enforcement.py`. macOS
+  cannot lower `RLIMIT_AS` below the interpreter's current address
+  space, so the meaningful-cap qualification remains a Linux-worker
+  gate; the protocol and refusal paths are tested on both.
+
+V336-03 — benchmark semantics:
+
+- `tools/benchmark_induction.py` no longer reports
+  `rule_recovered = rule is not None`. Candidate existence, intended
+  structure, bounded equivalence, holdout accuracy and search completion
+  are separate metrics; `exact_recovery_verified` is the only exact
+  recovery claim and requires a non-ambiguous result.
+- On the default non-negative domain the search returns
+  `absdiff(x[n-2] * x[n-1], -2)`, which matches every example but is a
+  different function; the tool now reports it as a candidate with the
+  wrong structure, not as recovery. `--input-min` adds negative values,
+  and `--equivalence z3` proves equivalence over the declared box.
+- 7 regressions in `tests/v3/test_v336_benchmark_semantics.py`.
+
+V336-04 — release seal:
+
+- Package version 3.3.6; full suite 1314 passed / 13 skipped in a clean
+  environment with pinned pytest 8.4.2. Release packaging and independent
+  artifact verification are recorded in
+  `docs/v3/QUALIFICATION_REPORT_V3_3_6.md` and `release/`.
+- Provenance signing still requires an externally trusted key; without
+  one the bundle is explicitly unsigned qualification evidence, not an
+  authentic release seal.
+
 ## 2026-11-10 — SIS v3.3.5 resource-security repair (V335-01…V335-04)
 
 V335-01 — memory-budget lifecycle:

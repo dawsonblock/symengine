@@ -90,7 +90,10 @@ class SearchBudget:
     sampled at resource-check points. Enabling it starts ``tracemalloc``
     when no tracer is running; a caller-owned tracer is measured from its
     current baseline and is never stopped by the search. If the tracer
-    disappears or restarts mid-search the cap fails closed.
+    disappears or restarts mid-search the cap fails closed. For an
+    OS-enforced hard bound, run the search through
+    :func:`sis.enforced_induction.run_induction_enforced`; this budget
+    remains soft and diagnostic.
     ``max_expression_depth`` excludes expressions deeper than the
     declared nesting level.
     """

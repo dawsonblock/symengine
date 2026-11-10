@@ -57,18 +57,25 @@ never embedded.
 ## Trust profiles — `MemoryTrustProfile`
 
 The store's trust configuration is explicit; there is no silent
-downgrade.
+downgrade. A profile is a closed enumeration, not a bag of caller-chosen
+flags: construction rejects any name other than `development` or
+`production`, requires every production control to be enabled, and
+requires a development profile to enable none.
 
 | profile | requirements | trust report |
 | --- | --- | --- |
 | `development()` (default) | none beyond the configured roots | `untrusted:development_profile` |
-| `production()` | trusted signer keys, custodian `chain_key`, external `MemoryWitness`, evaluator verifier | `trusted` only after chain + witness + signature + lineage |
+| `production()` | trusted signer keys, custodian `chain_key`, external `MemoryWitness`, evaluator verifier with `registered_task` | `trusted` only after chain + witness + signature + lineage |
 
-A production store refuses to construct when any root is missing.
+A production store refuses to construct when any root is missing,
+including a verifier that cannot perform registered-task verification.
 Production reads re-check chain membership and lineage on every row, and `repair_chain`
 refuses to chain legacy or untrusted rows — membership in a trusted
-chain is not provenance. `trust_status(record)` returns either
+chain is not provenance. `trust_status(record)` derives trust from the
+profile's full contract *and* the controls the store still holds; it
+does not key off the profile-name string alone. It returns either
 `trusted` or `untrusted:<reason>`; `is_trusted` is its Boolean form.
+
 
 ## External witness — `MemoryWitness`
 

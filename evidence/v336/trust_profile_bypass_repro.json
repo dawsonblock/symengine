@@ -1,0 +1,23 @@
+{
+  "kind": "memory_trust_profile_bypass",
+  "baseline": {
+    "release": "v3.3.5",
+    "commit": "b4d7446",
+    "command": "PYTHONPATH=src python3 /tmp/sis_trust_bypass_probe.py",
+    "output": {
+      "profile_constructed": true,
+      "trust_status": "trusted",
+      "is_trusted": true
+    }
+  },
+  "repaired": {
+    "release": "v3.3.6",
+    "command": "PYTHONPATH=src python3 /tmp/sis_trust_bypass_probe.py",
+    "output": {
+      "profile_constructed": false,
+      "error": "production_profile_requires_every_trust_control"
+    }
+  },
+  "regression": "tests/v3/test_v336_trust_profile.py::ProfileConstructionTests::test_audit_bypass_profile_is_rejected",
+  "note": "The probe constructs MemoryTrustProfile(name='production', all five require_* flags false), builds a store with no signer keys, chain key, witness or verifier, ingests an unsigned ExperienceRecordV1 and asks trust_status. v3.3.5 returned 'trusted'; v3.3.6 rejects the profile at construction."
+}

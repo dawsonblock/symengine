@@ -90,11 +90,14 @@
   `untrusted:development_profile`. A production store
   (`MemoryTrustProfile.production()`) refuses to construct without
   signed-record keys, a custodian chain key, an external witness, and
-  an evaluator verifier, and it runs the registered-task lineage check
-  itself on every ingest and read. Qualification is still the hard
-  serving gate — a record cannot reach trusted guidance without a
-  signed pass receipt *and* an evaluator-signed evidence binding naming
-  that exact candidate *and* an operator-signed decision.
+  an evaluator verifier that supports `registered_task`, and it runs
+  the registered-task lineage check itself on every ingest and read.
+  The profile is a closed enumeration: production must enable every
+  control, development must enable none, and `trust_status` also
+  requires the store to still hold those controls. Qualification is
+  still the hard serving gate — a record cannot reach trusted guidance
+  without a signed pass receipt *and* an evaluator-signed evidence
+  binding naming that exact candidate *and* an operator-signed decision.
 - The external witness is only as independent as its key custody. A
   principal that controls both the memory database and the witness key
   can forge a consistent pair; deployments must keep the witness path
@@ -103,6 +106,38 @@
   memory accepts the attempt binding only when the resolved artifact
   carries `attempt_id` (`OutcomeEnvelopeV2`). V1 receipts remain
   historical evidence, not the production path.
+
+## Induction budgets and benchmark claims
+
+- `SearchBudget.max_memory_bytes` remains an incremental soft budget
+  over Python allocations observed through `tracemalloc`. It is not an
+  OS RSS limit, cannot see native-extension allocations, and samples at
+  resource-check points. A search whose tracer disappears reports
+  `resource_exhausted`; that is fail-closed measurement, not proof of a
+  hard bound.
+- `sis.enforced_induction.run_induction_enforced` adds a process-level
+  `RLIMIT_AS` path. Its receipt is valid only when the child observed
+  exactly the requested soft and hard limit, and
+  `hard_memory_verified` requires a completed child with no memory kill.
+  This is local evidence: the parent applies the limit and the child
+  reports it back, so a principal controlling both can forge the pair.
+  Production execution still requires a separately qualified
+  cgroup/microVM worker and an externally signed attestation.
+- macOS cannot lower `RLIMIT_AS` below the interpreter's current
+  address space (hundreds of GiB for a forked Python process). The
+  enforced path refuses such a limit as unavailable; meaningful
+  hard-cap qualification belongs to the Linux worker gate.
+- The induction benchmark separates `candidate_found`,
+  `target_structure_recovered`, `equivalence_verified`,
+  `holdout_accuracy`, `search_complete` and `exact_recovery_verified`.
+  A candidate that matches every generated example is not a recovered
+  rule: on the default non-negative domain the search returns
+  `absdiff(x[n-2] * x[n-1], -2)`, a different function that its own
+  result reports as ambiguous. `equivalence_verified` is a bounded-box
+  result (z3 only), and `exact_recovery_verified` additionally requires
+  the intended structure, a perfect holdout, a completed search and a
+  non-ambiguous result. None of this is a mathematical proof over all
+  integers.
 
 ## Evolution
 

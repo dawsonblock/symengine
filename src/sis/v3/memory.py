@@ -87,6 +87,17 @@ class DuplicateEpisode(MemoryError):
     """The same episode + task fingerprint was already ingested."""
 
 
+_PRODUCTION_CONTROLS = (
+    "require_signed_records",
+    "require_evaluator_evidence",
+    "require_chain_signature",
+    "require_witness",
+    "require_registered_task",
+)
+
+_PROFILE_MODES = ("development", "production")
+
+
 @dataclass(frozen=True)
 class MemoryTrustProfile:
     """Explicit development/production memory trust configuration (3.1).
@@ -97,6 +108,13 @@ class MemoryTrustProfile:
     registered task, a custodian-signed chain, and an external witness;
     a store that cannot meet those requirements refuses to construct
     rather than silently downgrading.
+
+    A profile is a closed enumeration, not a bag of caller-chosen flags:
+    a production profile must enable every control, a development
+    profile must enable none, and any other name or partial combination
+    fails construction. ``trust_status`` additionally checks that the
+    store still holds the controls the profile claims, so renaming or
+    rewriting the profile object cannot manufacture trust.
     """
 
     name: str
@@ -105,6 +123,27 @@ class MemoryTrustProfile:
     require_chain_signature: bool
     require_witness: bool
     require_registered_task: bool
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.name, str) or self.name not in _PROFILE_MODES:
+            raise ContractError(f"unknown_memory_trust_profile:{self.name}")
+        flags = tuple(getattr(self, control)
+                      for control in _PRODUCTION_CONTROLS)
+        if any(type(flag) is not bool for flag in flags):
+            raise ContractError(
+                "memory_trust_profile_flags_must_be_boolean")
+        expected = self.name == "production"
+        if any(flag != expected for flag in flags):
+            raise ContractError(
+                "production_profile_requires_every_trust_control"
+                if expected else
+                "development_profile_cannot_enable_trust_controls")
+
+    @property
+    def production_trust(self) -> bool:
+        """Whether this profile claims the full production contract."""
+        return self.name == "production" and all(
+            getattr(self, control) for control in _PRODUCTION_CONTROLS)
 
     @classmethod
     def development(cls) -> "MemoryTrustProfile":
@@ -235,6 +274,10 @@ class MemoryStore:
             raise ContractError("production_requires_witness")
         if self._profile.require_evaluator_evidence and verifier is None:
             raise ContractError("production_requires_verifier")
+        if self._profile.require_registered_task and not callable(
+                getattr(verifier, "registered_task", None)):
+            raise ContractError(
+                "production_requires_registered_task_verifier")
         if witness is not None:
             if not isinstance(witness, MemoryWitness):
                 raise ContractError("witness must be a MemoryWitness")
@@ -257,6 +300,14 @@ class MemoryStore:
     @property
     def trust_configured(self) -> bool:
         return self._signer_keys is not None
+
+    @property
+    def _production_controls_present(self) -> bool:
+        """Whether every control a production profile claims is configured."""
+        return (bool(self._signer_keys)
+                and self._chain_key is not None
+                and self._witness is not None
+                and self._verifier is not None)
 
     @property
     def _chain_enforced(self) -> bool:
@@ -287,6 +338,8 @@ class MemoryStore:
 
     def _record_integrity(self, record) -> None:
         """Fail closed on rows a database writer could have forged."""
+        if self._profile.production_trust and not self._production_controls_present:
+            raise MemoryError("trust_controls_not_configured")
         if self._signer_keys is None:
             return
         if not isinstance(record, ExperienceRecordV2):
@@ -316,14 +369,18 @@ class MemoryStore:
         """Classify a record as ``trusted`` or name the failed condition.
 
         Development stores never report trust: local persistence is not
-        evidence. Production reports trust only after the chain, the
-        external witness, the record signature, and the evaluation
-        lineage all check out.
+        evidence. Production reports trust only when the profile claims
+        the full contract *and* the store still holds every control that
+        contract depends on — signer keys, chain key, witness and
+        evaluator verifier — before the chain, witness, record signature
+        and evaluation lineage checks run.
         """
         if not isinstance(record, (ExperienceRecordV1, ExperienceRecordV2)):
             return "untrusted:not_an_experience_record"
-        if self._profile.name != "production":
+        if not self._profile.production_trust:
             return "untrusted:development_profile"
+        if not self._production_controls_present:
+            return "untrusted:trust_controls_not_configured"
         try:
             self._require_chain()
             self._require_membership(record)

@@ -1,9 +1,69 @@
 # Upgrade guide
 
-> **Mixed document.** The v3.3.4 → v3.3.5 notes are current; the section
-> marked *Historical* describes the v2.4.0 source line. The current package
-> version is 3.3.5. See `docs/v3/MIGRATION.md`, `docs/V332_OPERATIONS.md`,
-> and `docs/v3/QUALIFICATION_REPORT_V3_3_5.md` for the current upgrade path.
+> **Mixed document.** The v3.3.5 → v3.3.6 notes are current; the sections
+> below them describe earlier lines. The current package version is 3.3.6.
+> See `docs/v3/MIGRATION.md`, `docs/V332_OPERATIONS.md`, and
+> `docs/v3/QUALIFICATION_REPORT_V3_3_6.md` for the current upgrade path.
+
+## Upgrading from v3.3.5 to v3.3.6
+
+v3.3.6 is a security/correctness repair release, not a feature release.
+
+### Memory trust profiles are a closed enumeration
+
+`MemoryTrustProfile` now validates at construction. Only `development` and
+`production` modes exist; production must enable every control and
+development must enable none. A custom profile such as
+`name="production"` with every requirement disabled now raises
+`production_profile_requires_every_trust_control` instead of constructing
+a store that reports unsigned legacy records as `trusted`.
+
+`trust_status()` derives trust from the full production contract *and*
+the controls the store actually holds (signer keys, chain key, witness,
+verifier). A production store also refuses construction when its verifier
+cannot perform `registered_task` verification. Development stores are
+unchanged apart from the stricter profile shape.
+
+### Enforced induction adds a process-level hard-memory path
+
+`SearchBudget.max_memory_bytes` remains the soft, diagnostic
+`tracemalloc` budget. New `sis.enforced_induction.run_induction_enforced`
+runs the search in a separate POSIX process capped by `RLIMIT_AS` and
+returns `EnforcedInduction` with a `MemoryEnforcementReceipt`.
+`hard_memory_verified` is true only for a valid receipt, a completed
+child and no memory kill; timeouts, forged reports, mismatched limits and
+signal deaths never report hard success. macOS cannot lower `RLIMIT_AS`
+below the interpreter's current address space, so meaningful hard-cap
+qualification remains a Linux-worker gate.
+
+### Benchmark metrics no longer equate a candidate with recovery
+
+`tools/benchmark_induction.py` removes `rule_recovered`. Reports now
+carry `candidate_found`, `target_structure_recovered`,
+`equivalence_verified`, `equivalence_scope`, `holdout_accuracy`,
+`search_complete`, `ambiguous` and `exact_recovery_verified`. Only the
+last field claims the intended rule, and it requires a non-ambiguous
+result. Consumers that read `rule_recovered` must switch to the metric
+that matches their claim. `--input-min` and `--equivalence z3` are new
+options for negative-value and bounded-equivalence runs.
+
+### Verifying this release
+
+```bash
+python3 -m venv /tmp/sis-venv
+/tmp/sis-venv/bin/python -m pip install pytest==8.4.2
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONNOUSERSITE=1 \
+PYTHONPATH=src /tmp/sis-venv/bin/python -m pytest -q
+python3 tools/verify_release.py --compile .
+python3 tools/verify_release.py release/SIS-v3.3.6.zip
+python3 tools/check_release_ci.py --mode release
+```
+
+The release is `ENGINEERING_VERIFIED` / `IMPLEMENTED_NOT_EFFICACY_QUALIFIED`:
+it does not qualify a production sandbox and does not establish that SIS
+improves a real coding agent. Provenance is signed only when an externally
+trusted release key is supplied; see `release/release_manifest.json` for
+whether this bundle carries a signature.
 
 ## Upgrading from v3.3.4 to v3.3.5
 
