@@ -57,6 +57,10 @@ from sis.v3.verifier import (
 
 ROOT = Path(__file__).resolve().parents[2]
 NOW = "2026-11-08T12:00:00Z"
+# ``release/`` is out-of-band provenance and is never archived, so the
+# release-identity checks describe a checkout and cannot run from the
+# extracted bundle.
+RELEASE_BUNDLE = ROOT / "release" / "release_manifest.json"
 
 
 def _base_tree(root: Path) -> Path:
@@ -975,6 +979,10 @@ class SearchStarvationTests(unittest.TestCase):
         self.assertEqual(result["validation_passed"], 2, result["status"])
 
 
+@unittest.skipUnless(
+    RELEASE_BUNDLE.is_file(),
+    "release/ is out-of-band and absent from the archive; release "
+    "identity requires the checkout")
 class ReleaseIdentityTests(unittest.TestCase):
     """T5: release/ provenance must describe the source it ships."""
 
