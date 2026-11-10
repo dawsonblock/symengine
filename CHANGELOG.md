@@ -690,7 +690,7 @@ archive.
 - Added v1.9 fixtures, new security and experimental-design guide, and regression tests.
 - Does not claim trained neural weights or independent real-LLM results; this source release tests validation, masking and orchestration using mocks.
 
-# v1.8.0 — Frozen procedural evaluation and controlled pseudo-labels
+## v1.8.0 — Frozen procedural evaluation and controlled pseudo-labels
 
 - Hash-bound `skill-freeze` artifacts include independently checked active skill dependency closure and audit head.
 - Precommitted two-split procedural-skill holdouts under evaluator-owned SQLite vault/HMAC, one-use scoring, signed aggregate receipts, strict replay and crash-safe receipt recovery.
@@ -699,7 +699,7 @@ archive.
 - Regression tests for forgery, modification, reuse, concurrent claims, distribution shift, archive/CLI integration, and failure paths.
 - Honest evidence boundaries: local software verification only; independent holdout ownership is required for credible generalization claims.
 
-# v1.7.0 — Governed bounded procedural skills
+## v1.7.0 — Governed bounded procedural skills
 
 - Added strict interpreted JSON program AST: conditionals, lexical bindings, bounded list reductions and skill composition with active dependency checks.
 - Added deterministic skill discovery and operator proposals, requiring disjoint caller-provided validation, ambiguity checks, and independent recomputation before promotion.
@@ -708,7 +708,7 @@ archive.
 - Added skill CLI, HTTP endpoints, read-only LLM tool bridge and basic caller-controlled benchmarking.
 - Preserved v1.6 rule engine, evaluator, paired LLM tests, and existing database schema; skill chain has no external anchor and is not independently qualified.
 
-# v1.6.0 — Paired LLM evaluation (2026-10-20)
+## v1.6.0 — Paired LLM evaluation (2026-10-20)
 
 - Same-model, read-only baseline vs SIS-augmented benchmark with counterbalanced arm order.
 - No reference labels included in LLM request content; fail-closed registry audit and drift checks.
