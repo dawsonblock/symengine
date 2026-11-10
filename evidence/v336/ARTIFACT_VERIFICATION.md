@@ -23,7 +23,7 @@ The extracted copy reports `sis.__version__ == "3.3.6"`.
 
 ## Regressions in the archive
 
-43 passed — the 18 trust-profile, 18 memory-enforcement and 7
+45 passed — the 18 trust-profile, 18 memory-enforcement and 9
 benchmark-semantics tests ship inside the archive and pass from it.
 
 The v3.3.5 tracer-restart counterexamples remain in

@@ -18,6 +18,8 @@ import importlib.util
 import unittest
 from pathlib import Path
 
+from sis.induction import SearchBudget, induce
+
 ROOT = Path(__file__).resolve().parents[2]
 _SPEC = importlib.util.spec_from_file_location(
     "benchmark_induction", ROOT / "tools" / "benchmark_induction.py")
@@ -128,6 +130,41 @@ class CandidateVersusRecoveryTests(unittest.TestCase):
             case["equivalence_scope"], "z3_box:0..9:all_features")
         self.assertTrue(case["ambiguous"])
         self.assertFalse(case["exact_recovery_verified"])
+
+
+class AdversarialDomainTests(unittest.TestCase):
+    @unittest.skipUnless(HAS_Z3, "bounded equivalence requires z3")
+    def test_non_equivalent_rule_yields_a_counterexample(self):
+        schema = {"x0": "int", "x1": "int"}
+        target = benchmark.target_rule(2)
+        wrong = {
+            "op": "add",
+            "args": [target["args"][0], {"op": "const", "value": 3}],
+        }
+        verified, scope, witness = benchmark.verify_equivalence(
+            wrong, target, schema, mode="z3")
+        self.assertFalse(verified)
+        self.assertEqual(scope, "z3:sat_counterexample")
+        self.assertIsInstance(witness, dict)
+        self.assertIn("inputs", witness)
+
+    def test_distribution_shift_breaks_the_observational_candidate(self):
+        train, dev, _holdout = benchmark.study(
+            4, seed=0, train_n=6, dev_n=3, holdout_n=3)
+        shifted = [
+            {"inputs": {"x0": -1, "x1": -1, "x2": 2, "x3": 3},
+             "output": 8},
+            {"inputs": {"x0": 0, "x1": 0, "x2": -4, "x3": 2},
+             "output": -6},
+            {"inputs": {"x0": 1, "x1": 1, "x2": -3, "x3": 3},
+             "output": -7},
+        ]
+        result = induce(
+            train, dev=dev, holdout=shifted,
+            budget=SearchBudget(max_candidates=50000))
+        self.assertEqual(result["status"], "validation_failed")
+        self.assertLess(
+            result["holdout_passed"], result["holdout_count"])
 
 
 class ReportSemanticsTests(unittest.TestCase):

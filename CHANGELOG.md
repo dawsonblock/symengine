@@ -49,7 +49,7 @@ V336-03 — benchmark semantics:
   different function; the tool now reports it as a candidate with the
   wrong structure, not as recovery. `--input-min` adds negative values,
   and `--equivalence z3` proves equivalence over the declared box.
-- 7 regressions in `tests/v3/test_v336_benchmark_semantics.py`.
+- 9 regressions in `tests/v3/test_v336_benchmark_semantics.py`.
 
 V336-04 — release seal:
 

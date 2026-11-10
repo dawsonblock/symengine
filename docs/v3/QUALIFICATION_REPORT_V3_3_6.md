@@ -30,7 +30,7 @@ a production sandbox.
 | --- | --- | --- |
 | V336-01 | `MemoryTrustProfile` is a closed enumeration; production must enable every control; development must enable none; `trust_status` requires the store to hold the controls it claims; a verifier without `registered_task` fails construction | `src/sis/v3/memory.py`, 18 regressions in `tests/v3/test_v336_trust_profile.py`, `evidence/v336/trust_profile_bypass_repro.json` |
 | V336-02 | New `sis.enforced_induction` runs `induce` in a separate POSIX process capped by `RLIMIT_AS`; a hard-budget claim requires a valid receipt with matching observed limits, a completed child and no memory kill | `src/sis/enforced_induction.py`, 18 regressions in `tests/v3/test_v336_memory_enforcement.py`, `evidence/v336/memory_enforcement_receipt.json` |
-| V336-03 | Benchmark reports candidate existence, intended structure, bounded equivalence, holdout accuracy and search completion separately; only `exact_recovery_verified` claims the intended rule | `tools/benchmark_induction.py`, 7 regressions in `tests/v3/test_v336_benchmark_semantics.py`, `evidence/v336/benchmark_default.json`, `evidence/v336/benchmark_negative_z3.json` |
+| V336-03 | Benchmark reports candidate existence, intended structure, bounded equivalence, holdout accuracy and search completion separately; only `exact_recovery_verified` claims the intended rule | `tools/benchmark_induction.py`, 9 regressions in `tests/v3/test_v336_benchmark_semantics.py`, `evidence/v336/benchmark_default.json`, `evidence/v336/benchmark_negative_z3.json` |
 | V336-04 | Version 3.3.6, pinned suite, regenerated manifest, packaged archive and independent verification | `RELEASE_SHA256.json`, `release/`, `evidence/v336/ARTIFACT_VERIFICATION.md` |
 
 ### V336-01 — the exact audit bypass
@@ -109,8 +109,8 @@ Environment: Python 3.12.0 on macOS arm64, pinned `pytest==8.4.2`,
 `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1`, `PYTHONNOUSERSITE=1`,
 `PYTHONPATH=src`.
 
-- Full suite: **1317 passed, 13 skipped, 0 failed** in 91.53s.
-- New repair regressions: 18 trust-profile, 18 memory-enforcement, 7
+- Full suite: **1319 passed, 13 skipped, 0 failed** in 91.13s.
+- New repair regressions: 18 trust-profile, 18 memory-enforcement, 9
   benchmark-semantics tests.
 - The 13 skips are platform/dependency gates (Linux worker, PostgreSQL
   control plane without its driver, and equivalent optional paths), not
