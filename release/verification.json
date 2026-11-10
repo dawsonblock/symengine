@@ -5,7 +5,7 @@
     "extracted_test_smoke": {
       "command": "pytest -q tests/v3/test_candidates.py",
       "returncode": 0,
-      "tail": "39 passed in 0.63s"
+      "tail": "39 passed in 0.69s"
     },
     "verify_tree": {
       "files": 423
@@ -14,7 +14,7 @@
   "kind": "release_verification",
   "schema_version": 1,
   "source": {
-    "commit": "1218e77e3135564608a548415396ca60dc34cdd1",
+    "commit": "1998cf700080781458d4fb142ae013e31d18315b",
     "dirty": false,
     "dirty_paths": []
   },
@@ -28,6 +28,6 @@
     "project": "SIS-v3.3.6",
     "source_files": 423,
     "valid": true,
-    "zip_sha256": "2549c92fee28fbab017b1a7bb8a9433b1e70aa54c8b373857216d1aa6b3b92cc"
+    "zip_sha256": "addca0fc8a7be4bc1ab2bcda271bda6d8b4493373228063207a8f03da438f52a"
   }
 }
