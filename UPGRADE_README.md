@@ -1,9 +1,9 @@
 # Upgrade guide
 
-> **Historical, with a current v3.3.5 section.** The body below describes
-> the v2.4.0 source line. The current package version is 3.3.5; see
-> `docs/v3/MIGRATION.md`, `docs/V332_OPERATIONS.md`, and
-> `docs/v3/QUALIFICATION_REPORT_V3_3_5.md` for the current upgrade path.
+> **Mixed document.** The v3.3.4 → v3.3.5 notes are current; the section
+> marked *Historical* describes the v2.4.0 source line. The current package
+> version is 3.3.5. See `docs/v3/MIGRATION.md`, `docs/V332_OPERATIONS.md`,
+> and `docs/v3/QUALIFICATION_REPORT_V3_3_5.md` for the current upgrade path.
 
 ## Upgrading from v3.3.4 to v3.3.5
 
@@ -63,13 +63,11 @@ The release is `ENGINEERING_VERIFIED` / `IMPLEMENTED_NOT_EFFICACY_QUALIFIED`:
 it does not qualify a production sandbox and does not establish that SIS
 improves a real coding agent.
 
----
-
-# Upgrade guide for the reviewed v2.4.0 source
+## Historical: the reviewed v2.4.0 source
 
 This guide covers the repository updates made after the v2.4.0 review. The Python package version remains `2.4.0`; the changes harden evaluation custody, improve task instructions sent to model arms, and make release verification stricter.
 
-## Before upgrading
+### Before upgrading
 
 - Back up the SIS registry database and evaluator vaults. Keep evaluator vaults and HMAC keys in an evaluator-controlled account and directory.
 - Preserve old signed datasets, protocols, receipts, and training exports as historical evidence. Do not edit old signed artifacts to make them match the newer formats.
@@ -82,21 +80,21 @@ This guide covers the repository updates made after the v2.4.0 review. The Pytho
 
 The core SIS registry database does not require a schema migration for these updates. Existing evaluation artifacts remain historical records; regenerate and sign artifacts when using the updated evaluation formats.
 
-## Evaluation format changes
+### Evaluation format changes
 
-### Family evaluation
+#### Family evaluation
 
 Family datasets now use `sis.family_dataset.v2` and require a plain-language `task_description`. The description is included in each model arm's prompt and bound into the signed protocol. Family v1 datasets and protocols are rejected by the updated evaluator; create a new v2 dataset and precommitment rather than changing a signed v1 artifact.
 
-### Neural comparison and distillation
+#### Neural comparison and distillation
 
 Neural comparison datasets now require `task_description`, which is included with each unlabeled input sent to the model arms. Neural comparison reports use format v2. New distillation exports use `sis.skill_distillation.v2`; their signed manifests and training rows bind the task description. Regenerate exports from a qualified evaluation before training with the updated validator.
 
-### Procedural skill holdouts
+#### Procedural skill holdouts
 
 The skill holdout protocol still accepts legacy private datasets without `task_description` and supplies a generic default. New datasets should include a specific description so evaluation prompts and distillation records state the intended transformation.
 
-## Evaluator vault storage
+### Evaluator vault storage
 
 All evaluator SQLite vaults now require private storage:
 
@@ -105,7 +103,7 @@ All evaluator SQLite vaults now require private storage:
 
 The vault remains unencrypted, and filesystem checks cannot protect it from an administrator or a process running as the evaluator account. Continue to protect the HMAC key and preserve backups outside candidate-controlled environments.
 
-## Recovering a committed evaluation receipt
+### Recovering a committed evaluation receipt
 
 The v1.4 evaluator CLI now provides `eval-recover`. If scoring committed a receipt to the vault but writing the output file failed, recover it without scoring the evaluation again:
 
@@ -117,7 +115,7 @@ sis eval-recover public.json \
 
 The command verifies the stored receipt against the public manifest and vault, and refuses to overwrite an existing output file. It cannot recover a receipt until scoring has committed one.
 
-## Verify the updated checkout
+### Verify the updated checkout
 
 From the repository root:
 
