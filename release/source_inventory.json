@@ -18,7 +18,7 @@
     },
     "CHANGELOG.md": {
       "bytes": 48491,
-      "sha256": "87717ee42542ef9ef7786ed065255b77ca099e4ae5803656577a3e5661763341"
+      "sha256": "87e96cb23ab82f9a0fb672645d386012ce3c1ca4e41153be851325e70d7e7aac"
     },
     "LICENSE": {
       "bytes": 1083,
@@ -290,7 +290,7 @@
     },
     "docs/v3/QUALIFICATION_REPORT_V3_3_6.md": {
       "bytes": 8580,
-      "sha256": "42e0d402a0e7ee56d3c6db0851f7541dcab467cc70ae78304e2e916f95297081"
+      "sha256": "72401ea7039ec88b7f3b70ce3ab7208bfb2309d5ca7c00252e3893158f17db46"
     },
     "docs/v3/RELEASE_NOTES_V3_3.md": {
       "bytes": 7466,
@@ -314,7 +314,7 @@
     },
     "docs/v3/TEST_MATRIX.md": {
       "bytes": 7596,
-      "sha256": "fad4be01d6aed309990ef5f626b855cd3c46a7a627777c81279e2fc72905034e"
+      "sha256": "82a088215f84a40c91f2c22076b7fcba1efc57899e02efdcfc34d5784f861cdc"
     },
     "docs/v3/THREAT_MODEL.md": {
       "bytes": 6253,
@@ -566,7 +566,7 @@
     },
     "evidence/v336/ARTIFACT_VERIFICATION.md": {
       "bytes": 2487,
-      "sha256": "07858d2f58256c0745d82444392dddae435544a2975f1edc0c90e58cc34adc46"
+      "sha256": "18d90f89df71cc273b658a6cd8cd6cb5ad0f6e460642d243a5309d1a902abc79"
     },
     "evidence/v336/benchmark_default.json": {
       "bytes": 8532,
@@ -582,7 +582,7 @@
     },
     "evidence/v336/test_summary.txt": {
       "bytes": 1564,
-      "sha256": "a5f3d0bbcb9b8b6f9d0f5337712a35d61a274de43df3f835ff65117a1dadd6da"
+      "sha256": "876965e20354e98049513bff96b2b27b8a5fcf611e96c294403bdf6e6746dbeb"
     },
     "evidence/v336/trust_profile_bypass_repro.json": {
       "bytes": 969,
@@ -1541,8 +1541,8 @@
       "sha256": "13be3627ccbd37c2e41239241fa99bbd60efccc3574cd169e336b53214ccb7f9"
     },
     "tests/v3/test_v336_benchmark_semantics.py": {
-      "bytes": 5228,
-      "sha256": "8067baa8c1e9ba0b127acb503ba33a17f3c031abba80e04589479cd5838667ce"
+      "bytes": 6713,
+      "sha256": "85e11b0741fa83b53fba690b364bb5ceed3a188aef506a096b4177cba954940f"
     },
     "tests/v3/test_v336_memory_enforcement.py": {
       "bytes": 8911,
@@ -1691,5 +1691,5 @@
   },
   "release": "SIS-v3.3.6",
   "schema_version": 1,
-  "source_commit": "ccca7b97bf6ba58d55f3d8b8407ae57f2f8afae9"
+  "source_commit": "e94d447f53b1c67dc52032aeb6a63dd7a0a45f77"
 }
