@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import tracemalloc
 import unittest
+from unittest import mock
 
 from sis.induction import SearchBudget, SearchState, induce
 
@@ -108,6 +109,80 @@ class MemoryBudgetLifecycleTests(unittest.TestCase):
         state.start()
         state.close()
         self.assertTrue(tracemalloc.is_tracing())
+
+
+class TracerLossTests(unittest.TestCase):
+    """A budget whose measurement disappears must fail closed.
+
+    ``tracemalloc.get_traced_memory()`` reports ``(0, 0)`` once tracing
+    stops, so the v3.3.4 check read a zero-growth measurement and
+    returned success while ``memory_check_enabled`` still claimed the cap
+    was enforced.
+    """
+
+    def setUp(self):
+        self.train, self.dev = _study()
+        self.budget = SearchBudget(
+            max_candidates=50000, max_memory_bytes=CAP)
+
+    def tearDown(self):
+        if tracemalloc.is_tracing():
+            tracemalloc.stop()
+
+    def test_engine_owned_tracer_stop_fails_closed(self):
+        state = SearchState(self.budget)
+        state.start()
+        self.assertTrue(state.owns_tracer)
+        tracemalloc.stop()
+        self.assertFalse(state.check_resources())
+        self.assertIn("memory_tracer_lost", state.limits_hit)
+        self.assertEqual(state.outcome, "resource_exhausted")
+        state.close()
+
+    def test_caller_owned_tracer_stop_fails_closed(self):
+        tracemalloc.start()
+        state = SearchState(self.budget)
+        state.start()
+        self.assertFalse(state.owns_tracer)
+        tracemalloc.stop()
+        self.assertFalse(state.check_resources())
+        self.assertIn("memory_tracer_lost", state.limits_hit)
+        self.assertEqual(state.outcome, "resource_exhausted")
+        state.close()
+
+    def test_tracer_restart_fails_closed(self):
+        tracemalloc.start()
+        state = SearchState(self.budget)
+        state.start()
+        _ = [bytes(4096) for _ in range(64)]
+        self.assertTrue(state.check_resources())
+        tracemalloc.stop()
+        tracemalloc.start()
+        self.assertFalse(state.check_resources())
+        self.assertIn("memory_tracer_restarted", state.limits_hit)
+        self.assertEqual(state.outcome, "resource_exhausted")
+        state.close()
+
+    def test_checks_after_close_are_inert(self):
+        state = SearchState(self.budget)
+        state.start()
+        state.close()
+        self.assertTrue(state.check_resources())
+        self.assertEqual(state.limits_hit, [])
+
+    def test_induce_reports_resource_exhausted_when_tracer_disappears(self):
+        real = tracemalloc.is_tracing
+        calls = {"n": 0}
+
+        def flaky():
+            calls["n"] += 1
+            return real() if calls["n"] == 1 else False
+
+        with mock.patch.object(tracemalloc, "is_tracing", side_effect=flaky):
+            result = induce(self.train, dev=self.dev, budget=self.budget)
+        self.assertEqual(result["search_outcome"], "resource_exhausted")
+        self.assertIn("memory_tracer_lost", result["limits_hit"])
+        self.assertTrue(result["search_truncated"])
 
 
 class SignatureAccountingTests(unittest.TestCase):

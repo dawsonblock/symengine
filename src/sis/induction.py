@@ -89,7 +89,8 @@ class SearchBudget:
     an OS RSS limit, does not see native-extension allocations, and is
     sampled at resource-check points. Enabling it starts ``tracemalloc``
     when no tracer is running; a caller-owned tracer is measured from its
-    current baseline and is never stopped by the search.
+    current baseline and is never stopped by the search. If the tracer
+    disappears or restarts mid-search the cap fails closed.
     ``max_expression_depth`` excludes expressions deeper than the
     declared nesting level.
     """
@@ -140,6 +141,10 @@ class SearchState:
     see native-extension allocations or enforce a hard OS limit; use a
     subprocess/cgroup/microVM limit for that. A caller-owned tracer is
     never stopped; a tracer this search started is stopped by ``close()``.
+
+    The budget fails closed on lost measurement: if the tracer stops or
+    is replaced while the search runs, growth is unmeasurable and the
+    search reports ``resource_exhausted`` rather than claiming success.
     """
 
     budget: SearchBudget
@@ -152,6 +157,8 @@ class SearchState:
     owns_tracer: bool = False
     baseline_traced_bytes: int = 0
     observed_peak_bytes: int = 0
+    closed: bool = False
+    _last_peak_bytes: int = 0
 
     def hit(self, reason: str) -> None:
         if reason not in self.limits_hit:
@@ -160,21 +167,26 @@ class SearchState:
     def start(self) -> None:
         """Begin accounting; enable the memory cap regardless of tracer owner."""
         self.started = time.monotonic()
+        self.closed = False
         if self.budget.max_memory_bytes is None:
             return
         self.memory_check_enabled = True
         if tracemalloc.is_tracing():
             # A caller-owned tracer: measure growth from here, never
             # reset or stop the caller's tracer.
-            self.baseline_traced_bytes = tracemalloc.get_traced_memory()[0]
+            current, peak = tracemalloc.get_traced_memory()
+            self.baseline_traced_bytes = current
         else:
             tracemalloc.start()
             self.owns_tracer = True
             self.baseline_traced_bytes = 0
+            current, peak = tracemalloc.get_traced_memory()
         self.observed_peak_bytes = 0
+        self._last_peak_bytes = peak
 
     def close(self) -> None:
         """Stop tracing only when this search started it."""
+        self.closed = True
         if self.owns_tracer:
             tracemalloc.stop()
             self.owns_tracer = False
@@ -190,8 +202,23 @@ class SearchState:
         if time.monotonic() - self.started > self.budget.max_wall_seconds:
             self.hit("max_wall_seconds")
             return False
-        if self.memory_check_enabled:
-            current, _peak = tracemalloc.get_traced_memory()
+        if self.memory_check_enabled and not self.closed:
+            if not tracemalloc.is_tracing():
+                # Another component stopped the tracer this budget
+                # depends on. Growth is unmeasurable from here, so the
+                # cap cannot be shown to hold: fail closed instead of
+                # silently reporting success.
+                self.hit("memory_tracer_lost")
+                return False
+            current, peak = tracemalloc.get_traced_memory()
+            if peak < self._last_peak_bytes:
+                # A tracer's peak never shrinks while it runs, so a drop
+                # means the tracer was stopped and restarted (or its peak
+                # was reset) mid-search: the baseline no longer refers to
+                # this measurement.
+                self.hit("memory_tracer_restarted")
+                return False
+            self._last_peak_bytes = peak
             growth = max(0, current - self.baseline_traced_bytes)
             if growth > self.observed_peak_bytes:
                 self.observed_peak_bytes = growth
@@ -203,7 +230,9 @@ class SearchState:
     @property
     def outcome(self) -> str:
         if any(reason in self.limits_hit
-               for reason in ("max_wall_seconds", "max_memory_bytes")):
+               for reason in ("max_wall_seconds", "max_memory_bytes",
+                              "memory_tracer_lost",
+                              "memory_tracer_restarted")):
             return "resource_exhausted"
         return "truncated" if self.limits_hit else "completed"
 
