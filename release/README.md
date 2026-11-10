@@ -1,7 +1,7 @@
 # SIS release artifacts
 
 Current release: `SIS-v3.3.6.zip`
-SHA-256: `0cabc9ce2faec1182b79ab43a3d582d5c91df35312adea324afee1a699631e6e`
+SHA-256: `182bd773039d5baf1baa13c399650cfdbf7b70da10fd0d97fde161a30ee01faa`
 
 `release_manifest.json` and `verification.json` are authoritative for the
 archive identity, source commit, test result and fresh-extraction checks.
