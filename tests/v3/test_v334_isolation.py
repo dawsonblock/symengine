@@ -523,6 +523,23 @@ class ProductionVerifierTests(unittest.TestCase):
         self.assertTrue(restarted.verify_receipt(production))
         self.assertTrue(restarted.verify_receipt(v1))
 
+        from sis.v3.contracts import parse_outcome_receipt
+        self.assertIsInstance(
+            parse_outcome_receipt(v1.to_dict()), OutcomeReceiptV1)
+        self.assertIsInstance(
+            parse_outcome_receipt(production.to_dict()), OutcomeReceiptV2)
+
+    def test_downstream_modules_accept_v2_receipts(self):
+        root = Path(__file__).resolve().parents[2] / "src" / "sis" / "v3"
+        for name in ("scope_grants.py", "procedures.py"):
+            source = (root / name).read_text(encoding="utf-8")
+            self.assertNotIn(
+                "isinstance(receipt, OutcomeReceiptV1)", source, name)
+        for name in ("evaluator_worker.py", "authority_db.py"):
+            source = (root / name).read_text(encoding="utf-8")
+            self.assertIn("parse_outcome_receipt", source, name)
+            self.assertNotIn("OutcomeReceiptV1.from_json", source, name)
+
 
 class AttestationIssuanceTests(IsolationFixture):
     """G2.4: the isolator can issue receipt-bound evidence, and only that."""

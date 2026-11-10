@@ -23,7 +23,7 @@ improves a real coding agent.
 
 ## Test result
 
-Pre-seal suite: 1250 passed, 13 skipped, 2 failed — both are release
+Pre-seal suite: 1251 passed, 13 skipped, 2 failed — both are release
 seal checks (`ReleaseIdentityTests.test_release_commit_covers_current_source`
 and `test_release_inventory_matches_current_manifest`). Both are
 resolved by this release seal. The post-seal result is recorded in

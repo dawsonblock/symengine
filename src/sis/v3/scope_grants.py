@@ -25,6 +25,7 @@ from . import signatures
 from .contracts import (
     ContractError,
     OutcomeReceiptV1,
+    OutcomeReceiptV2,
     ScopeGrantV1,
     canonical_json,
 )
@@ -235,7 +236,7 @@ class ScopeGrantAuthority:
         # identities — never tree-digest comparison alone.
         resolved = set()
         for receipt in receipts:
-            if not isinstance(receipt, OutcomeReceiptV1):
+            if not isinstance(receipt, (OutcomeReceiptV1, OutcomeReceiptV2)):
                 problems.append("evidence_malformed")
                 continue
             identity = self.registry.identity_by_tree(receipt.evaluated_repo_digest)

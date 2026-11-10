@@ -3,7 +3,7 @@
 ``evaluate_via_subprocess`` spawns ``python -m sis.v3.evaluator_worker``
 which constructs its own ``OutcomeVerifier`` inside the child, loads the
 evaluator seed there, runs the acceptance command in a fresh executor
-workspace, and writes the signed ``OutcomeReceiptV1`` to a caller-specified
+workspace, and writes the signed ``OutcomeReceiptV1``/``V2`` to a caller-specified
 path. The caller's process never touches the seed; memory-space separation
 is real, though both processes share one OS principal — a stronger custodial
 split still requires a separate service account or host.
@@ -20,7 +20,14 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from .contracts import ContractError, OutcomeReceiptV1, TaskEnvelopeV1
+from .contracts import (
+    ContractError,
+    OutcomeReceiptV1,
+    OutcomeReceiptV2,
+    TaskEnvelopeV1,
+    loads_json,
+    parse_outcome_receipt,
+)
 
 
 class EvaluatorWorkerError(RuntimeError):
@@ -29,7 +36,7 @@ class EvaluatorWorkerError(RuntimeError):
 
 @dataclass(frozen=True)
 class WorkerResult:
-    receipt: OutcomeReceiptV1
+    receipt: OutcomeReceiptV1 | OutcomeReceiptV2
     exit_status: int
     stderr_tail: str
 
@@ -96,7 +103,7 @@ def evaluate_via_subprocess(
     if proc.returncode != 0:
         raise EvaluatorWorkerError(f"worker exited {proc.returncode}: {tail.strip()}")
     try:
-        receipt = OutcomeReceiptV1.from_json(out_path.read_bytes())
+        receipt = parse_outcome_receipt(loads_json(out_path.read_bytes()))
     except (OSError, ContractError) as exc:
         raise EvaluatorWorkerError("worker produced no valid receipt") from exc
     return WorkerResult(receipt=receipt, exit_status=proc.returncode, stderr_tail=tail)

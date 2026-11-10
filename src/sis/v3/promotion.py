@@ -27,6 +27,7 @@ from .authority_db import AuthorityDB, AuthorityError
 from .contracts import (
     ContractError,
     OutcomeReceiptV1,
+    OutcomeReceiptV2,
     ProcedureRecordV1,
     PromotionDecisionV1,
     PromotionDecisionV2,
@@ -141,7 +142,7 @@ class PromotionController:
         *,
         operator_token_digest: str | None,
         trusted_evaluator_keys: Mapping[str, str],
-        receipt_resolver: Callable[[str], OutcomeReceiptV1] | None = None,
+        receipt_resolver: Callable[[str], OutcomeReceiptV1 | OutcomeReceiptV2] | None = None,
         min_pass_receipts: int = 1,
         min_distinct_repos: int = 1,
         expected_protocol: ExpectedProtocol | None = None,
@@ -446,7 +447,7 @@ class PromotionController:
                 return "operator_token_sha256:" + self._token_digest
         raise PromotionRejected("operator_authorization_failed")
 
-    def _verify_receipts(self, digests: tuple[str, ...]) -> list[OutcomeReceiptV1]:
+    def _verify_receipts(self, digests: tuple[str, ...]) -> list[OutcomeReceiptV1 | OutcomeReceiptV2]:
         """Resolve then verify every referenced receipt; resolver is transport."""
         receipts = []
         for digest in dict.fromkeys(digests):
@@ -476,7 +477,8 @@ class PromotionController:
             digests.add(next_revision.digest)
         return canonical_digest("qualified_catalog", 1, {"head": sorted(digests)})
 
-    def _require_qualification_evidence(self, receipts: list[OutcomeReceiptV1]) -> None:
+    def _require_qualification_evidence(
+        self, receipts: list[OutcomeReceiptV1 | OutcomeReceiptV2]) -> None:
         """Count independent evidence units — never raw outcome strings.
 
         Cloned receipts collapse to the same (task, repo) unit and cannot

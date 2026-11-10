@@ -139,7 +139,7 @@ Gate G2 — production isolation boundary:
   the container's containment. Evidence:
   `evidence/sandbox/v334_linux_worker_probe.json` and `_env.json`.
 
-Suite: 1250 passed, 13 skipped. Two release-seal checks
+Suite: 1251 passed, 13 skipped. Two release-seal checks
 (`ReleaseIdentityTests` commit binding and inventory)
 remains red until `release/` is re-signed with the release key in
 Phase 5; the source change itself is covered by the baseline record in

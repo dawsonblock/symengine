@@ -41,6 +41,8 @@ from pathlib import Path
 from .contracts import (
     ContractError,
     OutcomeReceiptV1,
+    OutcomeReceiptV2,
+    parse_outcome_receipt,
     ProcedureRecordV1,
     PromotionDecisionV1,
     PromotionDecisionV2,
@@ -662,14 +664,14 @@ class AuthorityDB:
             ).fetchall()
         return [ScopeGrantV1.from_dict(loads_json(r[0])) for r in rows]
 
-    def receipts_for_grant(self, grant_id: str) -> list[OutcomeReceiptV1]:
+    def receipts_for_grant(self, grant_id: str) -> list[OutcomeReceiptV1 | OutcomeReceiptV2]:
         """Evidence receipts bound to a committed grant (serve-time recheck)."""
         rows = self._conn().execute(
             "SELECT receipt_json FROM grant_receipt_binding WHERE grant_id=?"
             " ORDER BY receipt_digest",
             (grant_id,),
         ).fetchall()
-        return [OutcomeReceiptV1.from_dict(loads_json(r[0])) for r in rows]
+        return [parse_outcome_receipt(loads_json(r[0])) for r in rows]
 
     def commit_revocation(
         self, *, revocation: RevocationV1, authority, verifier=None,

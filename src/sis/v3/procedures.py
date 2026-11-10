@@ -28,6 +28,7 @@ from .contracts import (
     ContractError,
     ObservationEventV1,
     OutcomeReceiptV1,
+    OutcomeReceiptV2,
     ProcedureRecordV1,
     canonical_digest,
     canonical_json,
@@ -239,7 +240,7 @@ def mine_candidates(
     actor_role: str,
     episode_id: str,
     events: Sequence[ObservationEventV1],
-    receipt: OutcomeReceiptV1,
+    receipt: OutcomeReceiptV1 | OutcomeReceiptV2,
     context: MiningContext,
     miner_identity: str = "sis-v3-miner",
 ) -> list[ProcedureRecordV1]:
@@ -250,8 +251,8 @@ def mine_candidates(
     the caller must supply an outcome receipt it has already verified.
     """
     require_permission(actor_role, "candidate:write")
-    if not isinstance(receipt, OutcomeReceiptV1):
-        raise ContractError("receipt must be an OutcomeReceiptV1")
+    if not isinstance(receipt, (OutcomeReceiptV1, OutcomeReceiptV2)):
+        raise ContractError("receipt must be an OutcomeReceiptV1/V2")
     if not events:
         raise ContractError("cannot mine an empty episode")
     for event in events:

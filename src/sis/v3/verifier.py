@@ -5,7 +5,8 @@ outcome. It owns its task registry, its signing key, and its receipt journal
 under directories the caller dedicates to evaluator custody; ``evaluate``
 re-digests the submitted repository itself, replays registered acceptance
 material into a fresh evaluator-owned workspace, and signs the resulting
-``OutcomeReceiptV1`` over the canonical payload.
+``OutcomeReceiptV1`` (development) or ``OutcomeReceiptV2`` (production,
+binding execution and isolation evidence) over the canonical payload.
 
 Custody model: ``key_dir`` holds the Ed25519 seed (mode 0700/0600 on POSIX,
 a DACL restricted to the evaluator account and SYSTEM on Windows) and must
@@ -41,6 +42,7 @@ from .contracts import (
     canonical_digest,
     canonical_json,
     loads_json,
+    parse_outcome_receipt,
 )
 from .evaluation_runtime import (
     EVALUATOR_BOOTSTRAP_ERROR,
@@ -104,19 +106,8 @@ def _utcnow() -> str:
 
 
 def _parse_receipt(value) -> OutcomeReceiptV1 | OutcomeReceiptV2:
-    """Dispatch a stored receipt on its signed field set.
-
-    V2 carries ``execution_receipt_digest``; V1 never does. A V1 body
-    with an injected V2 field therefore fails V2 schema validation
-    instead of being silently downgraded.
-    """
-    if isinstance(value, (OutcomeReceiptV1, OutcomeReceiptV2)):
-        return value
-    if not isinstance(value, Mapping):
-        raise ContractError("receipt must be a JSON object")
-    if "execution_receipt_digest" in value:
-        return OutcomeReceiptV2.from_dict(value)
-    return OutcomeReceiptV1.from_dict(value)
+    """Dispatch a stored receipt on its signed field set."""
+    return parse_outcome_receipt(value)
 
 
 def _receipt_domain(record) -> bytes:

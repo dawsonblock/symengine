@@ -462,6 +462,22 @@ class OutcomeEnvelopeV2(V1Record):
     RECORD_TYPE: ClassVar[str] = "outcome_envelope"
 
 
+def parse_outcome_receipt(value):
+    """Dispatch a stored outcome receipt on its signed field set.
+
+    V2 carries ``execution_receipt_digest``; V1 never does. A V1 body with
+    an injected V2 field fails V2 schema validation instead of being
+    silently downgraded.
+    """
+    if isinstance(value, (OutcomeReceiptV1, OutcomeReceiptV2)):
+        return value
+    if not isinstance(value, Mapping):
+        raise ContractError("receipt must be a JSON object")
+    if "execution_receipt_digest" in value:
+        return OutcomeReceiptV2.from_dict(value)
+    return OutcomeReceiptV1.from_dict(value)
+
+
 @dataclass(frozen=True, kw_only=True)
 class ProcedureRecordV1(V1Record):
     procedure_id: str

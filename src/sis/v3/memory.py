@@ -716,13 +716,15 @@ def verify_experience_evidence(record, verifier, *,
     hash to ``outcome_receipt_digest``; a resolver returning some other
     valid receipt fails closed instead of being trusted on its say-so.
 
-    The resolved artifact may be an ``OutcomeReceiptV1`` (task, repo and
-    outcome bound; execution corroborated through the verifier's
-    ``execution_digest_for`` journal lookup) or an ``OutcomeEnvelopeV2``
-    (which additionally binds the attempt and the execution receipt in
-    the signed body). The stock ``OutcomeVerifier.verify_receipt``
-    authenticates ``OutcomeReceiptV1`` only — envelope artifacts verify
-    through a verifier extended to accept them. When neither artifact
+    The resolved artifact may be an ``OutcomeReceiptV1`` or
+    ``OutcomeReceiptV2`` (task, repo and outcome bound; V2 also binds the
+    execution receipt, worker and sandbox policy, and V1 execution is
+    corroborated through the verifier's ``execution_digest_for`` journal
+    lookup) or an ``OutcomeEnvelopeV2`` (which additionally binds the
+    attempt and the execution receipt in the signed body). The stock
+    ``OutcomeVerifier.verify_receipt`` authenticates signed outcome
+    receipts; envelope artifacts verify through a verifier extended to
+    accept them. When neither artifact
     nor journal can authenticate the claimed
     ``execution_receipt_digest``, the check fails closed.
 
