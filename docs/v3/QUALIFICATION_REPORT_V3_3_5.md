@@ -43,6 +43,10 @@ The system interpreter with `psycopg` installed runs the same tree as
 1272 passed, 13 skipped, 2 pre-seal failures: the extra skip is the
 PostgreSQL control-plane test that the clean environment cannot import.
 
+The sealed archive is re-verified from a fresh extraction, including the
+repair regressions and the audit reproductions, in
+`evidence/v335/V335_ARTIFACT_VERIFICATION.md`.
+
 ## What the repairs do and do not prove
 
 - The memory cap is an incremental soft budget over Python allocations

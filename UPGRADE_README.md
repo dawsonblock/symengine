@@ -1,8 +1,71 @@
-# Upgrade guide for the reviewed v2.4.0 source
+# Upgrade guide
 
-> **Historical.** This guide describes the v2.4.0 source line. The current
-> package version is 3.3.3; see `docs/v3/MIGRATION.md` and
-> `docs/V332_OPERATIONS.md` for the current upgrade path.
+> **Historical, with a current v3.3.5 section.** The body below describes
+> the v2.4.0 source line. The current package version is 3.3.5; see
+> `docs/v3/MIGRATION.md`, `docs/V332_OPERATIONS.md`, and
+> `docs/v3/QUALIFICATION_REPORT_V3_3_5.md` for the current upgrade path.
+
+## Upgrading from v3.3.4 to v3.3.5
+
+v3.3.5 is a repair release, not a feature release. Three behaviour changes
+can affect existing callers.
+
+### Memory budgets fail closed when their measurement disappears
+
+`SearchBudget.max_memory_bytes` now reports `resource_exhausted` when the
+`tracemalloc` tracer it depends on is stopped or restarted during a search.
+Results may carry two new `limits_hit` reasons: `memory_tracer_lost` and
+`memory_tracer_restarted`. A search that previously reported `completed`
+with a zero-growth reading after an external `tracemalloc.stop()` now
+reports `resource_exhausted`.
+
+The cap remains an incremental soft budget over Python allocations, not an
+OS RSS limit; a hard bound belongs to the subprocess/cgroup/microVM layer.
+Callers that already run `tracemalloc` keep their tracer: the search
+measures from its current baseline and never stops it.
+
+### Trusted memory reads require chain membership
+
+A `MemoryStore` configured with `trusted_signer_keys` or `chain_key` now
+requires the exact record being returned to own a `memory_chain` entry.
+`trust_status` on a correctly signed record that was never ingested returns
+`untrusted:experience_unchained:<id>` instead of `trusted`, and
+`get`/`by_outcome` raise `experience_unchained:<id>` for an unchained row.
+
+Development stores are unchanged: without a trust root they keep reading
+legacy rows that predate the chain. Stores that predate the chain already
+fail as `memory_unmigrated`; `repair_chain()` backfills rows, but a
+production store still refuses to chain legacy or untrusted rows.
+
+### Production verdicts have no caller-supplied shortcut
+
+`classify_execution` no longer accepts `isolation_verification`, and
+`production=True` always returns `SANDBOX_FAILURE`. The only route to
+`TASK_PASS` under production conditions is
+`classify_production_execution(receipt, attestation, policy, ...)` with a
+real `IsolationAttestationV1`. `ProductionIsolationPolicy` gains
+`revoked_keys`, and a revoked signer is rejected as `signer_revoked`.
+
+### Verifying this release
+
+```bash
+python3 -m venv /tmp/sis-venv
+/tmp/sis-venv/bin/python -m pip install pytest==8.4.2
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONNOUSERSITE=1 \
+PYTHONPATH=src /tmp/sis-venv/bin/python -m pytest -q
+python3 tools/verify_release.py --compile .
+python3 tools/verify_release.py release/SIS-v3.3.5.zip
+python3 tools/verify_provenance.py --envelope release/provenance.dsse.json \
+  --archive release/SIS-v3.3.5.zip --public-key release/provenance_public_key.hex
+```
+
+The release is `ENGINEERING_VERIFIED` / `IMPLEMENTED_NOT_EFFICACY_QUALIFIED`:
+it does not qualify a production sandbox and does not establish that SIS
+improves a real coding agent.
+
+---
+
+# Upgrade guide for the reviewed v2.4.0 source
 
 This guide covers the repository updates made after the v2.4.0 review. The Python package version remains `2.4.0`; the changes harden evaluation custody, improve task instructions sent to model arms, and make release verification stricter.
 
