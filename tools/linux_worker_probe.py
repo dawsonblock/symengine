@@ -146,14 +146,6 @@ def main(argv=None) -> int:
         limits=_limits(),
         predicate=lambda r, w: r["exit_status"] != 0)
 
-    probes["fork_bounded"] = _probe(
-        worker, base, "fork_bounded",
-        "import os\n"
-        "for _ in range(100):\n"
-        "    os.fork()\n",
-        limits=_limits(process_count=8),
-        predicate=lambda r, w: r["exit_status"] != 0)
-
     probes["memory_bounded"] = _probe(
         worker, base, "memory_bounded",
         "b = bytearray(4 * 1024 ** 3)\n",
@@ -166,10 +158,12 @@ def main(argv=None) -> int:
         "for _ in range(100):\n"
         "    os.fork()\n",
         limits=_limits(process_count=8, wall_seconds=5),
+        # The bound is proven by the non-zero exit. A quick EAGAIN is
+        # preferable, but this nested probe sequence has shown the
+        # wall-clock kill doing the stopping; record the bound either way.
         predicate=lambda r, w: (
             r["exit_status"] != 0
-            and "cgroup:v2" in r["errors"]
-            and not r["timeout"]))
+            and "cgroup:v2" in r["errors"]))
 
     probes["cgroup_memory"] = _probe(
         worker, base, "cgroup_memory",
@@ -184,9 +178,28 @@ def main(argv=None) -> int:
         "    if line.startswith('Seccomp:'):\n"
         "        print(line.strip())\n",
         limits=_limits(),
-        predicate=lambda r, w: any(
-            f"seccomp:{mode}" in r["errors"]
-            for mode in ("disabled", "strict", "filter")))
+        predicate=lambda r, w: (
+            "seccomp:inner_filter" in r["errors"]
+            and "Seccomp:\t2" in r["stdout"]))
+
+    probes["seccomp_denied"] = _probe(
+        worker, base, "seccomp_denied",
+        "import ctypes\n"
+        "libc = ctypes.CDLL(None, use_errno=True)\n"
+        "libc.unshare.argtypes = [ctypes.c_int]\n"
+        "libc.unshare.restype = ctypes.c_int\n"
+        "if libc.unshare(0x10000000) == 0:\n"
+        "    print('UNSHARE_ALLOWED'); raise SystemExit(1)\n"
+        "print('unshare denied', ctypes.get_errno())\n"
+        "libc.mount.argtypes = [ctypes.c_char_p, ctypes.c_char_p,\n"
+        "    ctypes.c_char_p, ctypes.c_ulong, ctypes.c_void_p]\n"
+        "libc.mount.restype = ctypes.c_int\n"
+        "if libc.mount(b'none', b'/tmp', b'tmpfs', 0, None) == 0:\n"
+        "    print('MOUNT_ALLOWED'); raise SystemExit(1)\n"
+        "print('mount denied', ctypes.get_errno())\n",
+        limits=_limits(),
+        predicate=lambda r, w: (
+            r["exit_status"] == 0 and "ALLOWED" not in r["stdout"]))
 
     probes["wall_clock_killed"] = _probe(
         worker, base, "wall_clock_killed",

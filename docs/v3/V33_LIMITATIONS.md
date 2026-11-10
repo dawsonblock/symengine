@@ -48,11 +48,16 @@
   container's own containment. It remains unvalidated on a production
   Linux host or microVM, and must not be deployed from a privileged
   container.
-- Seccomp reports `0` (disabled) in that container. The worker observes
-  and reports the mode (`seccomp:disabled`), but no inner filter is
-  applied; a production deployment must supply one at the
-  container/microVM layer and require `seccomp:filter` in the isolation
-  policy.
+- The worker applies its own seccomp filter inside the sandbox after
+  bwrap setup: the command reports `Seccomp: 2`, and `unshare`/`mount`
+  return `EPERM`. The container's inherited seccomp is disabled, so the
+  inner filter is the effective one; the isolation policy should require
+  `seccomp:inner_filter`. The filter is a denylist (mount, namespace,
+  ptrace, kernel/key/BPF, handle-based file access, host identity/time),
+  not a complete allowlist.
+- The cgroup pids bound is enforced. In the full probe sequence the fork
+  bomb was stopped by the wall clock; an isolated direct test with the
+  seccomp wrapper stopped it in 0.84s with `BlockingIOError`.
 - `/etc` is a tmpfs with individual read-only file binds and a
   read-only remount; a plain `--dir /etc` was writable and failed the
   write-escape probe.

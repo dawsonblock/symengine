@@ -37,6 +37,7 @@ class WorkerConfigTests(unittest.TestCase):
                 {"require_cgroups": "yes"},
                 {"require_seccomp": 1},
                 {"bind_etc_files": "no"},
+                {"apply_seccomp": "yes"},
                 {"cgroup_root": "relative"},
         ):
             with self.subTest(**{k: str(v)[:20] for k, v in kwargs.items()}):
@@ -51,14 +52,22 @@ class WorkerConfigTests(unittest.TestCase):
 
 class BwrapArgvTests(unittest.TestCase):
     def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
         self.workspace = Path(tempfile.gettempdir()) / "sis-ws"
+        self.seccomp_dir = Path(self.temp.name) / "seccomp"
+        self.seccomp_dir.mkdir()
         self.spec = CommandSpec(
             argv=(sys.executable, "-c", "print(1)"),
             env={"SIS_EXTRA": "1"})
 
+    def _argv(self, config):
+        return build_bwrap_argv(
+            config, self.workspace, self.spec,
+            seccomp_dir=self.seccomp_dir)
+
     def test_default_argv_is_confined(self):
-        argv = build_bwrap_argv(
-            LinuxWorkerConfig(), self.workspace, self.spec)
+        argv = self._argv(LinuxWorkerConfig())
         self.assertIn("--unshare-all", argv)
         self.assertNotIn("--share-net", argv)
         self.assertIn("--die-with-parent", argv)
@@ -70,11 +79,11 @@ class BwrapArgvTests(unittest.TestCase):
         self.assertIn("--chdir", argv)
         self.assertNotIn("--cap-add", argv)
         self.assertNotIn("--privileged", argv)
-        self.assertEqual(argv[argv.index("--") + 1:], list(self.spec.argv))
+        self.assertEqual(
+            argv[-len(self.spec.argv):], list(self.spec.argv))
 
     def test_etc_is_hardened_to_individual_files(self):
-        argv = build_bwrap_argv(
-            LinuxWorkerConfig(), self.workspace, self.spec)
+        argv = self._argv(LinuxWorkerConfig())
         self.assertIn("--tmpfs", argv)
         self.assertEqual(argv[argv.index("--tmpfs") + 1], "/etc")
         self.assertIn("--remount-ro", argv)
@@ -91,23 +100,37 @@ class BwrapArgvTests(unittest.TestCase):
                     "/etc/group", "/etc/nsswitch.conf"})
 
     def test_etc_can_be_disabled(self):
-        argv = build_bwrap_argv(
-            LinuxWorkerConfig(bind_etc_files=False), self.workspace,
-            self.spec)
+        argv = self._argv(LinuxWorkerConfig(bind_etc_files=False))
         tmpfs_targets = [
             argv[i + 1] for i, item in enumerate(argv) if item == "--tmpfs"]
         self.assertNotIn("/etc", tmpfs_targets)
         self.assertNotIn("--remount-ro", argv)
 
+    def test_seccomp_wrapper_is_bound_and_invoked(self):
+        argv = self._argv(LinuxWorkerConfig())
+        pairs = [
+            (argv[i + 1], argv[i + 2])
+            for i, item in enumerate(argv) if item == "--ro-bind"
+        ]
+        self.assertIn(
+            (str(self.seccomp_dir.resolve()), "/opt/sis-seccomp"), pairs)
+        inner = argv[argv.index("--") + 1:]
+        self.assertEqual(inner[0], sys.executable)
+        self.assertEqual(inner[1], "/opt/sis-seccomp/seccomp_exec.py")
+        self.assertEqual(inner[2], "--")
+        self.assertEqual(inner[3:], list(self.spec.argv))
+
+    def test_seccomp_can_be_disabled(self):
+        argv = self._argv(LinuxWorkerConfig(apply_seccomp=False))
+        self.assertNotIn("/opt/sis-seccomp", argv)
+        self.assertEqual(argv[argv.index("--") + 1:], list(self.spec.argv))
+
     def test_network_share_is_explicit(self):
-        argv = build_bwrap_argv(
-            LinuxWorkerConfig(share_network=True), self.workspace, self.spec)
+        argv = self._argv(LinuxWorkerConfig(share_network=True))
         self.assertIn("--share-net", argv)
 
     def test_environment_is_cleared_then_set(self):
-        argv = build_bwrap_argv(
-            LinuxWorkerConfig(environment=(("WORKER_ONLY", "1"),)),
-            self.workspace, self.spec)
+        argv = self._argv(LinuxWorkerConfig(environment=(("WORKER_ONLY", "1"),)))
         env = {}
         for index, item in enumerate(argv):
             if item == "--setenv":
@@ -119,11 +142,42 @@ class BwrapArgvTests(unittest.TestCase):
         self.assertEqual(env["PATH"], "/usr/local/bin:/usr/bin:/bin")
 
     def test_system_binds_are_read_only(self):
-        argv = build_bwrap_argv(
-            LinuxWorkerConfig(system_binds=("/usr",)), self.workspace,
-            self.spec)
+        argv = self._argv(LinuxWorkerConfig(system_binds=("/usr",)))
         index = argv.index("--ro-bind")
         self.assertEqual(argv[index + 2], "/usr")
+
+
+class SeccompFilterTests(unittest.TestCase):
+    def test_filter_has_arch_check_and_denials(self):
+        from sis.v3.seccomp_exec import (
+            AUDIT_ARCH_AARCH64,
+            AUDIT_ARCH_X86_64,
+            SECCOMP_RET_ALLOW,
+            SECCOMP_RET_ERRNO,
+            SECCOMP_RET_KILL_PROCESS,
+            build_filter,
+        )
+        for arch, audit in (
+                ("x86_64", AUDIT_ARCH_X86_64),
+                ("aarch64", AUDIT_ARCH_AARCH64)):
+            filters = build_filter(arch)
+            self.assertGreater(len(filters), 10)
+            self.assertEqual(filters[1].k, audit)
+            self.assertEqual(filters[-3].k, SECCOMP_RET_ALLOW)
+            self.assertEqual(filters[-2].k, SECCOMP_RET_KILL_PROCESS)
+            self.assertEqual(filters[-1].k, SECCOMP_RET_ERRNO | 1)
+
+    def test_unsupported_arch_rejected(self):
+        from sis.v3.seccomp_exec import SeccompUnavailable, detect_arch
+        with self.assertRaises(SeccompUnavailable):
+            detect_arch("riscv64")
+
+    def test_apply_fails_closed_off_linux(self):
+        if sys.platform.startswith("linux"):
+            self.skipTest("Linux: the probe applies the real filter")
+        from sis.v3.seccomp_exec import SeccompUnavailable, apply_filter
+        with self.assertRaises(SeccompUnavailable):
+            apply_filter()
 
 
 class CgroupControllerTests(unittest.TestCase):

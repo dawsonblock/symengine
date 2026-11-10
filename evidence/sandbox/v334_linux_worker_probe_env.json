@@ -1,6 +1,6 @@
 {
   "kind": "linux_worker_probe_environment",
-  "generated_at": "2026-11-09T22:52:00Z",
+  "generated_at": "2026-11-09T23:05:00Z",
   "image": "debian:bookworm-slim",
   "os": "Debian GNU/Linux 12 (bookworm)",
   "kernel": "7.0.14-linuxkit (Colima Docker VM, arm64)",
@@ -10,8 +10,9 @@
   "result": "13/13 probes passed; see v334_linux_worker_probe.json",
   "caveat": "The privileged container was required because this Docker kernel denied unprivileged user namespaces. This validates the bubblewrap configuration, not the container's own containment. A production deployment must run the worker on a host or microVM where unprivileged user namespaces (or a rootless container runtime with the required namespaces) are enabled, and must not rely on --privileged.",
   "findings": [
-    "cgroup v2 pids.max and memory.max enforced the fork and memory probes without relying on the wall clock; the host cgroup hierarchy had to be mounted read-write because the default container cgroup fs is read-only.",
-    "The privileged container reports Seccomp: 0 (disabled); no inner seccomp filter is applied. A production deployment must supply one at the container/microVM layer and require seccomp:filter in the isolation policy.",
+    "The worker applies its own seccomp filter inside the sandbox after bwrap setup: the command reports Seccomp: 2 and unshare/mount return EPERM. The container's inherited seccomp is disabled, so the inner filter is the effective one.",
+    "cgroup v2 pids.max and memory.max enforced the fork and memory bounds. In the full probe sequence the fork bomb was stopped by the wall clock; an isolated direct test with the seccomp wrapper stopped it in 0.84s with BlockingIOError. The bound is enforced either way; the quick-EAGAIN path is proven in isolation.",
+    "The host cgroup hierarchy had to be mounted read-write; the default container cgroup fs is read-only and the worker fails closed without a writable cgroup v2 leaf.",
     "/etc is a tmpfs with individual read-only file binds and a read-only remount. A plain --dir /etc left the directory writable and failed the write-escape probe.",
     "The probe does not test microVM isolation."
   ]

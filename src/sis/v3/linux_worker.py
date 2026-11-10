@@ -99,6 +99,7 @@ class LinuxWorkerConfig:
     require_cgroups: bool = True
     cgroup_root: str = "/sys/fs/cgroup"
     require_seccomp: bool = False
+    apply_seccomp: bool = True
     bind_etc_files: bool = True
 
     def __post_init__(self) -> None:
@@ -118,7 +119,8 @@ class LinuxWorkerConfig:
                 for item in self.environment):
             raise ContractError("environment must be (name, value) pairs")
         for flag in ("share_network", "use_pid_namespace", "die_with_parent",
-                     "require_cgroups", "require_seccomp", "bind_etc_files"):
+                     "require_cgroups", "require_seccomp", "apply_seccomp",
+                     "bind_etc_files"):
             if type(getattr(self, flag)) is not bool:
                 raise ContractError(f"{flag} must be boolean")
         if (type(self.max_output_bytes) is not int
@@ -139,17 +141,20 @@ class LinuxWorkerConfig:
             "die_with_parent": self.die_with_parent,
             "require_cgroups": self.require_cgroups,
             "require_seccomp": self.require_seccomp,
+            "apply_seccomp": self.apply_seccomp,
             "bind_etc_files": self.bind_etc_files,
         })
 
 
 def build_bwrap_argv(config: LinuxWorkerConfig, workspace_path: Path,
-                     spec: CommandSpec) -> list[str]:
+                     spec: CommandSpec, *,
+                     seccomp_dir: Path | None = None) -> list[str]:
     """Build the exact bubblewrap invocation; no shell, no host env."""
     if not isinstance(config, LinuxWorkerConfig):
         raise ContractError("config must be a LinuxWorkerConfig")
     if not isinstance(spec, CommandSpec):
         raise ContractError("spec must be a CommandSpec")
+    inner = list(spec.argv)
     argv = [config.bwrap]
     if config.die_with_parent:
         argv.append("--die-with-parent")
@@ -162,6 +167,14 @@ def build_bwrap_argv(config: LinuxWorkerConfig, workspace_path: Path,
         source = Path(path)
         if source.exists():
             argv += ["--ro-bind", str(source.resolve()), path]
+    if config.apply_seccomp:
+        if seccomp_dir is None:
+            raise ContractError(
+                "seccomp_dir is required when apply_seccomp is enabled")
+        argv += ["--ro-bind", str(Path(seccomp_dir).resolve()),
+                 "/opt/sis-seccomp"]
+        inner = [sys.executable, "/opt/sis-seccomp/seccomp_exec.py",
+                 "--", *inner]
     if config.bind_etc_files and "/etc" not in config.system_binds:
         # A plain --dir /etc would leave the directory writable. Make it
         # a tmpfs mount, bind the individual files read-only, then remount
@@ -182,7 +195,7 @@ def build_bwrap_argv(config: LinuxWorkerConfig, workspace_path: Path,
     for name, value in sorted(environment.items()):
         argv += ["--setenv", name, value]
     argv.append("--")
-    argv.extend(spec.argv)
+    argv.extend(inner)
     return argv
 
 
@@ -247,6 +260,24 @@ class LinuxRootlessWorker:
         self.root = Path(root)
         self.root.mkdir(parents=True, exist_ok=True)
         (self.root / "workspaces").mkdir(exist_ok=True)
+        self._seccomp_dir: Path | None = None
+        if self.config.apply_seccomp:
+            executable = Path(sys.executable).resolve()
+            if not any(
+                    Path(path).exists()
+                    and executable.is_relative_to(Path(path).resolve())
+                    for path in self.config.system_binds):
+                raise WorkerBackendUnavailable(
+                    "seccomp_interpreter_not_bound")
+            source = Path(__file__).with_name("seccomp_exec.py")
+            if not source.is_file():
+                raise WorkerBackendUnavailable("seccomp_wrapper_missing")
+            self._seccomp_dir = self.root / "seccomp"
+            self._seccomp_dir.mkdir(parents=True, exist_ok=True)
+            target = self._seccomp_dir / "seccomp_exec.py"
+            shutil.copyfile(source, target)
+            os.chmod(target, 0o644)
+            os.chmod(self._seccomp_dir, 0o755)
         self._workspaces: dict[str, Workspace] = {}
         self._live: dict[str, subprocess.Popen] = {}
         self._outputs: dict[str, tuple[bytes, bytes]] = {}
@@ -281,7 +312,9 @@ class LinuxRootlessWorker:
         if before.external_symlinks:
             raise RunnerError("workspace contains external symlinks")
         execution_id = "exec-" + secrets.token_hex(8)
-        argv = build_bwrap_argv(self.config, workspace.path, spec)
+        argv = build_bwrap_argv(
+            self.config, workspace.path, spec,
+            seccomp_dir=self._seccomp_dir)
         security_errors = ["backend:linux-rootless-bwrap"]
         if self.config.share_network:
             security_errors.append("net:shared_by_configuration")
@@ -292,7 +325,10 @@ class LinuxRootlessWorker:
         security_errors.append("fs:workspace_confined")
         seccomp = _seccomp_mode()
         security_errors.append(f"seccomp:{seccomp}")
-        if self.config.require_seccomp and seccomp != "filter":
+        if self.config.apply_seccomp:
+            security_errors.append("seccomp:inner_filter")
+        if (self.config.require_seccomp and seccomp != "filter"
+                and not self.config.apply_seccomp):
             raise WorkerBackendUnavailable("seccomp_filter_required")
 
         cgroup = None
