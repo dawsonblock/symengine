@@ -1,9 +1,9 @@
 {
   "archive": {
-    "inner_project_dir": "SIS-v3.3.3",
-    "path": "release/SIS-v3.3.3.zip",
-    "sha256": "594e563d7505c45cee090412d8c83d626ff3101488f95345416983c7d0421402",
-    "source_files": 384
+    "inner_project_dir": "SIS-v3.3.4",
+    "path": "release/SIS-v3.3.4.zip",
+    "sha256": "e43951ad4913eaeac9ac6145a2c928ef34e5b0501b0595201e7ff38f84b18465",
+    "source_files": 402
   },
   "branch": "main",
   "docs": [
@@ -22,6 +22,7 @@
     "docs/v3/OPERATIONS.md",
     "docs/v3/QUALIFICATION_REPORT.md",
     "docs/v3/QUALIFICATION_REPORT_V3_3_0.md",
+    "docs/v3/QUALIFICATION_REPORT_V3_3_4.md",
     "docs/v3/RELEASE_NOTES_V3_3.md",
     "docs/v3/SECURITY_BOUNDARIES_V3_3.md",
     "docs/v3/SKILL_HOLDOUTS.md",
@@ -34,6 +35,7 @@
     "docs/v3/V2_BASELINE.md",
     "docs/v3/V32_GAP_MAP.md",
     "docs/v3/V33_LIMITATIONS.md",
+    "docs/v3/WORKER_VALIDATION_PLAN.md",
     "docs/audits/BASELINE_INTEGRITY.md"
   ],
   "evidence": [
@@ -53,23 +55,23 @@
   ],
   "notes": "release/ artifacts are out-of-band provenance and are intentionally absent from the archive manifest",
   "provenance": {
-    "key_id": "release-v333-key-2",
+    "key_id": "release-v334-key-1",
     "path": "release/provenance.dsse.json",
     "public_key_path": "release/provenance_public_key.hex",
     "signed": true,
-    "statement_sha256": "9410f0f321248bc0ad4a6419da0244b63d24daef88e704d48425a588cb5ff6a9",
-    "subject_sha256": "594e563d7505c45cee090412d8c83d626ff3101488f95345416983c7d0421402",
+    "statement_sha256": "327cdd0e17b2de3218d3f3deb47f684f1e32cd3a9021211e09bdbf928cb74541",
+    "subject_sha256": "e43951ad4913eaeac9ac6145a2c928ef34e5b0501b0595201e7ff38f84b18465",
     "trust_root": "qualification-only"
   },
-  "release": "SIS-v3.3.3",
+  "release": "SIS-v3.3.4",
   "schema_version": 1,
-  "source_commit": "22d2cdf01343c50996b62f92ec2855915c46767f",
+  "source_commit": "d1674c2e9b5c71ba6f6374e1dda4ece1aca6a689",
   "source_commit_note": "archive members are byte-identical to this commit for every manifest-covered file; the release commit itself touches only out-of-band release/ provenance",
   "status": "ENGINEERING_VERIFIED",
   "test_result": {
     "command": "PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONNOUSERSITE=1 PYTHONPATH=src python3 -m pytest -q",
-    "failed": 0,
-    "passed": 1122,
-    "skipped": 12
+    "failed": 2,
+    "passed": 1253,
+    "skipped": 13
   }
 }

@@ -1,12 +1,12 @@
 {
-  "base_commit": "22d2cdf01343c50996b62f92ec2855915c46767f",
+  "base_commit": "d1674c2e9b5c71ba6f6374e1dda4ece1aca6a689",
   "branch": "main",
   "builder": "tools/package_release.py -> tools/build_canonical_zip.py",
   "commit_binding": "every archive member is re-hashed against the working tree at build time (verify_against_tree); the source commit and dirty state are recorded in release/verification.json",
-  "generated_at": "2026-11-08T23:36:00Z",
+  "generated_at": "2026-11-10T05:07:11Z",
   "kind": "release_build_record",
   "manifest_scope": "all _included() source/evidence files; release/ and evidence/release/build_record.json are out-of-band and never inventoried into the archive",
   "post_build_verification": "release/verification.json \u2014 outside the archive by construction",
-  "release": "SIS-v3.3.3",
+  "release": "SIS-v3.3.4",
   "schema_version": 1
 }
