@@ -36,9 +36,6 @@ from sis.v3.contracts import (
 )
 from sis.v3.evaluation_runtime import (
     SANDBOX_FAILURE,
-    TASK_FAIL,
-    TASK_PASS,
-    TIMEOUT,
     classify_execution,
 )
 from sis.v3.memory import (
