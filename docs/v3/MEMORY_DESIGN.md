@@ -45,6 +45,14 @@ never embedded.
   not have is rejected before any write.
 - `get`/`by_outcome` re-verify the stored digest on every read; tampered
   rows raise `experience_tampered` and fail closed.
+- Trusted reads require the exact record to be a chain member. The
+  store-wide invariant ("the chain covers exactly the rows present") is
+  evaluated at a different instant from the row read, so it cannot bind
+  the row a caller receives. Membership is one statement joining
+  `experience` to `memory_chain`, and a non-member — never ingested, row
+  removed, or inserted after the invariant check — raises
+  `experience_unchained`. Membership is not provenance: signature and
+  lineage still decide whether a member is trusted.
 
 ## Trust profiles — `MemoryTrustProfile`
 
@@ -57,7 +65,7 @@ downgrade.
 | `production()` | trusted signer keys, custodian `chain_key`, external `MemoryWitness`, evaluator verifier | `trusted` only after chain + witness + signature + lineage |
 
 A production store refuses to construct when any root is missing.
-Production reads re-check lineage on every row, and `repair_chain`
+Production reads re-check chain membership and lineage on every row, and `repair_chain`
 refuses to chain legacy or untrusted rows — membership in a trusted
 chain is not provenance. `trust_status(record)` returns either
 `trusted` or `untrusted:<reason>`; `is_trusted` is its Boolean form.

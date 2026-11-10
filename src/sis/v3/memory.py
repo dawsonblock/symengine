@@ -191,6 +191,9 @@ class MemoryStore:
     signature on every read so a database writer that edits both
     ``record_json`` and ``record_digest`` is detected — the row-local
     digest is an integrity checksum, never a provenance signature.
+    Trusted reads additionally require the exact record being returned
+    to own a chain entry, checked per record in one statement rather
+    than inferred from a store-wide chain/table scan.
     Without trusted keys rows are read as untrusted legacy data: V1
     records carry no signature at all and can never be promoted to
     verified evidence through this store.
@@ -255,6 +258,33 @@ class MemoryStore:
     def trust_configured(self) -> bool:
         return self._signer_keys is not None
 
+    @property
+    def _chain_enforced(self) -> bool:
+        """Whether chain integrity gates reads and writes."""
+        return self._signer_keys is not None or self._chain_key is not None
+
+    def _require_membership(self, record) -> None:
+        """Require this exact record to be a member of the chain.
+
+        ``_chain_state`` proves a store-wide invariant — the chain covers
+        exactly the rows present — at the instant it runs. That is not
+        the same as proving the record a caller is about to trust owns a
+        chain entry, and it cannot bind a row that appears between the
+        invariant check and the row read. One statement joins the
+        experience row to its chain entry, so both are read from the same
+        snapshot; a record that was never ingested, whose row was removed,
+        or whose stored digest differs from the object presented fails
+        closed. Membership is not provenance: the signature and lineage
+        checks still decide whether the member is trusted.
+        """
+        row = self._conn().execute(
+            "SELECT 1 FROM experience e"
+            " JOIN memory_chain c ON c.record_digest = e.record_digest"
+            " WHERE e.experience_id=? AND e.record_digest=?",
+            (record.experience_id, record.digest)).fetchone()
+        if row is None:
+            raise MemoryError(f"experience_unchained:{record.experience_id}")
+
     def _record_integrity(self, record) -> None:
         """Fail closed on rows a database writer could have forged."""
         if self._signer_keys is None:
@@ -296,6 +326,7 @@ class MemoryStore:
             return "untrusted:development_profile"
         try:
             self._require_chain()
+            self._require_membership(record)
             self._record_integrity(record)
         except MemoryError as exc:
             return f"untrusted:{exc}"
@@ -684,6 +715,8 @@ class MemoryStore:
         record = _parse_record(row[0].encode("utf-8"))
         if record.digest != row[1]:
             raise MemoryError(f"experience_tampered:{experience_id}")
+        if self._chain_enforced:
+            self._require_membership(record)
         self._record_integrity(record)
         return record
 
@@ -698,6 +731,8 @@ class MemoryStore:
             record = _parse_record(raw.encode("utf-8"))
             if record.digest != digest:
                 raise MemoryError("experience_tampered")
+            if self._chain_enforced:
+                self._require_membership(record)
             self._record_integrity(record)
             out.append(record)
         return out
