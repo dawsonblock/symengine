@@ -29,8 +29,8 @@
       "sha256": "20b228d1ff9c45950f9219374e123ea5b57d790e1cb111c7cd9be92afb10761c"
     },
     "UPGRADE_README.md": {
-      "bytes": 7063,
-      "sha256": "7e009ef413fb222061c668f5fa40add340ae0b6cd0bad52d734a9e60a3525c07"
+      "bytes": 7092,
+      "sha256": "26400fe0e5c2259baa875e51eff189d2fe4f857cde08e66f5ea799b7f930a1a0"
     },
     "UPGRADE_RELEASE_NOTES_2026-10-24.md": {
       "bytes": 4370,
@@ -1647,5 +1647,5 @@
   },
   "release": "SIS-v3.3.5",
   "schema_version": 1,
-  "source_commit": "ff914f9b14dec019ccc5be0b54a22a119ae76987"
+  "source_commit": "5f94ada0ea223de42ac766d3222e688b1ad6fee5"
 }
