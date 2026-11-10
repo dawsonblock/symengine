@@ -106,6 +106,13 @@ production store still refuses to chain legacy or untrusted rows.
 real `IsolationAttestationV1`. `ProductionIsolationPolicy` gains
 `revoked_keys`, and a revoked signer is rejected as `signer_revoked`.
 
+`ProductionIsolationPolicy.digest` now commits to `revoked_keys`, so
+**every** policy digest changes in this release, including a policy with
+no revocations. Any deployment that pins a policy digest externally must
+recompute it after upgrading. Verification itself is unaffected: the
+attestation's `policy_digest` is compared against the caller-supplied
+`required_policy_digest`, not against the computed digest.
+
 ### Verifying the v3.3.5 release
 
 ```bash

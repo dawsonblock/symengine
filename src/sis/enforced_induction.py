@@ -70,6 +70,10 @@ class MemoryEnforcementReceipt:
     have observed exactly the requested soft and hard ``RLIMIT_AS``
     values. A completed result without a valid receipt is not evidence
     that a hard memory bound held.
+
+    ``platform`` and ``python`` describe the host that built the receipt,
+    not the child interpreter: they are the parent's values, which differ
+    when ``python_executable`` names another interpreter.
     """
 
     schema_version: int

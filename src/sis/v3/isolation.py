@@ -10,8 +10,10 @@ workspace input tree, and the exact execution receipt it describes.
 ``verify_isolation_attestation`` re-checks every binding against the
 receipt at hand: an attestation issued for another command, worker, tree,
 nonce, policy or receipt does not verify, and neither does an expired or
-untrusted signature. Callers feed the boolean verdict to
-``classify_execution(production=True, isolation_attested=...)`` — the
+untrusted signature. Production classification goes through
+``sis.v3.evaluation_runtime.classify_production_execution``, which takes
+the attestation itself; ``classify_execution`` no longer accepts a
+caller-supplied verdict, and ``production=True`` always fails closed. The
 receipt's own markers are never consulted as evidence of isolation.
 
 The ``nonce`` is a uniqueness tag bound into the signed body, not a

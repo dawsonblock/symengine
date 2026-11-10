@@ -109,20 +109,30 @@ Environment: Python 3.12.0 on macOS arm64, pinned `pytest==8.4.2`,
 `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1`, `PYTHONNOUSERSITE=1`,
 `PYTHONPATH=src`.
 
-- System interpreter with psycopg and z3 4.15.4: **1319 passed, 13
-  skipped, 0 failed** in 91.13s.
+- System interpreter with psycopg, cryptography and z3 4.15.4: **1319
+  passed, 13 skipped, 0 failed** in 91.13s.
 - Fresh venv with `pytest==8.4.2` and optional `z3-solver==4.16.0`, no
-  PostgreSQL driver: **1318 passed, 14 skipped, 0 failed** in 235.21s.
-  The single extra skip is the PostgreSQL control-plane test.
-- The same fresh venv without z3 skips the four z3-gated equivalence
-  tests: **1315 passed, 17 skipped, 0 failed**.
+  PostgreSQL driver and no `cryptography`: **1318 passed, 14 skipped, 0
+  failed** in 235.21s. The single extra skip is the Ed25519 cross-check
+  in `tests/v3/test_receipt_signatures.py`, which skips when
+  `cryptography` is absent. The PostgreSQL control-plane tests skip in
+  both environments because `SIS_POSTGRES_DSN` is unset, not because of
+  a missing driver.
+- The same fresh venv without z3 skips the three z3-gated tests (two
+  bounded-equivalence cases and one counterexample case): **1315
+  passed, 17 skipped, 0 failed**.
 - New repair regressions: 18 trust-profile, 18 memory-enforcement, 9
   benchmark-semantics tests. All 45 run in every configuration that has
-  z3; without z3, the four bounded-equivalence tests report the metric
-  as unavailable rather than inferring it.
-- The remaining skips are platform/dependency gates (Linux worker,
-  PostgreSQL control plane without its driver, and equivalent optional
-  paths), not skipped repair regressions.
+  z3; without z3 the three z3-gated tests skip rather than inferring
+  equivalence from matching examples.
+- The remaining skips are platform/dependency gates (Linux worker and
+  cgroup, PostgreSQL control plane without `SIS_POSTGRES_DSN`, Windows
+  ACL paths, absent optional packages), not skipped repair regressions.
+
+The counts above were re-confirmed on the final sealed tree after the
+evidence corrections in this commit (`1319 passed, 13 skipped, 0
+failed`); only the wall-clock time varies with host load. The recorded
+run outputs remain in `evidence/v336/test_summary*.txt`.
 
 ## Release integrity
 

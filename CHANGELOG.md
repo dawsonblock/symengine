@@ -53,11 +53,13 @@ V336-03 — benchmark semantics:
 
 V336-04 — release seal:
 
-- Package version 3.3.6. The system interpreter (psycopg and z3 4.15.4)
-  runs 1319 passed / 13 skipped; a fresh venv with pytest 8.4.2 and
-  optional z3-solver 4.16.0 (no PostgreSQL driver) runs 1318 passed /
-  14 skipped. Without z3 the same venv skips four equivalence tests
-  (1315 passed / 17 skipped). No failures in any configuration. Release
+- Package version 3.3.6. The system interpreter (psycopg, cryptography
+  and z3 4.15.4) runs 1319 passed / 13 skipped; a fresh venv with pytest
+  8.4.2 and optional z3-solver 4.16.0, no PostgreSQL driver and no
+  `cryptography`, runs 1318 passed / 14 skipped (the extra skip is the
+  Ed25519 cross-check). Without z3 the same venv skips the three
+  z3-gated tests (1315 passed / 17 skipped). No failures in any
+  configuration. Release
   packaging and independent artifact verification are recorded in
   `docs/v3/QUALIFICATION_REPORT_V3_3_6.md` and `release/`.
 - Provenance signing still requires an externally trusted key; without
@@ -95,7 +97,9 @@ V335-02 — production verdict trust boundary:
   policy/image digests, required properties, expiry, and the exact
   receipt/command/workspace/worker binding.
 - `ProductionIsolationPolicy` gains `revoked_keys`; a revoked signer is
-  rejected as `signer_revoked`.
+  rejected as `signer_revoked`. The policy digest commits to the new
+  field, so every policy digest changes on upgrade, including a policy
+  with no revocations; a deployment that pins a digest must recompute it.
 
 V335-03 — explicit memory chain membership:
 

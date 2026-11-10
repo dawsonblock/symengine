@@ -31,6 +31,10 @@ CAP = 1 << 30
 # still exercised there with the smallest limit the host accepts; the
 # meaningful-cap qualification belongs to the Linux worker gate.
 HARD_CAP = (1 << 39) if sys.platform == "darwin" else CAP
+# ``sis.enforced_induction`` requires POSIX ``resource``; on Windows the
+# module refuses with EnforcementUnavailable. The spawn-based runs skip
+# there; the validation and refusal contracts stay cross-platform.
+POSIX = os.name == "posix"
 
 
 def _study(features=8, rows=9):
@@ -170,6 +174,7 @@ class EnforcedRunTests(unittest.TestCase):
     def setUp(self):
         self.train, self.dev = _study()
 
+    @unittest.skipUnless(POSIX, "RLIMIT_AS requires POSIX")
     def test_child_observes_the_requested_hard_limit(self):
         enforced = run_induction_enforced(
             self.train, dev=self.dev,
@@ -186,6 +191,7 @@ class EnforcedRunTests(unittest.TestCase):
             enforced.receipt.observed_hard_limit_bytes, HARD_CAP)
         self.assertNotEqual(enforced.receipt.child_pid, os.getpid())
 
+    @unittest.skipUnless(POSIX, "RLIMIT_AS requires POSIX")
     def test_soft_budget_stays_diagnostic_under_hard_cap(self):
         enforced = run_induction_enforced(
             self.train, dev=self.dev,
@@ -199,6 +205,7 @@ class EnforcedRunTests(unittest.TestCase):
         self.assertTrue(enforced.receipt.valid)
         self.assertTrue(enforced.hard_memory_verified)
 
+    @unittest.skipUnless(POSIX, "RLIMIT_AS requires POSIX")
     def test_timeout_never_reports_hard_success(self):
         enforced = run_induction_enforced(
             self.train, dev=self.dev,

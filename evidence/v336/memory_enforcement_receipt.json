@@ -1,4 +1,6 @@
 {
+  "cap_is_meaningful": false,
+  "cap_meaningfulness_note": "The 512 GiB ceiling is the smallest RLIMIT_AS this macOS host accepts, so the receipt proves the protocol and that the kernel enforces the value it reports, not that a search was constrained. A meaningful cap is a Linux-worker gate.",
   "hard_memory_verified": true,
   "kind": "enforced_induction_receipt",
   "note": "macOS cannot lower RLIMIT_AS below the interpreter's current address space; this run exercises the receipt protocol with the smallest limit the host accepts. A meaningful hard cap belongs to the Linux worker qualification gate.",

@@ -40,11 +40,28 @@ a 1,048,576-byte cap.
 - `spend_signature()` checks the cap before incrementing, so the reported
   count never exceeds `max_signature_checks`.
 
+## V335-01b — a lost tracer fails closed
+
+The first repair still trusted `tracemalloc.get_traced_memory()`, which
+returns `(0, 0)` once tracing stops. A caller that stopped the tracer
+mid-search therefore read zero growth and the search returned
+`completed` while `memory_limit_source` still claimed the cap was
+enforced.
+
+- `check_resources()` records `memory_tracer_lost` when the tracer it
+  depends on is no longer running, and `memory_tracer_restarted` when
+  the traced peak moves backwards (stopped and restarted, or its peak
+  reset). Either reason makes `outcome` report `resource_exhausted`.
+- Five tracer-loss regressions were added to
+  `tests/v3/test_v335_memory_budget.py`, bringing it to 12 tests.
+
 ## Green evidence
 
-- `tests/v3/test_v335_memory_budget.py`: 7 passed.
+- `tests/v3/test_v335_memory_budget.py`: 12 passed (7 at the V335-01
+  commit, plus the 5 V335-01b tracer-loss regressions).
 - Focused induction/legacy suite: 73 passed.
-- Full suite: 1262 passed, 13 skipped (pre-commit working tree).
+- Full suite: 1262 passed, 13 skipped (V335-01 working tree, before the
+  tracer-loss regressions).
 - Benchmark with a caller-owned tracer and a 1 MiB cap:
   `evidence/v335/memory_budget_probe.json`
   - 8 fields: `resource_exhausted`, `max_memory_bytes`, observed peak
