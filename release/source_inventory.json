@@ -29,8 +29,8 @@
       "sha256": "20b228d1ff9c45950f9219374e123ea5b57d790e1cb111c7cd9be92afb10761c"
     },
     "UPGRADE_README.md": {
-      "bytes": 4266,
-      "sha256": "114110c43dc88bb7d0be73a7056ec35bf4f2f1e8adebd58baa03d054ec4c43ee"
+      "bytes": 7063,
+      "sha256": "7e009ef413fb222061c668f5fa40add340ae0b6cd0bad52d734a9e60a3525c07"
     },
     "UPGRADE_RELEASE_NOTES_2026-10-24.md": {
       "bytes": 4370,
@@ -285,8 +285,8 @@
       "sha256": "340272833414c463851e4bf908906bff8d505089739d7833eee9f3bc5c9f42e1"
     },
     "docs/v3/QUALIFICATION_REPORT_V3_3_5.md": {
-      "bytes": 4282,
-      "sha256": "b5e16f5be23cbada7503a1272d534ecf1a4356d8ff24c5dddaefc76496918fbb"
+      "bytes": 4454,
+      "sha256": "30c984f0f432ea092ccc70922a1d4a958c8dbc96d875b7064f2fa1a7b41615d5"
     },
     "docs/v3/RELEASE_NOTES_V3_3.md": {
       "bytes": 7466,
@@ -551,6 +551,10 @@
     "evidence/v335/V335_04_REPORT.md": {
       "bytes": 2539,
       "sha256": "d42f3553f637cb515fb2c003230e85e8f342f6e6dd2e7bf164a9e459b7205c13"
+    },
+    "evidence/v335/V335_ARTIFACT_VERIFICATION.md": {
+      "bytes": 2545,
+      "sha256": "014f294c6f94c522034d999fa642ac9ce9c8fd304c1a0b3b60ee92e2b1275be6"
     },
     "evidence/v335/memory_budget_probe.json": {
       "bytes": 2021,
@@ -1643,5 +1647,5 @@
   },
   "release": "SIS-v3.3.5",
   "schema_version": 1,
-  "source_commit": "e1e844f910524babd9cf94b4902b53b82152695b"
+  "source_commit": "9b08b1a795102cd8b844fbfa824803f32bea777d"
 }
