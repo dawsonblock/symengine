@@ -51,11 +51,11 @@ from .evaluation_runtime import (
     EvaluationRuntimeProfile,
     bootstrap_check,
     classify_execution,
+    classify_production_execution,
 )
 from .isolation import (
     IsolationVerification,
     ProductionIsolationPolicy,
-    verify_production_isolation,
 )
 from .policy import require_permission
 from .runner import CommandSpec, ResourceLimits, WorkspaceExecutor, tree_digest
@@ -491,16 +491,18 @@ class OutcomeVerifier:
             if attestation is None:
                 self.last_outcome_class = SANDBOX_FAILURE
                 raise EvaluationRejected("isolation_attestation_required")
-            verification = verify_production_isolation(
-                attestation, receipt_exec, self.isolation_policy)
+            classification = classify_production_execution(
+                receipt_exec, attestation, self.isolation_policy,
+                bootstrap_ok=True, stderr_tail=stderr_tail)
+            verification = classification.verification
             if not verification.ok:
                 self.last_outcome_class = SANDBOX_FAILURE
                 raise EvaluationRejected(
                     "isolation_unverified", verification.reason)
-        outcome_class = classify_execution(
-            receipt_exec, bootstrap_ok=True, stderr_tail=stderr_tail,
-            production=self.isolation_policy is not None,
-            isolation_verification=verification)
+            outcome_class = classification.outcome_class
+        else:
+            outcome_class = classify_execution(
+                receipt_exec, bootstrap_ok=True, stderr_tail=stderr_tail)
         self.last_outcome_class = outcome_class
         if outcome_class == "TASK_PASS":
             outcome = "pass"

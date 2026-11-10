@@ -34,6 +34,7 @@ from sis.v3.evaluation_runtime import (
     TASK_PASS,
     TIMEOUT,
     classify_execution,
+    classify_production_execution,
 )
 from sis.v3.isolation import (
     IsolationVerification,
@@ -288,52 +289,70 @@ class ProductionVerificationTests(IsolationFixture):
 
 
 class ProductionClassificationTests(IsolationFixture):
-    """G2.2: only a typed verdict for this exact receipt can qualify."""
+    """G2.2: only the evaluator-owned attestation route can qualify."""
 
-    def test_production_without_verification_is_sandbox_failure(self):
-        receipt = self.receipt
+    def test_production_without_attestation_is_sandbox_failure(self):
         self.assertEqual(
-            classify_execution(receipt, production=True), SANDBOX_FAILURE)
+            classify_execution(self.receipt, production=True),
+            SANDBOX_FAILURE)
 
     def test_boolean_verification_is_not_accepted(self):
-        self.assertEqual(
+        with self.assertRaises(TypeError):
             classify_execution(
                 self.receipt, production=True,
-                isolation_verification=True),
-            SANDBOX_FAILURE)
+                isolation_verification=True)
 
-    def test_verification_for_other_receipt_is_sandbox_failure(self):
-        verdict = IsolationVerification(
-            ok=True, reason="ok", receipt_digest="f" * 64)
-        self.assertEqual(
-            classify_execution(
-                self.receipt, production=True,
-                isolation_verification=verdict),
-            SANDBOX_FAILURE)
+    def test_forged_positive_verification_is_not_an_attestation(self):
+        forged = IsolationVerification(
+            ok=True, reason="ok", receipt_digest=self.receipt.digest)
+        result = classify_production_execution(
+            self.receipt, forged, self.policy())
+        self.assertEqual(result.outcome_class, SANDBOX_FAILURE)
+        self.assertFalse(result.verification.ok)
 
-    def test_valid_verification_qualifies(self):
-        verdict = self.verify(self.issue())
-        self.assertEqual(
-            classify_execution(
-                self.receipt, production=True,
-                isolation_verification=verdict),
-            TASK_PASS)
+    def test_attestation_for_other_receipt_is_sandbox_failure(self):
+        workspace = self.executor.prepare(self.base)
+        other = self.executor.run(workspace, CommandSpec(
+            argv=(sys.executable, "-c", "print(2)")))
+        result = classify_production_execution(
+            self.receipt, self.issue(receipt=other), self.policy())
+        self.assertEqual(result.outcome_class, SANDBOX_FAILURE)
+        self.assertEqual(result.verification.reason, "receipt_mismatch")
 
-    def test_local_marker_disqualifies_even_with_valid_verification(self):
+    def test_valid_attestation_qualifies(self):
+        result = classify_production_execution(
+            self.receipt, self.issue(), self.policy())
+        self.assertTrue(result.verification.ok)
+        self.assertEqual(result.outcome_class, TASK_PASS)
+
+    def test_local_marker_disqualifies_even_with_valid_attestation(self):
         executor = ScriptedExecutor(
             self.root / "local-exec", worker_identity="worker-A",
             security_errors=("isolation:unverified_local",))
         workspace = executor.prepare(self.base)
         receipt = executor.run(workspace, self.spec)
-        attestation = self.issue(receipt=receipt)
-        verdict = verify_production_isolation(
-            attestation, receipt, self.policy())
-        self.assertTrue(verdict.ok, verdict.reason)
-        self.assertEqual(
-            classify_execution(
-                receipt, production=True,
-                isolation_verification=verdict),
-            SANDBOX_FAILURE)
+        result = classify_production_execution(
+            receipt, self.issue(receipt=receipt), self.policy())
+        self.assertTrue(result.verification.ok)
+        self.assertEqual(result.outcome_class, SANDBOX_FAILURE)
+
+    def test_revoked_signer_rejected(self):
+        policy = self.policy(revoked_keys=frozenset({"isolator-1"}))
+        result = classify_production_execution(
+            self.receipt, self.issue(), policy)
+        self.assertEqual(result.outcome_class, SANDBOX_FAILURE)
+        self.assertEqual(result.verification.reason, "signer_revoked")
+
+    def test_forged_property_from_untrusted_signer_rejected(self):
+        other_seed, _public = signatures.generate_keypair()
+        attestation = self.issue(
+            seed=other_seed, key_id="isolator-unknown",
+            properties=("fs:workspace_confined", "net:denied",
+                        "proc:namespaced", "seccomp:inner_filter"))
+        result = classify_production_execution(
+            self.receipt, attestation, self.policy())
+        self.assertEqual(result.outcome_class, SANDBOX_FAILURE)
+        self.assertEqual(result.verification.reason, "untrusted_signer")
 
     def test_old_boolean_keyword_is_gone(self):
         with self.assertRaises(TypeError):

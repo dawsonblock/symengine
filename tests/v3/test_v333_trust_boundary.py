@@ -174,18 +174,12 @@ class FabricatedMarkerTests(unittest.TestCase):
             classify_execution(receipt, production=True), SANDBOX_FAILURE)
 
     def test_unverified_local_marker_disqualifies_even_when_attested(self):
-        # A receipt self-reporting local execution must never qualify in
-        # production, whatever verification object the caller supplies.
-        from sis.v3.isolation import IsolationVerification
+        # production=True is fail-closed; a local marker can never qualify.
         receipt = SimpleNamespace(
             security_errors=("isolation:unverified_local",),
             timeout=False, exit_status=0)
         self.assertEqual(
-            classify_execution(
-                receipt, production=True,
-                isolation_verification=IsolationVerification(
-                    ok=True, reason="ok")),
-            SANDBOX_FAILURE)
+            classify_execution(receipt, production=True), SANDBOX_FAILURE)
 
 
 class IsolationAttestationTests(unittest.TestCase):
@@ -286,35 +280,29 @@ class IsolationAttestationTests(unittest.TestCase):
             self._issue(), required_policy_digest="aa" * 32))
 
     def test_attested_production_classification(self):
-        from sis.v3.isolation import IsolationVerification
+        # A preconstructed positive verification object is not an
+        # attestation; the evaluator-owned route rejects it.
+        from sis.v3.evaluation_runtime import classify_production_execution
+        from sis.v3.isolation import (
+            IsolationVerification,
+            ProductionIsolationPolicy,
+        )
         digest = "a" * 64
-        verification = IsolationVerification(
-            ok=True, reason="ok", receipt_digest=digest,
-            verified_properties=("net:denied",))
         receipt = SimpleNamespace(
             security_errors=("net:denied",), timeout=False, exit_status=0,
-            digest=digest)
-        self.assertEqual(
-            classify_execution(
-                receipt, production=True,
-                isolation_verification=verification),
-            TASK_PASS)
-        receipt = SimpleNamespace(
-            security_errors=("net:denied",), timeout=False, exit_status=1,
-            digest=digest)
-        self.assertEqual(
-            classify_execution(
-                receipt, production=True,
-                isolation_verification=verification),
-            TASK_FAIL)
-        receipt = SimpleNamespace(
-            security_errors=("net:denied",), timeout=True, exit_status=-1,
-            digest=digest)
-        self.assertEqual(
-            classify_execution(
-                receipt, production=True,
-                isolation_verification=verification),
-            TIMEOUT)
+            digest=digest, command_spec_digest="b" * 64,
+            before_tree_digest="c" * 64, worker_identity="worker-A")
+        policy = ProductionIsolationPolicy(
+            allowed_backends=frozenset({"linux-rootless-worker"}),
+            trusted_keys=self.keys,
+            required_policy_digest="aa" * 32,
+            required_image_digest="bb" * 32,
+            required_properties=frozenset({"net:denied"}))
+        forged = IsolationVerification(
+            ok=True, reason="ok", receipt_digest=digest)
+        result = classify_production_execution(receipt, forged, policy)
+        self.assertEqual(result.outcome_class, SANDBOX_FAILURE)
+        self.assertFalse(result.verification.ok)
 
 
 def _v1_record(**over):
