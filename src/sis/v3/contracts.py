@@ -419,6 +419,7 @@ class OutcomeReceiptV2(V1Record):
     receipt_id: str
     evaluator_identity: str
     task_id: str
+    attempt_id: str
     evaluated_repo_digest: str
     test_suite_commitment: str
     criterion_version: str
@@ -1098,6 +1099,7 @@ def _validate_record(record: V1Record) -> None:
         _identifier(d["receipt_id"], "receipt_id")
         _identifier(d["evaluator_identity"], "evaluator_identity")
         _identifier(d["task_id"], "task_id")
+        _identifier(d["attempt_id"], "attempt_id")
         for name in ("evaluated_repo_digest", "test_suite_commitment",
                      "execution_receipt_digest", "isolation_attestation_digest",
                      "evaluator_runtime_digest", "evaluation_protocol_digest",

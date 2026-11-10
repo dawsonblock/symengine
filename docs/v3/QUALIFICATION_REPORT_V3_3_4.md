@@ -19,11 +19,11 @@ improves a real coding agent.
 | G1 | Receipt identity: a receipt reference resolves to exactly one authenticated artifact; journal entries are bound to persisted receipts | `src/sis/v3/verifier.py`, 13 regressions in `tests/v3/test_v333_trust_boundary.py::ReceiptIdentityTests` |
 | G3 | Memory trust: explicit development/production profiles, external rollback witness, registered-task lineage, retrieval trust gate | `src/sis/v3/memory.py`, `src/sis/v3/memory_witness.py`, 34 regressions in `tests/v3/test_v334_memory_trust.py` |
 | G4 | Symbolic induction: development-guided early stopping, explicit computation budget, counterexample refinement, scalability matrix | `src/sis/induction.py`, 19 regressions in `tests/v3/test_v334_induction.py`, `evidence/benchmark/v334_induction_scalability.json` |
-| G2 | Production isolation: mandatory policy, typed verification, V2 receipts, isolator issuance, rootless Linux worker, cgroups, seccomp, probe | `src/sis/v3/isolation.py`, `src/sis/v3/linux_worker.py`, `src/sis/v3/cgroups.py`, `src/sis/v3/seccomp_exec.py`, 44 + 21 regressions, `evidence/sandbox/v334_linux_worker_probe.json` |
+| G2 | Production isolation: mandatory policy, typed verification, V2 receipts (including `attempt_id`), isolator issuance, rootless Linux worker, cgroups, seccomp, probe | `src/sis/v3/isolation.py`, `src/sis/v3/linux_worker.py`, `src/sis/v3/cgroups.py`, `src/sis/v3/seccomp_exec.py`, 44 + 21 regressions, `evidence/sandbox/v334_linux_worker_probe.json` |
 
 ## Test result
 
-Pre-seal suite: 1251 passed, 13 skipped, 2 failed — both are release
+Pre-seal suite: 1253 passed, 13 skipped, 2 failed — both are release
 seal checks (`ReleaseIdentityTests.test_release_commit_covers_current_source`
 and `test_release_inventory_matches_current_manifest`). Both are
 resolved by this release seal. The post-seal result is recorded in

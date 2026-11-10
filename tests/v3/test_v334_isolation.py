@@ -23,6 +23,7 @@ import sys
 import tempfile
 import unittest
 from datetime import datetime, timezone
+from types import SimpleNamespace
 from pathlib import Path
 
 from sis.v3 import signatures
@@ -393,6 +394,7 @@ class ProductionVerifierTests(unittest.TestCase):
             self.isolator_seed, "isolator-1", **fields)
 
     def evaluate(self, **kw):
+        kw.setdefault("attempt_id", "att-1")
         return self.verifier.evaluate(
             actor_role="evaluator", task=_task(),
             submission_dir=self.submission,
@@ -405,6 +407,7 @@ class ProductionVerifierTests(unittest.TestCase):
         self.assertEqual(
             receipt.execution_receipt_digest, self.executions[0].digest)
         self.assertEqual(receipt.worker_identity, "worker-A")
+        self.assertEqual(receipt.attempt_id, "att-1")
         self.assertEqual(receipt.sandbox_policy_digest, "aa" * 32)
         self.assertEqual(len(receipt.isolation_attestation_digest), 64)
         self.assertEqual(len(receipt.evaluator_runtime_digest), 64)
@@ -413,6 +416,12 @@ class ProductionVerifierTests(unittest.TestCase):
         loaded = self.verifier.load_receipt(receipt.digest)
         self.assertIsInstance(loaded, OutcomeReceiptV2)
         self.assertEqual(loaded.digest, receipt.digest)
+
+    def test_production_requires_attempt_id(self):
+        with self.assertRaisesRegex(
+                EvaluationRejected, "missing_attempt_id"):
+            self.evaluate(attempt_id=None,
+                          isolation_attestation_resolver=self.resolver)
 
     def test_production_requires_attestation(self):
         with self.assertRaisesRegex(
@@ -428,6 +437,7 @@ class ProductionVerifierTests(unittest.TestCase):
                 task=_task(isolation_profile="unverified_local"),
                 submission_dir=self.submission,
                 evaluation_nonce="nonce-profile",
+                attempt_id="att-1",
                 isolation_attestation_resolver=self.resolver)
 
     def test_production_rejects_invalid_attestation(self):
@@ -472,6 +482,7 @@ class ProductionVerifierTests(unittest.TestCase):
         receipt = verifier.evaluate(
             actor_role="evaluator", task=_task(),
             submission_dir=self.submission, evaluation_nonce="nonce-local",
+            attempt_id="att-1",
             isolation_attestation_resolver=self.resolver)
         self.assertIsInstance(receipt, OutcomeReceiptV2)
         self.assertEqual(receipt.outcome, "error")
@@ -572,6 +583,14 @@ class AttestationIssuanceTests(IsolationFixture):
                 policy_digest="aa" * 32, image_digest="bb" * 32,
                 properties=("net:denied",),
                 issued_at=NOW, expires_at=FUTURE)
+
+    def test_issuer_rejects_incomplete_receipt(self):
+        with self.assertRaisesRegex(ContractError, "receipt is missing"):
+            issue_attestation_for_receipt(
+                SimpleNamespace(security_errors=()), self.seed, "isolator-1",
+                backend="linux-rootless-worker",
+                policy_digest="aa" * 32, image_digest="bb" * 32,
+                properties=("net:denied",))
 
     def test_issuer_requires_a_property(self):
         with self.assertRaisesRegex(ContractError, "properties"):

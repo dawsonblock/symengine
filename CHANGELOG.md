@@ -91,10 +91,12 @@ Gate G2 — production isolation boundary:
   directly or fetched by a post-execution resolver. Missing, expired,
   reused, or property-incomplete evidence rejects the evaluation
   instead of issuing a pass/fail receipt.
-- `OutcomeReceiptV2` binds `execution_receipt_digest`,
+- `OutcomeReceiptV2` binds `attempt_id`, `execution_receipt_digest`,
   `isolation_attestation_digest`, `evaluator_runtime_digest`,
   `evaluation_protocol_digest`, `worker_identity` and
-  `sandbox_policy_digest` under a separate signature domain. V1 remains
+  `sandbox_policy_digest` under a separate signature domain. Production
+  evaluation requires an attempt identity, so memory lineage can check
+  it against the signed outcome instead of skipping it. V1 remains
   readable for historical verification; production evaluations issue V2.
 - `issue_attestation_for_receipt` and
   `tools/issue_worker_attestation.py` give an independent isolator a real
@@ -139,7 +141,7 @@ Gate G2 — production isolation boundary:
   the container's containment. Evidence:
   `evidence/sandbox/v334_linux_worker_probe.json` and `_env.json`.
 
-Suite: 1251 passed, 13 skipped. Two release-seal checks
+Suite: 1253 passed, 13 skipped. Two release-seal checks
 (`ReleaseIdentityTests` commit binding and inventory)
 remains red until `release/` is re-signed with the release key in
 Phase 5; the source change itself is covered by the baseline record in

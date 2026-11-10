@@ -195,15 +195,20 @@ def issue_attestation_for_receipt(
     if not properties:
         raise ContractError(
             "properties must name the containment the worker enforced")
+    for name in ("worker_identity", "command_spec_digest",
+                 "before_tree_digest", "digest"):
+        value = getattr(receipt, name, None)
+        if not isinstance(value, str) or not value:
+            raise ContractError(f"receipt is missing {name}")
     return issue_attestation(
         seed, key_id,
         backend=backend,
-        worker_identity=getattr(receipt, "worker_identity"),
+        worker_identity=receipt.worker_identity,
         policy_digest=policy_digest,
         image_digest=image_digest,
-        command_spec_digest=getattr(receipt, "command_spec_digest"),
-        workspace_input_digest=getattr(receipt, "before_tree_digest"),
-        execution_receipt_digest=getattr(receipt, "digest"),
+        command_spec_digest=receipt.command_spec_digest,
+        workspace_input_digest=receipt.before_tree_digest,
+        execution_receipt_digest=receipt.digest,
         properties=properties,
         issued_at=issued_at,
         expires_at=expires_at,

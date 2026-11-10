@@ -385,6 +385,7 @@ class OutcomeVerifier:
         task: TaskEnvelopeV1,
         submission_dir: str | Path,
         evaluation_nonce: str,
+        attempt_id: str | None = None,
         isolation_attestation=None,
         isolation_attestation_resolver=None,
     ) -> OutcomeReceiptV1 | OutcomeReceiptV2:
@@ -422,6 +423,10 @@ class OutcomeVerifier:
                 and task.isolation_profile == "unverified_local"):
             raise EvaluationRejected(
                 "production_requires_qualified_task_profile")
+        if self.isolation_policy is not None:
+            if (not isinstance(attempt_id, str) or not attempt_id.strip()
+                    or len(attempt_id) > 128):
+                raise EvaluationRejected("missing_attempt_id")
         if not isinstance(evaluation_nonce, str) or not evaluation_nonce.strip() or len(evaluation_nonce) > 128:
             raise EvaluationRejected("missing_nonce")
         if evaluation_nonce in self._nonces:
@@ -530,6 +535,7 @@ class OutcomeVerifier:
             })
             unsigned = {
                 **common,
+                "attempt_id": attempt_id,
                 "execution_receipt_digest": receipt_exec.digest,
                 "isolation_attestation_digest": verification.attestation_digest,
                 "evaluator_runtime_digest": self.runtime_profile.digest,
@@ -615,6 +621,7 @@ class OutcomeVerifier:
             "receipt_digest": receipt.digest,
             "receipt_id": receipt.receipt_id,
             "task_id": receipt.task_id,
+            "attempt_id": getattr(receipt, "attempt_id", None),
             "evaluated_repo_digest": receipt.evaluated_repo_digest,
             "criterion_version": receipt.criterion_version,
             "outcome": receipt.outcome,
