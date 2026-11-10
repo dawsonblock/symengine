@@ -1,5 +1,5 @@
 {
-  "archive": "SIS-v3.3.5.zip",
+  "archive": "SIS-v3.3.6.zip",
   "fresh_extraction": {
     "compileall_src": true,
     "extracted_test_smoke": {
@@ -8,26 +8,26 @@
       "tail": "39 passed in 0.57s"
     },
     "verify_tree": {
-      "files": 411
+      "files": 422
     }
   },
   "kind": "release_verification",
   "schema_version": 1,
   "source": {
-    "commit": "d008abe8dc277ba63ed67cba43d99ab2665081aa",
+    "commit": "ccca7b97bf6ba58d55f3d8b8407ae57f2f8afae9",
     "dirty": false,
     "dirty_paths": []
   },
   "source_binding": {
-    "files": 411,
-    "project": "SIS-v3.3.5",
+    "files": 422,
+    "project": "SIS-v3.3.6",
     "source_bound": true
   },
   "zip_verify": {
     "manifest": "RELEASE_SHA256.json",
-    "project": "SIS-v3.3.5",
-    "source_files": 411,
+    "project": "SIS-v3.3.6",
+    "source_files": 422,
     "valid": true,
-    "zip_sha256": "862096cfd19f696eb321bde17fe92b121ef6878680db590562f6474283d25051"
+    "zip_sha256": "cb067818bb255d267d9b5134e959f0b89ded2255d08e374f879d64278cc898be"
   }
 }

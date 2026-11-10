@@ -1,9 +1,9 @@
 {
   "archive": {
-    "inner_project_dir": "SIS-v3.3.5",
-    "path": "release/SIS-v3.3.5.zip",
-    "sha256": "862096cfd19f696eb321bde17fe92b121ef6878680db590562f6474283d25051",
-    "source_files": 411
+    "inner_project_dir": "SIS-v3.3.6",
+    "path": "release/SIS-v3.3.6.zip",
+    "sha256": "cb067818bb255d267d9b5134e959f0b89ded2255d08e374f879d64278cc898be",
+    "source_files": 422
   },
   "branch": "repair/v335-resource-security",
   "docs": [
@@ -24,6 +24,7 @@
     "docs/v3/QUALIFICATION_REPORT_V3_3_0.md",
     "docs/v3/QUALIFICATION_REPORT_V3_3_4.md",
     "docs/v3/QUALIFICATION_REPORT_V3_3_5.md",
+    "docs/v3/QUALIFICATION_REPORT_V3_3_6.md",
     "docs/v3/RELEASE_NOTES_V3_3.md",
     "docs/v3/SECURITY_BOUNDARIES_V3_3.md",
     "docs/v3/SKILL_HOLDOUTS.md",
@@ -53,27 +54,26 @@
     "evidence/security/",
     "evidence/skills/",
     "evidence/v332/",
-    "evidence/v335/"
+    "evidence/v335/",
+    "evidence/v336/"
   ],
   "notes": "release/ artifacts are out-of-band provenance and are intentionally absent from the archive manifest",
   "provenance": {
-    "key_id": "release-v334-key-1",
-    "path": "release/provenance.dsse.json",
-    "public_key_path": "release/provenance_public_key.hex",
-    "signed": true,
-    "statement_sha256": "44e4937aefa83add5766b37fcf38cc62ace7601d13c9884bf0e1c78bca15430c",
-    "subject_sha256": "862096cfd19f696eb321bde17fe92b121ef6878680db590562f6474283d25051",
+    "path": "release/provenance.intoto.json",
+    "signed": false,
+    "statement_sha256": "060fcd0215632b585448ad66ca2dd6a22b0cd00db98eb318479af0cb894838ae",
+    "subject_sha256": "cb067818bb255d267d9b5134e959f0b89ded2255d08e374f879d64278cc898be",
     "trust_root": "qualification-only"
   },
-  "release": "SIS-v3.3.5",
+  "release": "SIS-v3.3.6",
   "schema_version": 1,
-  "source_commit": "d008abe8dc277ba63ed67cba43d99ab2665081aa",
+  "source_commit": "ccca7b97bf6ba58d55f3d8b8407ae57f2f8afae9",
   "source_commit_note": "archive members are byte-identical to this commit for every manifest-covered file; the release commit itself touches only out-of-band release/ provenance",
   "status": "ENGINEERING_VERIFIED",
   "test_result": {
     "command": "PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONNOUSERSITE=1 PYTHONPATH=src python3 -m pytest -q",
     "failed": 0,
-    "passed": 1273,
-    "skipped": 14
+    "passed": 1317,
+    "skipped": 13
   }
 }
