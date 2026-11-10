@@ -17,8 +17,8 @@
       "sha256": "f4e9590f3ebad5ffec1d03da3db058375438693dbcd93f2738ff3ea66da17b8d"
     },
     "CHANGELOG.md": {
-      "bytes": 48989,
-      "sha256": "d7ec783449886ccfdf5ca67464c24d28ea2102afb8ac3ca5ace56b00d9ac66fd"
+      "bytes": 48992,
+      "sha256": "9699d80844bd169511285bbc027ef64b0113a4b133c323b4e0fb82bc6e3947a7"
     },
     "LICENSE": {
       "bytes": 1083,
@@ -1695,5 +1695,5 @@
   },
   "release": "SIS-v3.3.6",
   "schema_version": 1,
-  "source_commit": "2031c01ba4472a2d6c68118dbe861008ce1123b0"
+  "source_commit": "e9041970abae3286a2be404fa786fbbda7ae585a"
 }
