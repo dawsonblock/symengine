@@ -47,7 +47,7 @@ result. Consumers that read `rule_recovered` must switch to the metric
 that matches their claim. `--input-min` and `--equivalence z3` are new
 options for negative-value and bounded-equivalence runs.
 
-### Verifying this release
+### Verifying the v3.3.6 release
 
 ```bash
 python3 -m venv /tmp/sis-venv
@@ -106,7 +106,7 @@ production store still refuses to chain legacy or untrusted rows.
 real `IsolationAttestationV1`. `ProductionIsolationPolicy` gains
 `revoked_keys`, and a revoked signer is rejected as `signer_revoked`.
 
-### Verifying this release
+### Verifying the v3.3.5 release
 
 ```bash
 python3 -m venv /tmp/sis-venv
