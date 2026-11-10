@@ -65,7 +65,7 @@ wiring and deployment profiles.
 
 ---
 
-# Legacy v2.4.0 documentation
+## Legacy v2.4.0 documentation
 
 **v2.4.0:** Adds a narrowly scoped **pure Python coding-repair recipe learner**.
 It captures proposed arithmetic-operator AST repairs, interprets before/after
@@ -84,7 +84,7 @@ Run locally: `PYTHONPATH=src python3 tools/demo_code_learning.py`.
 
 ---
 
-# Symbolic Induction Engine (SIS) v2.3.0
+## Symbolic Induction Engine (SIS) v2.3.0
 
 **v2.3.0:** Adds an independent, bounded *tabular workflow* learner and executor,
 with observation-time captures, deterministic replay, conservative canonicalization
@@ -176,7 +176,7 @@ sis tools
 PYTHONPATH=src python examples/active_oracle_loop.py   # synthetic controlled ground-truth demo
 ```
 
-## Agent integration with any LLM
+### Agent integration with any LLM
 
 The model only needs the ability to call your application's Python functions or
 JSON-over-HTTP endpoints. The built-in chat/proposal convenience client targets
@@ -215,7 +215,7 @@ An installable, **model-agnostic** symbolic reasoning service. It discovers *bou
 
 **This is an executable research prototype**, not a system that turns every LLM into an AGI, updates neural weights, or establishes symbolic proofs of real-world hypotheses. Its capability is intentionally limited to supported rule families. It does **not** autonomously crawl your files, run arbitrary code, trade money, or call an external LLM by default.
 
-## 1. Setup — Python 3.10+
+### 1. Setup — Python 3.10+
 
 ```bash
 # From a checkout of this repository:
@@ -228,7 +228,7 @@ python -m unittest discover -s tests -v
 
 Core runtime has **zero third-party dependencies**. Install `python -m pip install -e '.[z3]'` only if you want the optional integer-domain Z3 counterexample search. No Z3 runtime results are included in the release test claim unless you run tests with Z3 installed.
 
-## 2. Learn a rule from examples
+### 2. Learn a rule from examples
 
 ```bash
 sis --db ./knowledge.sqlite3 train examples/arithmetic_study.json
@@ -254,7 +254,7 @@ sis --db ./knowledge.sqlite3 train examples/ambiguous_study.json
 
 When `a` always equals `b`, the data do not establish which one should determine the output. SIS generates a distinguishing input and refuses promotion. Collect its **true label from the actual task**, move that *newly labeled* example to a future training set, and reserve an entirely fresh validation set. A synthetic query by itself is NOT evidence of the correct answer.
 
-## 3. Local HTTP service
+### 3. Local HTTP service
 
 ```bash
 sis --db ./knowledge.sqlite3 serve --host 127.0.0.1 --port 8765
@@ -273,7 +273,7 @@ curl -sS -X POST http://127.0.0.1:8765/v1/predict \
 
 By default, server binds loopback only. For non-loopback bind `SIS_API_KEY` is mandatory; any configured API key must be at least 24 UTF-8 bytes. HTTPS/TLS at an authenticated reverse proxy is **also** required for confidentiality on a real network. `X-SIS-Key` carries the read/prediction API key. When an API key is set, operator mutations (`/v1/induce`, `/v1/feedback`, `/v1/retire`, `/v1/chat`) are **disabled** unless a separate `SIS_ADMIN_KEY` (at least 24 bytes) is set and passed via `X-SIS-Admin-Key`. The two secrets must differ. On loopback with neither key configured, developer-mode mutations remain available. The included server does not implement rate limiting, tenant isolation, distributed authorization, or network TLS itself; do not expose this demonstration server to the public internet.
 
-## 4. Add to a small or large LLM
+### 4. Add to a small or large LLM
 
 SIS is an **external tool/service**. It works with a locally deployed LLM or any hosted model whose agent framework can call local Python or HTTPS endpoints. The bundled convenience adapter directly supports **OpenAI-compatible** `/chat/completions` URLs (e.g., model servers, compatible gateways). Other proprietary LLM APIs require a gateway or a provider-specific adapter; they are not falsely claimed as native implementations.
 
@@ -318,7 +318,7 @@ print(service.predict({'namespace':'my_task', 'inputs': {'x': 10, 'y': 12}}))
 service.registry.close()
 ```
 
-## 5. Evidence policy
+### 5. Evidence policy
 
 - Induction uses only `train`. Validation is not sent to an LLM, used to select a competing rule, or consulted for re-fitting; it is evaluated on the selected hypothesis only.
 - Training inputs must be unique. Validation inputs must be distinct from each other and from training inputs. At least **3 train + 2 validation** examples are necessary for promotion, but are not sufficient to establish meaningful generalization beyond them.
@@ -327,7 +327,7 @@ service.registry.close()
 - An incomplete search, empirical ambiguity, failed validation, or missing validation results in abstention/rejection.
 - SQLite events have a hash-linked, integrity-checkable sequence. The optional **operator-held audit checkpoint** can detect rewritten/truncated history **only if its file (and HMAC key, if used) is independently protected**. Exporting and verifying a checkpoint on the same compromised computer does not establish independent cryptographic authority. See `docs/SECURITY.md`.
 
-## 6. Test and reproduce
+### 6. Test and reproduce
 
 ```bash
 python -m unittest discover -s tests -v
@@ -338,7 +338,7 @@ python tools/build_release.py
 
 `tools/evaluate_fixtures.py` exercises **local synthetic demonstration tasks**, not a third-party benchmark. See `docs/EVALUATION.md` for a valid independent evaluation design and `docs/ARCHITECTURE.md` for interfaces, rule grammar, known limits and upgrades.
 
-## 7. Paired live LLM A/B evaluation (v1.6)
+### 7. Paired live LLM A/B evaluation (v1.6)
 
 Promote a rule using disjoint training and validation data before evaluating a fresh task set:
 
@@ -352,13 +352,13 @@ sis --db ./study.sqlite3 paired-eval examples/paired_eval_synthetic.json ./paire
 
 This makes **60 LLM calls** for the included 30-row *synthetic* example (30 baseline, 30 SIS-assisted). It will incur inference compute/provider costs; the examples are for verifying the workflow, not claiming improved intelligence. Two explicit authorization steps are required for outgoing requests. Baseline and SIS-assisted are the **same LLM** and use the same decoding settings, but SIS hints increase prompt tokens. See [the full v1.6 design and evaluation caveats](docs/V1_6_PAIRED_LLM_BENCHMARK.md).
 
-## 8. Current boundaries
+### 8. Current boundaries
 
 Only bounded integers, booleans, short strings, and fixed-length lists of these are accepted. The grammar supports feature references, indexed references, constants, addition, subtraction, multiplication, absolute difference, min/max, equality, negation, absolute value, case changes, string reverse, and LLM-proposed conditional equality. The deterministic search enumerates simple unary/binary rules first and bounded two-stage arithmetic rules if none of the simple ones fit. It does not learn general programs, recursive algorithms, unbounded formulas, image representations, causal mechanisms, or neural model weights.
 
 See `docs/LIMITATIONS.md` and `docs/ROADMAP.md` before extending this to untrusted users or consequential decisions.
 
-## 9. v1.2: Secure promotion and out-of-band audit checkpoint
+### 9. v1.2: Secure promotion and out-of-band audit checkpoint
 
 `Registry.promote(result)` now refuses promotion unless the original training and
 validation examples and matching induction options are passed as keyword arguments.
@@ -390,7 +390,7 @@ external custody. The checkpoint file contains no raw training examples.
 per-item predictions or abstentions; invalid requests fail before evaluation.
 The model tool bridge remains deliberately read-only.
 
-## 10. v1.3: bounded admission firewall and operator key
+### 10. v1.3: bounded admission firewall and operator key
 
 For an authenticated loopback server:
 
@@ -418,7 +418,7 @@ transitions and immutable fields. It catches some internally coherent forgeries,
 **not** full-history rewriting by someone who can rewrite the database and
 its independently unanchored audit. Preserve operator-held checkpoints.
 
-## 11. v1.4: one-use evaluator-controlled holdout
+### 11. v1.4: one-use evaluator-controlled holdout
 
 For a **local synthetic demonstration**, run `python3 tools/generate_eval_demo.py /tmp/sis-eval-demo` to generate an example private dataset. Do not mistake generated
 examples or locally controlled secrets for independent evaluation.
@@ -455,7 +455,7 @@ separate evaluator custody, protected backups, and sealed receipts external to
 the dev environment are prerequisites for credible independent qualification.
 The regular `sis benchmark` command is unchanged.
 
-## v1.5: transfer and qualification (research use)
+### v1.5: transfer and qualification (research use)
 
 - Transfer a rule without creating or promoting a target rule: `sis --db knowledge.sqlite3 transfer examples/transfer.json` after replacing the example's source `rule_id` with an actual promoted ID.
 - Optional transfer-batch: `sis --db knowledge.sqlite3 transfer-batch examples/transfer_batch.json`. The tool bridge offers `sis_transfer`, read-only.
