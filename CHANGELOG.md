@@ -1,5 +1,61 @@
 # Changelog
 
+## 2026-11-10 — SIS v3.3.5 resource-security repair (V335-01…V335-04)
+
+V335-01 — memory-budget lifecycle:
+
+- `SearchState.start()` enables `max_memory_bytes` whenever a cap is set,
+  whether or not the caller already owns a tracer. A caller-owned tracer
+  is measured from its current baseline and is never stopped; `close()`
+  stops only a tracer the search started.
+- The cap is an incremental soft budget over Python allocations
+  (`current - baseline`), sampled at resource-check points and reported
+  as `observed_peak_bytes` and `memory_limit_source`. It is not an OS RSS
+  limit and cannot see native-extension allocations.
+- The budget now fails closed when its measurement disappears. If the
+  tracer stops mid-search the check records `memory_tracer_lost`; if it
+  is stopped and restarted (or its peak is reset) it records
+  `memory_tracer_restarted`. Either way the search reports
+  `resource_exhausted` instead of returning success with a zero-growth
+  reading.
+- `spend_signature()` checks the cap before incrementing, so the reported
+  count never exceeds `max_signature_checks`.
+
+V335-02 — production verdict trust boundary:
+
+- `classify_execution(production=True)` is fail-closed and always returns
+  SANDBOX_FAILURE; the forgeable `isolation_verification` argument is
+  removed. Only `classify_production_execution(receipt, attestation,
+  policy, ...)` can return TASK_PASS, and only after parsing a real
+  `IsolationAttestationV1` and checking signer, backend allowlist,
+  policy/image digests, required properties, expiry, and the exact
+  receipt/command/workspace/worker binding.
+- `ProductionIsolationPolicy` gains `revoked_keys`; a revoked signer is
+  rejected as `signer_revoked`.
+
+V335-03 — explicit memory chain membership:
+
+- Trusted memory reads require the exact record being returned to own a
+  `memory_chain` entry. Membership is one statement joining `experience`
+  to `memory_chain`, so the row and its chain entry are read from the
+  same snapshot rather than inferred from a store-wide invariant
+  evaluated earlier.
+- A record that was never ingested, whose row was removed, or that
+  appears between the chain check and the row read raises
+  `experience_unchained` instead of being reported as trusted.
+  Membership is not provenance: signature and lineage checks still
+  decide trust.
+- Development stores keep reading legacy rows without chain enforcement.
+
+V335-04 — release seal:
+
+- Package version 3.3.5; `RELEASE_SHA256.json` and the release bundle are
+  regenerated for the repaired tree and resealed under the release
+  provenance key.
+- The full suite runs in a clean environment with pinned pytest 8.4.2;
+  results are recorded in `docs/v3/QUALIFICATION_REPORT_V3_3_5.md` and
+  `release/release_manifest.json`.
+
 ## 2026-11-09 — SIS v3.3.4 G1/G3 hardening (development line)
 
 Gate G1 — receipt identity:
