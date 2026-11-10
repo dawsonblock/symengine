@@ -1517,8 +1517,8 @@
       "sha256": "16fc7535cf1537c99c0940d08d7b321a828716bce3c194951399c14f71951b6f"
     },
     "tests/v3/test_v333_trust_boundary.py": {
-      "bytes": 43838,
-      "sha256": "3e1f7cf39f3f26450561083abd2d2e55af250aa22970d0e5fa6c871be2149561"
+      "bytes": 43795,
+      "sha256": "00b706bb1045fcf2c5bc41e4f542d2255131b24d523e4c0ea3fc5daaeaf71aeb"
     },
     "tests/v3/test_v334_induction.py": {
       "bytes": 11349,
@@ -1695,5 +1695,5 @@
   },
   "release": "SIS-v3.3.6",
   "schema_version": 1,
-  "source_commit": "5c0e59fcdb05c4784dd001e6a426a04f4fd5309e"
+  "source_commit": "1218e77e3135564608a548415396ca60dc34cdd1"
 }
