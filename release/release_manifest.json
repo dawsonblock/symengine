@@ -1,9 +1,9 @@
 {
   "archive": {
-    "inner_project_dir": "SIS-v3.3.7",
-    "path": "release/SIS-v3.3.7.zip",
-    "sha256": "1b1cef483d76c1e1070fd379ae35a827d4b6ade2b8690fb295acccee0c9c2184",
-    "source_files": 428
+    "inner_project_dir": "SIS-v3.3.8",
+    "path": "release/SIS-v3.3.8.zip",
+    "sha256": "04c3044955d79752c8e0d9c3b52081107470102dd3437810c732c706919a9490",
+    "source_files": 435
   },
   "branch": "repair/v335-resource-security",
   "docs": [
@@ -26,6 +26,7 @@
     "docs/v3/QUALIFICATION_REPORT_V3_3_5.md",
     "docs/v3/QUALIFICATION_REPORT_V3_3_6.md",
     "docs/v3/QUALIFICATION_REPORT_V3_3_7.md",
+    "docs/v3/QUALIFICATION_REPORT_V3_3_8.md",
     "docs/v3/RELEASE_NOTES_V3_3.md",
     "docs/v3/SECURITY_BOUNDARIES_V3_3.md",
     "docs/v3/SKILL_HOLDOUTS.md",
@@ -62,19 +63,19 @@
   "provenance": {
     "path": "release/provenance.intoto.json",
     "signed": false,
-    "statement_sha256": "0e44f60ae4f1412c6828064eb7658916dc141c0b13b05e2831f2e048dac74447",
-    "subject_sha256": "1b1cef483d76c1e1070fd379ae35a827d4b6ade2b8690fb295acccee0c9c2184",
+    "statement_sha256": "6fa5584640670cc53e155850f42e049939a3fe0ceb7f2c40f0931e9fcf416f2c",
+    "subject_sha256": "04c3044955d79752c8e0d9c3b52081107470102dd3437810c732c706919a9490",
     "trust_root": "qualification-only"
   },
-  "release": "SIS-v3.3.7",
+  "release": "SIS-v3.3.8",
   "schema_version": 1,
-  "source_commit": "2bd6da665fdd30bd5e2dee0b62e390d62e1f5282",
+  "source_commit": "fafe4b479b5c2cb778c685adf95cd8994230c579",
   "source_commit_note": "archive members are byte-identical to this commit for every manifest-covered file; the release commit itself touches only out-of-band release/ provenance",
   "status": "ENGINEERING_VERIFIED",
   "test_result": {
     "command": "PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONNOUSERSITE=1 PYTHONPATH=src python3 -m pytest -q",
     "failed": 0,
-    "passed": 1330,
+    "passed": 1340,
     "skipped": 14
   }
 }

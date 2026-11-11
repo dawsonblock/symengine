@@ -29,12 +29,20 @@
       "sha256": "20b228d1ff9c45950f9219374e123ea5b57d790e1cb111c7cd9be92afb10761c"
     },
     "UPGRADE_README.md": {
-      "bytes": 12536,
-      "sha256": "9d07f516023877d3a5f9895ea53fc6463df53857ff2ab3900749de03694b3bad"
+      "bytes": 14134,
+      "sha256": "130aaba0d25afdc8558dc6ed4922e633bff5dfe9368dee2ab63470d93a90a3c7"
     },
     "UPGRADE_RELEASE_NOTES_2026-10-24.md": {
       "bytes": 4370,
       "sha256": "a0a215a7f916d9dac2f6c19b7844cf14167c66d95ea034688932bdaf9d4d5c90"
+    },
+    "docker/sandbox/Dockerfile": {
+      "bytes": 762,
+      "sha256": "e370bb5432173aac3468411f210e01909075d656f9fd823bcba55916db6b9d87"
+    },
+    "docker/sandbox/README.md": {
+      "bytes": 1276,
+      "sha256": "0eca0e9856c052e4e51d874b20f9e3071962f2f59f6f15595d6eb50f48aa62f1"
     },
     "docs/ARCHITECTURE.md": {
       "bytes": 5880,
@@ -296,6 +304,10 @@
       "bytes": 3939,
       "sha256": "8966e3a3abec2209818b844a68659620337a12a40311d03f7a967601d0ccfb58"
     },
+    "docs/v3/QUALIFICATION_REPORT_V3_3_8.md": {
+      "bytes": 3633,
+      "sha256": "5b20e00d4359c53d8e4be4e4b8943323c8286634c44245821d66e4a080957b8f"
+    },
     "docs/v3/RELEASE_NOTES_V3_3.md": {
       "bytes": 7466,
       "sha256": "69b2211968e60b8a8487e1fcf95d9e16870b46c46a0ddfbf47d9906017549968"
@@ -493,12 +505,16 @@
       "sha256": "9aa05fc78b55d4b6b23a7bd65dc612d9dd99e28fffeccbbcb9ddcfa4910b016c"
     },
     "evidence/qualification/LEARN_CYCLE.md": {
-      "bytes": 4975,
-      "sha256": "6518b9679aad98c76fd82b51e6f36b8c7726dc1bc9582dffba025f9d473c5377"
+      "bytes": 5939,
+      "sha256": "13bba411774806340be8a850a85db64f68a82bb22c0be8baf650032e196ab273"
     },
     "evidence/qualification/learn_cycle_live.json": {
       "bytes": 1885,
       "sha256": "893cd4ae00d471fd1feff462f2a69a9f21ca9cd618a4c0e4b7bef12169f3d847"
+    },
+    "evidence/qualification/learn_cycle_live_docker.json": {
+      "bytes": 3793,
+      "sha256": "34fffd5920f30658b0c619cb9ce8f1bf88f0a5ce1f9ddfe1eeac232347bac613"
     },
     "evidence/qualification/learn_cycle_scripted.json": {
       "bytes": 1879,
@@ -507,6 +523,10 @@
     "evidence/qualification/qualification_run.json": {
       "bytes": 3816,
       "sha256": "f73731e860f175db4bd197bbe1f8eb6352dbcc3520621dcd2d1bcae8e12f6ba4"
+    },
+    "evidence/sandbox/docker_sandbox_probe.json": {
+      "bytes": 2047,
+      "sha256": "e16795431d06043fb0856eaa1d14d2874f48b402d802404e291ac6c567ff0c6a"
     },
     "evidence/sandbox/holdout_summary.json": {
       "bytes": 1781,
@@ -754,7 +774,7 @@
     },
     "pyproject.toml": {
       "bytes": 875,
-      "sha256": "dfbc84e5dbb029d78fbf74b4966412d13bb74a2aad194dcc5c57c2b3e454cd89"
+      "sha256": "7e276e14a0bb747f21001a607a445c621a9180386616b3b21e8cbcfb966baabe"
     },
     "requirements-lock.txt": {
       "bytes": 239,
@@ -766,7 +786,7 @@
     },
     "src/sis/__init__.py": {
       "bytes": 98,
-      "sha256": "a22370f8455b415a0078251bdf4f53bbe0eb297cffffc8943134e304d105235d"
+      "sha256": "d41fb86416f9ba54086ddd71ebea74e2fcc2ebd6bdafa39532c5187cf9d9e118"
     },
     "src/sis/__main__.py": {
       "bytes": 47,
@@ -987,6 +1007,10 @@
     "src/sis/v3/counterexamples.py": {
       "bytes": 2326,
       "sha256": "1d09753b307b015197b2738716f3998b888b6d5479c950a6528e5e3ea9e4f51d"
+    },
+    "src/sis/v3/docker_sandbox.py": {
+      "bytes": 18218,
+      "sha256": "8e9d3c88f85dbe52ac47603af7486593a415ab120f029712ca4abda59fa5428a"
     },
     "src/sis/v3/episode_projection.py": {
       "bytes": 4517,
@@ -1372,6 +1396,10 @@
       "bytes": 12990,
       "sha256": "b9c1fca0de7e9c98630e463ef78e839125c4e3784622397327b00859b8c3ea51"
     },
+    "tests/v3/test_docker_sandbox.py": {
+      "bytes": 5274,
+      "sha256": "b30ed24cab09a96eb0076fdae82fb2630de8255d9b031ca728327609ef801758"
+    },
     "tests/v3/test_e2e_loop.py": {
       "bytes": 4918,
       "sha256": "b1e6f760544ef88fb0621c23c374760e5d304fc599da2e5d0c60828c7c0b66ef"
@@ -1657,8 +1685,8 @@
       "sha256": "259f9a3c32451af45b5b21d729768e8f7071e857333b89ef7f515b030e15a951"
     },
     "tools/learn_recommend_cycle.py": {
-      "bytes": 20889,
-      "sha256": "5e912f71336578db1461a56274c2598096ef9225e91e6973de8869f1a1ace6cc"
+      "bytes": 21867,
+      "sha256": "81bad5d55e549c403c4244aada0214c4be6bcffa932c28aefac338f371ade445"
     },
     "tools/linux_worker_probe.py": {
       "bytes": 9193,
@@ -1713,7 +1741,7 @@
       "sha256": "83b5bb723d323f861a6a55d7c39bf9593ed67937258585de9a47c95b1843a115"
     }
   },
-  "release": "SIS-v3.3.7",
+  "release": "SIS-v3.3.8",
   "schema_version": 1,
-  "source_commit": "2bd6da665fdd30bd5e2dee0b62e390d62e1f5282"
+  "source_commit": "fafe4b479b5c2cb778c685adf95cd8994230c579"
 }

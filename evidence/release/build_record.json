@@ -1,12 +1,12 @@
 {
-  "base_commit": "2bd6da665fdd30bd5e2dee0b62e390d62e1f5282",
+  "base_commit": "fafe4b479b5c2cb778c685adf95cd8994230c579",
   "branch": "repair/v335-resource-security",
   "builder": "tools/package_release.py -> tools/build_canonical_zip.py",
   "commit_binding": "every archive member is re-hashed against the working tree at build time (verify_against_tree); the source commit and dirty state are recorded in release/verification.json",
-  "generated_at": "2026-11-11T09:09:34Z",
+  "generated_at": "2026-11-11T09:23:37Z",
   "kind": "release_build_record",
   "manifest_scope": "all _included() source/evidence files; release/ and evidence/release/build_record.json are out-of-band and never inventoried into the archive",
   "post_build_verification": "release/verification.json \u2014 outside the archive by construction",
-  "release": "SIS-v3.3.7",
+  "release": "SIS-v3.3.8",
   "schema_version": 1
 }
