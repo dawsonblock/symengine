@@ -1,9 +1,59 @@
 # Upgrade guide
 
-> **Mixed document.** The v3.3.5 → v3.3.6 notes are current; the sections
-> below them describe earlier lines. The current package version is 3.3.6.
+> **Mixed document.** The v3.3.6 → v3.3.7 notes are current; the sections
+> below them describe earlier lines. The current package version is 3.3.7.
 > See `docs/v3/MIGRATION.md`, `docs/V332_OPERATIONS.md`, and
-> `docs/v3/QUALIFICATION_REPORT_V3_3_6.md` for the current upgrade path.
+> `docs/v3/QUALIFICATION_REPORT_V3_3_7.md` for the current upgrade path.
+
+## Upgrading from v3.3.6 to v3.3.7
+
+v3.3.7 connects a verified real-agent episode to a qualified procedure
+that a sibling task can retrieve. It is a correctness release, not an
+efficacy result.
+
+### Learned procedures use a failure class, not the dev task signature
+
+`experience_to_record` converts one verified pass into a candidate
+procedure whose preconditions name a failure class. The record must
+already carry that class in `failure_category`; the conversion refuses to
+relabel evidence (`failure_class_not_bound_to_record`).
+
+Existing procedures that still name the originating task's own signature
+will not match sibling tasks. Re-derive them from a verified episode, or
+update their preconditions, before expecting cross-task retrieval.
+
+### Failure classes are registered with the evaluator
+
+`OutcomeVerifier.register_task` accepts an optional `failure_class`. It is
+bound into the task commitment only when declared, persisted in
+`tasks.json`, and exposed through `failure_class_for(task_id)`. Outcome
+receipts carry the class as an optional signed field; receipts that omit
+it keep their historical canonical form, digest and signature.
+
+### Scope grants require cited or classed transfer evidence
+
+`ScopeGrantAuthority` now defaults to `require_cited_evidence=True`. Each
+transfer witness must either carry the procedure's failure class or be
+cited by the qualified revision. A mismatched class fails with
+`evidence_class_mismatch`; an uncited legacy witness fails with
+`evidence_not_cited_by_procedure`. Pass `require_cited_evidence=False`
+only for legacy test custody, and record why.
+
+### Verifying the v3.3.7 release
+
+```bash
+python3 -m venv /tmp/sis-venv
+/tmp/sis-venv/bin/python -m pip install pytest==8.4.2
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONNOUSERSITE=1 \
+PYTHONPATH=src /tmp/sis-venv/bin/python -m pytest -q
+python3 tools/verify_release.py --compile .
+python3 tools/verify_release.py release/SIS-v3.3.7.zip
+python3 tools/check_release_ci.py --mode release
+```
+
+The release is `ENGINEERING_VERIFIED` / `IMPLEMENTED_NOT_EFFICACY_QUALIFIED`.
+It does not qualify a production sandbox and does not establish that SIS
+improves a real coding agent.
 
 ## Upgrading from v3.3.5 to v3.3.6
 
