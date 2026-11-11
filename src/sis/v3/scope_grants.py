@@ -118,6 +118,7 @@ class ScopeGrantAuthority:
         revoked_signers=frozenset(),
         revoked_grants=frozenset(),
         min_transfer_receipts: int = 2,
+        require_cited_evidence: bool = False,
         now: str | None = None,
     ) -> None:
         if type(min_transfer_receipts) is not int or min_transfer_receipts < 2:
@@ -133,6 +134,7 @@ class ScopeGrantAuthority:
         self._revoked_signers = set(revoked_signers)
         self._revoked_grants = set(revoked_grants)
         self._min_receipts = min_transfer_receipts
+        self._require_cited = bool(require_cited_evidence)
 
     # ---- issuance (operator path; commits go through the authority store) ---- #
     def issue(
@@ -248,6 +250,21 @@ class ScopeGrantAuthority:
             problems.append("insufficient_transfer_evidence")
         elif grant.source_registry_id not in resolved:
             problems.append("source_not_in_evidence")
+        # Opt-in strict binding: a witness must either carry the
+        # procedure's failure class (signed into the receipt) or be a
+        # receipt the qualified revision itself cites. Distinct identities
+        # alone do not prove that the evidence is about this procedure.
+        if self._require_cited and record is not None:
+            cited = set(record.evidence_refs)
+            classes = set(record.failure_signatures)
+            for receipt in receipts:
+                if not isinstance(receipt, (OutcomeReceiptV1, OutcomeReceiptV2)):
+                    problems.append("evidence_malformed")
+                elif receipt.failure_class is not None:
+                    if receipt.failure_class not in classes:
+                        problems.append("evidence_class_mismatch")
+                elif receipt.digest not in cited:
+                    problems.append("evidence_not_cited_by_procedure")
         if grant.target_registry_id is not None and \
                 grant.target_registry_id not in resolved:
             problems.append("target_not_in_evidence")

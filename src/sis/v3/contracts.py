@@ -388,8 +388,28 @@ class IsolationAttestationV1(V1Record):
     RECORD_TYPE: ClassVar[str] = "isolation_attestation"
 
 
+class _ReceiptFailureClass:
+    """Optional failure class on outcome receipts.
+
+    The field is omitted from the canonical form when absent, so receipts
+    signed before it existed keep their exact digests and signatures.
+    """
+
+    def to_dict(self):
+        data = super().to_dict()
+        if data.get("failure_class") is None:
+            data.pop("failure_class", None)
+        return data
+
+    @classmethod
+    def from_dict(cls, value):
+        if isinstance(value, Mapping) and "failure_class" not in value:
+            value = {**value, "failure_class": None}
+        return super().from_dict(value)
+
+
 @dataclass(frozen=True, kw_only=True)
-class OutcomeReceiptV1(V1Record):
+class OutcomeReceiptV1(_ReceiptFailureClass, V1Record):
     receipt_id: str
     evaluator_identity: str
     task_id: str
@@ -400,12 +420,13 @@ class OutcomeReceiptV1(V1Record):
     regression_evidence: tuple[str, ...]
     signer_key_id: str
     signature: str
+    failure_class: str | None = None
 
     RECORD_TYPE: ClassVar[str] = "outcome_receipt"
 
 
 @dataclass(frozen=True, kw_only=True)
-class OutcomeReceiptV2(V1Record):
+class OutcomeReceiptV2(_ReceiptFailureClass, V1Record):
     """V2 outcome receipt: binds the execution and its isolation proof.
 
     Adds the execution receipt, isolation attestation, evaluator runtime,
@@ -433,6 +454,7 @@ class OutcomeReceiptV2(V1Record):
     sandbox_policy_digest: str
     signer_key_id: str
     signature: str
+    failure_class: str | None = None
 
     RECORD_TYPE: ClassVar[str] = "outcome_receipt_v2"
 
@@ -1084,6 +1106,8 @@ def _validate_record(record: V1Record) -> None:
             _timestamp(d["expires_at"], "expires_at")
         _require(isinstance(d["signature"], str) and bool(re.fullmatch(r"[0-9a-f]{128}", d["signature"])), "signature must be a 64-byte lowercase hexadecimal Ed25519 signature")
     elif isinstance(record, OutcomeReceiptV1):
+        if d.get("failure_class") is not None:
+            _text(d["failure_class"], "failure_class", maximum=128)
         _identifier(d["receipt_id"], "receipt_id")
         _identifier(d["evaluator_identity"], "evaluator_identity")
         _identifier(d["task_id"], "task_id")
@@ -1096,6 +1120,8 @@ def _validate_record(record: V1Record) -> None:
         _identifier(d["signer_key_id"], "signer_key_id")
         _require(isinstance(d["signature"], str) and bool(re.fullmatch(r"[0-9a-f]{128}", d["signature"])), "signature must be a 64-byte lowercase hexadecimal Ed25519 signature")
     elif isinstance(record, OutcomeReceiptV2):
+        if d.get("failure_class") is not None:
+            _text(d["failure_class"], "failure_class", maximum=128)
         _identifier(d["receipt_id"], "receipt_id")
         _identifier(d["evaluator_identity"], "evaluator_identity")
         _identifier(d["task_id"], "task_id")

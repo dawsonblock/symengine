@@ -39,6 +39,7 @@ def signed_receipt(
     criterion_version: str = "v1",
     suite_commitment: str = "0" * 64,
     evaluator_identity: str = "sis-v3-test-evaluator",
+    failure_class: str | None = None,
 ) -> OutcomeReceiptV1:
     """Mint a real Ed25519-signed outcome receipt under a test key."""
     unsigned = {
@@ -53,6 +54,8 @@ def signed_receipt(
         "regression_evidence": [],
         "signer_key_id": key_id,
     }
+    if failure_class is not None:
+        unsigned["failure_class"] = failure_class
     signature = signatures.sign(seed, _RECEIPT_DOMAIN + canonical_json(unsigned)).hex()
     return OutcomeReceiptV1.from_dict({**unsigned, "signature": signature})
 

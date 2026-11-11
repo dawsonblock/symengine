@@ -459,3 +459,65 @@ class BackendDispatchTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FailureClassRegistryTests(VerifierFixture):
+    def test_failure_class_is_registered_and_persisted(self):
+        self.assertIsNone(self.verifier.failure_class_for("task-scale"))
+        self.verifier.register_task(
+            actor_role="evaluator", task_id="task-money",
+            criterion_version="acceptance-v1", argv=(PY, "acceptance.py"),
+            files={"acceptance.py": ACCEPTANCE},
+            failure_class="convention_unknown:money")
+        self.assertEqual(self.verifier.failure_class_for("task-money"),
+                         "convention_unknown:money")
+        reloaded = OutcomeVerifier(
+            executor=self.eval_executor, key_dir=self.key_dir,
+            registry_dir=self.registry_dir)
+        self.assertEqual(reloaded.failure_class_for("task-money"),
+                         "convention_unknown:money")
+        self.assertIsNone(reloaded.failure_class_for("task-scale"))
+
+    def test_conflicting_failure_class_is_rejected(self):
+        kwargs = dict(
+            actor_role="evaluator", task_id="task-money",
+            criterion_version="acceptance-v1", argv=(PY, "acceptance.py"),
+            files={"acceptance.py": ACCEPTANCE})
+        self.verifier.register_task(**kwargs, failure_class="class-a")
+        with self.assertRaises(EvaluationRejected):
+            self.verifier.register_task(**kwargs, failure_class="class-b")
+
+    def test_malformed_failure_class_is_rejected(self):
+        with self.assertRaises(ContractError):
+            self.verifier.register_task(
+                actor_role="evaluator", task_id="task-bad",
+                criterion_version="acceptance-v1", argv=(PY, "acceptance.py"),
+                files={"acceptance.py": ACCEPTANCE},
+                failure_class="bad\x00class")
+
+
+class ReceiptFailureClassTests(VerifierFixture):
+    def test_failure_class_is_signed_and_persisted(self):
+        self.verifier.register_task(
+            actor_role="evaluator", task_id="task-money",
+            criterion_version="acceptance-v1", argv=(PY, "acceptance.py"),
+            files={"acceptance.py": ACCEPTANCE},
+            failure_class="convention_unknown:money")
+        receipt = self.evaluate(task=make_task("task-money"),
+                                nonce="nonce-failure-class")
+        self.assertEqual(receipt.failure_class, "convention_unknown:money")
+        self.assertTrue(verify_receipt_signature(
+            receipt, self.verifier.keystore.public.hex()))
+        reloaded = OutcomeVerifier(
+            executor=self.eval_executor, key_dir=self.key_dir,
+            registry_dir=self.registry_dir)
+        self.assertEqual(
+            reloaded.load_receipt(receipt.digest).failure_class,
+            "convention_unknown:money")
+
+    def test_receipt_without_failure_class_keeps_historical_form(self):
+        receipt = self.evaluate(nonce="nonce-legacy-form")
+        self.assertIsNone(receipt.failure_class)
+        self.assertNotIn("failure_class", receipt.to_dict())
+        self.assertTrue(verify_receipt_signature(
+            receipt, self.verifier.keystore.public.hex()))

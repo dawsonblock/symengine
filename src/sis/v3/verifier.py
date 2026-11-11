@@ -231,6 +231,7 @@ class RegisteredTask:
     base_commit: str | None
     suite_commitment: str
     statement_digest: str | None = None
+    failure_class: str | None = None
 
 
 class OutcomeVerifier:
@@ -308,6 +309,7 @@ class OutcomeVerifier:
         files: Mapping[str, bytes] | None = None,
         base_commit: str | None = None,
         statement_digest: str | None = None,
+        failure_class: str | None = None,
     ) -> RegisteredTask:
         """Record evaluator-private acceptance material for a task identity."""
         require_permission(actor_role, "outcome:evaluate")
@@ -316,6 +318,13 @@ class OutcomeVerifier:
             and re.fullmatch(r"[0-9a-f]{64}", statement_digest)
         ):
             raise ContractError("statement_digest must be a lowercase SHA-256 hex digest")
+        if failure_class is not None and not (
+            isinstance(failure_class, str)
+            and 0 < len(failure_class) <= 128
+            and not any(ord(ch) < 32 for ch in failure_class)
+        ):
+            raise ContractError(
+                "failure_class must be a bounded printable string")
         command = CommandSpec(argv=tuple(argv))
         material = dict(files or {})
         for name, data in material.items():
@@ -324,13 +333,18 @@ class OutcomeVerifier:
                 raise ContractError("registered file names must be file paths, not directories")
             if not isinstance(data, bytes) or len(data) > (1 << 20):
                 raise ContractError("registered test files must be bounded bytes")
-        commitment = canonical_digest("test_suite", 1, {
+        commitment_payload = {
             "task_id": task_id,
             "criterion_version": criterion_version,
             "argv": list(command.argv),
             "files": {name: hashlib.sha256(data).hexdigest() for name, data in sorted(material.items())},
             "base_commit": base_commit,
-        })
+        }
+        if failure_class is not None:
+            # Bound into the commitment only when declared, so existing
+            # registrations keep their historical commitments.
+            commitment_payload["failure_class"] = failure_class
+        commitment = canonical_digest("test_suite", 1, commitment_payload)
         task = RegisteredTask(
             task_id=task_id,
             criterion_version=criterion_version,
@@ -339,11 +353,13 @@ class OutcomeVerifier:
             base_commit=base_commit,
             suite_commitment=commitment,
             statement_digest=statement_digest,
+            failure_class=failure_class,
         )
         existing = self._tasks.get(task_id)
         if existing is not None:
             if (existing.suite_commitment != task.suite_commitment or
-                    existing.statement_digest != task.statement_digest):
+                    existing.statement_digest != task.statement_digest or
+                    existing.failure_class != task.failure_class):
                 raise EvaluationRejected("task_registration_conflict", task_id)
             return existing
         self._tasks[task_id] = task
@@ -360,6 +376,11 @@ class OutcomeVerifier:
         if not isinstance(task_id, str):
             return None
         return self._tasks.get(task_id)
+
+    def failure_class_for(self, task_id: str) -> str | None:
+        """The trusted failure class registered for a task identity."""
+        task = self.registered_task(task_id)
+        return task.failure_class if task is not None else None
 
     def bootstrap(self):
         """Run the evaluator bootstrap probe once (cached)."""
@@ -525,6 +546,10 @@ class OutcomeVerifier:
             "regression_evidence": [],
             "signer_key_id": self.keystore.key_id,
         }
+        if registration.failure_class is not None:
+            # Bound into the signed payload so a scope grant can check that
+            # the witness belongs to the procedure's failure class.
+            common["failure_class"] = registration.failure_class
         seed = self.keystore._seed or self.keystore.load_or_create()[0]
         if self.isolation_policy is not None:
             protocol_digest = canonical_digest("evaluation_protocol", 1, {
@@ -685,6 +710,7 @@ class OutcomeVerifier:
                     base_commit=item["base_commit"],
                     suite_commitment=item["suite_commitment"],
                     statement_digest=item.get("statement_digest"),
+                    failure_class=item.get("failure_class"),
                 )
                 self._tasks[task.task_id] = task
         if self._journal_path.exists():
@@ -794,6 +820,7 @@ class OutcomeVerifier:
                     "base_commit": task.base_commit,
                     "suite_commitment": task.suite_commitment,
                     "statement_digest": task.statement_digest,
+                    "failure_class": task.failure_class,
                 }
                 for task in sorted(self._tasks.values(), key=lambda t: t.task_id)
             ],
