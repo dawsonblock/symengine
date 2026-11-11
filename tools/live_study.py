@@ -209,6 +209,7 @@ def main() -> int:
         db, operator_token_digest=operator_token_digest(TEST_TOKEN),
         trusted_evaluator_keys={eval_key: eval_pub.hex()})
     receipt_src = signed_receipt(eval_seed, eval_key, task_id="t-src",
+                                 failure_class=sig,
                                  repo_digest=src_tree)
     receipt_table = {receipt_src.digest: receipt_src}
     controller._resolve_receipt = receipt_table.__getitem__
@@ -247,6 +248,7 @@ def main() -> int:
             status="candidate", expires_at=None)
         seed(db, proc)
         receipt = signed_receipt(eval_seed, eval_key, task_id="r-" + name,
+                                 failure_class=sig,
                                  repo_digest=repo_tree)
         receipt_table[receipt.digest] = receipt
         drive(db, controller, proc.procedure_id, "qualified",

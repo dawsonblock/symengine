@@ -260,7 +260,8 @@ class CatalogTests(unittest.TestCase):
         return [
             signed_receipt(self.eval_seed, self.eval_key_id,
                            task_id=f"transfer-{repo}",
-                           repo_digest=self.trees[repo])
+                           repo_digest=self.trees[repo],
+                           failure_class="sig-x")
             for repo in repos
         ]
 

@@ -118,7 +118,7 @@ class ScopeGrantAuthority:
         revoked_signers=frozenset(),
         revoked_grants=frozenset(),
         min_transfer_receipts: int = 2,
-        require_cited_evidence: bool = False,
+        require_cited_evidence: bool = True,
         now: str | None = None,
     ) -> None:
         if type(min_transfer_receipts) is not int or min_transfer_receipts < 2:

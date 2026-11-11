@@ -112,7 +112,8 @@ class RevocationFixture(unittest.TestCase):
     def transfer_receipts(self, *repos):
         return [signed_receipt(self.eval_seed, self.eval_key,
                                task_id=f"tr-{repo}",
-                               repo_digest=_tree(repo))
+                               repo_digest=_tree(repo),
+                               failure_class="sig-x")
                 for repo in repos]
 
     def commit_grant(self, *, target_repo, receipts=None):

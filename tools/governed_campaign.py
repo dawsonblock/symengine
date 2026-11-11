@@ -360,9 +360,11 @@ def main() -> int:
         status="candidate", expires_at=None)
     seed(db, proc)
     receipt_src = signed_receipt(eval_seed, eval_key, task_id="t-src",
-                                 repo_digest="f" * 64)
+                                 repo_digest="f" * 64,
+                                 failure_class="sig-money")
     receipt_money = signed_receipt(eval_seed, eval_key, task_id="r-money",
-                                   repo_digest=dev[0][2])
+                                   repo_digest=dev[0][2],
+                                   failure_class="sig-money")
     receipts = {receipt_src.digest: receipt_src,
                 receipt_money.digest: receipt_money}
     controller._resolve_receipt = receipts.__getitem__

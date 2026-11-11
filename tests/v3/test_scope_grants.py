@@ -77,7 +77,8 @@ class ScopeGrantFixture(unittest.TestCase):
     def transfer_receipts(self, *repos):
         return [signed_receipt(self.eval_seed, self.eval_key,
                                task_id=f"transfer-{repo}-{i}",
-                               repo_digest=_tree(repo))
+                               repo_digest=_tree(repo),
+                               failure_class="sig-x")
                 for i, repo in enumerate(repos)]
 
     def commit_grant(self, *, source="repo-a", target_repo=None,
@@ -392,7 +393,10 @@ class CitedEvidenceBindingTests(ScopeGrantFixture):
     def test_strict_grant_rejects_uncited_witness(self):
         strict, seed, key = make_grant_authority(
             self.registry, require_cited_evidence=True)
-        receipts = self.transfer_receipts("repo-a", "repo-b")
+        receipts = [signed_receipt(self.eval_seed, self.eval_key,
+                                   task_id=f"transfer-{repo}-{i}",
+                                   repo_digest=_tree(repo))
+                    for i, repo in enumerate(("repo-a", "repo-b"))]
         with self.assertRaises(ScopeGrantError):
             strict.issue(
                 actor_role="operator", seed=seed,
