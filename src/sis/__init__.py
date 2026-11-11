@@ -1,2 +1,2 @@
 """Symbolic Induction Engine: bounded hypotheses, tests, and provenance."""
-__version__ = "3.3.7"
+__version__ = "3.3.8"

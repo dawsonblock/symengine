@@ -1,9 +1,54 @@
 # Upgrade guide
 
-> **Mixed document.** The v3.3.6 → v3.3.7 notes are current; the sections
-> below them describe earlier lines. The current package version is 3.3.7.
+> **Mixed document.** The v3.3.7 → v3.3.8 notes are current; the sections
+> below them describe earlier lines. The current package version is 3.3.8.
 > See `docs/v3/MIGRATION.md`, `docs/V332_OPERATIONS.md`, and
-> `docs/v3/QUALIFICATION_REPORT_V3_3_7.md` for the current upgrade path.
+> `docs/v3/QUALIFICATION_REPORT_V3_3_8.md` for the current upgrade path.
+
+## Upgrading from v3.3.7 to v3.3.8
+
+v3.3.8 moves evaluator execution of untrusted submitted code into a
+Docker sandbox. It is a containment release, not an efficacy result.
+
+### Build the evaluator image
+
+```bash
+docker build --platform linux/arm64 -t sis-evaluator:3.3.8 docker/sandbox
+```
+
+The image carries the pinned test runner and runs as an unprivileged
+user. A tag-only image is acceptable for development; receipts record
+`docker:image_tag_only`. Production must pin the image by digest.
+
+### Run the cycle with the sandbox
+
+```bash
+PYTHONPATH=src:. python3 tools/learn_recommend_cycle.py   --agent codex --sandbox docker --wall 150 -o /tmp/cycle.json
+```
+
+The tool probes the sandbox before evaluating and aborts if any
+containment check fails. The probe covers network denial, read-only root,
+workspace write, non-root execution, memory and pid limits. Evidence:
+`evidence/sandbox/docker_sandbox_probe.json`.
+
+### Production is still gated
+
+The Docker receipt markers (`isolation:docker_sandbox`, `docker:*`) are
+factual launch controls, not a signed containment proof. Production
+qualification still requires a digest-pinned image and an
+`IsolationAttestationV1` from a separately trusted isolator.
+
+### Verifying the v3.3.8 release
+
+```bash
+python3 -m venv /tmp/sis-venv
+/tmp/sis-venv/bin/python -m pip install pytest==8.4.2
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONNOUSERSITE=1 \
+PYTHONPATH=src /tmp/sis-venv/bin/python -m pytest -q
+python3 tools/verify_release.py --compile .
+python3 tools/verify_release.py release/SIS-v3.3.8.zip
+python3 tools/check_release_ci.py --mode release
+```
 
 ## Upgrading from v3.3.6 to v3.3.7
 

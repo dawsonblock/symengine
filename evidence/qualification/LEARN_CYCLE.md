@@ -6,8 +6,9 @@ candidate procedure, signed decisions qualify it, and a sibling task in
 the same failure class is served `recommend`. A different failure class
 abstains.
 
-Machine-readable evidence: `learn_cycle_live.json` (real Codex) and
-`learn_cycle_scripted.json` (deterministic plumbing check). The raw
+Machine-readable evidence: `learn_cycle_live.json` (real Codex, local
+evaluator), `learn_cycle_live_docker.json` (real Codex, Docker evaluator)
+and `learn_cycle_scripted.json` (deterministic plumbing check). The raw
 transcripts are not committed; the live run's key lines are quoted below.
 
 ## Command
@@ -51,6 +52,27 @@ passes, half-even fails. In this instance the baseline **declined to
 guess** rather than guessing wrong. `no_action` records that distinction
 from the receipt's evaluated tree, so a refusal is never reported as a
 wrong attempt.
+
+## Docker-backed evaluation
+
+`learn_cycle_live_docker.json` repeats the live cycle with the evaluator
+inside the Docker sandbox. Every evaluation ran in `sis-evaluator:3.3.7`
+(image id `76873b68…`) under:
+
+- `--network none`
+- `--read-only` root, writable workspace bind, tmpfs `/tmp`
+- host non-root uid, `--cap-drop ALL`, `no-new-privileges`
+- memory, pids and CPU bounds
+
+The probe in `evidence/sandbox/docker_sandbox_probe.json` observed all six
+checks: network denied, root write denied, workspace write allowed,
+non-root user, memory limit enforced (exit 137), pids limit enforced.
+
+The image is **tag-only** in this development run; the receipts carry
+`docker:image_tag_only`. Production requires a digest-pinned image and a
+signed `IsolationAttestationV1` from a separately trusted isolator. The
+Docker receipt markers are factual launch controls, not a containment
+proof.
 
 ## Mechanism
 

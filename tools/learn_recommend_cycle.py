@@ -53,6 +53,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from sis.v3.authority_db import AuthorityDB
 from sis.v3.benchmark import BenchmarkHarness, BudgetCaps, report_digest
 from sis.v3.contracts import GuidanceRequestV1, TaskEnvelopeV1
+from sis.v3.docker_sandbox import DockerSandboxExecutor
 from sis.v3.learning.records import experience_to_record
 from sis.v3.memory import (MemoryStore, issue_experience_record,
                            verify_experience_evidence)
@@ -243,6 +244,11 @@ def main() -> int:
     ap.add_argument("--wall", type=float, default=180,
                     help="per-turn wall budget seconds")
     ap.add_argument("--agent", choices=("codex", "scripted"), default="codex")
+    ap.add_argument("--sandbox", choices=("local", "docker"), default="local",
+                    help="where the evaluator runs submitted code")
+    ap.add_argument("--sandbox-image", default="sis-evaluator:3.3.8")
+    ap.add_argument("--require-sandbox-digest", action="store_true",
+                    help="refuse a sandbox image that is not digest-pinned")
     args = ap.parse_args()
     wall = int(args.wall)
 
@@ -250,8 +256,18 @@ def main() -> int:
     registry, reg_seed = make_registry()
     grants, grant_seed, grant_key = make_grant_authority(
         registry, require_cited_evidence=True)
+    sandbox = None
+    if args.sandbox == "docker":
+        executor = DockerSandboxExecutor(
+            root / "exec-docker", image=args.sandbox_image,
+            require_image_digest=args.require_sandbox_digest)
+        sandbox = executor.probe()
+        if not sandbox["ok"]:
+            raise SystemExit("docker sandbox probe failed; refusing to evaluate")
+    else:
+        executor = LocalSubprocessExecutor(root / "exec")
     verifier = OutcomeVerifier(
-        executor=LocalSubprocessExecutor(root / "exec"),
+        executor=executor,
         key_dir=root / "eval-keys", registry_dir=root / "eval-reg")
     # The promotion controller must trust the key that actually signed the
     # receipt, not a test key.
@@ -434,6 +450,9 @@ def main() -> int:
         "served_holdout": (holdout_entry(served_report, sib_env)
                            if served_report else None),
         "memory_chain_verified": memory.verify_chain(),
+        "evaluator_sandbox": (
+            {"backend": "docker_sandbox", **sandbox}
+            if sandbox is not None else {"backend": "local_subprocess"}),
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)
     logs = args.output.parent / "logs"
