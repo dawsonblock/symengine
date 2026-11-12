@@ -1,7 +1,6 @@
 """Single boundary for JSON/data-shape validation."""
 import hashlib
 import json
-import math
 import re
 from .errors import InvalidInput
 

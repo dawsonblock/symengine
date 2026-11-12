@@ -32,7 +32,6 @@ independent backend and must never be configured as one.
 from __future__ import annotations
 
 import hashlib
-import json
 import os
 import re
 import secrets

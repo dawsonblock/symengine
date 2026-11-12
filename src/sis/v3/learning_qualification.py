@@ -30,7 +30,6 @@ from .benchmark import BenchmarkHarness, BudgetCaps
 from .contracts import GuidanceV1, TaskEnvelopeV1, canonical_digest
 from .runner import tree_digest
 from .governed_eval import (GOVERNED_ARMS, assert_partition_disjoint,
-                            compute_metrics, preregister,
                             required_sample_size, run_governed_evaluation)
 
 ARM_LABELS = {

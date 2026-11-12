@@ -26,7 +26,14 @@ def _docker_ready(image=IMAGE):
                        timeout=30)
         subprocess.run(["docker", "image", "inspect", image], check=True,
                        capture_output=True, timeout=30)
-        return True
+        # A reachable daemon that cannot create a container (read-only
+        # metadata store, exhausted VM disk, paused engine) is not a
+        # usable integration environment; the class must skip, not fail.
+        probe = subprocess.run(
+            ["docker", "run", "--rm", "--network", "none",
+             "--entrypoint", "python3", image, "-c", "pass"],
+            capture_output=True, timeout=120)
+        return probe.returncode == 0
     except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
         return False
 
@@ -86,7 +93,8 @@ def limits(**overrides):
     return ResourceLimits(**values)
 
 
-@unittest.skipUnless(_docker_ready(), f"Docker image {IMAGE} unavailable")
+@unittest.skipUnless(
+    _docker_ready(), f"Docker daemon or image {IMAGE} unavailable")
 class ContainerIntegrationTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()

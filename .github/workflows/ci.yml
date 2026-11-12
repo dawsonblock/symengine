@@ -49,6 +49,20 @@ jobs:
         if: runner.os == 'Linux'
         run: python tools/smoke_integration.py
 
+  lint:
+    # One pinned static gate over the production tree. The rules are
+    # deliberately limited to syntax errors and pyflakes so the check
+    # stays actionable; style rules are not enforced yet.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install ruff==0.16.0
+      - run: python -m ruff check src
+      - run: python -m compileall -q src tests tools
+
   postgres:
     # Qualifies the multi-process profile: the SQLite-only job skips the
     # cross-replica replay tests, so this job is the one that proves the

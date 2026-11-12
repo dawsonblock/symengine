@@ -21,7 +21,7 @@ EvoSkill-style failure-driven optimization inside the v3 trust model:
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Callable, Protocol, Sequence
 
 from .candidates import content_digest

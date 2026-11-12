@@ -18,7 +18,7 @@ from __future__ import annotations
 import importlib.metadata
 import sys
 import tempfile
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 from .contracts import canonical_digest

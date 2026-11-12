@@ -82,6 +82,18 @@ than `disk_bytes` now fails at copy-in instead of producing a
 qualification evidence describe the pre-repair tree and must be
 regenerated with `tools/package_release.py` before any release claim.
 
+Repository hygiene in the same repair:
+
+- Ruff is pinned in `pyproject.toml` (`E9` and `F` over `src`); the CI
+  `lint` job runs it plus `compileall`. The 27 unused imports and six
+  unused variables it found are removed without changing behavior.
+- `tests/v3/test_docker_sandbox.py` probes for the ability to create a
+  container, so a daemon that is reachable but unusable skips the
+  integration class instead of failing it.
+- `docs/v3/RELEASE_PROCESS.md` records the branch, tag and seal ritual.
+  The sealed releases are tagged `SIS-v3.3.5` through `SIS-v3.3.8` on
+  their seal commits.
+
 ## 2026-11-10 — SIS v3.3.6 trust, memory-enforcement and benchmark repair (V336-01…V336-04)
 
 V336-01 — memory trust profiles are a closed enumeration:

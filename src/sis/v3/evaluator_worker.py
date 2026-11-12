@@ -11,7 +11,6 @@ split still requires a separate service account or host.
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import signal
 import subprocess

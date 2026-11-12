@@ -79,3 +79,12 @@ has a drained stderr and a watchdog. The sealed archive and the
 `evidence/` snapshots in this report predate that repair; see the
 2026-11-11 CHANGELOG entry and regenerate the release before quoting this
 report.
+
+The repair was re-sealed twice. The first re-seal ran with a working
+Docker daemon and recorded the same 1396 passed / 13 skipped. The second
+re-seal ran after the daemon's metadata store went read-only (an
+environment failure, not a code change), so `_docker_ready()` skipped the
+15 Docker integration tests instead of failing them and the run recorded
+**1381 passed, 28 skipped, 0 failed**. The skip is the documented
+contract; the Docker-backed cycle evidence above still comes from the
+working run.

@@ -17,7 +17,6 @@ maximum revocation staleness it accepts; the default is to deny.
 from __future__ import annotations
 
 import hashlib
-import json
 import os
 import re
 import secrets
@@ -826,7 +825,7 @@ class EvidenceCustodyStore:
             links += 1
             try:
                 manifest = loads_json(path.read_bytes())
-            except (OSError, ValueError) as exc:
+            except (OSError, ValueError):
                 problems.append(f"link:{path.stem[:12]}:unreadable")
                 continue
             if not self._verify_link(manifest):

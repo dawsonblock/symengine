@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Any
 
 from .base import AgentTurn, SandboxChoice
-from ..contracts import ContractError, ObservationEventV1, canonical_digest
+from ..contracts import ObservationEventV1, canonical_digest
 
 
 _MAX_PROMPT_CHARS = 65_536
