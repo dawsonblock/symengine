@@ -50,7 +50,7 @@ No efficacy, production-hardening, or cross-repository claims are made.
 
 ### Test evidence (exact commands)
 
-```
+```text
 PYTHONPATH=src:. python3 -m pytest -q
   → 585 passed, 2 skipped   (17.2s)
 
