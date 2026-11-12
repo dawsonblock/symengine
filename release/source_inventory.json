@@ -257,8 +257,8 @@
       "sha256": "c56c5cd92bbfce69b536edeb6c296c2ed18456c4d1a64a7b2672e7369a8b9c87"
     },
     "docs/v3/G1_GATE_REPORT.md": {
-      "bytes": 6623,
-      "sha256": "14f79d367c3955351419db8a440a77d36b00209565c80fec60b84a87ecbce323"
+      "bytes": 6627,
+      "sha256": "6dbda1d67e5b5c68c021ccdc51fc2529c0037509150dc56ad3eb1de172fa6460"
     },
     "docs/v3/G2_GATE_REPORT.md": {
       "bytes": 6178,
@@ -1759,5 +1759,5 @@
   },
   "release": "SIS-v3.3.8",
   "schema_version": 1,
-  "source_commit": "8b92946dd4075d07c2fa685096e318969d2d6da3"
+  "source_commit": "7babb41ed962f4ba0425757f8ed201c921b5885e"
 }

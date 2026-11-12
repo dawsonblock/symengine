@@ -2,7 +2,7 @@
   "archive": {
     "inner_project_dir": "SIS-v3.3.8",
     "path": "release/SIS-v3.3.8.zip",
-    "sha256": "e2c8737f943c06a060de7048130c7d9914dacab74d2589878bcb529c9a465da6",
+    "sha256": "10c62bbff5565a0f09bc5f3cb4240549db3b8c67fe03541c4f94a65e7934a9f2",
     "source_files": 439
   },
   "branch": "repair/v335-resource-security",
@@ -63,13 +63,13 @@
   "provenance": {
     "path": "release/provenance.intoto.json",
     "signed": false,
-    "statement_sha256": "ee25f1760f97ad857bf0e457a512f55bb71aa99801729a31e4d61604ed62e5e4",
-    "subject_sha256": "e2c8737f943c06a060de7048130c7d9914dacab74d2589878bcb529c9a465da6",
+    "statement_sha256": "9075f955fd5ea5f6a6ca2fde0b720c5ce899dfa0a6d8ac1e81288fbe54ea2706",
+    "subject_sha256": "10c62bbff5565a0f09bc5f3cb4240549db3b8c67fe03541c4f94a65e7934a9f2",
     "trust_root": "qualification-only"
   },
   "release": "SIS-v3.3.8",
   "schema_version": 1,
-  "source_commit": "8b92946dd4075d07c2fa685096e318969d2d6da3",
+  "source_commit": "7babb41ed962f4ba0425757f8ed201c921b5885e",
   "source_commit_note": "archive members are byte-identical to this commit for every manifest-covered file; the release commit itself touches only out-of-band release/ provenance",
   "status": "ENGINEERING_VERIFIED",
   "test_result": {
