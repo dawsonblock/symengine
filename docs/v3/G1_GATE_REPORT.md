@@ -1,7 +1,8 @@
 # G0/G1 Gate Report — V2 Authority Recovery → v3.1-alpha
 
 Status date: 2026-10-24. Branch: `codex/sis-authority-transfer-qualification`.
-Commits: `d79a813` (baseline import) · `35b9831` (PR-00 freeze) · `b4c9664` (PR-01/PR-02) · `f7429d0` (PR-02 migration tests).
+Commits: `d79a813` (baseline import) · `35b9831` (PR-00 freeze) · `b4c9664` (PR-01/PR-02) · `f7429d0` (PR-02 migration
+tests).
 
 This is an engineering gate report — **not** a v4.0 qualification certificate.
 No efficacy, production-hardening, or cross-repository claims are made.

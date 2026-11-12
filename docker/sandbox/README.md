@@ -31,8 +31,16 @@ PYTHONPATH=src:. python3 tools/learn_recommend_cycle.py \
 ```
 
 The probe checks network denial, read-only root, workspace write,
-non-root execution, memory limit and pids limit. The tool aborts before
-evaluating if any check fails.
+non-root execution, memory limit, pids limit, disk quota, CPU-time
+budget and combined output cap. The tool aborts before evaluating if any
+check fails.
+
+The workspace is a quota-limited tmpfs inside the container. The host
+workspace is mounted read-only at `/submission`, copied into the tmpfs
+before the command runs, and copied back through a filtered tar stream
+afterwards. A run that is stopped by the wall clock, the output cap or
+pids exhaustion reports `fs:workspace_state_unavailable` rather than
+presenting the pre-run tree as final.
 
 ## What this is not
 

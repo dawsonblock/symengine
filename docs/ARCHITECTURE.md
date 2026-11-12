@@ -7,9 +7,13 @@
 
 ## Trust and execution boundaries
 
-Input examples (untrusted data) -> shape/type validation -> bounded grammar enumeration -> **interpreter-only** execution -> training fit -> rival disagreement probes -> untouched supplied validation -> evidence-gated `Registry.promote()` -> rule retrieval -> predictions.
+Input examples (untrusted data) -> shape/type validation -> bounded grammar enumeration -> **interpreter-only**
+execution -> training fit -> rival disagreement probes -> untouched supplied validation -> evidence-gated
+`Registry.promote()` -> rule retrieval -> predictions.
 
-LLM calls, when explicitly requested, are *proposal generators*. The model receives only the training examples (and public AST schema). Its returned JSON must pass the same AST parser and fit checks as every other candidate. It cannot determine the final evidence status or directly promote a rule.
+LLM calls, when explicitly requested, are *proposal generators*. The model receives only the training examples (and
+public AST schema). Its returned JSON must pass the same AST parser and fit checks as every other candidate. It cannot
+determine the final evidence status or directly promote a rule.
 
 ## Components
 
@@ -41,7 +45,9 @@ Study:
 }
 ```
 
-The above is the *shape*, **not** a valid promoted dataset: promotion requires three distinct train records and two distinct validation records. All examples must have an identical typed schema. Values are bounded and field names are identifier-only.
+The above is the *shape*, **not** a valid promoted dataset: promotion requires three distinct train records and two
+distinct validation records. All examples must have an identical typed schema. Values are bounded and field names are
+identifier-only.
 
 Rule AST example: `{ "op": "add", "args": [ {"op":"field","name":"a"}, {"op":"field","name":"b"} ] }`.
 
@@ -53,26 +59,38 @@ Allowed AST constructors:
 - `neg/abs/upper/lower/reverse(arg:AST)`.
 - `if_eq(left,right,then,else)` (model suggestions; deterministic search does not currently enumerate conditionals).
 
-Max 31 AST nodes, max nesting depth 5, integer and text limits enforced at input and output. No Python evaluation, imports, subprocess, file system, reflection, or network access exists in the rule interpreter.
+Max 31 AST nodes, max nesting depth 5, integer and text limits enforced at input and output. No Python evaluation,
+imports, subprocess, file system, reflection, or network access exists in the rule interpreter.
 
 ## Induction algorithm
 
-First enumerate depth-one hypotheses, evaluate *only* training examples, retain perfect fits, rank by AST cost and canonical JSON, then generate deterministic input perturbations. If depth-one has no perfect fit, expand arithmetic depth two up to `max_candidates`; a budget hit is reflected as `search_truncated=true`. Compare alternatives on probes, producing a distinguishing input when possible. A probe does not carry truth labels. Finally test only the selected rule against separately supplied validation cases. This is deliberately conservative and not statistically calibrated.
+First enumerate depth-one hypotheses, evaluate *only* training examples, retain perfect fits, rank by AST cost and
+canonical JSON, then generate deterministic input perturbations. If depth-one has no perfect fit, expand arithmetic
+depth two up to `max_candidates`; a budget hit is reflected as `search_truncated=true`. Compare alternatives on probes,
+producing a distinguishing input when possible. A probe does not carry truth labels. Finally test only the selected rule
+against separately supplied validation cases. This is deliberately conservative and not statistically calibrated.
 
-The optional Z3 module can find a disagreement between *two symbolic formulas* in a bounded integer region. Even a Z3 `unsat` for two formulas does **not** prove either formula correctly models the external task. Use it as a falsification tool, not an oracle for the correct hypothesis.
+The optional Z3 module can find a disagreement between *two symbolic formulas* in a bounded integer region. Even a Z3
+`unsat` for two formulas does **not** prove either formula correctly models the external task. Use it as a falsification
+tool, not an oracle for the correct hypothesis.
 
 ## Rule lifecycle
 
 - `provisional`: training fit without required validation.
-- `ambiguous`: competing training-fit candidates differ on constructed input; collect ground-truth labels and restart with new holdout.
+- `ambiguous`: competing training-fit candidates differ on constructed input; collect ground-truth labels and restart
+  with new holdout.
 - `validation_failed`: selected training-fit hypothesis failed supplied validation.
 - `search_incomplete`: budget terminated a search.
 - `no_rule`: no candidate matched within grammar.
 - `locally_validated`: selected rule matched supplied validation and passed available ambiguity checks.
 - `active`: promoted rule stored persistently.
-- `suspended`: user reports a mismatched outcome. Human review/re-induction required; no untrusted automatic self-rewriting.
+- `suspended`: user reports a mismatched outcome. Human review/re-induction required; no untrusted automatic
+  self-rewriting.
 
-Feedback stores user-reported outcomes, does not treat them as independent ground truth, and suspends on a mismatch as a conservative risk control. On prediction, the registry abstains if zero valid rules apply or multiple rules disagree. As of v1.3, promotion rejects a new rule that disagrees with existing active rules on training, validation, or deterministic generated probes. This is bounded compatibility checking, not proof of equivalent domain behavior.
+Feedback stores user-reported outcomes, does not treat them as independent ground truth, and suspends on a mismatch as a
+conservative risk control. On prediction, the registry abstains if zero valid rules apply or multiple rules disagree. As
+of v1.3, promotion rejects a new rule that disagrees with existing active rules on training, validation, or
+deterministic generated probes. This is bounded compatibility checking, not proof of equivalent domain behavior.
 
 ## Important future extension points
 
@@ -85,7 +103,9 @@ Feedback stores user-reported outcomes, does not treat them as independent groun
 
 ## v1.7 procedural-skill subsystem
 
-See [V1_7_PROCEDURAL_SKILLS.md](V1_7_PROCEDURAL_SKILLS.md) for architecture, verification boundary, threat model and explicit limitations. The procedural skill chain is local integrity evidence, not a separately anchored cryptographic attestation.
+See [V1_7_PROCEDURAL_SKILLS.md](V1_7_PROCEDURAL_SKILLS.md) for architecture, verification boundary, threat model and
+explicit limitations. The procedural skill chain is local integrity evidence, not a separately anchored cryptographic
+attestation.
 
 ## v2.1 operator-side trace learning
 

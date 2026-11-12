@@ -35,6 +35,7 @@ from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 from .contracts import ContractError, ExecutionReceiptV1, canonical_digest
+from .workspace_guard import ManagedWorkspaceRegistry, protected_overlap
 
 try:
     import resource
@@ -218,6 +219,14 @@ def tree_digest(root: Path) -> str:
 
 @dataclass(frozen=True)
 class Workspace:
+    """A handle to a disposable workspace.
+
+    ``path`` is informational. Backends resolve execution and deletion
+    through their private registry and reject a handle whose path does
+    not match the registered canonical path, so a caller cannot redirect
+    a mount, an execution, or a delete by supplying its own path.
+    """
+
     workspace_id: str
     path: Path
     before_tree_digest: str
@@ -344,15 +353,17 @@ class LocalSubprocessExecutor:
             # from a separately trusted isolator.
             raise ContractError(
                 "verified_isolation_unavailable_for_local_backend")
-        self.root = Path(root) if root is not None else Path(tempfile.mkdtemp(prefix="sis-v3-exec-"))
+        self.root = Path(os.path.abspath(
+            root if root is not None
+            else tempfile.mkdtemp(prefix="sis-v3-exec-")))
         self.root.mkdir(parents=True, exist_ok=True)
-        (self.root / "workspaces").mkdir(exist_ok=True)
+        self._registry = ManagedWorkspaceRegistry(
+            self.root, executor_identity=worker_identity, error=RunnerError)
         self.worker_identity = worker_identity
         self._production = bool(production)
         self._seatbelt = None if use_seatbelt is False else _seatbelt_binary()
         self._protected: set[Path] = {
             Path(path).resolve() for path in protected_paths}
-        self._workspaces: dict[str, Workspace] = {}
         self._live: dict[str, subprocess.Popen] = {}
         self._live_ws: dict[str, str] = {}
         self._outputs: dict[str, tuple[bytes, bytes]] = {}
@@ -361,6 +372,10 @@ class LocalSubprocessExecutor:
     def protect(self, path: str | Path) -> None:
         """Deny the child read access to a key/authority/dataset path."""
         resolved = Path(path).resolve()
+        root = self.root.resolve()
+        if resolved.is_relative_to(root) or root.is_relative_to(resolved):
+            raise RunnerError(
+                "protected path must not overlap the executor root")
         with self._lock:
             self._protected.add(resolved)
 
@@ -383,15 +398,17 @@ class LocalSubprocessExecutor:
             raise RunnerError("base_dir must be an existing directory")
         if base.resolve().is_relative_to(self.root.resolve()):
             raise RunnerError("base_dir must not live inside the executor root")
-        workspace_id = "ws-" + secrets.token_hex(8)
-        path = self.root / "workspaces" / workspace_id
+        if protected_overlap(base, self.protected_paths) is not None:
+            raise RunnerError("base_dir_overlaps_protected_material")
         self._reject_symlinks(base)
+        workspace_id, path = self._registry.allocate()
         shutil.copytree(base, path, symlinks=False)
         scan = scan_tree(path)
-        workspace = Workspace(workspace_id, path, scan.digest, self.worker_identity)
-        with self._lock:
-            self._workspaces[workspace_id] = workspace
-        return workspace
+        record = self._registry.register(
+            workspace_id, path, before_tree_digest=scan.digest)
+        return Workspace(
+            record.workspace_id, record.path, record.before_tree_digest,
+            record.executor_identity)
 
     def run(self, workspace: Workspace, spec: CommandSpec) -> ExecutionReceiptV1:
         if not isinstance(spec, CommandSpec):
@@ -402,11 +419,19 @@ class LocalSubprocessExecutor:
             # validated. This backend is explicitly not that — no flag or
             # attestation can qualify it.
             raise RunnerError("local_backend_not_production_qualified")
-        with self._lock:
-            if workspace.workspace_id not in self._workspaces:
-                raise RunnerError("workspace is not managed by this executor")
-        workdir = (workspace.path / spec.cwd).resolve()
-        if not workdir.is_dir() or not workdir.is_relative_to(workspace.path.resolve()):
+        with self._registry.execution(
+                workspace.workspace_id, workspace.path,
+                executor_identity=workspace.executor_identity) as record:
+            return self._run_workspace(record, spec)
+
+    def _run_workspace(
+        self, record, spec: CommandSpec,
+    ) -> ExecutionReceiptV1:
+        before = scan_tree(record.path)
+        if before.external_symlinks:
+            raise RunnerError("workspace contains external symlinks")
+        workdir = (record.path / spec.cwd).resolve()
+        if not workdir.is_dir() or not workdir.is_relative_to(record.path.resolve()):
             raise RunnerError("command cwd escapes or is absent from the workspace")
 
         security_errors: list[str] = ["isolation:unverified_local"]
@@ -423,10 +448,10 @@ class LocalSubprocessExecutor:
         argv = list(spec.argv)
         argv[0] = self._resolve_executable(argv[0])
         if self._seatbelt:
-            scratch = workspace.path / ".scratch"
+            scratch = record.path / ".scratch"
             scratch.mkdir(exist_ok=True)
             profile = _seatbelt_profile(
-                workspace.path, scratch, self.protected_paths)
+                record.path, scratch, self.protected_paths)
             if profile is not None:
                 argv = [self._seatbelt, "-p", profile, *argv]
                 security_errors.append("isolation:seatbelt")
@@ -437,7 +462,7 @@ class LocalSubprocessExecutor:
                 security_errors.append("network:not_enforced")
                 security_errors.append("seatbelt:profile_unembeddable_path")
 
-        env = _minimal_env(workspace.path)
+        env = _minimal_env(record.path)
         env.update(spec.env)
 
         execution_id = "exec-" + secrets.token_hex(8)
@@ -448,6 +473,8 @@ class LocalSubprocessExecutor:
         usage_before = (
             resource.getrusage(resource.RUSAGE_CHILDREN) if resource is not None else None
         )
+        if self._registry.is_closing(record.workspace_id):
+            raise RunnerError("workspace_is_closing")
         proc = subprocess.Popen(
             argv,
             cwd=str(workdir),
@@ -460,7 +487,27 @@ class LocalSubprocessExecutor:
         )
         with self._lock:
             self._live[execution_id] = proc
-            self._live_ws[execution_id] = workspace.workspace_id
+            self._live_ws[execution_id] = record.workspace_id
+        if self._registry.is_closing(record.workspace_id):
+            # Destruction began between the pre-launch check and the
+            # registration above; never leave a process running against
+            # a workspace that is about to be removed.
+            self._kill_group(proc)
+            try:
+                proc.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait(timeout=10)
+            with self._lock:
+                self._live.pop(execution_id, None)
+                self._live_ws.pop(execution_id, None)
+            for pipe in (proc.stdout, proc.stderr, proc.stdin):
+                try:
+                    if pipe is not None and not pipe.closed:
+                        pipe.close()
+                except OSError:
+                    pass
+            raise RunnerError("workspace_is_closing")
 
         def pump(pipe, sink: bytearray, name: str) -> None:
             try:
@@ -518,7 +565,7 @@ class LocalSubprocessExecutor:
                 self._live_ws.pop(execution_id, None)
         wall = time.monotonic() - start
 
-        after = scan_tree(workspace.path)
+        after = scan_tree(record.path)
         if truncated["stdout"]:
             security_errors.append("output:stdout_truncated")
         if truncated["stderr"]:
@@ -553,7 +600,7 @@ class LocalSubprocessExecutor:
             execution_id=execution_id,
             worker_identity=self.worker_identity,
             environment_digest=self._environment_digest(),
-            before_tree_digest=workspace.before_tree_digest,
+            before_tree_digest=record.before_tree_digest,
             after_tree_digest=after.digest,
             command_spec_digest=command_spec_digest(spec),
             exit_status=proc.returncode if proc.returncode is not None else -1,
@@ -572,16 +619,42 @@ class LocalSubprocessExecutor:
             return self._outputs[execution_id]
 
     def destroy(self, workspace: Workspace) -> None:
+        record = self._registry.begin_destroy(
+            workspace.workspace_id, workspace.path,
+            executor_identity=workspace.executor_identity)
+        if record is None:
+            return
+        try:
+            self._terminate_workspace(record.workspace_id)
+            if not self._registry.wait_idle(record.workspace_id, timeout=30):
+                raise RunnerError("workspace_busy")
+        except BaseException:
+            self._registry.abort_destroy(record.workspace_id)
+            raise
+        try:
+            self._registry.remove(record)
+        finally:
+            self._registry.finish_destroy(record.workspace_id)
+
+    def _terminate_workspace(self, workspace_id: str) -> None:
         with self._lock:
-            self._workspaces.pop(workspace.workspace_id, None)
             targets = [
                 proc for exec_id, proc in self._live.items()
-                if self._live_ws.get(exec_id) == workspace.workspace_id
+                if self._live_ws.get(exec_id) == workspace_id
             ]
         for proc in targets:
             if proc.poll() is None:
                 self._kill_group(proc)
-        shutil.rmtree(workspace.path, ignore_errors=True)
+        for proc in targets:
+            if proc.poll() is None:
+                try:
+                    proc.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    try:
+                        proc.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        pass
 
     def terminate_all(self) -> None:
         with self._lock:

@@ -393,9 +393,12 @@ class OutcomeVerifier:
                     ok=False, reason="runtime_pin_mismatch",
                     detail=f"{type(exc).__name__}: {exc}")
             else:
+                # The bootstrap base tree must not live under the
+                # protected registry/key directories: workspace
+                # preparation rejects any source tree that overlaps
+                # evaluator material.
                 self._bootstrap = bootstrap_check(
-                    self.executor, self.runtime_profile,
-                    root=self.registry_dir)
+                    self.executor, self.runtime_profile)
         self.last_bootstrap = self._bootstrap
         return self._bootstrap
 
