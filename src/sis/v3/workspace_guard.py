@@ -25,7 +25,7 @@ import time
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Iterator
+from typing import Callable, Iterable, Iterator
 
 _WORKSPACE_ID = re.compile(r"^ws-[0-9a-f]{16}$")
 _DESTROY_WAIT_SECONDS = 30.0
@@ -173,6 +173,8 @@ class ManagedWorkspaceRegistry:
                 workspace_id, path, executor_identity)
             if workspace_id in self._closing:
                 raise self._error("workspace_is_closing")
+            if not record.path.is_dir():
+                raise self._error("workspace_path_missing")
             self._active[workspace_id] = self._active.get(workspace_id, 0) + 1
         try:
             yield record
@@ -263,6 +265,36 @@ class ManagedWorkspaceRegistry:
         with self._condition:
             self._closing.discard(workspace_id)
             self._condition.notify_all()
+
+    def destroy(
+        self, workspace_id: str, path: str | Path, *,
+        executor_identity: str,
+        terminate: Callable[[str], None],
+    ) -> bool:
+        """Run the full destruction protocol for one workspace.
+
+        ``terminate`` stops every execution the backend still has in
+        flight for this workspace; it runs before the registry waits for
+        those executions to leave their critical section. Returns
+        ``False`` when the directory could not be removed, so the caller
+        can report the leak instead of assuming cleanup succeeded.
+        """
+        record = self.begin_destroy(
+            workspace_id, path, executor_identity=executor_identity)
+        if record is None:
+            return True
+        try:
+            terminate(record.workspace_id)
+            if not self.wait_idle(
+                    record.workspace_id, timeout=_DESTROY_WAIT_SECONDS):
+                raise self._error("workspace_busy")
+        except BaseException:
+            self.abort_destroy(record.workspace_id)
+            raise
+        try:
+            return self.remove(record)
+        finally:
+            self.finish_destroy(record.workspace_id)
 
 
 __all__ = [

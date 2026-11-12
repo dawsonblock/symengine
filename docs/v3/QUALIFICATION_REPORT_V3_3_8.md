@@ -11,10 +11,10 @@ isolator.
 
 | Item | Scope | Evidence |
 | --- | --- | --- |
-| V338-01 | New `sis.v3.docker_sandbox.DockerSandboxExecutor` implements the `WorkspaceExecutor` protocol: no network, read-only root, writable workspace bind, tmpfs `/tmp`, non-root uid, `cap-drop ALL`, `no-new-privileges`, memory/pids/CPU bounds, capped output, wall-clock kill. | `src/sis/v3/docker_sandbox.py`, `tests/v3/test_docker_sandbox.py` |
+| V338-01 | New `sis.v3.docker_sandbox.DockerSandboxExecutor` implements the `WorkspaceExecutor` protocol: no network, read-only root, quota-limited tmpfs workspace fed from a read-only `/submission` bind, tmpfs `/tmp`, non-root uid, `cap-drop ALL`, `no-new-privileges`, memory/pids/CPU-time/disk bounds, capped output, wall-clock kill. | `src/sis/v3/docker_sandbox.py`, `tests/v3/test_docker_sandbox.py` |
 | V338-02 | `tools/learn_recommend_cycle.py --sandbox docker` runs every evaluator acceptance test inside the sandbox and aborts if the containment probe fails. | `tools/learn_recommend_cycle.py`, `evidence/qualification/learn_cycle_live_docker.json` |
 | V338-03 | `docker/sandbox/Dockerfile` builds the evaluator image with the pinned test runner and an unprivileged user. | `docker/sandbox/Dockerfile` |
-| V338-04 | Containment probe evidence: network denied, root write denied, workspace write allowed, non-root user, memory limit enforced (exit 137), pids limit enforced. | `evidence/sandbox/docker_sandbox_probe.json` |
+| V338-04 | Containment probe evidence: network denied, root write denied, workspace write allowed, non-root user, memory limit enforced (exit 137), pids limit enforced, disk quota enforced, CPU-time budget enforced, combined output cap enforced. | `evidence/sandbox/docker_sandbox_probe.json` |
 
 ## Docker-backed cycle
 
@@ -29,9 +29,9 @@ The live cycle was repeated with `--sandbox docker`:
 
 Every evaluator run was executed in `sis-evaluator:3.3.7` (image id
 `76873b68…`, the same image content later tagged `3.3.8`) under
-`--network none`, a read-only root, a writable workspace mount, a tmpfs
-`/tmp`, the host non-root uid, `--cap-drop ALL`,
-`no-new-privileges`, and memory/pids/CPU bounds. Receipts carry
+`--network none`, a read-only root, a quota-limited tmpfs workspace, a
+tmpfs `/tmp`, the host non-root uid, `--cap-drop ALL`,
+`no-new-privileges`, and memory/pids/CPU-time bounds. Receipts carry
 `isolation:docker_sandbox` and the individual control markers.
 
 The image is tag-only in this development run; receipts carry
@@ -46,9 +46,9 @@ Environment: Python 3.12.0 on macOS arm64, pinned `pytest==8.4.2`,
 `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1`, `PYTHONNOUSERSITE=1`,
 `PYTHONPATH=src`.
 
-- **1340 passed, 14 skipped, 0 failed.**
-- The six Docker integration tests skip when the daemon or
-  `sis-evaluator:3.3.8` is unavailable; the four construction tests always
+- **1396 passed, 13 skipped, 0 failed.**
+- The Docker integration tests skip when the daemon or
+  `sis-evaluator:3.3.8` is unavailable; the construction tests always
   run.
 - Skips: 8 PostgreSQL (`SIS_POSTGRES_DSN` not configured), 2 Windows ACL,
   1 missing `cryptography`, 1 cgroup v2, 1 pinned Git baseline, 1 missing
@@ -66,3 +66,16 @@ Environment: Python 3.12.0 on macOS arm64, pinned `pytest==8.4.2`,
   the fixture at task registration.
 - Provenance is unsigned unless an externally trusted release key is
   supplied.
+
+## Post-seal repair (2026-11-11)
+
+The workspace-ownership and sandbox-limit repair changed the
+implementation this report describes. A `Workspace` handle is now
+resolved through a backend registry, and the Docker workspace is a
+quota-limited tmpfs with a read-only `/submission` bind, a copy-in before
+the command and a filtered copy-out afterwards. The probe now observes
+nine checks, `environment_digest` is domain version 2, and the copy-out
+has a drained stderr and a watchdog. The sealed archive and the
+`evidence/` snapshots in this report predate that repair; see the
+2026-11-11 CHANGELOG entry and regenerate the release before quoting this
+report.

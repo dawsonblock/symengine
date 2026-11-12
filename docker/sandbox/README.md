@@ -38,9 +38,16 @@ check fails.
 The workspace is a quota-limited tmpfs inside the container. The host
 workspace is mounted read-only at `/submission`, copied into the tmpfs
 before the command runs, and copied back through a filtered tar stream
-afterwards. A run that is stopped by the wall clock, the output cap or
-pids exhaustion reports `fs:workspace_state_unavailable` rather than
-presenting the pre-run tree as final.
+afterwards. The copy-out archive is extracted with `filter="data"`, so
+absolute paths, `..` escapes, device nodes and links that leave the
+workspace are rejected. A run that is stopped by the wall clock, the
+output cap or pids exhaustion reports `fs:workspace_state_unavailable`
+rather than presenting the pre-run tree as final; a successful run whose
+tree cannot be collected fails with `workspace_copy_out_failed`.
+
+The probe also pins the descriptor budget as
+`docker:ulimit_nofile:<n>`; `nofile_limit` is a constructor parameter
+(default 1024), not a fixed cap.
 
 ## What this is not
 

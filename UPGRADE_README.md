@@ -38,6 +38,32 @@ factual launch controls, not a signed containment proof. Production
 qualification still requires a digest-pinned image and an
 `IsolationAttestationV1` from a separately trusted isolator.
 
+### Post-seal repair: workspace ownership and limits
+
+The evaluator was repaired after the v3.3.8 seal. A `Workspace` handle is
+now a capability: execution and deletion resolve it through the backend's
+private registry and reject a substituted path. The Docker workspace is a
+quota-limited tmpfs (read-only `/submission` bind, copy-in before the
+command, filtered copy-out afterwards) instead of a writable host bind,
+so `disk_bytes` is enforced during the run. CPU time is a kernel
+`RLIMIT_CPU`, the pids and output caps are the minimum of the executor
+and spec values, and `nofile` is a bounded `nofile_limit` (default 1024).
+
+Operators must know:
+
+- `DockerSandboxExecutor(user=...)` must be a numeric `uid[:gid]` and
+  must not be root.
+- A protected path may not contain the executor root. A deployment that
+  placed the executor root under the evaluator registry directory now
+  fails at verifier construction.
+- `destroy()` can raise `workspace_busy` or `workspace_remove_failed`.
+- A submission larger than `disk_bytes` fails at copy-in instead of
+  producing a `fs:disk_budget_exceeded` receipt.
+
+See the 2026-11-11 CHANGELOG entry. The sealed archive and its evidence
+predate the repair; regenerate them with `tools/package_release.py`
+before making a release claim.
+
 ### Verifying the v3.3.8 release
 
 ```bash

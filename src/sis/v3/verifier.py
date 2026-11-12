@@ -491,7 +491,12 @@ class OutcomeVerifier:
                 "evaluator_infrastructure_error",
                 f"{type(exc).__name__}: {exc}") from exc
         finally:
-            self.executor.destroy(workspace)
+            # Cleanup failure must not replace the classified outcome;
+            # the workspace is disposable either way.
+            try:
+                self.executor.destroy(workspace)
+            except Exception:
+                pass
 
         stderr_tail = ""
         output = getattr(self.executor, "output", None)

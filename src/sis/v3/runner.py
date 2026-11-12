@@ -362,12 +362,13 @@ class LocalSubprocessExecutor:
         self.worker_identity = worker_identity
         self._production = bool(production)
         self._seatbelt = None if use_seatbelt is False else _seatbelt_binary()
-        self._protected: set[Path] = {
-            Path(path).resolve() for path in protected_paths}
+        self._protected: set[Path] = set()
         self._live: dict[str, subprocess.Popen] = {}
         self._live_ws: dict[str, str] = {}
         self._outputs: dict[str, tuple[bytes, bytes]] = {}
         self._lock = threading.Lock()
+        for path in protected_paths:
+            self.protect(path)
 
     def protect(self, path: str | Path) -> None:
         """Deny the child read access to a key/authority/dataset path."""
@@ -402,10 +403,14 @@ class LocalSubprocessExecutor:
             raise RunnerError("base_dir_overlaps_protected_material")
         self._reject_symlinks(base)
         workspace_id, path = self._registry.allocate()
-        shutil.copytree(base, path, symlinks=False)
-        scan = scan_tree(path)
-        record = self._registry.register(
-            workspace_id, path, before_tree_digest=scan.digest)
+        try:
+            shutil.copytree(base, path, symlinks=False)
+            scan = scan_tree(path)
+            record = self._registry.register(
+                workspace_id, path, before_tree_digest=scan.digest)
+        except BaseException:
+            shutil.rmtree(path, ignore_errors=True)
+            raise
         return Workspace(
             record.workspace_id, record.path, record.before_tree_digest,
             record.executor_identity)
@@ -600,7 +605,7 @@ class LocalSubprocessExecutor:
             execution_id=execution_id,
             worker_identity=self.worker_identity,
             environment_digest=self._environment_digest(),
-            before_tree_digest=record.before_tree_digest,
+            before_tree_digest=before.digest,
             after_tree_digest=after.digest,
             command_spec_digest=command_spec_digest(spec),
             exit_status=proc.returncode if proc.returncode is not None else -1,
@@ -619,22 +624,11 @@ class LocalSubprocessExecutor:
             return self._outputs[execution_id]
 
     def destroy(self, workspace: Workspace) -> None:
-        record = self._registry.begin_destroy(
-            workspace.workspace_id, workspace.path,
-            executor_identity=workspace.executor_identity)
-        if record is None:
-            return
-        try:
-            self._terminate_workspace(record.workspace_id)
-            if not self._registry.wait_idle(record.workspace_id, timeout=30):
-                raise RunnerError("workspace_busy")
-        except BaseException:
-            self._registry.abort_destroy(record.workspace_id)
-            raise
-        try:
-            self._registry.remove(record)
-        finally:
-            self._registry.finish_destroy(record.workspace_id)
+        if not self._registry.destroy(
+                workspace.workspace_id, workspace.path,
+                executor_identity=workspace.executor_identity,
+                terminate=self._terminate_workspace):
+            raise RunnerError("workspace_remove_failed")
 
     def _terminate_workspace(self, workspace_id: str) -> None:
         with self._lock:
@@ -659,6 +653,8 @@ class LocalSubprocessExecutor:
     def terminate_all(self) -> None:
         with self._lock:
             procs = list(self._live.values())
+            self._live.clear()
+            self._live_ws.clear()
         for proc in procs:
             if proc.poll() is None:
                 self._kill_group(proc)

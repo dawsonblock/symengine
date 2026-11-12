@@ -1,5 +1,87 @@
 # Changelog
 
+## 2026-11-11 — SIS v3.3.8 workspace-ownership and sandbox-limit repair (V338-05…V338-09)
+
+Post-seal repair of the v3.3.8 containment line. It changes evaluator
+behavior, not any efficacy claim.
+
+V338-05 — a workspace handle is a capability, not a path:
+
+- `sis.v3.workspace_guard.ManagedWorkspaceRegistry` records every
+  workspace a backend creates. `run()` and `destroy()` resolve the
+  handle ID through that registry and accept a caller-supplied path only
+  when it is exactly the registered canonical path. A forged handle, a
+  handle from another executor, a mismatched executor identity, a
+  symlinked workspace directory, or a workspace whose directory has been
+  deleted is rejected before the backend mounts, executes within, or
+  deletes anything (`workspace_not_registered`,
+  `workspace_path_substituted`, `workspace_executor_identity_mismatch`,
+  `workspace_path_symlink_escape`, `workspace_path_missing`).
+- Destruction marks a workspace closing, refuses new runs, terminates
+  the executions still in flight, and removes the directory only after
+  every execution that already started has left its critical section.
+  Repeated destruction of the same handle is a no-op, and a removal that
+  cannot be verified raises `workspace_remove_failed` instead of being
+  reported as success.
+- 9 new ownership regressions in
+  `tests/v3/test_v338_workspace_ownership.py` (43 total), including the
+  concurrent execute/destroy race.
+
+V338-06 — the Docker workspace is a quota-limited tmpfs:
+
+- The host tree is mounted read-only at `/submission`, copied into the
+  tmpfs before the command runs, and copied back through a filtered tar
+  stream afterwards. `disk_bytes` is enforced by the filesystem during
+  execution instead of being audited after it.
+- The copy-out archive is extracted with `filter="data"`: absolute
+  paths, `..` escapes, device nodes and links that leave the workspace
+  are rejected. Four regressions in
+  `tests/v3/test_v338_workspace_ownership.py` pin each rejection.
+- A run stopped by the wall clock, the output cap or pids exhaustion
+  reports `fs:workspace_state_unavailable` instead of presenting the
+  pre-run tree as final.
+
+V338-07 — resource bounds compose with the executor:
+
+- `pids` and the output cap are the minimum of the executor limit and
+  the spec request; previously a larger spec value overrode the executor
+  cap. Output is now capped across both streams, not per stream.
+- CPU time is a kernel `RLIMIT_CPU` inherited by the command, so it is a
+  budget rather than only a scheduling share.
+- `nofile` is a bounded constructor parameter (`nofile_limit`, default
+  1024) instead of an undocumented 256 hard cap; the value is reported
+  as `docker:ulimit_nofile:<n>` and folded into the environment digest.
+- A root container identity is rejected at construction, and a host that
+  runs as root falls back to `65534:65534`.
+
+V338-08 — copy-out liveness:
+
+- The copy-out reader drained stdout but never stderr. A workspace with
+  thousands of unreadable entries makes GNU tar write far more than one
+  pipe buffer to stderr; the child then blocked before finishing the
+  archive and `run()` waited forever, leaking the container and the
+  workspace. stderr now goes to a temporary file, and a watchdog bounds
+  the copy-out. Regression:
+  `test_copy_out_does_not_stall_on_a_stderr_flood`.
+
+V338-09 — protected material and bootstrap staging:
+
+- `protect()` refuses a protected path that contains the executor root,
+  and the `protected_paths` constructor argument now runs the same check
+  instead of bypassing it. `prepare()` refuses any source tree that
+  overlaps protected key or registry material in either direction
+  (`base_dir_overlaps_protected_material`).
+- The runtime bootstrap check no longer stages its base tree under the
+  evaluator registry directory.
+
+Behavior changes for operators: `DockerSandboxExecutor(user=...)` must be
+a numeric `uid[:gid]` and must not be root; `destroy()` can raise
+`workspace_busy` or `workspace_remove_failed`; and a submission larger
+than `disk_bytes` now fails at copy-in instead of producing a
+`fs:disk_budget_exceeded` receipt. The sealed v3.3.8 archive and
+qualification evidence describe the pre-repair tree and must be
+regenerated with `tools/package_release.py` before any release claim.
+
 ## 2026-11-10 — SIS v3.3.6 trust, memory-enforcement and benchmark repair (V336-01…V336-04)
 
 V336-01 — memory trust profiles are a closed enumeration:

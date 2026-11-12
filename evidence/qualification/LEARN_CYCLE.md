@@ -60,13 +60,17 @@ inside the Docker sandbox. Every evaluation ran in `sis-evaluator:3.3.7`
 (image id `76873b68…`) under:
 
 - `--network none`
-- `--read-only` root, writable workspace bind, tmpfs `/tmp`
+- `--read-only` root, quota-limited tmpfs workspace, tmpfs `/tmp`
 - host non-root uid, `--cap-drop ALL`, `no-new-privileges`
-- memory, pids and CPU bounds
+- memory, pids, CPU-time and disk bounds
 
-The probe in `evidence/sandbox/docker_sandbox_probe.json` observed all six
-checks: network denied, root write denied, workspace write allowed,
-non-root user, memory limit enforced (exit 137), pids limit enforced.
+The probe in `evidence/sandbox/docker_sandbox_probe.json` observed all
+nine checks: network denied, root write denied, workspace write allowed,
+non-root user, memory limit enforced (exit 137), pids limit enforced,
+disk quota enforced, CPU-time budget enforced, combined output cap
+enforced. The workspace figures in this snapshot predate the post-seal
+repair that replaced the writable host bind with the tmpfs copy-in and
+copy-out.
 
 The image is **tag-only** in this development run; the receipts carry
 `docker:image_tag_only`. Production requires a digest-pinned image and a

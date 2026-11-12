@@ -28,6 +28,12 @@ This is a **local-first research prototype**, not an audited hardened multi-tena
    coherent history or truncating it.
 8. The admission firewall rejects bounded counterexample disagreements with active rules using the same namespace and
    schema. It does not prove semantic equivalence or prevent malicious labels.
+9. A workspace handle is a capability, not a path. Every executor records the workspaces it creates in a private
+   registry; execution and deletion resolve the handle through that registry and accept a caller-supplied path only
+   when it is exactly the registered canonical path. A forged handle, a handle from another executor, a symlinked
+   workspace directory, or a deleted workspace is rejected before the backend mounts, executes within, or deletes
+   anything. Destruction refuses new runs, terminates executions still in flight, and removes the directory only after
+   every execution that already started has left its critical section.
 
 ## Not implemented; do not assume
 

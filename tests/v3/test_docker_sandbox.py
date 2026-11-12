@@ -59,6 +59,14 @@ class ConstructionTests(unittest.TestCase):
                 image="sis-evaluator:3.3.8",
                 require_image_digest=False, user="nobody")
 
+    def test_nofile_limit_is_bounded(self):
+        for value in (0, -1, 1 << 21, "1024"):
+            with self.subTest(value=value):
+                with self.assertRaises(ContractError):
+                    DockerSandboxExecutor(
+                        image="sis-evaluator:3.3.8",
+                        require_image_digest=False, nofile_limit=value)
+
     def test_host_interpreter_translation(self):
         self.assertTrue(DockerSandboxExecutor._is_host_interpreter(
             sys.executable))
@@ -174,6 +182,15 @@ class ContainerIntegrationTests(unittest.TestCase):
             run_limits=limits(process_count=700))
         self.assertNotEqual(receipt.exit_status, 0)
         self.assertIn("docker:pids_limit:16", receipt.security_errors)
+
+    def test_descriptor_budget_allows_a_normal_test_suite(self):
+        receipt, (stdout, _), _ = self.run_argv(
+            ("python3", "-c",
+             "handles = [open('/tmp/f-%d' % i, 'w') for i in range(300)]\n"
+             "print(len(handles))\n"))
+        self.assertEqual(receipt.exit_status, 0)
+        self.assertEqual(stdout.strip(), b"300")
+        self.assertIn("docker:ulimit_nofile:1024", receipt.security_errors)
 
     def test_output_limit_is_combined_across_streams(self):
         receipt, (stdout, stderr), _ = self.run_argv(

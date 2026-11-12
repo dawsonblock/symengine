@@ -317,10 +317,14 @@ class LinuxRootlessWorker:
                 if (Path(dirpath) / name).is_symlink():
                     raise RunnerError("base tree must not contain symlinks")
         workspace_id, path = self._registry.allocate()
-        shutil.copytree(base, path, symlinks=False)
-        scan = scan_tree(path)
-        record = self._registry.register(
-            workspace_id, path, before_tree_digest=scan.digest)
+        try:
+            shutil.copytree(base, path, symlinks=False)
+            scan = scan_tree(path)
+            record = self._registry.register(
+                workspace_id, path, before_tree_digest=scan.digest)
+        except BaseException:
+            shutil.rmtree(path, ignore_errors=True)
+            raise
         return Workspace(
             record.workspace_id, record.path, record.before_tree_digest,
             record.executor_identity)
@@ -486,22 +490,11 @@ class LinuxRootlessWorker:
             return self._outputs.get(execution_id, (b"", b""))
 
     def destroy(self, workspace: Workspace) -> None:
-        record = self._registry.begin_destroy(
-            workspace.workspace_id, workspace.path,
-            executor_identity=workspace.executor_identity)
-        if record is None:
-            return
-        try:
-            self._terminate_workspace(record.workspace_id)
-            if not self._registry.wait_idle(record.workspace_id, timeout=30):
-                raise RunnerError("workspace_busy")
-        except BaseException:
-            self._registry.abort_destroy(record.workspace_id)
-            raise
-        try:
-            self._registry.remove(record)
-        finally:
-            self._registry.finish_destroy(record.workspace_id)
+        if not self._registry.destroy(
+                workspace.workspace_id, workspace.path,
+                executor_identity=workspace.executor_identity,
+                terminate=self._terminate_workspace):
+            raise RunnerError("workspace_remove_failed")
 
     def _terminate_workspace(self, workspace_id: str) -> None:
         with self._lock:
@@ -526,6 +519,8 @@ class LinuxRootlessWorker:
     def terminate_all(self) -> None:
         with self._lock:
             live = list(self._live.values())
+            self._live.clear()
+            self._live_ws.clear()
         for process in live:
             _kill_group(process)
 

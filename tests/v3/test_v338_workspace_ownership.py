@@ -8,10 +8,12 @@ a mount, an execution, or a delete touches the substituted path.
 """
 from __future__ import annotations
 
+import io
 import os
 import shlex
 import shutil
 import sys
+import tarfile
 import tempfile
 import threading
 import time
@@ -236,6 +238,17 @@ class LocalOwnershipTests(Fixture):
             self.executor.destroy(self.workspace)
         self.assertTrue(self.sentinel.exists())
 
+    def test_deleted_workspace_is_rejected_before_execution(self):
+        shutil.rmtree(self.workspace.path)
+        with self.assertRaisesRegex(RunnerError, "path_missing"):
+            self.executor.run(self.workspace, self.spec)
+
+    def test_constructor_protected_paths_cannot_overlap_the_root(self):
+        with self.assertRaisesRegex(RunnerError, "must not overlap"):
+            LocalSubprocessExecutor(
+                self.root / "exec-protected", use_seatbelt=False,
+                protected_paths=(self.root,))
+
     def test_repeated_destroy_has_no_additional_effects(self):
         self.executor.destroy(self.workspace)
         self.assertFalse(self.workspace.path.exists())
@@ -315,6 +328,8 @@ class DockerOwnershipTests(Fixture):
     def setUp(self):
         super().setUp()
         self.log = self.root / "docker-args.log"
+        self.payload = self.root / "payload.tar"
+        self.write_payload([])
         self.fake = self.root / "fake-docker"
         self.fake.write_text(
             "#!/bin/sh\n"
@@ -323,26 +338,44 @@ class DockerOwnershipTests(Fixture):
             "  inspect) echo true ;;\n"
             "  exec)\n"
             "    case \" $* \" in\n"
-            "      *\" tar \"*)\n"
-            "        tmp=$(mktemp -d)\n"
-            "        tar -C \"$tmp\" -cf - .\n"
-            "        rm -rf \"$tmp\"\n"
-            "        ;;\n"
+            f"      *\" tar \"*) cat {shlex.quote(str(self.payload))} ;;\n"
             "    esac\n"
             "    ;;\n"
             "esac\n"
             "exit 0\n",
             encoding="utf-8")
         self.fake.chmod(0o755)
+        self.executor = self.make_executor()
+        self.workspace = self.executor.prepare(self.base)
+        self.spec = CommandSpec(argv=("python3", "-c", "print('ok')"))
+
+    def make_executor(self, **kwargs):
+        options = {
+            "image": "sis-evaluator:3.3.8",
+            "require_image_digest": False,
+            "docker_binary": str(self.fake),
+            "image_id": "0" * 64,
+            "root": tempfile.mkdtemp(dir=self.temp.name, prefix="exec-"),
+        }
+        options.update(kwargs)
         with mock.patch.object(
                 DockerSandboxExecutor, "_require_docker",
                 return_value="test-server"):
-            self.executor = DockerSandboxExecutor(
-                self.root / "exec", image="sis-evaluator:3.3.8",
-                require_image_digest=False, docker_binary=str(self.fake),
-                image_id="0" * 64)
-        self.workspace = self.executor.prepare(self.base)
-        self.spec = CommandSpec(argv=("python3", "-c", "print('ok')"))
+            executor = DockerSandboxExecutor(**options)
+        self.addCleanup(executor.terminate_all)
+        return executor
+
+    def write_payload(self, members):
+        with tarfile.open(self.payload, "w") as archive:
+            for info, data in members:
+                archive.addfile(info, io.BytesIO(data) if data else None)
+
+    def run_payload(self, members, *, executor=None):
+        self.write_payload(members)
+        executor = executor or self.executor
+        workspace = executor.prepare(self.base)
+        self.addCleanup(executor.destroy, workspace)
+        return executor.run(workspace, self.spec), workspace
 
     def test_mount_uses_the_registry_path_not_the_handle(self):
         receipt = self.executor.run(self.workspace, self.spec)
@@ -353,6 +386,81 @@ class DockerOwnershipTests(Fixture):
             mount,
             f"type=bind,source={self.workspace.path.resolve()},"
             "target=/submission,readonly")
+
+    def test_copy_out_replaces_the_workspace_with_the_payload(self):
+        info = tarfile.TarInfo("copied.txt")
+        data = b"from-container"
+        info.size = len(data)
+        receipt, workspace = self.run_payload([(info, data)])
+        self.assertEqual(receipt.exit_status, 0)
+        self.assertEqual(
+            (workspace.path / "copied.txt").read_bytes(), data)
+
+    def test_copy_out_does_not_stall_on_a_stderr_flood(self):
+        flood = self.root / "flood-docker"
+        flood.write_text(
+            "#!/bin/sh\n"
+            "case \"$1\" in\n"
+            "  inspect) echo true ;;\n"
+            "  exec)\n"
+            "    case \" $* \" in\n"
+            "      *\" tar \"*)\n"
+            "        python3 -c \"import sys; sys.stderr.write('e' * 200000)\"\n"
+            f"        cat {shlex.quote(str(self.payload))}\n"
+            "        ;;\n"
+            "    esac\n"
+            "    ;;\n"
+            "esac\n"
+            "exit 0\n",
+            encoding="utf-8")
+        flood.chmod(0o755)
+        executor = self.make_executor(docker_binary=str(flood))
+        finished = {}
+
+        def run():
+            workspace = executor.prepare(self.base)
+            try:
+                finished["receipt"] = executor.run(workspace, self.spec)
+            finally:
+                executor.destroy(workspace)
+
+        thread = threading.Thread(target=run)
+        thread.start()
+        thread.join(timeout=60)
+        self.assertFalse(thread.is_alive(), "copy-out blocked on tar stderr")
+        self.assertEqual(finished["receipt"].exit_status, 0)
+
+    def test_copy_out_rejects_a_parent_escape(self):
+        info = tarfile.TarInfo("../escape.txt")
+        data = b"escape"
+        info.size = len(data)
+        with self.assertRaisesRegex(
+                RunnerError, "workspace_copy_out_failed"):
+            self.run_payload([(info, data)])
+        self.assertFalse((self.root / "escape.txt").exists())
+        self.assertFalse((self.root.parent / "escape.txt").exists())
+
+    def test_copy_out_rejects_an_absolute_symlink(self):
+        info = tarfile.TarInfo("link")
+        info.type = tarfile.SYMTYPE
+        info.linkname = "/etc/passwd"
+        with self.assertRaisesRegex(
+                RunnerError, "workspace_copy_out_failed"):
+            self.run_payload([(info, None)])
+
+    def test_copy_out_rejects_a_device_node(self):
+        info = tarfile.TarInfo("dev")
+        info.type = tarfile.CHRTYPE
+        info.devmajor = 1
+        info.devminor = 3
+        with self.assertRaisesRegex(
+                RunnerError, "workspace_copy_out_failed"):
+            self.run_payload([(info, None)])
+
+    def test_deleted_workspace_is_rejected_before_the_container_launches(self):
+        shutil.rmtree(self.workspace.path)
+        with self.assertRaisesRegex(RunnerError, "path_missing"):
+            self.executor.run(self.workspace, self.spec)
 
     def test_forged_path_is_rejected_before_the_container_launches(self):
         forged = self.forged(self.workspace, self.outside)
@@ -372,13 +480,7 @@ class DockerOwnershipTests(Fixture):
             self.executor.run(unknown, self.spec)
         self.executor.destroy(unknown)
         self.assertTrue(self.sentinel.exists())
-        with mock.patch.object(
-                DockerSandboxExecutor, "_require_docker",
-                return_value="test-server"):
-            other = DockerSandboxExecutor(
-                self.root / "exec-other", image="sis-evaluator:3.3.8",
-                require_image_digest=False, docker_binary=str(self.fake),
-                image_id="0" * 64)
+        other = self.make_executor()
         with self.assertRaisesRegex(RunnerError, "not_registered"):
             other.run(self.workspace, self.spec)
         other.destroy(self.workspace)
@@ -445,6 +547,11 @@ class LinuxWorkerOwnershipTests(Fixture):
         with self.assertRaisesRegex(RunnerError, "symlink_escape"):
             self.worker.destroy(self.workspace)
         self.assertTrue(self.sentinel.exists())
+
+    def test_deleted_workspace_is_rejected_before_execution(self):
+        shutil.rmtree(self.workspace.path)
+        with self.assertRaisesRegex(RunnerError, "path_missing"):
+            self.worker.run(self.workspace, self.spec)
 
     def test_repeated_destroy_has_no_additional_effects(self):
         self.worker.destroy(self.workspace)

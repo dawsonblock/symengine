@@ -42,6 +42,16 @@ _IMAGE_DIGEST = re.compile(
     r"^[a-z0-9][a-z0-9._/-]*(?::[A-Za-z0-9._-]+)?@sha256:[0-9a-f]{64}$")
 _USER = re.compile(r"^([0-9]{1,10})(?::([0-9]{1,10}))?$")
 _READ_CHUNK = 65_536
+_COPY_OUT_SECONDS = 300.0
+
+
+def _error_tail(handle, limit: int = 4_096) -> str:
+    """Return a bounded diagnostic tail from a drained stderr file."""
+    try:
+        handle.seek(0)
+        return handle.read(limit).decode("utf-8", "replace").strip()[:200]
+    except (OSError, ValueError):
+        return ""
 
 
 def _default_user() -> str:
@@ -88,6 +98,7 @@ class DockerSandboxExecutor:
         cpus: float = 1.0,
         output_bytes: int = 1_048_576,
         tmpfs_bytes: int = 64 * 1024 * 1024,
+        nofile_limit: int = 1024,
         user: str | None = None,
         image_id: str | None = None,
     ) -> None:
@@ -103,6 +114,7 @@ class DockerSandboxExecutor:
             ("pids_limit", pids_limit, 65_535),
             ("output_bytes", output_bytes, 1 << 30),
             ("tmpfs_bytes", tmpfs_bytes, 1 << 30),
+            ("nofile_limit", nofile_limit, 1 << 20),
         ):
             if type(value) is not int or not 1 <= value <= maximum:
                 raise ContractError(f"{name} must be an integer in [1,{maximum}]")
@@ -126,6 +138,7 @@ class DockerSandboxExecutor:
         self._cpus = float(cpus)
         self._output_bytes = output_bytes
         self._tmpfs = tmpfs_bytes
+        self._nofile = nofile_limit
         self._live: dict[str, str] = {}
         self._live_ws: dict[str, str] = {}
         self._outputs: dict[str, tuple[bytes, bytes]] = {}
@@ -171,10 +184,14 @@ class DockerSandboxExecutor:
             raise RunnerError("base_dir_overlaps_protected_material")
         _reject_symlinks(base)
         workspace_id, path = self._registry.allocate()
-        shutil.copytree(base, path, symlinks=False)
-        scan = scan_tree(path)
-        record = self._registry.register(
-            workspace_id, path, before_tree_digest=scan.digest)
+        try:
+            shutil.copytree(base, path, symlinks=False)
+            scan = scan_tree(path)
+            record = self._registry.register(
+                workspace_id, path, before_tree_digest=scan.digest)
+        except BaseException:
+            shutil.rmtree(path, ignore_errors=True)
+            raise
         return Workspace(
             record.workspace_id, record.path, record.before_tree_digest,
             record.executor_identity)
@@ -219,6 +236,7 @@ class DockerSandboxExecutor:
             f"docker:pids_limit:{pids}",
             f"docker:disk_bytes:{disk}",
             f"docker:ulimit_cpu:{limits.cpu_seconds}",
+            f"docker:ulimit_nofile:{self._nofile}",
             f"docker:output_bytes:{output_cap}",
         ]
         if not _IMAGE_DIGEST.fullmatch(self._image):
@@ -366,9 +384,10 @@ class DockerSandboxExecutor:
                 "disk_bytes": disk,
                 "cpu_seconds": limits.cpu_seconds,
                 "output_bytes": output_cap,
+                "nofile_limit": self._nofile,
                 "cpus": f"{self._cpus:g}",
             }),
-            before_tree_digest=record.before_tree_digest,
+            before_tree_digest=before.digest,
             after_tree_digest=after.digest,
             command_spec_digest=command_spec_digest(spec),
             exit_status=exit_status if exit_status is not None else -1,
@@ -392,22 +411,11 @@ class DockerSandboxExecutor:
             return self._outputs[execution_id]
 
     def destroy(self, workspace: Workspace) -> None:
-        record = self._registry.begin_destroy(
-            workspace.workspace_id, workspace.path,
-            executor_identity=workspace.executor_identity)
-        if record is None:
-            return
-        try:
-            self._terminate_workspace(record.workspace_id)
-            if not self._registry.wait_idle(record.workspace_id, timeout=30):
-                raise RunnerError("workspace_busy")
-        except BaseException:
-            self._registry.abort_destroy(record.workspace_id)
-            raise
-        try:
-            self._registry.remove(record)
-        finally:
-            self._registry.finish_destroy(record.workspace_id)
+        if not self._registry.destroy(
+                workspace.workspace_id, workspace.path,
+                executor_identity=workspace.executor_identity,
+                terminate=self._terminate_workspace):
+            raise RunnerError("workspace_remove_failed")
 
     def _terminate_workspace(self, workspace_id: str) -> None:
         with self._lock:
@@ -422,6 +430,7 @@ class DockerSandboxExecutor:
         with self._lock:
             containers = list(self._live.values())
             self._live.clear()
+            self._live_ws.clear()
         for container in containers:
             self._kill(container)
 
@@ -448,7 +457,7 @@ class DockerSandboxExecutor:
             # RLIMIT_CPU is inherited by the exec'd command, so CPU time
             # is a kernel-enforced budget, not only a scheduling share.
             "--ulimit", f"cpu={limits.cpu_seconds}",
-            "--ulimit", "nofile=256:256",
+            "--ulimit", f"nofile={self._nofile}:{self._nofile}",
             "--ipc", "none",
             "--mount",
             f"type=bind,source={record.real_path},target=/submission,readonly",
@@ -520,18 +529,27 @@ class DockerSandboxExecutor:
             raise RunnerError(
                 "workspace_copy_out_failed:container_stopped")
         staging = Path(tempfile.mkdtemp(dir=self.root, prefix=".staging-"))
+        # stderr goes to a file, never a pipe. A tar that reports one
+        # error per unreadable entry writes far more than one pipe
+        # buffer, and a pipe the parent is not draining blocks the child
+        # before it finishes writing the archive.
+        errors = tempfile.TemporaryFile()
+        watchdog = None
         try:
             try:
                 proc = subprocess.Popen(
                     [self._docker, "exec", "--user", self._user, container,
                      "tar", "-C", "/workspace", "-cf", "-", "."],
                     stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
+                    stderr=errors,
                     start_new_session=(os.name == "posix"),
                 )
             except OSError as exc:
                 raise RunnerError(
                     f"workspace_copy_out_failed:{exc}") from exc
+            watchdog = threading.Timer(_COPY_OUT_SECONDS, proc.kill)
+            watchdog.daemon = True
+            watchdog.start()
             try:
                 with tarfile.open(fileobj=proc.stdout, mode="r|") as archive:
                     try:
@@ -550,22 +568,13 @@ class DockerSandboxExecutor:
                 except OSError:
                     pass
                 try:
-                    stderr = proc.stderr.read(4_096)
-                except (OSError, ValueError):
-                    stderr = b""
-                try:
-                    proc.stderr.close()
-                except OSError:
-                    pass
-                try:
                     returncode = proc.wait(timeout=60)
                 except subprocess.TimeoutExpired:
                     proc.kill()
                     returncode = -1
             if returncode != 0:
                 raise RunnerError(
-                    "workspace_copy_out_failed:"
-                    + stderr.decode("utf-8", "replace").strip()[:200])
+                    "workspace_copy_out_failed:" + _error_tail(errors))
             shutil.rmtree(record.path, ignore_errors=True)
             try:
                 os.rename(staging, record.path)
@@ -574,6 +583,9 @@ class DockerSandboxExecutor:
                     f"workspace_copy_out_failed:{exc}") from exc
             staging = None
         finally:
+            if watchdog is not None:
+                watchdog.cancel()
+            errors.close()
             if staging is not None:
                 shutil.rmtree(staging, ignore_errors=True)
 

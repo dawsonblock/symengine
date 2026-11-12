@@ -32,6 +32,27 @@
 - **Registry reads re-verify digests** — a tampered `candidate` row raises
   `candidate_tampered`; a tampered `experience` row raises
   `experience_tampered`. Corrupt JSON never deserializes into a record.
+- **Workspace handles are capabilities, not paths** — each executor keeps
+  a private registry of the workspaces it created, and `run()`/`destroy()`
+  accept a caller-supplied path only when it is exactly the registered
+  canonical path. A forged handle, a handle from another executor, a
+  mismatched executor identity, a symlinked workspace directory or a
+  deleted workspace raises before any mount, execution or delete
+  (`workspace_not_registered`, `workspace_path_substituted`,
+  `workspace_executor_identity_mismatch`, `workspace_path_symlink_escape`,
+  `workspace_path_missing`). Destruction marks the workspace closing,
+  refuses new runs, terminates in-flight executions and removes the
+  directory only after every started execution has left its critical
+  section; a removal that cannot be verified raises
+  `workspace_remove_failed`. Repeated destruction is a no-op.
+- **Docker workspaces are collected through a filtered archive** — the
+  host tree is mounted read-only at `/submission` and copied into a
+  quota-limited tmpfs. The copy-out tar is extracted with
+  `filter="data"`, so absolute paths, `..` escapes, device nodes and
+  links that leave the workspace are rejected instead of materializing
+  on the host. A run whose workspace state cannot be collected reports
+  `fs:workspace_state_unavailable`, which classifies as a resource limit
+  and never as a pass.
 - **Replayed episodes are rejected** — `MemoryStore.ingest` keys on
   `(episode_id, task_fingerprint)`; a mutated copy of an episode is a
   `DuplicateEpisode`, never a second vote.
