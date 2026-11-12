@@ -12,13 +12,21 @@
       "bytes": 246,
       "sha256": "34c425d3d26909406aa334fc456c8ae7c4fcfca93af09a2faed049859b1880d5"
     },
+    ".markdownlint-cli2.jsonc": {
+      "bytes": 477,
+      "sha256": "736842e6f984ac4e397cd9e0a203afc04e3e66b65b149b2f18770583437ce050"
+    },
+    ".markdownlint.json": {
+      "bytes": 132,
+      "sha256": "6b3e004595e63b4c0c58a7c2d1c7aaebe72b993c8da2a63ebbdacb12cb5b3c5e"
+    },
     "AUTHORITY_RECOVERY_RELEASE_NOTES.md": {
       "bytes": 5397,
       "sha256": "f4e9590f3ebad5ffec1d03da3db058375438693dbcd93f2738ff3ea66da17b8d"
     },
     "CHANGELOG.md": {
-      "bytes": 48992,
-      "sha256": "9699d80844bd169511285bbc027ef64b0113a4b133c323b4e0fb82bc6e3947a7"
+      "bytes": 53300,
+      "sha256": "ec69b4326520a5297fae8dd990fcc10cfac7fbd9d6916bf8fb75bf8101e569a9"
     },
     "LICENSE": {
       "bytes": 1083,
@@ -29,8 +37,8 @@
       "sha256": "20b228d1ff9c45950f9219374e123ea5b57d790e1cb111c7cd9be92afb10761c"
     },
     "UPGRADE_README.md": {
-      "bytes": 14134,
-      "sha256": "130aaba0d25afdc8558dc6ed4922e633bff5dfe9368dee2ab63470d93a90a3c7"
+      "bytes": 15412,
+      "sha256": "037620cb3ed9b1aaebb6c55c481a9ab7a0647c38a64ab81a6dbba46b7720cba9"
     },
     "UPGRADE_RELEASE_NOTES_2026-10-24.md": {
       "bytes": 4370,
@@ -41,20 +49,20 @@
       "sha256": "e370bb5432173aac3468411f210e01909075d656f9fd823bcba55916db6b9d87"
     },
     "docker/sandbox/README.md": {
-      "bytes": 1276,
-      "sha256": "0eca0e9856c052e4e51d874b20f9e3071962f2f59f6f15595d6eb50f48aa62f1"
+      "bytes": 2105,
+      "sha256": "6681d7af015e1fc0844fd2af73175a0bb6742da732840daa8dec019ff26e3a52"
     },
     "docs/ARCHITECTURE.md": {
-      "bytes": 5880,
-      "sha256": "54ed869153054fb1d8cedd5f12308c98a85ae1d253729c71b46dfac3b445c6b9"
+      "bytes": 5884,
+      "sha256": "3baeb839099f73e15c6125d1d9cd15e955f9bdabb92e2ee587e1907371792f1d"
     },
     "docs/AUTHORITY_CHECKPOINTS.md": {
       "bytes": 4829,
       "sha256": "a25f31cebf61e9d63916acad756177e451591ba062b29bee3c59f598bc4b2691"
     },
     "docs/EVALUATION.md": {
-      "bytes": 3299,
-      "sha256": "b407efaf4543b641fff4a9aa8ada6ff83303154b5f2379e2f79ca380d7bbac83"
+      "bytes": 3323,
+      "sha256": "06e523ae08d3806388731c82f95fd0dc6e48132619713cd39c07a10b97a035a5"
     },
     "docs/EVALUATION_CERTIFICATES.md": {
       "bytes": 6815,
@@ -81,8 +89,8 @@
       "sha256": "a99d96a77bfca708898d94dc0c8195ec60c650cf96e70887f11e523ab462deda"
     },
     "docs/LIMITATIONS.md": {
-      "bytes": 2301,
-      "sha256": "a88c15e9f13c793b9ed520d39e74df84141a98445e3988c8933f3f8c40043d78"
+      "bytes": 2319,
+      "sha256": "056cf09c77328b93c13d036c4acb5e5fd359b9f2aeb96f28ad820d7526f0417c"
     },
     "docs/MIGRATION_V330_TO_V331.md": {
       "bytes": 4318,
@@ -93,12 +101,12 @@
       "sha256": "521fe27a039414bf50dfa4fbc6a206d3c3bf74c9af753e631b3ffce1aacec8e7"
     },
     "docs/ROADMAP.md": {
-      "bytes": 4369,
-      "sha256": "16fb67003a3d5ccf542b0bb221d2eb8751793fdf095687affe0c7dbe34702e57"
+      "bytes": 4385,
+      "sha256": "1c036ff27b12f4a171bab3a5422438b34b5ffcf3f928904a3a77aeeec4b8e15d"
     },
     "docs/SECURITY.md": {
-      "bytes": 8748,
-      "sha256": "a1dc08e61838eadeefabb323c71d15e0e8be2c3f5375dd93f036c85d847784a4"
+      "bytes": 9443,
+      "sha256": "669c7a5b625394b1be44005494500a7e2f9266874f67185110ecbd1ca58812a4"
     },
     "docs/SECURITY_THREAT_MODEL.md": {
       "bytes": 5730,
@@ -250,7 +258,7 @@
     },
     "docs/v3/G1_GATE_REPORT.md": {
       "bytes": 6623,
-      "sha256": "d32427a76f4b3ebaffb03f8dc839781037c400ed05dd661b0e81525d6a8e3f47"
+      "sha256": "14f79d367c3955351419db8a440a77d36b00209565c80fec60b84a87ecbce323"
     },
     "docs/v3/G2_GATE_REPORT.md": {
       "bytes": 6178,
@@ -305,16 +313,16 @@
       "sha256": "8966e3a3abec2209818b844a68659620337a12a40311d03f7a967601d0ccfb58"
     },
     "docs/v3/QUALIFICATION_REPORT_V3_3_8.md": {
-      "bytes": 3633,
-      "sha256": "5b20e00d4359c53d8e4be4e4b8943323c8286634c44245821d66e4a080957b8f"
+      "bytes": 4425,
+      "sha256": "ed7b1f70c0b1a690856e92f75e990e98272b69d63c289c6829c97b72299d62ec"
     },
     "docs/v3/RELEASE_NOTES_V3_3.md": {
       "bytes": 7466,
       "sha256": "69b2211968e60b8a8487e1fcf95d9e16870b46c46a0ddfbf47d9906017549968"
     },
     "docs/v3/SECURITY_BOUNDARIES_V3_3.md": {
-      "bytes": 11582,
-      "sha256": "ab39876d1faceefd4a2fb93dca35826eafca11d8af40cadded759c76257f6db2"
+      "bytes": 12970,
+      "sha256": "d77a2d654e2f7f9ba9bcbc904c5bfd1af1c78000503ee9a872238c1f0a334a0a"
     },
     "docs/v3/SKILL_HOLDOUTS.md": {
       "bytes": 4923,
@@ -333,8 +341,8 @@
       "sha256": "82a088215f84a40c91f2c22076b7fcba1efc57899e02efdcfc34d5784f861cdc"
     },
     "docs/v3/THREAT_MODEL.md": {
-      "bytes": 6253,
-      "sha256": "6d8910b93461f85dcd8a7f871200920d7b417451108f5b34a8aec1627483b199"
+      "bytes": 7013,
+      "sha256": "07aa942b8380b943d84e7f050bd2ad2a17aa63d90f7afd6c31aa3d63d1e5318a"
     },
     "docs/v3/TRUST_BOUNDARIES.md": {
       "bytes": 8540,
@@ -505,8 +513,8 @@
       "sha256": "9aa05fc78b55d4b6b23a7bd65dc612d9dd99e28fffeccbbcb9ddcfa4910b016c"
     },
     "evidence/qualification/LEARN_CYCLE.md": {
-      "bytes": 5939,
-      "sha256": "13bba411774806340be8a850a85db64f68a82bb22c0be8baf650032e196ab273"
+      "bytes": 6176,
+      "sha256": "762981ff8db71ffb4d255ec01d39e1e48b1cfbd4bc1e48666f20cd2811e149cb"
     },
     "evidence/qualification/learn_cycle_live.json": {
       "bytes": 1885,
@@ -525,8 +533,8 @@
       "sha256": "f73731e860f175db4bd197bbe1f8eb6352dbcc3520621dcd2d1bcae8e12f6ba4"
     },
     "evidence/sandbox/docker_sandbox_probe.json": {
-      "bytes": 2047,
-      "sha256": "e16795431d06043fb0856eaa1d14d2874f48b402d802404e291ac6c567ff0c6a"
+      "bytes": 2619,
+      "sha256": "9d55e25b5589ac125d0357d8a6ee44191c8746862d67323ac922bdd7cc0a94a3"
     },
     "evidence/sandbox/holdout_summary.json": {
       "bytes": 1781,
@@ -1009,8 +1017,8 @@
       "sha256": "1d09753b307b015197b2738716f3998b888b6d5479c950a6528e5e3ea9e4f51d"
     },
     "src/sis/v3/docker_sandbox.py": {
-      "bytes": 18218,
-      "sha256": "8e9d3c88f85dbe52ac47603af7486593a415ab120f029712ca4abda59fa5428a"
+      "bytes": 32108,
+      "sha256": "74ff50b509b007a60d06e4a2519249a8a652205f80bb1ca9ace1e0ea4d27d066"
     },
     "src/sis/v3/episode_projection.py": {
       "bytes": 4517,
@@ -1093,8 +1101,8 @@
       "sha256": "0ac3109042e70e24b945ac16d66f2077a2b46b9cb89966a5771c07a89893ec18"
     },
     "src/sis/v3/linux_worker.py": {
-      "bytes": 18833,
-      "sha256": "c20bee430c3ed47fcc187a0a5a9ddce48c0015c6411cc9c6ab0c0cb2561175e8"
+      "bytes": 22307,
+      "sha256": "e7a7868f740984c6d5ae4aa9b5a92876161cce0eaed496b340cf3dbf0834ae56"
     },
     "src/sis/v3/memory.py": {
       "bytes": 45637,
@@ -1145,8 +1153,8 @@
       "sha256": "7706850c3d66c2ee5c88c63393fb320b88933b931cad614deffb6f6be35c9457"
     },
     "src/sis/v3/runner.py": {
-      "bytes": 26422,
-      "sha256": "69183861b8f6d13b0affc5699a9ed1e399a144602b5907b1e792fed87a46c951"
+      "bytes": 29264,
+      "sha256": "ca73bac4df64ede1a48efda7107e60834fa4f133cf0013f5adac5ef0bddb46c2"
     },
     "src/sis/v3/schemas/execution_receipt_v1.json": {
       "bytes": 675,
@@ -1229,8 +1237,12 @@
       "sha256": "7807649f55925083afbcc12695756b129988e121971d2dcb1708404b27590346"
     },
     "src/sis/v3/verifier.py": {
-      "bytes": 42411,
-      "sha256": "720f7bd807bcc7d63c462725e4106d1b6b73d0dc599496ee20f0783108cbf0f6"
+      "bytes": 42800,
+      "sha256": "03dd0324edfc2fbde9ffdd500eed04874d8dae672bb147c0af5a6c0345c72cdc"
+    },
+    "src/sis/v3/workspace_guard.py": {
+      "bytes": 12082,
+      "sha256": "8cc83ded46ed7140e87ebc5ce72ec1ed8e05e63ce2708e5ba7e3f6ead22d8eb7"
     },
     "src/sis/validation.py": {
       "bytes": 3674,
@@ -1397,8 +1409,8 @@
       "sha256": "b9c1fca0de7e9c98630e463ef78e839125c4e3784622397327b00859b8c3ea51"
     },
     "tests/v3/test_docker_sandbox.py": {
-      "bytes": 5274,
-      "sha256": "b30ed24cab09a96eb0076fdae82fb2630de8255d9b031ca728327609ef801758"
+      "bytes": 11218,
+      "sha256": "19f85f53ddaf6b9692ac4b47a130e36998aab0cac5e4adafa9477c2d1dfa4b74"
     },
     "tests/v3/test_e2e_loop.py": {
       "bytes": 4918,
@@ -1600,6 +1612,10 @@
       "bytes": 10379,
       "sha256": "e6903d47566cd05173f4e7a337d872758c92ef28cb6864bdefcb46e80d5fdf2d"
     },
+    "tests/v3/test_v338_workspace_ownership.py": {
+      "bytes": 23579,
+      "sha256": "bfac769a833f365634791034d1660be1e0477a37f9444ba4fcfc913c952c2fd9"
+    },
     "tests/v3/test_verified_episode.py": {
       "bytes": 7702,
       "sha256": "840d9049ca985d65363abe693065e12745d623c68ca95cd4418e8cafd2d73eaf"
@@ -1743,5 +1759,5 @@
   },
   "release": "SIS-v3.3.8",
   "schema_version": 1,
-  "source_commit": "fafe4b479b5c2cb778c685adf95cd8994230c579"
+  "source_commit": "8b92946dd4075d07c2fa685096e318969d2d6da3"
 }
