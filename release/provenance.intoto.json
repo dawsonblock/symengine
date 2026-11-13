@@ -6,7 +6,7 @@
       "externalParameters": {
         "branch": "repair/v335-resource-security",
         "release": "SIS-v3.3.8",
-        "source_commit": "ac2f754b7fcfae4ec934a87dd604c1caeb6795b7"
+        "source_commit": "25030eae97a51b79a606f4ce02267fb4a21c849a"
       },
       "internalParameters": {
         "builder": "tools/package_release.py"
@@ -14,7 +14,7 @@
       "resolvedDependencies": [
         {
           "digest": {
-            "sha1": "ac2f754b7fcfae4ec934a87dd604c1caeb6795b7"
+            "sha1": "25030eae97a51b79a606f4ce02267fb4a21c849a"
           },
           "uri": "git+https://sis.local/repair/v335-resource-security"
         }
@@ -25,9 +25,9 @@
         "id": "tools/package_release.py"
       },
       "metadata": {
-        "finishedOn": "2026-11-13T09:19:10Z",
-        "invocationId": "release-60a275c9b78ffdeb",
-        "startedOn": "2026-11-13T09:19:10Z"
+        "finishedOn": "2026-11-13T09:51:33Z",
+        "invocationId": "release-160811837627baac",
+        "startedOn": "2026-11-13T09:51:32Z"
       }
     }
   },
@@ -35,7 +35,7 @@
   "subject": [
     {
       "digest": {
-        "sha256": "60a275c9b78ffdebc4f1c04e96ae4a3af28bb405f85c5aeee715f33801fe7080"
+        "sha256": "160811837627baac0e1ccf44026e18a8dce55e3e68540cb4d33f7affc09684d7"
       },
       "name": "SIS-v3.3.8.zip"
     }
