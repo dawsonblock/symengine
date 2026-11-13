@@ -25,8 +25,8 @@
       "sha256": "f4e9590f3ebad5ffec1d03da3db058375438693dbcd93f2738ff3ea66da17b8d"
     },
     "CHANGELOG.md": {
-      "bytes": 55741,
-      "sha256": "da14891ec58f18399e1b1d2e63aa13d534285c545f01a4fa5e2b33d9ce232f03"
+      "bytes": 56118,
+      "sha256": "fbb9e545fcd320c3ef9f737b5d65129cbcefb6ab04ea83c787101773ecb19ac4"
     },
     "LICENSE": {
       "bytes": 1083,
@@ -1101,8 +1101,8 @@
       "sha256": "7bd0dc3b0b5deb141c10b4b234b9c266b954e3e3f6f697092db9cd0d95102794"
     },
     "src/sis/v3/learning_qualification.py": {
-      "bytes": 18980,
-      "sha256": "35c536f5a390b74d4fa0ac6a2d4c175729aab0a7c2352ca4161517dde8d36f3f"
+      "bytes": 18933,
+      "sha256": "308b24587f888c797d72549723844179f43890043457fbbaf50f6ecdb8f26553"
     },
     "src/sis/v3/linux_worker.py": {
       "bytes": 22307,
@@ -1473,8 +1473,8 @@
       "sha256": "45077019e2ce23aeca7d7f6d89e018cbac435aaccb9d929a42cbcd0b29c4cf61"
     },
     "tests/v3/test_learning_qualification.py": {
-      "bytes": 13099,
-      "sha256": "ae1e520c21e18ba30f1af133324677293394eba74e07cc63f0f3d0f8148841e8"
+      "bytes": 13805,
+      "sha256": "b1e5da0729cef1e5b340c6f4ff33499f9595f7eb04b820cf941f88dfc8dab99a"
     },
     "tests/v3/test_memory.py": {
       "bytes": 12300,
@@ -1763,5 +1763,5 @@
   },
   "release": "SIS-v3.3.8",
   "schema_version": 1,
-  "source_commit": "2d038a40b5010f8bbf8ec9df570d01702ed686f3"
+  "source_commit": "cd918e3d4e12ea549fcff6bfd33d356e56d84e54"
 }

@@ -1,7 +1,7 @@
 # SIS release artifacts
 
 Latest sealed release: `SIS-v3.3.8.zip`
-SHA-256: `015e354b0ebbfdbb6f4ad81b546f26346a2a65fdf2e25bd2451d227eef4f1318`
+SHA-256: `fa25e4ee5dc60c1f33e9759138de8d6dd2cf7f1779d7945af7d92d18566bc8e6`
 
 `release_manifest.json` and `verification.json` are authoritative for the
 archive identity, source commit, test result and fresh-extraction checks.
@@ -17,9 +17,10 @@ not available.
 v3.3.5 artifacts signed under `release-v334-key-1`. They do not describe
 v3.3.8 and are not part of this bundle's `SHA256SUMS`.
 
-The archive was re-sealed over the Gate 1 patch-verification repair and the
-Gate 2 sandbox hardening, at source commit `2d038a4` over 440 source files.
-It is still unsigned: re-sign with an externally held key before publishing.
+The archive was re-sealed over the Gate 1 patch-verification repair, the
+Gate 2 sandbox hardening and the efficacy `E_vs_A` contrast fix, at source
+commit `cd918e3` over 440 source files. It is still unsigned: re-sign with
+an externally held key before publishing.
 
 ## Verify
 
