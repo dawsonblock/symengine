@@ -30,7 +30,7 @@ import tempfile
 import threading
 import time
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
@@ -48,11 +48,65 @@ MAX_ENV_ITEMS = 32
 MAX_ENV_CHARS = 4_096
 MAX_STDIN_BYTES = 1 << 20
 MAX_WORKSPACE_FILES = 200_000
+MAX_PRIVATE_FILES = 64
+MAX_PRIVATE_FILE_BYTES = 1 << 20
+MAX_PRIVATE_TOTAL_BYTES = 8 << 20
 _READ_CHUNK = 65_536
 
 _ARG_TEXT = re.compile(r"^[^\x00]{1,1024}$", re.DOTALL)
 _ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,127}$")
 _SAFE_CWD = re.compile(r"^(?!/)(?![A-Za-z]:)(?!.*(?:^|/)\.\.(?:/|$))[A-Za-z0-9_.@/-]{0,512}$")
+_PRIVATE_NAME = re.compile(r"^(?!/)(?![A-Za-z]:)(?!.*(?:^|/)\.\.(?:/|$))[A-Za-z0-9_.@/-]{1,512}$")
+_PYTHON_COMMAND = re.compile(r"^python(?:\d+(?:\.\d+)?)?(?:\.exe)?$", re.IGNORECASE)
+
+_BOOTSTRAP_NAME = "_sis_bootstrap.py"
+# Staged read-only next to the private material and run as the Python entry
+# point. It imports the test runner before the graded workspace becomes
+# importable, so a submission can neither shadow ``pytest`` nor supply a
+# ``sitecustomize`` that runs at interpreter startup.
+_BOOTSTRAP_SOURCE = '''"""SIS evaluator bootstrap (evaluator-owned, read-only).
+
+The graded workspace becomes importable only after the interpreter has
+started and the test runner has been imported. A submission therefore
+cannot supply ``sitecustomize`` or shadow ``pytest`` before the
+acceptance command runs.
+"""
+import importlib
+import runpy
+import sys
+import warnings
+
+warnings.filterwarnings(
+    "ignore", message=r".*found in sys\\.modules.*", category=RuntimeWarning)
+
+workspace = sys.argv[1]
+target = sys.argv[2:]
+if not target:
+    raise SystemExit(64)
+
+try:
+    importlib.import_module("pytest")
+except ImportError:
+    pass
+
+if target[0] == "-m":
+    if len(target) < 2:
+        raise SystemExit(64)
+    module = target[1]
+    sys.path.insert(0, workspace)
+    sys.argv = [module, *target[2:]]
+    runpy.run_module(module, run_name="__main__", alter_sys=True)
+elif target[0] == "-c":
+    if len(target) < 2:
+        raise SystemExit(64)
+    sys.path.insert(0, workspace)
+    sys.argv = ["-c", *target[2:]]
+    exec(compile(target[1], "<string>", "exec"), {"__name__": "__main__"})
+else:
+    sys.path.insert(0, workspace)
+    sys.argv = target
+    runpy.run_path(target[0], run_name="__main__")
+'''
 
 
 class RunnerError(RuntimeError):
@@ -157,6 +211,140 @@ def command_spec_digest(spec: CommandSpec) -> str:
     })
 
 
+def normalize_private_files(
+    files: Mapping[str, bytes] | None,
+) -> dict[str, bytes]:
+    """Validate evaluator-private material before it is staged anywhere."""
+    if not files:
+        return {}
+    if len(files) > MAX_PRIVATE_FILES:
+        raise ContractError("private material exceeds the file-count bound")
+    normalized: dict[str, bytes] = {}
+    total = 0
+    for name, data in files.items():
+        if (not isinstance(name, str) or not _PRIVATE_NAME.fullmatch(name)
+                or any(part in {"", ".", ".."} for part in name.split("/"))):
+            raise ContractError(
+                "private material names must be normalized relative paths")
+        if not isinstance(data, bytes) or len(data) > MAX_PRIVATE_FILE_BYTES:
+            raise ContractError("private material must be bounded bytes")
+        total += len(data)
+        normalized[name] = data
+    if total > MAX_PRIVATE_TOTAL_BYTES:
+        raise ContractError("private material exceeds the byte bound")
+    return normalized
+
+
+def stage_private_material(
+    root: str | Path, files: Mapping[str, bytes] | None, *,
+    bootstrap: bool = False,
+) -> Path:
+    """Write private material into a fresh directory outside any workspace.
+
+    The directory is a sibling of the backend's managed workspaces, never a
+    descendant of one, so submitted code cannot reach the material through
+    its own workspace tree, the tree digest, or the copy-out archive. When
+    ``bootstrap`` is set, the trusted runner bootstrap is staged beside it.
+    """
+    material = normalize_private_files(files)
+    if bootstrap and _BOOTSTRAP_NAME in material:
+        raise ContractError(f"{_BOOTSTRAP_NAME} is reserved for evaluator staging")
+    directory = Path(tempfile.mkdtemp(dir=Path(root), prefix=".private-"))
+    try:
+        # A Docker bind mount preserves host ownership, and the container
+        # user may be a different numeric UID than the host owner. The
+        # material must therefore be traversable/readable by that UID; the
+        # executor root itself is expected to be private.
+        os.chmod(directory, 0o755)
+        for name, data in sorted(material.items()):
+            target = directory / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(data)
+            os.chmod(target, 0o444)
+        if bootstrap:
+            target = directory / _BOOTSTRAP_NAME
+            target.write_bytes(_BOOTSTRAP_SOURCE.encode("utf-8"))
+            os.chmod(target, 0o444)
+    except BaseException:
+        shutil.rmtree(directory, ignore_errors=True)
+        raise
+    return directory
+
+
+def private_command_spec(
+    spec: CommandSpec, *,
+    names: Mapping[str, bytes] | set[str] | tuple[str, ...],
+    prefix: str,
+    workspace: str,
+    bootstrap: bool = True,
+) -> CommandSpec:
+    """Point registered private-file arguments at the staged directory.
+
+    Only exact argument matches (optionally ``./``-prefixed) are rewritten;
+    every other argument, the cwd, stdin and the limits stay unchanged. A
+    Python invocation is routed through the staged bootstrap, which imports
+    the test runner and only then adds ``workspace`` to ``sys.path``. The
+    workspace is never placed on ``PYTHONPATH``: a submission must not be
+    importable — and must not be able to supply ``sitecustomize`` — before
+    the acceptance command starts.
+    """
+    known = set(names)
+    if not known:
+        return spec
+
+    def rewrite(arg: str) -> str:
+        candidate = arg[2:] if arg.startswith("./") else arg
+        head, separator, tail = candidate.partition("::")
+        if head in known:
+            return prefix.rstrip("/") + "/" + head + separator + tail
+        return arg
+
+    argv = tuple(rewrite(arg) for arg in spec.argv)
+    if bootstrap and _PYTHON_COMMAND.fullmatch(Path(argv[0]).name):
+        argv = (
+            argv[0],
+            prefix.rstrip("/") + "/" + _BOOTSTRAP_NAME,
+            workspace,
+            *argv[1:],
+        )
+    return CommandSpec(
+        argv=argv, env=dict(spec.env), cwd=spec.cwd,
+        stdin=spec.stdin, limits=spec.limits)
+
+
+def private_material_modified(
+    directory: str | Path, files: Mapping[str, bytes] | None,
+) -> bool:
+    """True when a staged private file no longer matches its registered bytes."""
+    material = normalize_private_files(files)
+    root = Path(directory)
+    for name, data in material.items():
+        try:
+            if (root / name).read_bytes() != data:
+                return True
+        except OSError:
+            return True
+    bootstrap = root / _BOOTSTRAP_NAME
+    if bootstrap.exists():
+        try:
+            if bootstrap.read_bytes() != _BOOTSTRAP_SOURCE.encode("utf-8"):
+                return True
+        except OSError:
+            return True
+    return False
+
+
+def mark_private_material_modified(
+    receipt: ExecutionReceiptV1,
+) -> ExecutionReceiptV1:
+    """Append the tamper marker; classification maps ``sandbox:`` to failure."""
+    return replace(
+        receipt,
+        security_errors=receipt.security_errors
+        + ("sandbox:private_material_modified",),
+    )
+
+
 @dataclass(frozen=True)
 class TreeScan:
     digest: str
@@ -237,9 +425,14 @@ class Workspace:
 class WorkspaceExecutor(Protocol):
     """Lifecycle for an isolated disposable task workspace."""
 
+    supports_private_material: bool
+
     def prepare(self, base_dir: str | Path, *, label: str = "task") -> Workspace: ...
 
-    def run(self, workspace: Workspace, spec: CommandSpec) -> ExecutionReceiptV1: ...
+    def run(
+        self, workspace: Workspace, spec: CommandSpec, *,
+        private_files: Mapping[str, bytes] | None = None,
+    ) -> ExecutionReceiptV1: ...
 
     def destroy(self, workspace: Workspace) -> None: ...
 
@@ -335,6 +528,8 @@ class LocalSubprocessExecutor:
     sandbox for hostile code without an OS-validated replacement.
     """
 
+    supports_private_material = True
+
     def __init__(
         self,
         root: str | Path | None = None,
@@ -415,7 +610,10 @@ class LocalSubprocessExecutor:
             record.workspace_id, record.path, record.before_tree_digest,
             record.executor_identity)
 
-    def run(self, workspace: Workspace, spec: CommandSpec) -> ExecutionReceiptV1:
+    def run(
+        self, workspace: Workspace, spec: CommandSpec, *,
+        private_files: Mapping[str, bytes] | None = None,
+    ) -> ExecutionReceiptV1:
         if not isinstance(spec, CommandSpec):
             raise ContractError("spec must be a CommandSpec")
         if self._production:
@@ -427,10 +625,28 @@ class LocalSubprocessExecutor:
         with self._registry.execution(
                 workspace.workspace_id, workspace.path,
                 executor_identity=workspace.executor_identity) as record:
-            return self._run_workspace(record, spec)
+            material = None
+            try:
+                if private_files:
+                    material = stage_private_material(
+                        self.root, private_files, bootstrap=True)
+                    spec = private_command_spec(
+                        spec, names=private_files, prefix=str(material),
+                        workspace=str(record.path))
+                receipt = self._run_workspace(
+                    record, spec, private=material is not None)
+                if material is not None and private_material_modified(
+                        material, private_files):
+                    # The local backend runs the submission as the same OS
+                    # principal, so mode bits are not a tamper boundary.
+                    receipt = mark_private_material_modified(receipt)
+                return receipt
+            finally:
+                if material is not None:
+                    shutil.rmtree(material, ignore_errors=True)
 
     def _run_workspace(
-        self, record, spec: CommandSpec,
+        self, record, spec: CommandSpec, *, private: bool = False,
     ) -> ExecutionReceiptV1:
         before = scan_tree(record.path)
         if before.external_symlinks:
@@ -440,6 +656,8 @@ class LocalSubprocessExecutor:
             raise RunnerError("command cwd escapes or is absent from the workspace")
 
         security_errors: list[str] = ["isolation:unverified_local"]
+        if private:
+            security_errors.append("evaluation:private_material_separated")
         security_errors.append(
             "network:seatbelt_denied" if self._seatbelt
             else "network:not_enforced")

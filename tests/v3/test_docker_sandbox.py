@@ -256,6 +256,42 @@ class ContainerIntegrationTests(unittest.TestCase):
         self.assertEqual(receipt.exit_status, 0)
         self.assertIn(b"1 passed", stdout)
 
+    def test_private_material_runs_outside_the_workspace(self):
+        workspace = self.executor.prepare(self.base)
+        self.addCleanup(self.executor.destroy, workspace)
+        receipt = self.executor.run(
+            workspace,
+            CommandSpec(
+                argv=("python3", "acc.py"),
+                limits=limits(cpu_seconds=30, wall_seconds=60)),
+            private_files={"acc.py": (
+                b"import calc\n"
+                b"assert calc.x == 1\n"
+                b"open('/workspace/ran.txt', 'w').write('ok')\n")})
+        self.assertEqual(receipt.exit_status, 0)
+        self.assertIn("evaluation:private_material_separated",
+                      receipt.security_errors)
+        self.assertFalse((workspace.path / "acc.py").exists())
+        self.assertEqual(
+            (workspace.path / "ran.txt").read_text(), "ok")
+
+    def test_private_material_is_read_only_in_the_container(self):
+        workspace = self.executor.prepare(self.base)
+        self.addCleanup(self.executor.destroy, workspace)
+        receipt = self.executor.run(
+            workspace,
+            CommandSpec(
+                argv=("python3", "acc.py"),
+                limits=limits(cpu_seconds=30, wall_seconds=60)),
+            private_files={"acc.py": (
+                b"import os, sys\n"
+                b"try:\n"
+                b"    open(__file__, 'w').write('tampered')\n"
+                b"except OSError:\n"
+                b"    sys.exit(0)\n"
+                b"sys.exit(3)\n")})
+        self.assertEqual(receipt.exit_status, 0)
+
     def test_probe_reports_every_check(self):
         report = self.executor.probe()
         self.assertTrue(report["ok"], report)

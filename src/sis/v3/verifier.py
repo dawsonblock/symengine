@@ -57,7 +57,13 @@ from .isolation import (
     ProductionIsolationPolicy,
 )
 from .policy import require_permission
-from .runner import CommandSpec, ResourceLimits, WorkspaceExecutor, tree_digest
+from .runner import (
+    CommandSpec,
+    ResourceLimits,
+    WorkspaceExecutor,
+    normalize_private_files,
+    tree_digest,
+)
 from ..vault_storage import (
     assert_private_acl,
     create_private_file,
@@ -325,13 +331,10 @@ class OutcomeVerifier:
             raise ContractError(
                 "failure_class must be a bounded printable string")
         command = CommandSpec(argv=tuple(argv))
-        material = dict(files or {})
-        for name, data in material.items():
-            CommandSpec(argv=("x",), cwd=name)  # reuse normalized-relative-path validation
-            if name == ".":
-                raise ContractError("registered file names must be file paths, not directories")
-            if not isinstance(data, bytes) or len(data) > (1 << 20):
-                raise ContractError("registered test files must be bounded bytes")
+        # The same bounds the executor enforces when staging private material
+        # are enforced here, so an over-bound registration fails at
+        # registration instead of surfacing as an infrastructure error.
+        material = normalize_private_files(dict(files or {}))
         commitment_payload = {
             "task_id": task_id,
             "criterion_version": criterion_version,
@@ -474,16 +477,25 @@ class OutcomeVerifier:
             argv = self.runtime_profile.pytest_argv(argv)
         workspace = self.executor.prepare(submission, label="eval")
         try:
-            for name, data in registration.files.items():
-                target = workspace.path / name
-                target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_bytes(data)
-            receipt_exec = self.executor.run(
-                workspace,
-                CommandSpec(
-                    argv=argv, limits=self.limits,
-                    env=self.runtime_profile.environment()),
-            )
+            private_files = dict(registration.files)
+            # A backend that supports private material stages it outside the
+            # submission tree. Only a legacy backend without that capability
+            # still writes acceptance files into the workspace being graded.
+            separated = bool(private_files) and bool(
+                getattr(self.executor, "supports_private_material", False))
+            if private_files and not separated:
+                for name, data in private_files.items():
+                    target = workspace.path / name
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_bytes(data)
+            spec = CommandSpec(
+                argv=argv, limits=self.limits,
+                env=self.runtime_profile.environment())
+            if separated:
+                receipt_exec = self.executor.run(
+                    workspace, spec, private_files=private_files)
+            else:
+                receipt_exec = self.executor.run(workspace, spec)
         except Exception as exc:
             self.last_outcome_class = INFRASTRUCTURE_ERROR
             raise EvaluationRejected(

@@ -49,6 +49,7 @@ class EvaluatorWorkerTests(unittest.TestCase):
             task=self.task, submission_dir=self.repo,
             evaluation_nonce="sub-nonce-1",
             executor_root=self.root / "work-exec",
+            executor="local", allow_local_executor=True,
         )
         self.assertEqual(result.exit_status, 0)
         self.assertEqual(result.receipt.outcome, "pass")
@@ -68,14 +69,17 @@ class EvaluatorWorkerTests(unittest.TestCase):
                 key_dir=self.key_dir, registry_dir=self.registry_dir,
                 task=bad, submission_dir=self.repo,
                 evaluation_nonce="sub-nonce-2",
+                executor="local", allow_local_executor=True,
             )
 
     def test_missing_dirs_fail_fast(self):
-        with self.assertRaises(EvaluatorWorkerError):
+        with self.assertRaisesRegex(
+                EvaluatorWorkerError, "key_dir must be an existing directory"):
             evaluate_via_subprocess(
                 key_dir=self.root / "absent", registry_dir=self.registry_dir,
                 task=self.task, submission_dir=self.repo,
-                evaluation_nonce="n",
+                evaluation_nonce="n", executor="docker",
+                sandbox_image="example.invalid/img@sha256:" + "0" * 64,
             )
 
 

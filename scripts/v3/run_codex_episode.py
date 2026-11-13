@@ -9,8 +9,12 @@ evaluator-owned workspace and signs an OutcomeReceiptV1.
 
 Usage:
     PYTHONPATH=src python3 scripts/v3/run_codex_episode.py \
+        --allow-local-executor \
         --work-root /tmp/sis-ep --fixture examples/v3/fixtures/buggy_calc \
         --evidence-root /tmp/sis-evidence
+
+The local backend is development-only; ``--allow-local-executor`` is the
+explicit authorization to run it.
 
 The agent never sees the hidden test file or the evaluator directories.
 """
@@ -49,6 +53,9 @@ def main() -> int:
     parser.add_argument("--task-id", default="buggy-calc-001")
     parser.add_argument("--timeout", type=int, default=600)
     parser.add_argument("--model", default=None)
+    parser.add_argument(
+        "--allow-local-executor", action="store_true",
+        help="authorize development-only local evaluation")
     args = parser.parse_args()
 
     fixture = Path(args.fixture).resolve()
@@ -67,7 +74,7 @@ def main() -> int:
             shutil.copy2(item, agent_ws / item.name)
 
     verifier = OutcomeVerifier(
-        executor=_local_executor(),
+        executor=_local_executor(args.allow_local_executor),
         key_dir=evidence / "evaluator-keys",
         registry_dir=evidence / "evaluator-registry",
     )
@@ -137,8 +144,12 @@ def main() -> int:
     return 0
 
 
-def _local_executor():
+def _local_executor(allow_local_executor: bool):
     from sis.v3.runner import LocalSubprocessExecutor
+    if not allow_local_executor:
+        raise SystemExit(
+            "local execution is development-only and not a containment "
+            "boundary; pass --allow-local-executor to authorize it")
     return LocalSubprocessExecutor(use_seatbelt=True)
 
 

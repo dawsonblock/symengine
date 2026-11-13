@@ -45,14 +45,43 @@
   directory only after every started execution has left its critical
   section; a removal that cannot be verified raises
   `workspace_remove_failed`. Repeated destruction is a no-op.
-- **Docker workspaces are collected through a filtered archive** — the
-  host tree is mounted read-only at `/submission` and copied into a
+- **Docker workspaces are collected through a filtered, budgeted archive**
+  — the host tree is mounted read-only at `/submission` and copied into a
   quota-limited tmpfs. The copy-out tar is extracted with
   `filter="data"`, so absolute paths, `..` escapes, device nodes and
   links that leave the workspace are rejected instead of materializing
-  on the host. A run whose workspace state cannot be collected reports
-  `fs:workspace_state_unavailable`, which classifies as a resource limit
-  and never as a pass.
+  on the host. The declared `disk_bytes` and file-count bound are
+  enforced **while the archive is read**: a regular member is rejected
+  before its bytes are written, sparse members are refused, and the tar
+  stream itself is capped. A violation stops extraction and reports a
+  reason-specific marker (`fs:disk_budget_exceeded`,
+  `fs:file_count_exceeded`, `fs:sparse_member_rejected`) plus
+  `fs:workspace_state_unavailable` (never a pass). The prepared
+  workspace is replaced only after a complete, in-budget extraction; a
+  failed swap restores the original tree instead of deleting it.
+- **Private acceptance material lives outside the graded tree** — a
+  backend that supports private material stages registered acceptance
+  files in a directory beside its managed workspaces and exposes it
+  read-only at `/private` (Docker, Linux worker) or as an absolute host
+  path (local). The material is never written into the submission
+  workspace, never included in its tree digest or copy-out archive, and
+  a submission's `conftest.py` is not loaded from the test root. The
+  graded workspace is **not** placed on `PYTHONPATH`: a Python
+  acceptance command runs through a staged, read-only bootstrap that
+  imports the test runner and only then adds the workspace to
+  `sys.path`, so a submission cannot shadow `pytest` or supply a
+  `sitecustomize` that runs at interpreter startup. Staging is bounded
+  (64 files, 1 MiB each, 8 MiB total) and registration enforces the
+  same bounds. The execution receipt carries
+  `evaluation:private_material_separated`. Backends without that
+  capability keep the legacy co-located staging.
+- **Submitted code runs in Docker by default** — the evaluator worker
+  constructs a `DockerSandboxExecutor` and refuses to start without an
+  image; `LocalSubprocessExecutor` requires an explicit
+  `allow_local_executor` authorization (or `--allow-local-executor` on
+  the CLI, the demonstration cycle, and the live-episode script). Local
+  execution remains `isolation:unverified_local` and is never a
+  containment claim.
 - **Replayed episodes are rejected** — `MemoryStore.ingest` keys on
   `(episode_id, task_fingerprint)`; a mutated copy of an episode is a
   `DuplicateEpisode`, never a second vote.
@@ -179,6 +208,28 @@
 
 - Local execution is `isolation:unverified_local`; seatbelt network
   denial is opportunistic, not a guarantee.
+- Private-material separation moves acceptance files out of the graded
+  workspace, but the test runner and the code under test still share one
+  process and one OS principal. A submission that deliberately
+  enumerates the private path can still read the tests at run time. True
+  secrecy requires a process-split harness that invokes the submission
+  through a separate principal; that is not implemented. Separation does
+  remove the incidental paths (same directory, tree digest, copy-out,
+  submission `conftest.py`, `PYTHONPATH`/startup hooks, runner
+  shadowing).
+- The Docker and Linux worker mounts are read-only, so the material
+  cannot be rewritten there. The local backend only clears write mode
+  bits; the submission runs as the same principal and can `chmod` them.
+  A post-run re-read detects a rewrite and the receipt carries
+  `sandbox:private_material_modified` (a sandbox failure, never a pass),
+  but prevention requires the process split above or seatbelt.
+- The local backend's `command_spec_digest` includes the run-specific
+  private-material directory, so it is not comparable across runs.
+  Docker and the Linux worker use the fixed `/private` mount point and
+  keep a stable digest.
+- The copy-out budget bounds host disk writes; it does not make a
+  malicious archive safe to parse in memory. The tar stream is capped,
+  but a future parser change must keep that cap.
 - Advisory text is delivered to the agent — the harness must treat it as
   untrusted context. SIS guarantees the channel is advisory; the agent's
   sandbox is responsible for action-level enforcement.

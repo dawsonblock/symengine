@@ -234,7 +234,7 @@ tests_added: 60
 commands_run:
   - "PYTHONPATH=src python3 -m unittest discover -s tests -q"
   - "PYTHONPATH=src python3 -W error::ResourceWarning -m unittest discover -s tests -q"
-  - "PYTHONPATH=src python3 scripts/v3/run_codex_episode.py --work-root /tmp/sis-live-ws --evidence-root /tmp/sis-live-evidence"
+  - "PYTHONPATH=src python3 scripts/v3/run_codex_episode.py --allow-local-executor --work-root /tmp/sis-live-ws --evidence-root /tmp/sis-live-evidence"
   - "codex exec --json --ephemeral -s workspace-write -C /tmp/codex-dbg (direct capability probe)"
 observed_outcomes:
   - "Full suite: 479 tests, 0 failures, 2 skips; no ResourceWarnings under -W error"

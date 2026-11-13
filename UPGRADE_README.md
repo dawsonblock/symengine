@@ -80,6 +80,68 @@ new fields fail closed.
 
 See the 2026-11-12 CHANGELOG entry.
 
+### Post-seal repair: Gate 2 containment and evaluation defaults
+
+Five containment/evaluation defects were repaired after the v3.3.8 seal.
+None of them changes a signed artifact; the sealed archive and evidence
+still describe the pre-repair tree.
+
+- **Copy-out budget.** `DockerSandboxExecutor._copy_out` now enforces the
+  run's `disk_bytes` and the workspace file-count bound while it reads
+  the tar stream. A regular member larger than the remaining budget is
+  rejected before its bytes are written, sparse members are refused, and
+  the stream itself is capped. A violation preserves the prepared
+  workspace and reports a reason-specific marker
+  (`fs:disk_budget_exceeded`, `fs:file_count_exceeded`,
+  `fs:sparse_member_rejected`), plus `fs:workspace_state_unavailable` and
+  `fs:copy_out_rejected:<reason>`; it can never classify as a pass.
+- **Workspace preservation.** The copy-out swap renames the prepared
+  workspace aside, renames the staged tree into place, and restores the
+  original if the second rename fails. A failed copy-out no longer
+  deletes the only copy of the workspace.
+- **Private acceptance material.** `OutcomeVerifier` no longer writes
+  registered acceptance files into the workspace being graded when the
+  backend supports private material. The files are staged beside the
+  executor's workspaces and exposed read-only at `/private` (Docker,
+  Linux worker) or as an absolute host path (local). Registered argv
+  tokens that name a private file are rewritten to that path. The
+  workspace is **not** put on `PYTHONPATH`; a Python acceptance command
+  runs through a staged, read-only bootstrap that imports the test
+  runner and only then adds the workspace to `sys.path`. That blocks a
+  submission `pytest.py` from shadowing the runner and a submission
+  `sitecustomize.py` from running at interpreter startup — both
+  previously forced exit 0 (a pass) without running the tests. The
+  execution receipt carries `evaluation:private_material_separated`.
+  Staging is bounded (64 files, 1 MiB each, 8 MiB total), and
+  `register_task()` enforces the same bounds. Residual risk: the test
+  runner and the submitted code still share one process and one OS
+  principal, so a submission that deliberately enumerates `/private`
+  can still read the tests. The local backend's material is
+  mode-protected, not OS-read-only: a rewrite is detected after the run
+  (`sandbox:private_material_modified`, a sandbox failure) rather than
+  prevented. A process-split harness is not implemented.
+- **Execution default.** `sis.v3.evaluator_worker` constructs a
+  `DockerSandboxExecutor` by default and refuses to start without an
+  image. Local execution requires `allow_local_executor=True` (CLI:
+  `--allow-local-executor`). `tools/learn_recommend_cycle.py` defaults
+  to `--sandbox docker` and refuses `--sandbox local` without the same
+  flag; `scripts/v3/run_codex_episode.py` requires it too. The remaining
+  campaign scripts under `tools/` (`five_arm_campaign.py`,
+  `governed_campaign.py`, `governed_live_campaign.py`, `live_study.py`,
+  `real_agent_campaign.py`, `skill_holdout.py`) still construct the
+  local backend directly. They are development/diagnostic harnesses,
+  not production qualification entrypoints: their receipts are
+  `isolation:unverified_local` and cannot pass production
+  classification.
+- **Patch verification.** `verify_proposal()` now rejects a target that
+  resolves outside the base directory (`target_escapes_base`), matching
+  `propose_edit()`.
+
+New regressions live in `tests/v3/test_gate2_containment_repairs.py`.
+The full suite is 1449 passed, 13 skipped. Regenerate the sealed archive
+and its evidence with `tools/package_release.py` before making a release
+claim.
+
 ### Verifying the v3.3.8 release
 
 ```bash

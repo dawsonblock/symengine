@@ -31,11 +31,15 @@ import tarfile
 import tempfile
 import threading
 import time
+from collections.abc import Mapping
 from pathlib import Path
 
 from .contracts import ContractError, ExecutionReceiptV1, canonical_digest
-from .runner import (CommandSpec, ResourceLimits, RunnerError, Workspace,
-                     command_spec_digest, scan_tree)
+from .runner import (MAX_WORKSPACE_FILES, CommandSpec, ResourceLimits,
+                     RunnerError, Workspace, command_spec_digest,
+                     mark_private_material_modified, private_command_spec,
+                     private_material_modified, scan_tree,
+                     stage_private_material)
 from .workspace_guard import ManagedWorkspaceRegistry, protected_overlap
 
 _IMAGE_DIGEST = re.compile(
@@ -43,6 +47,43 @@ _IMAGE_DIGEST = re.compile(
 _USER = re.compile(r"^([0-9]{1,10})(?::([0-9]{1,10}))?$")
 _READ_CHUNK = 65_536
 _COPY_OUT_SECONDS = 300.0
+_COPY_OUT_MAX_MEMBERS = MAX_WORKSPACE_FILES * 2
+_COPY_OUT_STREAM_FLOOR = 1 << 20
+_BUDGET_MARKERS = {
+    "disk_budget_exceeded": "fs:disk_budget_exceeded",
+    "archive_budget_exceeded": "fs:disk_budget_exceeded",
+    "file_count_exceeded": "fs:file_count_exceeded",
+    "sparse_member_rejected": "fs:sparse_member_rejected",
+}
+
+
+class CopyOutBudgetError(RunnerError):
+    """The copy-out archive exceeded the workspace's declared budget."""
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(f"workspace_copy_out_failed:{reason}")
+        self.reason = reason
+
+
+class _BudgetedReader:
+    """Read the tar stream but refuse to exceed a hard byte budget.
+
+    ``tarfile`` reads ahead in fixed-size buffers, so the budget carries a
+    floor that covers one buffer plus tar record padding; the authoritative
+    limit on extracted bytes is enforced per member by ``_extract_bounded``.
+    """
+
+    def __init__(self, stream, limit: int) -> None:
+        self._stream = stream
+        self._limit = limit
+        self.read_bytes = 0
+
+    def read(self, size: int = -1) -> bytes:
+        chunk = self._stream.read(size)
+        self.read_bytes += len(chunk)
+        if self.read_bytes > self._limit:
+            raise CopyOutBudgetError("archive_budget_exceeded")
+        return chunk
 
 
 def _error_tail(handle, limit: int = 4_096) -> str:
@@ -83,6 +124,8 @@ def _reject_symlinks(root: Path) -> None:
 
 class DockerSandboxExecutor:
     """Run evaluator commands in a bounded Docker container."""
+
+    supports_private_material = True
 
     def __init__(
         self,
@@ -196,16 +239,35 @@ class DockerSandboxExecutor:
             record.workspace_id, record.path, record.before_tree_digest,
             record.executor_identity)
 
-    def run(self, workspace: Workspace, spec: CommandSpec) -> ExecutionReceiptV1:
+    def run(
+        self, workspace: Workspace, spec: CommandSpec, *,
+        private_files: Mapping[str, bytes] | None = None,
+    ) -> ExecutionReceiptV1:
         if not isinstance(spec, CommandSpec):
             raise ContractError("spec must be a CommandSpec")
         with self._registry.execution(
                 workspace.workspace_id, workspace.path,
                 executor_identity=workspace.executor_identity) as record:
-            return self._run_workspace(record, spec)
+            material = None
+            try:
+                if private_files:
+                    material = stage_private_material(
+                        self.root, private_files, bootstrap=True)
+                    spec = private_command_spec(
+                        spec, names=private_files, prefix="/private",
+                        workspace="/workspace")
+                receipt = self._run_workspace(
+                    record, spec, private_host=material)
+                if material is not None and private_material_modified(
+                        material, private_files):
+                    receipt = mark_private_material_modified(receipt)
+                return receipt
+            finally:
+                if material is not None:
+                    shutil.rmtree(material, ignore_errors=True)
 
     def _run_workspace(
-        self, record, spec: CommandSpec,
+        self, record, spec: CommandSpec, *, private_host: Path | None = None,
     ) -> ExecutionReceiptV1:
         before = scan_tree(record.path)
         if before.external_symlinks:
@@ -241,6 +303,8 @@ class DockerSandboxExecutor:
         ]
         if not _IMAGE_DIGEST.fullmatch(self._image):
             security_errors.append("docker:image_tag_only")
+        if private_host is not None:
+            security_errors.append("evaluation:private_material_separated")
 
         stdout_chunks = bytearray()
         stderr_chunks = bytearray()
@@ -252,7 +316,8 @@ class DockerSandboxExecutor:
         exit_status = -1
         try:
             self._start_container(
-                container, record, spec, limits, memory, pids, disk)
+                container, record, spec, limits, memory, pids, disk,
+                private_host)
             with self._lock:
                 self._live[execution_id] = container
                 self._live_ws[execution_id] = record.workspace_id
@@ -337,7 +402,16 @@ class DockerSandboxExecutor:
                 security_errors.append("fs:workspace_state_unavailable")
             else:
                 try:
-                    self._copy_out(container, record)
+                    self._copy_out(container, record, disk)
+                except CopyOutBudgetError as exc:
+                    # The archive exceeded a budget the run declared. The
+                    # prepared workspace is preserved, but its post-run state
+                    # was never collected: the receipt must say both.
+                    security_errors.append(_BUDGET_MARKERS.get(
+                        exc.reason, "fs:disk_budget_exceeded"))
+                    security_errors.append("fs:workspace_state_unavailable")
+                    security_errors.append(
+                        f"fs:copy_out_rejected:{exc.reason}")
                 except RunnerError:
                     if exit_status == 0:
                         raise
@@ -438,6 +512,7 @@ class DockerSandboxExecutor:
     def _start_container(
         self, container: str, record, spec: CommandSpec,
         limits: ResourceLimits, memory: int, pids: int, disk: int,
+        private_host: Path | None = None,
     ) -> None:
         command = [
             self._docker, "run", "-d", "--name", container,
@@ -465,6 +540,19 @@ class DockerSandboxExecutor:
             "-e", "HOME=/tmp",
             "-e", "TMPDIR=/tmp",
         ]
+        if private_host is not None:
+            # Evaluator-private acceptance material is mounted outside the
+            # submission workspace and is never part of the copy-out tree.
+            # Docker's --mount grammar has no escaping for commas, so a path
+            # that cannot be represented fails closed instead of being
+            # mounted somewhere unintended.
+            source = str(Path(private_host).resolve())
+            if "," in source:
+                raise RunnerError("private_material_path_unrepresentable")
+            command.extend((
+                "--mount",
+                f"type=bind,source={source},target=/private,readonly",
+            ))
         for key, value in spec.env.items():
             command.extend(("-e", f"{key}={value}"))
         command.extend((
@@ -521,8 +609,14 @@ class DockerSandboxExecutor:
         except OSError as exc:
             raise RunnerError(f"docker_unavailable:{exc}") from exc
 
-    def _copy_out(self, container: str, record) -> None:
-        """Copy the tmpfs workspace back through a filtered tar stream."""
+    def _copy_out(self, container: str, record, disk_bytes: int) -> None:
+        """Copy the tmpfs workspace back through a filtered tar stream.
+
+        The declared disk budget and file-count bound are enforced while the
+        archive is read, not audited after the host has already written it.
+        The prepared workspace is replaced only after a complete, in-budget
+        extraction succeeded; a failed swap restores it.
+        """
         if not self._container_running(container):
             # A stopped container has already lost its tmpfs; restarting
             # would copy an empty tree over the real workspace.
@@ -535,6 +629,7 @@ class DockerSandboxExecutor:
         # before it finishes writing the archive.
         errors = tempfile.TemporaryFile()
         watchdog = None
+        retired: Path | None = None
         try:
             try:
                 proc = subprocess.Popen(
@@ -550,18 +645,23 @@ class DockerSandboxExecutor:
             watchdog = threading.Timer(_COPY_OUT_SECONDS, proc.kill)
             watchdog.daemon = True
             watchdog.start()
+            # tarfile reads ahead in fixed-size buffers; the stream budget
+            # carries a floor for that read-ahead. Extracted bytes are
+            # bounded exactly, per member, below.
+            stream_limit = max(
+                disk_bytes * 2 + _COPY_OUT_STREAM_FLOOR,
+                _COPY_OUT_STREAM_FLOOR)
             try:
-                with tarfile.open(fileobj=proc.stdout, mode="r|") as archive:
-                    try:
-                        archive.extractall(path=staging, filter="data")
-                    except TypeError as exc:
-                        raise RunnerError(
-                            "workspace_copy_out_failed:"
-                            "safe_extraction_unavailable") from exc
+                self._extract_bounded(
+                    _BudgetedReader(proc.stdout, stream_limit),
+                    staging, disk_bytes)
             except (tarfile.TarError, OSError) as exc:
                 proc.kill()
                 raise RunnerError(
                     f"workspace_copy_out_failed:{type(exc).__name__}") from exc
+            except BaseException:
+                proc.kill()
+                raise
             finally:
                 try:
                     proc.stdout.close()
@@ -575,19 +675,73 @@ class DockerSandboxExecutor:
             if returncode != 0:
                 raise RunnerError(
                     "workspace_copy_out_failed:" + _error_tail(errors))
-            shutil.rmtree(record.path, ignore_errors=True)
+            retired = record.path.with_name(
+                record.path.name + ".retired-" + secrets.token_hex(4))
             try:
-                os.rename(staging, record.path)
+                os.rename(record.path, retired)
             except OSError as exc:
                 raise RunnerError(
                     f"workspace_copy_out_failed:{exc}") from exc
+            try:
+                os.rename(staging, record.path)
+            except OSError as exc:
+                try:
+                    os.rename(retired, record.path)
+                except OSError as restore_exc:
+                    raise RunnerError(
+                        "workspace_copy_out_failed:"
+                        f"workspace_restore_failed:{restore_exc}") from exc
+                retired = None
+                raise RunnerError(
+                    f"workspace_copy_out_failed:{exc}") from exc
             staging = None
+            shutil.rmtree(retired, ignore_errors=True)
+            retired = None
         finally:
             if watchdog is not None:
                 watchdog.cancel()
             errors.close()
             if staging is not None:
                 shutil.rmtree(staging, ignore_errors=True)
+            if retired is not None and not record.path.exists():
+                # Restoration failed earlier: the retired directory holds
+                # the only copy of the prepared workspace. Try once more.
+                try:
+                    os.rename(retired, record.path)
+                except OSError:
+                    pass
+
+    @staticmethod
+    def _extract_bounded(reader, staging: Path, disk_bytes: int) -> None:
+        """Extract one filtered archive under an exact byte/member budget."""
+        extracted = 0
+        members = 0
+        files = 0
+        with tarfile.open(fileobj=reader, mode="r|") as archive:
+            for member in archive:
+                members += 1
+                if members > _COPY_OUT_MAX_MEMBERS:
+                    raise CopyOutBudgetError("file_count_exceeded")
+                if not member.isdir():
+                    files += 1
+                    if files > MAX_WORKSPACE_FILES:
+                        raise CopyOutBudgetError("file_count_exceeded")
+                if getattr(member, "sparse", None) is not None:
+                    # A sparse header can declare small archived data while
+                    # extraction writes a much larger logical file.
+                    raise CopyOutBudgetError("sparse_member_rejected")
+                if member.isreg() and (
+                        member.size < 0
+                        or extracted + member.size > disk_bytes):
+                    raise CopyOutBudgetError("disk_budget_exceeded")
+                try:
+                    archive.extract(member, path=staging, filter="data")
+                except TypeError as exc:
+                    raise RunnerError(
+                        "workspace_copy_out_failed:"
+                        "safe_extraction_unavailable") from exc
+                if member.isreg():
+                    extracted += member.size
 
     def _container_running(self, container: str) -> bool:
         try:

@@ -32,6 +32,7 @@ import sys
 import tempfile
 import threading
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -48,7 +49,11 @@ from .runner import (
     RunnerError,
     Workspace,
     command_spec_digest,
+    mark_private_material_modified,
+    private_command_spec,
+    private_material_modified,
     scan_tree,
+    stage_private_material,
 )
 from .workspace_guard import ManagedWorkspaceRegistry, protected_overlap
 
@@ -149,7 +154,8 @@ class LinuxWorkerConfig:
 
 def build_bwrap_argv(config: LinuxWorkerConfig, workspace_path: Path,
                      spec: CommandSpec, *,
-                     seccomp_dir: Path | None = None) -> list[str]:
+                     seccomp_dir: Path | None = None,
+                     private_dir: Path | None = None) -> list[str]:
     """Build the exact bubblewrap invocation; no shell, no host env."""
     if not isinstance(config, LinuxWorkerConfig):
         raise ContractError("config must be a LinuxWorkerConfig")
@@ -187,6 +193,10 @@ def build_bwrap_argv(config: LinuxWorkerConfig, workspace_path: Path,
                 argv += ["--ro-bind", str(source.resolve()), path]
         argv += ["--remount-ro", "/etc"]
     argv += ["--proc", "/proc", "--dev", "/dev", "--tmpfs", "/tmp"]
+    if private_dir is not None:
+        # Evaluator-private material is bound outside the workspace and is
+        # never writable from, or copied into, the submission tree.
+        argv += ["--ro-bind", str(Path(private_dir).resolve()), "/private"]
     argv += ["--bind", str(Path(workspace_path).resolve()), "/workspace"]
     argv += ["--chdir", "/workspace"]
     argv.append("--clearenv")
@@ -249,6 +259,8 @@ def _read_capped(path: Path, limit: int) -> tuple[bytes, bool]:
 
 class LinuxRootlessWorker:
     """Bubblewrap-based rootless worker; Linux only, fails closed elsewhere."""
+
+    supports_private_material = True
 
     def __init__(self, root: str | Path, *,
                  config: LinuxWorkerConfig | None = None) -> None:
@@ -329,16 +341,35 @@ class LinuxRootlessWorker:
             record.workspace_id, record.path, record.before_tree_digest,
             record.executor_identity)
 
-    def run(self, workspace: Workspace, spec: CommandSpec) -> ExecutionReceiptV1:
+    def run(
+        self, workspace: Workspace, spec: CommandSpec, *,
+        private_files: Mapping[str, bytes] | None = None,
+    ) -> ExecutionReceiptV1:
         if not isinstance(spec, CommandSpec):
             raise ContractError("spec must be a CommandSpec")
         with self._registry.execution(
                 workspace.workspace_id, workspace.path,
                 executor_identity=workspace.executor_identity) as record:
-            return self._run_workspace(record, spec)
+            material = None
+            try:
+                if private_files:
+                    material = stage_private_material(
+                        self.root, private_files, bootstrap=True)
+                    spec = private_command_spec(
+                        spec, names=private_files, prefix="/private",
+                        workspace="/workspace")
+                receipt = self._run_workspace(
+                    record, spec, private_dir=material)
+                if material is not None and private_material_modified(
+                        material, private_files):
+                    receipt = mark_private_material_modified(receipt)
+                return receipt
+            finally:
+                if material is not None:
+                    shutil.rmtree(material, ignore_errors=True)
 
     def _run_workspace(
-        self, record, spec: CommandSpec,
+        self, record, spec: CommandSpec, *, private_dir: Path | None = None,
     ) -> ExecutionReceiptV1:
         before = scan_tree(record.path)
         if before.external_symlinks:
@@ -346,8 +377,10 @@ class LinuxRootlessWorker:
         execution_id = "exec-" + secrets.token_hex(8)
         argv = build_bwrap_argv(
             self.config, record.path, spec,
-            seccomp_dir=self._seccomp_dir)
+            seccomp_dir=self._seccomp_dir, private_dir=private_dir)
         security_errors = ["backend:linux-rootless-bwrap"]
+        if private_dir is not None:
+            security_errors.append("evaluation:private_material_separated")
         if self.config.share_network:
             security_errors.append("net:shared_by_configuration")
         else:

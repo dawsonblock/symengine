@@ -136,12 +136,19 @@ def verify_proposal(
     root = Path(base_dir).resolve()
     target = (root / proposal.target_path).resolve()
     readable = True
-    try:
-        content = target.read_bytes()
-    except OSError:
-        content = b""
+    if root not in target.parents:
+        # Resolution follows symlinks. A path inside the base tree that
+        # resolves outside it is a substituted target, not a proposal.
+        problems.append("target_escapes_base")
         readable = False
-        problems.append("target_unreadable")
+        content = b""
+    else:
+        try:
+            content = target.read_bytes()
+        except OSError:
+            content = b""
+            readable = False
+            problems.append("target_unreadable")
     if readable:
         if hashlib.sha256(content).hexdigest() != proposal.source_blob_digest:
             problems.append("source_mismatch")

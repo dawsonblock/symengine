@@ -7,6 +7,11 @@ workspace, and writes the signed ``OutcomeReceiptV1``/``V2`` to a caller-specifi
 path. The caller's process never touches the seed; memory-space separation
 is real, though both processes share one OS principal — a stronger custodial
 split still requires a separate service account or host.
+
+The worker executes submitted code in the Docker sandbox by default. Local
+subprocess execution is development-only and requires an explicit
+``allow_local_executor=True`` from the caller (or ``--allow-local-executor``
+on the CLI).
 """
 from __future__ import annotations
 
@@ -40,6 +45,36 @@ class WorkerResult:
     stderr_tail: str
 
 
+def build_worker_executor(
+    *,
+    executor: str = "docker",
+    executor_root: str | Path | None = None,
+    sandbox_image: str | None = None,
+    allow_local_executor: bool = False,
+    require_image_digest: bool = True,
+):
+    """Construct the worker's executor; local execution is opt-in.
+
+    Docker is the default because submitted code is hostile by assumption.
+    A local subprocess is a development convenience, never a containment
+    boundary, and is refused unless the caller says so explicitly.
+    """
+    if executor not in {"docker", "local"}:
+        raise ContractError("executor must be 'docker' or 'local'")
+    if executor == "local":
+        if not allow_local_executor:
+            raise EvaluatorWorkerError(
+                "local_executor_requires_explicit_authorization")
+        from .runner import LocalSubprocessExecutor
+        return LocalSubprocessExecutor(executor_root)
+    if not isinstance(sandbox_image, str) or not sandbox_image:
+        raise EvaluatorWorkerError("sandbox_image_required")
+    from .docker_sandbox import DockerSandboxExecutor
+    return DockerSandboxExecutor(
+        executor_root, image=sandbox_image,
+        require_image_digest=require_image_digest)
+
+
 def evaluate_via_subprocess(
     *,
     key_dir: str | Path,
@@ -50,12 +85,23 @@ def evaluate_via_subprocess(
     executor_root: str | Path | None = None,
     timeout: int = 180,
     python: str = sys.executable,
+    executor: str = "docker",
+    sandbox_image: str | None = None,
+    allow_local_executor: bool = False,
+    require_image_digest: bool = True,
 ) -> WorkerResult:
     """Evaluate a submission in a child process; returns the signed receipt."""
     if not isinstance(task, TaskEnvelopeV1):
         task = TaskEnvelopeV1.from_dict(task)
     if type(timeout) is not int or not 1 <= timeout <= 3600:
         raise ContractError("timeout out of range")
+    if executor not in {"docker", "local"}:
+        raise ContractError("executor must be 'docker' or 'local'")
+    if executor == "local" and not allow_local_executor:
+        raise EvaluatorWorkerError(
+            "local_executor_requires_explicit_authorization")
+    if executor == "docker" and not sandbox_image:
+        raise EvaluatorWorkerError("sandbox_image_required")
     for name, value in (("key_dir", key_dir), ("registry_dir", registry_dir),
                         ("submission_dir", submission_dir)):
         path = Path(value)
@@ -77,7 +123,14 @@ def evaluate_via_subprocess(
         "--submission", str(submission_dir),
         "--nonce", evaluation_nonce,
         "--receipt-out", str(out_path),
+        "--executor", executor,
     ]
+    if sandbox_image is not None:
+        argv += ["--sandbox-image", sandbox_image]
+    if allow_local_executor:
+        argv += ["--allow-local-executor"]
+    if not require_image_digest:
+        argv += ["--allow-tagged-image"]
     if executor_root is not None:
         argv += ["--executor-root", str(executor_root)]
     argv += ["--task-json", "-"]  # task arrives on stdin, bounded
@@ -117,6 +170,11 @@ def _main() -> int:
     parser.add_argument("--receipt-out", required=True)
     parser.add_argument("--executor-root", default=None)
     parser.add_argument("--task-json", required=True)
+    parser.add_argument("--executor", choices=("docker", "local"),
+                        default="docker")
+    parser.add_argument("--sandbox-image", default=None)
+    parser.add_argument("--allow-local-executor", action="store_true")
+    parser.add_argument("--allow-tagged-image", action="store_true")
     args = parser.parse_args()
 
     if args.task_json == "-":
@@ -125,10 +183,20 @@ def _main() -> int:
         raw = Path(args.task_json).read_bytes()
     task = TaskEnvelopeV1.from_json(raw)
 
-    from .runner import LocalSubprocessExecutor
+    from .runner import RunnerError
     from .verifier import EvaluationRejected, OutcomeVerifier
 
-    executor = LocalSubprocessExecutor(args.executor_root)
+    try:
+        executor = build_worker_executor(
+            executor=args.executor,
+            executor_root=args.executor_root,
+            sandbox_image=args.sandbox_image,
+            allow_local_executor=args.allow_local_executor,
+            require_image_digest=not args.allow_tagged_image,
+        )
+    except (ContractError, EvaluatorWorkerError, RunnerError) as exc:
+        print(f"executor_unavailable: {exc}", file=sys.stderr)
+        return 2
     verifier = OutcomeVerifier(
         executor=executor, key_dir=args.key_dir, registry_dir=args.registry_dir,
     )

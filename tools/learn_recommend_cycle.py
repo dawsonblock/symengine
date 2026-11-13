@@ -244,8 +244,11 @@ def main() -> int:
     ap.add_argument("--wall", type=float, default=180,
                     help="per-turn wall budget seconds")
     ap.add_argument("--agent", choices=("codex", "scripted"), default="codex")
-    ap.add_argument("--sandbox", choices=("local", "docker"), default="local",
-                    help="where the evaluator runs submitted code")
+    ap.add_argument("--sandbox", choices=("docker", "local"), default="docker",
+                    help="where the evaluator runs submitted code "
+                         "(local is development-only)")
+    ap.add_argument("--allow-local-executor", action="store_true",
+                    help="explicitly authorize development-only local execution")
     ap.add_argument("--sandbox-image", default="sis-evaluator:3.3.8")
     ap.add_argument("--require-sandbox-digest", action="store_true",
                     help="refuse a sandbox image that is not digest-pinned")
@@ -265,6 +268,10 @@ def main() -> int:
         if not sandbox["ok"]:
             raise SystemExit("docker sandbox probe failed; refusing to evaluate")
     else:
+        if not args.allow_local_executor:
+            raise SystemExit(
+                "local execution is development-only and not a containment "
+                "boundary; pass --allow-local-executor to authorize it")
         executor = LocalSubprocessExecutor(root / "exec")
     verifier = OutcomeVerifier(
         executor=executor,

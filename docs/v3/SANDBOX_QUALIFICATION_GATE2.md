@@ -45,3 +45,33 @@ attestation binds the receipt, worker identity, policy and image. See
 - The probe is factual launch evidence; it does not prove kernel
   enforcement against a privileged attacker.
 - Windows and the desktop GUI are still unqualified.
+
+## Post-qualification repairs (2026-11-13)
+
+The Gate 2 audit reproduced five containment/evaluation defects after
+this evidence was recorded. They are repaired in the working tree; the
+stored probe, receipt and attestation above still describe the
+pre-repair executor and must be regenerated before they are used to
+support a new qualification claim.
+
+- Copy-out extraction now enforces the declared disk budget and file
+  count while reading, with a reason-specific `fs:` marker.
+- A failed swap preserves the prepared workspace and restores the
+  original if the staged rename fails.
+- Private acceptance material is staged outside the graded tree and
+  bound read-only at `/private` (Docker, Linux worker). The graded
+  workspace is no longer placed on `PYTHONPATH`: a staged bootstrap
+  imports the test runner before exposing the workspace, so a submission
+  cannot shadow `pytest` or inject `sitecustomize`. A local-backend
+  rewrite is detected after the run
+  (`sandbox:private_material_modified`). The residual same-process read
+  risk is documented in
+  [SECURITY_BOUNDARIES_V3_3.md](SECURITY_BOUNDARIES_V3_3.md).
+- The evaluator worker, the demonstration cycle and the live-episode
+  script default to Docker or require explicit authorization; local
+  execution requires the flag.
+- `verify_proposal()` rejects a target that resolves outside its base
+  directory.
+
+See the 2026-11-13 CHANGELOG entry and
+`tests/v3/test_gate2_containment_repairs.py`.

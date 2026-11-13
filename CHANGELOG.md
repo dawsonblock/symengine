@@ -1,5 +1,75 @@
 # Changelog
 
+## 2026-11-13 — Gate 2 containment repairs (post-seal)
+
+Security/correctness repair of the Docker evaluator boundary. This is not
+a feature release and does not change any signed artifact; the sealed
+v3.3.8 archive and its evidence still describe the pre-repair tree.
+
+Containment:
+
+- `DockerSandboxExecutor._copy_out` enforces the run's `disk_bytes` and
+  the workspace file-count bound **while reading** the tar stream, not
+  after the host has written the archive. A regular member over budget
+  is rejected before extraction, sparse members are refused, and the
+  stream carries a hard cap. Violations preserve the workspace and
+  report a reason-specific marker (`fs:disk_budget_exceeded`,
+  `fs:file_count_exceeded`, `fs:sparse_member_rejected`), plus
+  `fs:workspace_state_unavailable` and `fs:copy_out_rejected:<reason>`.
+- A failed copy-out swap restores the prepared workspace instead of
+  deleting it (`shutil.rmtree` before `os.rename` removed).
+- `OutcomeVerifier` stages registered acceptance files outside the graded
+  workspace when the backend supports private material. Docker and the
+  Linux worker bind them read-only at `/private`; the local backend uses
+  an absolute sibling directory. Registered argv tokens are rewritten
+  and the receipt carries `evaluation:private_material_separated`.
+  Legacy backends keep the co-located staging.
+- The graded workspace is **not** placed on `PYTHONPATH`. A Python
+  acceptance command runs through a staged, read-only bootstrap that
+  imports the test runner and only then adds the workspace to
+  `sys.path`. This closes two forgeries: a submission `pytest.py` no
+  longer shadows the runner, and a submission `sitecustomize.py` is no
+  longer imported at interpreter startup. Both previously made a failing
+  acceptance test report exit 0, which classifies as a pass.
+- A post-run check re-reads the staged private files. A local backend
+  run that rewrote them carries `sandbox:private_material_modified` and
+  classifies as a sandbox failure, never a pass. Docker and the Linux
+  worker mounts are read-only; the check is defense in depth.
+- `register_task()` enforces the same private-material bounds as
+  staging (64 files, 1 MiB each, 8 MiB total, normalized relative
+  names), so an over-bound task fails at registration rather than as an
+  evaluation infrastructure error.
+
+Evaluation defaults:
+
+- `sis.v3.evaluator_worker` defaults to `DockerSandboxExecutor` and
+  requires an image. Local execution requires explicit
+  `allow_local_executor` authorization.
+- `tools/learn_recommend_cycle.py` defaults to `--sandbox docker`;
+  `--sandbox local` requires `--allow-local-executor`.
+- `scripts/v3/run_codex_episode.py` requires `--allow-local-executor`
+  before it will construct the local backend.
+
+Correctness:
+
+- `verify_proposal()` rejects a target path that resolves outside its
+  base directory (`target_escapes_base`), matching `propose_edit()`.
+
+Tests: `tests/v3/test_gate2_containment_repairs.py` covers the over-budget
+archive, member-count and stream rejection, sparse members, swap-failure
+and restore-failure preservation, private material separation (Docker
+argv and local execution), the bootstrap (startup and runner shadowing),
+tamper detection, staging/registration bounds, verifier staging, the
+patch symlink escape and the worker defaults. Full suite: 1449 passed,
+13 skipped.
+
+Limits: same-process, same-principal test runners can still read a
+private path they deliberately enumerate; process-split test custody is
+not implemented. The local backend's material is mode-protected, not
+OS-read-only, so tampering is detected after the fact rather than
+prevented. Regenerate the sealed archive with `tools/package_release.py`
+before a release claim.
+
 ## 2026-11-13 — Gate 2 sandbox qualification: live containment and signed attestation
 
 Live qualification of the Docker evaluator sandbox, with evidence.
