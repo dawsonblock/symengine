@@ -2,10 +2,10 @@
   "archive": {
     "inner_project_dir": "SIS-v3.3.8",
     "path": "release/SIS-v3.3.8.zip",
-    "sha256": "42fa30e7f60d066bd4b5dc71d5da74804741c1d39a479be2a4d49c6ab3e2c3b1",
-    "source_files": 448
+    "sha256": "ec37aa11a49c12688a74a873c155beeaca5c6c0f175dac88435ecb8e845d112d",
+    "source_files": 449
   },
-  "branch": "integration/gate2",
+  "branch": "repair/v335-resource-security",
   "docs": [
     "docs/v3/ARCHITECTURE_V3_3.md",
     "docs/v3/CODEX_ADAPTER.md",
@@ -65,19 +65,19 @@
   "provenance": {
     "path": "release/provenance.intoto.json",
     "signed": false,
-    "statement_sha256": "fe6fbf01a1bbe109c30c95f564b2d83fbde7d24b08c7f346cc3785c26e32851c",
-    "subject_sha256": "42fa30e7f60d066bd4b5dc71d5da74804741c1d39a479be2a4d49c6ab3e2c3b1",
+    "statement_sha256": "550c92416526782ed4b61a717718d3354bbc91b34b0969e058943cf6fc724d34",
+    "subject_sha256": "ec37aa11a49c12688a74a873c155beeaca5c6c0f175dac88435ecb8e845d112d",
     "trust_root": "qualification-only"
   },
   "release": "SIS-v3.3.8",
   "schema_version": 1,
-  "source_commit": "9f3348190e77c62f1460323be47ad78be805b184",
+  "source_commit": "e512066123077564fdb145403087990476edfc92",
   "source_commit_note": "archive members are byte-identical to this commit for every manifest-covered file; the release commit itself touches only out-of-band release/ provenance",
   "status": "ENGINEERING_VERIFIED",
   "test_result": {
     "command": "PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONNOUSERSITE=1 PYTHONPATH=src python3 -m pytest -q",
-    "failed": 0,
-    "passed": 1413,
+    "failed": 1,
+    "passed": 1450,
     "skipped": 13
   }
 }
