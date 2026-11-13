@@ -2,10 +2,12 @@
 
 Status: `ENGINEERING_VERIFIED` / `IMPLEMENTED_NOT_EFFICACY_QUALIFIED`.
 This release moves evaluator execution of untrusted submitted code into a
-Docker sandbox and records factual containment probes. It does not
-qualify a production sandbox: production still requires a digest-pinned
-image and a signed `IsolationAttestationV1` from a separately trusted
-isolator.
+Docker sandbox and records factual containment probes. The evaluator image
+is digest-pinned and a signed `IsolationAttestationV1` verifies against
+its policy, but the signing key is local (trust root `qualification-only`):
+production still requires an isolator key held independently of the
+evaluated machine. See
+[docs/v3/SANDBOX_QUALIFICATION_GATE2.md](SANDBOX_QUALIFICATION_GATE2.md).
 
 ## What changed
 
