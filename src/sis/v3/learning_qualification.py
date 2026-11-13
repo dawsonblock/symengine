@@ -210,9 +210,9 @@ def analyze_report(
     for arm in arms:
         if arm == "A":
             continue
-        contrasts[f"E_vs_{arm}" if arm != "E" else "E_vs_A"] = \
-            paired_contrast(report, baseline=arm if arm != "E" else "A",
-                            treatment="E" if arm != "E" else "A")
+        baseline = "A" if arm == "E" else arm
+        contrasts[f"E_vs_{baseline}"] = paired_contrast(
+            report, baseline=baseline, treatment="E")
     # The decisive contrast is always E vs A.
     decisive = paired_contrast(report, baseline="A", treatment="E")
     alpha = protocol.get("alpha", 0.05)

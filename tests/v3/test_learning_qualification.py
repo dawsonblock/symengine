@@ -155,6 +155,20 @@ class AnalysisTests(unittest.TestCase):
         self.assertEqual(analysis["release_gate"],
                          "IMPLEMENTED_NOT_EFFICACY_QUALIFIED")
 
+    def test_e_vs_a_contrast_uses_e_as_treatment(self):
+        report = synthetic_report(10, a_pass=False, e_pass=True)
+        analysis = analyze_report(
+            report, protocol={"sample_size": 10, "alpha": 0.05},
+            real_agent=True, hidden_holdout=True)
+        contrast = analysis["contrasts"]["E_vs_A"]
+        self.assertEqual(contrast["baseline"], "A")
+        self.assertEqual(contrast["treatment"], "E")
+        self.assertEqual(contrast["baseline_solved"], 0)
+        self.assertEqual(contrast["treatment_solved"], 10)
+        self.assertEqual(contrast["delta"], 1.0)
+        self.assertEqual(contrast["wins"], 10)
+        self.assertEqual(contrast, analysis["decisive_contrast"])
+
     def test_integration_vs_components_reported(self):
         report = synthetic_report(
             10, a_pass=False, e_pass=True, b_pass=True, c_pass=False,

@@ -28,6 +28,14 @@ Benchmark semantics:
   target are no longer treated as the same structure. Pinned by
   `tests/v3/test_v336_benchmark_semantics.py`.
 
+Efficacy analysis:
+
+- `analyze_report()` built `contrasts["E_vs_A"]` with treatment `A` instead
+  of `E`, so that entry compared the baseline with itself. The entry now
+  uses the same A-vs-E contrast as `decisive_contrast`; pinned by
+  `tests/v3/test_learning_qualification.py`. The existing evidence files
+  retain the old field and must be regenerated before being quoted.
+
 Release inventory:
 
 - `.coverage` and `.coverage.*` are structurally excluded from the release
