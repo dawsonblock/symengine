@@ -33,8 +33,10 @@ Efficacy analysis:
 - `analyze_report()` built `contrasts["E_vs_A"]` with treatment `A` instead
   of `E`, so that entry compared the baseline with itself. The entry now
   uses the same A-vs-E contrast as `decisive_contrast`; pinned by
-  `tests/v3/test_learning_qualification.py`. The existing evidence files
-  retain the old field and must be regenerated before being quoted.
+  `tests/v3/test_learning_qualification.py`. The two historical report
+  files were corrected post hoc by replacing only that derived field with
+  their existing `decisive_contrast`; raw outcomes were not changed. See
+  `evidence/evaluation/CORRECTIONS.md`.
 
 Release inventory:
 

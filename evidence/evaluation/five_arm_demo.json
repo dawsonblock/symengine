@@ -181,19 +181,19 @@
       "E_vs_A": {
         "baseline": "A",
         "baseline_solved": 0,
-        "delta": 0.0,
+        "delta": 1.0,
         "difference_interval_95": [
-          -0.65762,
-          0.65762
+          0.069985,
+          1.0
         ],
         "losses": 0,
-        "mcnemar_exact_p": 1.0,
+        "mcnemar_exact_p": 0.5,
         "significant": false,
         "tasks": 2,
-        "ties": 2,
-        "treatment": "A",
-        "treatment_solved": 0,
-        "wins": 0
+        "ties": 0,
+        "treatment": "E",
+        "treatment_solved": 2,
+        "wins": 2
       },
       "E_vs_B": {
         "baseline": "B",
