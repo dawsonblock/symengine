@@ -1,7 +1,7 @@
 # SIS release artifacts
 
 Latest sealed release: `SIS-v3.3.8.zip`
-SHA-256: `3e924b509b62d67e5076c90a3bf0aaf13e0826b1dcba611ccf054fcef947bca4`
+SHA-256: `42fa30e7f60d066bd4b5dc71d5da74804741c1d39a479be2a4d49c6ab3e2c3b1`
 
 `release_manifest.json` and `verification.json` are authoritative for the
 archive identity, source commit, test result and fresh-extraction checks.
@@ -19,8 +19,8 @@ v3.3.8 and are not part of this bundle's `SHA256SUMS`.
 
 The archive was re-sealed over the Gate 1 patch-verification repair, the
 Gate 2 sandbox hardening and qualification, the efficacy `E_vs_A` contrast
-fix and the historical evidence correction, at source commit `8466e97`
-over 447 source files. The Docker containment probe ran live (13/13) and a
+fix and the historical evidence correction, at source commit `9f33481`
+over 448 source files. The Docker containment probe ran live (13/13) and a
 signed `IsolationAttestationV1` verifies against its policy; the signing
 key is local, so the trust root is qualification-only. It is still
 unsigned: re-sign with an externally held key before publishing.
