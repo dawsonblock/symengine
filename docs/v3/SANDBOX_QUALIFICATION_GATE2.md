@@ -62,8 +62,9 @@ support a new qualification claim.
   bound read-only at `/private` (Docker, Linux worker). The graded
   workspace is no longer placed on `PYTHONPATH`: a staged bootstrap
   imports the test runner before exposing the workspace, so a submission
-  cannot shadow `pytest` or inject `sitecustomize`. A local-backend
-  rewrite is detected after the run
+  cannot shadow `pytest` or inject `sitecustomize`; a missing `-m` runner
+  exits 70 before the workspace is importable. A local-backend rewrite is
+  detected after the run
   (`sandbox:private_material_modified`). The residual same-process read
   risk is documented in
   [SECURITY_BOUNDARIES_V3_3.md](SECURITY_BOUNDARIES_V3_3.md).

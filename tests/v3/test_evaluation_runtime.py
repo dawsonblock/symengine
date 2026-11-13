@@ -114,6 +114,11 @@ class ClassificationTests(unittest.TestCase):
             receipt(), infrastructure_error="worker crashed"),
             INFRASTRUCTURE_ERROR)
 
+    def test_missing_runner_is_a_bootstrap_error_even_with_exit_zero(self):
+        self.assertEqual(classify_execution(
+            receipt(), stderr_tail="evaluation_runner_unavailable: pytest\n"),
+            EVALUATOR_BOOTSTRAP_ERROR)
+
 
 class BootstrapTests(unittest.TestCase):
     def setUp(self):

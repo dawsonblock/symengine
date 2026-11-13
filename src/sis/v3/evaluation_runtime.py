@@ -294,6 +294,10 @@ def classify_execution(
         return INFRASTRUCTURE_ERROR
     if not bootstrap_ok:
         return EVALUATOR_BOOTSTRAP_ERROR
+    if "evaluation_runner_unavailable:" in stderr_tail:
+        # The trusted test runner never resolved, so the exit status says
+        # nothing about the submission: fail closed as a bootstrap error.
+        return EVALUATOR_BOOTSTRAP_ERROR
     errors = set(getattr(receipt, "security_errors", ()) or ())
     if production:
         # No public production authority: the real route is

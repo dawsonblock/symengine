@@ -84,25 +84,36 @@ target = sys.argv[2:]
 if not target:
     raise SystemExit(64)
 
-try:
-    importlib.import_module("pytest")
-except ImportError:
-    pass
-
 if target[0] == "-m":
     if len(target) < 2:
         raise SystemExit(64)
     module = target[1]
+    # A -m runner must resolve from the trusted environment, before the
+    # graded workspace is importable. A missing runner is an evaluator
+    # bootstrap failure, never a submission-controlled module.
+    try:
+        importlib.import_module(module)
+    except ImportError:
+        sys.stderr.write("evaluation_runner_unavailable: " + module + "\\n")
+        raise SystemExit(70)
     sys.path.insert(0, workspace)
     sys.argv = [module, *target[2:]]
     runpy.run_module(module, run_name="__main__", alter_sys=True)
 elif target[0] == "-c":
     if len(target) < 2:
         raise SystemExit(64)
+    try:
+        importlib.import_module("pytest")
+    except ImportError:
+        pass
     sys.path.insert(0, workspace)
     sys.argv = ["-c", *target[2:]]
     exec(compile(target[1], "<string>", "exec"), {"__name__": "__main__"})
 else:
+    try:
+        importlib.import_module("pytest")
+    except ImportError:
+        pass
     sys.path.insert(0, workspace)
     sys.argv = target
     runpy.run_path(target[0], run_name="__main__")

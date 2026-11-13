@@ -70,7 +70,11 @@
   acceptance command runs through a staged, read-only bootstrap that
   imports the test runner and only then adds the workspace to
   `sys.path`, so a submission cannot shadow `pytest` or supply a
-  `sitecustomize` that runs at interpreter startup. Staging is bounded
+  `sitecustomize` that runs at interpreter startup. A `-m` runner that
+  cannot be imported from the trusted environment fails closed
+  (`evaluation_runner_unavailable`, exit 70) before the workspace is
+  importable; the marker classifies as an evaluator bootstrap error even
+  when a receipt reports exit 0. Staging is bounded
   (64 files, 1 MiB each, 8 MiB total) and registration enforces the
   same bounds. The execution receipt carries
   `evaluation:private_material_separated`. Backends without that

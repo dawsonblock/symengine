@@ -16,6 +16,8 @@ failure rather than a pass.
 import io
 import os
 import shlex
+import shutil
+import subprocess
 import sys
 import tarfile
 import tempfile
@@ -485,8 +487,11 @@ class BootstrapIsolationTests(unittest.TestCase):
             "def scale(a, b):\n    return a * b\n", encoding="utf-8")
         (self.base / "sitecustomize.py").write_text(
             "import os\nos._exit(0)\n", encoding="utf-8")
+        self.marker = self.root / "SHADOW_RAN"
         (self.base / "pytest.py").write_text(
-            "import sys\nsys.exit(0)\n", encoding="utf-8")
+            "import sys\n"
+            f"open({str(self.marker)!r}, 'w').write('x')\n"
+            "sys.exit(0)\n", encoding="utf-8")
         self.executor = LocalSubprocessExecutor(
             self.root / "exec", use_seatbelt=False)
         self.workspace = self.executor.prepare(self.base)
@@ -505,7 +510,20 @@ class BootstrapIsolationTests(unittest.TestCase):
         stdout, stderr = self.executor.output(receipt.execution_id)
         self.assertEqual(receipt.exit_status, 1, (stdout, stderr))
         self.assertNotIn(b"sitecustomize", stdout)
-        self.assertNotIn(b"shadowed", stdout)
+        self.assertFalse(self.marker.exists())
+
+    def test_missing_runner_fails_closed_before_the_workspace_is_importable(self):
+        material = stage_private_material(
+            self.root, {"acc.py": b"def test_fail():\n    assert False\n"},
+            bootstrap=True)
+        self.addCleanup(shutil.rmtree, material, True)
+        result = subprocess.run(
+            [PY, "-S", str(material / "_sis_bootstrap.py"), str(self.base),
+             "-m", "pytest", "-q", str(material / "acc.py")],
+            capture_output=True, text=True, timeout=60)
+        self.assertEqual(result.returncode, 70, result.stderr)
+        self.assertIn("evaluation_runner_unavailable: pytest", result.stderr)
+        self.assertFalse(self.marker.exists())
 
     def test_private_test_can_still_import_the_submission(self):
         receipt = self.executor.run(
