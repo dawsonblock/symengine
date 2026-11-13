@@ -5,7 +5,7 @@
     "extracted_test_smoke": {
       "command": "pytest -q tests/v3/test_candidates.py",
       "returncode": 0,
-      "tail": "39 passed in 0.55s"
+      "tail": "39 passed in 0.61s"
     },
     "verify_tree": {
       "files": 449
@@ -14,7 +14,7 @@
   "kind": "release_verification",
   "schema_version": 1,
   "source": {
-    "commit": "25030eae97a51b79a606f4ce02267fb4a21c849a",
+    "commit": "5a187d0d6bfd15aa671ae88dfaf49cb3178ba1e8",
     "dirty": false,
     "dirty_paths": []
   },

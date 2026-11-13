@@ -11,9 +11,9 @@ archive identity, source commit, test result and fresh-extraction checks.
 - Release: `SIS-v3.3.8`
 - Status: `ENGINEERING_VERIFIED`
 - Branch: `repair/v335-resource-security`
-- Source commit: `25030eae97a51b79a606f4ce02267fb4a21c849a`
+- Source commit: `5a187d0d6bfd15aa671ae88dfaf49cb3178ba1e8`
 - Source files: 449
-- Test result: 1451 passed, 13 skipped, 1 failed
+- Test result: 1452 passed, 13 skipped, 0 failed
 
 ## Provenance status
 
