@@ -27,6 +27,11 @@ class InventoryExclusionTests(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertFalse(_included(name), name)
 
+    def test_transient_coverage_files_are_not_inventoried(self):
+        for name in (".coverage", ".coverage.hostname.12345"):
+            with self.subTest(name=name):
+                self.assertFalse(_included(name), name)
+
     def test_source_files_remain_inventoried(self):
         self.assertTrue(_included("README.md"))
         self.assertTrue(_included("src/sis/cli.py"))

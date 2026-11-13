@@ -69,6 +69,22 @@ class StructuralMetricTests(unittest.TestCase):
             benchmark.structural_form(target),
             benchmark.structural_form(swapped))
 
+    def test_if_eq_right_operand_is_part_of_the_structure(self):
+        base = {
+            "op": "if_eq",
+            "left": {"op": "field", "name": "x0"},
+            "then": {"op": "const", "value": 10},
+            "else": {"op": "const", "value": 20},
+        }
+        first = {**base, "right": {"op": "const", "value": 1}}
+        second = {**base, "right": {"op": "const", "value": 2}}
+        self.assertNotEqual(
+            benchmark.structural_form(first),
+            benchmark.structural_form(second))
+        self.assertEqual(
+            benchmark.structural_form(first),
+            benchmark.structural_form({**base, "right": {"op": "const", "value": 1}}))
+
     def test_observational_equivalent_is_a_different_structure(self):
         target = benchmark.target_rule(2)
         observational = {

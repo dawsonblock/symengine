@@ -329,6 +329,9 @@ class PatchProposalV1(V1Record):
     source_blob_digest: str
     target_path: str
     exact_span_fingerprint: str
+    source_span_offset: int
+    source_span_length: int
+    patched_content_digest: str
     generated_diff_digest: str
     purpose: str
     procedure_ids: tuple[str, ...]
@@ -1070,8 +1073,13 @@ def _validate_record(record: V1Record) -> None:
         _require(d["payload_digest"] == canonical_digest("event_payload", 1, d["payload"]),
                  "payload_digest does not bind the event payload")
     elif isinstance(record, PatchProposalV1):
-        for name in ("source_blob_digest", "generated_diff_digest", "exact_span_fingerprint"):
+        for name in ("source_blob_digest", "generated_diff_digest",
+                     "exact_span_fingerprint", "patched_content_digest"):
             _digest(d[name], name)
+        _require(type(d["source_span_offset"]) is int and d["source_span_offset"] >= 0,
+                 "source_span_offset must be a nonnegative integer")
+        _require(type(d["source_span_length"]) is int and 1 <= d["source_span_length"] <= 1 << 20,
+                 "source_span_length must be a positive bounded integer")
         _relative_path(d["target_path"], "target_path")
         _text(d["purpose"], "purpose", maximum=MAX_TEXT_CHARS)
         for name in ("procedure_ids", "precondition_evidence_refs"):

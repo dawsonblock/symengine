@@ -77,7 +77,8 @@ def structural_form(ast) -> tuple:
         return (op, structural_form(ast["arg"]))
     if op == "if_eq":
         return ("if_eq", structural_form(ast["left"]),
-                structural_form(ast["then"]), structural_form(ast["else"]))
+                structural_form(ast["right"]), structural_form(ast["then"]),
+                structural_form(ast["else"]))
     return (op, tuple(structural_form(child) for child in ast["args"]))
 
 

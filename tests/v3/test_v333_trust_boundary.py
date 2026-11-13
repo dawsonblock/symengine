@@ -24,6 +24,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -986,15 +987,21 @@ class SearchStarvationTests(unittest.TestCase):
 class ReleaseIdentityTests(unittest.TestCase):
     """T5: release/ provenance must describe the source it ships."""
 
-    def test_release_inventory_matches_current_manifest(self):
-        manifest = json.loads(
-            (ROOT / "RELEASE_SHA256.json").read_text())["files"]
+    def test_release_inventory_matches_sealed_archive(self):
+        release = json.loads(
+            (ROOT / "release" / "release_manifest.json").read_text())
         inventory = json.loads(
             (ROOT / "release" / "source_inventory.json").read_text())
+        archive_path = ROOT / release["archive"]["path"]
+        inner = release["archive"]["inner_project_dir"]
+        with zipfile.ZipFile(archive_path) as archive:
+            embedded = json.loads(
+                archive.read(f"{inner}/RELEASE_SHA256.json"))["files"]
+        self.assertEqual(inventory["release"], release["release"])
         self.assertEqual(
-            set(inventory["files"]), set(manifest),
+            set(inventory["files"]), set(embedded),
             "release source_inventory covers a different file set")
-        for relative, digest in manifest.items():
+        for relative, digest in embedded.items():
             self.assertEqual(
                 inventory["files"][relative]["sha256"], digest,
                 f"release inventory hash drifted at {relative}")

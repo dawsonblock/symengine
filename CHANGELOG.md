@@ -1,5 +1,42 @@
 # Changelog
 
+## 2026-11-12 — Patch-verification binding and release-inventory repair (Gate 1)
+
+Post-seal correctness repair. `verify_proposal()` had no production call
+site, but its output was not bound to the reviewed change: substituted
+patched bytes passed, an empty source skipped the source-digest check, and
+two different binary replacements shared one diff and one proposal digest.
+
+Patch binding:
+
+- `PatchProposalV1` now commits to `source_span_offset`,
+  `source_span_length` and `patched_content_digest`, so the proposal digest
+  covers the exact replacement span and the complete resulting bytes.
+- `verify_proposal()` checks the source digest unconditionally (including
+  empty files), checks the patched-content digest and size, replays the one
+  permitted span replacement against the source, and requires the supplied
+  diff to be the canonical diff of that source-to-output transformation.
+- New regressions in `tests/v3/test_patcher.py` cover substituted output,
+  empty-source digest bypass, distinct binary replacements, path
+  substitution, out-of-bounds spans and a diff that does not bind content.
+  Golden schema and contract examples carry the new fields.
+
+Benchmark semantics:
+
+- `tools/benchmark_induction.py` now includes the `if_eq` right operand in
+  `structural_form()`, so conditionals that differ only in the comparison
+  target are no longer treated as the same structure. Pinned by
+  `tests/v3/test_v336_benchmark_semantics.py`.
+
+Release inventory:
+
+- `.coverage` and `.coverage.*` are structurally excluded from the release
+  inventory in `tools/check_source_manifest.py`; the manifest was
+  regenerated over 440 files and verifies with `tools/verify_release.py`.
+- `release/README.md` now identifies `SIS-v3.3.8.zip`, records its SHA-256,
+  and states that the sealed archive predates this repair and remains
+  unsigned.
+
 ## 2026-11-11 — SIS v3.3.8 workspace-ownership and sandbox-limit repair (V338-05…V338-09)
 
 Post-seal repair of the v3.3.8 containment line. It changes evaluator

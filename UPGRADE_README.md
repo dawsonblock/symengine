@@ -64,6 +64,22 @@ See the 2026-11-11 CHANGELOG entry. The sealed archive and its evidence
 predate the repair; regenerate them with `tools/package_release.py`
 before making a release claim.
 
+### Post-seal repair: patch verification and release inventory
+
+`PatchProposalV1` now commits to the exact source span (offset and length)
+and the full patched-content digest. `verify_proposal()` checks the source
+digest even for empty files, rejects substituted output bytes, replays the
+one permitted span replacement, and requires the supplied diff to be the
+canonical diff of that transformation. Serialized proposals without the
+new fields fail closed.
+
+`.coverage` and `.coverage.*` are no longer release-inventory inputs;
+`RELEASE_SHA256.json` was regenerated over 440 files. The sealed
+`SIS-v3.3.8.zip` still carries the old 441-file inventory including
+`.coverage`, so it is a historical artifact, not a seal for this tree.
+
+See the 2026-11-12 CHANGELOG entry.
+
 ### Verifying the v3.3.8 release
 
 ```bash

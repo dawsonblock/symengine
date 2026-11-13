@@ -105,6 +105,9 @@ def propose_edit(
         source_blob_digest=hashlib.sha256(content).hexdigest(),
         target_path=target_path,
         exact_span_fingerprint=span_fingerprint(target_path, old, first),
+        source_span_offset=first,
+        source_span_length=len(old),
+        patched_content_digest=hashlib.sha256(patched).hexdigest(),
         generated_diff_digest=hashlib.sha256(diff).hexdigest(),
         purpose=purpose,
         procedure_ids=tuple(procedure_ids),
@@ -120,24 +123,59 @@ def verify_proposal(
     patched_content: bytes,
     diff: bytes,
 ) -> dict:
-    """Re-check a stored proposal against the base tree and its artifacts."""
+    """Re-check a stored proposal against the base tree and its artifacts.
+
+    Verification binds the reviewed diff, the final bytes, the exact source
+    span and the proposal digest to one another: the source digest is checked
+    even for empty files, the patched content must match its committed digest
+    and replay from the declared span, and the diff must be the canonical diff
+    of that source-to-output transformation.
+    """
     _validate_path(proposal.target_path)
     problems: list[str] = []
     root = Path(base_dir).resolve()
     target = (root / proposal.target_path).resolve()
+    readable = True
     try:
         content = target.read_bytes()
     except OSError:
         content = b""
+        readable = False
         problems.append("target_unreadable")
-    if content and hashlib.sha256(content).hexdigest() != proposal.source_blob_digest:
-        problems.append("source_mismatch")
-    if hashlib.sha256(diff).hexdigest() != proposal.generated_diff_digest:
-        problems.append("diff_mismatch")
+    if readable:
+        if hashlib.sha256(content).hexdigest() != proposal.source_blob_digest:
+            problems.append("source_mismatch")
+        if len(content) > _MAX_FILE_BYTES:
+            problems.append("source_content_too_large")
     if len(patched_content) > _MAX_FILE_BYTES:
         problems.append("patched_content_too_large")
-    if patched_content == content:
+    elif hashlib.sha256(patched_content).hexdigest() != proposal.patched_content_digest:
+        problems.append("patched_content_mismatch")
+    if readable and patched_content == content:
         problems.append("patched_content_is_identity")
+    if hashlib.sha256(diff).hexdigest() != proposal.generated_diff_digest:
+        problems.append("diff_mismatch")
+    if readable:
+        offset = proposal.source_span_offset
+        length = proposal.source_span_length
+        if offset > len(content) or length > len(content) - offset:
+            problems.append("source_span_out_of_bounds")
+        else:
+            old_span = content[offset:offset + length]
+            if span_fingerprint(proposal.target_path, old_span, offset) != proposal.exact_span_fingerprint:
+                problems.append("span_fingerprint_mismatch")
+            replacement_length = len(patched_content) - (len(content) - length)
+            if replacement_length < 0:
+                problems.append("patched_content_length_mismatch")
+            else:
+                replay = (content[:offset]
+                          + patched_content[offset:offset + replacement_length]
+                          + content[offset + length:])
+                if replay != patched_content:
+                    problems.append("patched_content_does_not_replay")
+        expected_diff = _unified_diff(content, patched_content, proposal.target_path)
+        if hashlib.sha256(expected_diff).hexdigest() != proposal.generated_diff_digest:
+            problems.append("diff_does_not_bind_content")
     return {"ok": not problems, "problems": problems}
 
 
