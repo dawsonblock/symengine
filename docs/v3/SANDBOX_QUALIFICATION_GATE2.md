@@ -63,8 +63,9 @@ support a new qualification claim.
   workspace is no longer placed on `PYTHONPATH`: a staged bootstrap
   imports the test runner before exposing the workspace, so a submission
   cannot shadow `pytest` or inject `sitecustomize`; a missing `-m` runner
-  exits 70 before the workspace is importable. A local-backend rewrite is
-  detected after the run
+  exits 70 before the workspace is importable, and direct scripts refuse
+  a workspace `pytest` module. A local-backend rewrite is detected after
+  the run
   (`sandbox:private_material_modified`). The residual same-process read
   risk is documented in
   [SECURITY_BOUNDARIES_V3_3.md](SECURITY_BOUNDARIES_V3_3.md).

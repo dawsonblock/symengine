@@ -31,12 +31,13 @@ Containment:
   longer shadows the runner, and a submission `sitecustomize.py` is no
   longer imported at interpreter startup. Both previously made a failing
   acceptance test report exit 0, which classifies as a pass.
-- The bootstrap fails closed when a `-m` runner cannot be imported from
-  the trusted environment: it writes `evaluation_runner_unavailable:
-  <module>` and exits 70 before the workspace is importable, so a
-  submission module can never stand in for a missing runner.
-  `classify_execution` maps that marker to an evaluator bootstrap error,
-  even if a receipt reports exit 0.
+- The bootstrap fails closed when the trusted runner cannot be imported:
+  a `-m` runner missing from the trusted environment writes
+  `evaluation_runner_unavailable: <module>` and exits 70 before the
+  workspace is importable, and direct scripts install an import guard
+  that refuses a workspace `pytest` module. `classify_execution` maps
+  that marker to an evaluator bootstrap error, even if a receipt reports
+  exit 0.
 - A post-run check re-reads the staged private files. A local backend
   run that rewrote them carries `sandbox:private_material_modified` and
   classifies as a sandbox failure, never a pass. Docker and the Linux
@@ -66,10 +67,9 @@ archive, member-count and stream rejection, sparse members, swap-failure
 and restore-failure preservation, private material separation (Docker
 argv and local execution), the bootstrap (startup and runner shadowing),
 tamper detection, staging/registration bounds, verifier staging, the
-patch symlink escape and the worker defaults. Full suite: 1450 passed,
-13 skipped; the release-identity gate
-(`test_release_commit_covers_current_source`) fails by design until the
-repaired tree is re-sealed with `tools/package_release.py`.
+patch symlink escape and the worker defaults. Full suite: 1452 passed,
+13 skipped after the repaired tree is re-sealed with
+`tools/package_release.py`.
 
 Limits: same-process, same-principal test runners can still read a
 private path they deliberately enumerate; process-split test custody is

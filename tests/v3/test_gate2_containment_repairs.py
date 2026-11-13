@@ -525,6 +525,21 @@ class BootstrapIsolationTests(unittest.TestCase):
         self.assertIn("evaluation_runner_unavailable: pytest", result.stderr)
         self.assertFalse(self.marker.exists())
 
+    def test_direct_script_cannot_shadow_a_missing_runner(self):
+        material = stage_private_material(
+            self.root, {"acc.py": (
+                b"import pytest\n"
+                b"print('shadowed')\n")}, bootstrap=True)
+        self.addCleanup(shutil.rmtree, material, True)
+        result = subprocess.run(
+            [PY, "-S", str(material / "_sis_bootstrap.py"), str(self.base),
+             str(material / "acc.py")],
+            capture_output=True, text=True, timeout=60)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("evaluation_runner_unavailable: pytest", result.stderr)
+        self.assertNotIn("shadowed", result.stdout)
+        self.assertFalse(self.marker.exists())
+
     def test_private_test_can_still_import_the_submission(self):
         receipt = self.executor.run(
             self.workspace,

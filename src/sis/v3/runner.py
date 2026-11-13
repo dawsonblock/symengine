@@ -84,6 +84,26 @@ target = sys.argv[2:]
 if not target:
     raise SystemExit(64)
 
+
+def block_missing_runner():
+    """Refuse a workspace pytest module when the trusted runner is absent."""
+    class BlockPytest:
+        def find_spec(self, name, path=None, target=None):
+            if (name == "pytest" or name.startswith("pytest.")
+                    or name == "_pytest" or name.startswith("_pytest.")):
+                raise ModuleNotFoundError(
+                    "evaluation_runner_unavailable: pytest")
+            return None
+    sys.meta_path.insert(0, BlockPytest())
+
+
+def preload_pytest():
+    try:
+        importlib.import_module("pytest")
+    except ImportError:
+        block_missing_runner()
+
+
 if target[0] == "-m":
     if len(target) < 2:
         raise SystemExit(64)
@@ -102,18 +122,12 @@ if target[0] == "-m":
 elif target[0] == "-c":
     if len(target) < 2:
         raise SystemExit(64)
-    try:
-        importlib.import_module("pytest")
-    except ImportError:
-        pass
+    preload_pytest()
     sys.path.insert(0, workspace)
     sys.argv = ["-c", *target[2:]]
     exec(compile(target[1], "<string>", "exec"), {"__name__": "__main__"})
 else:
-    try:
-        importlib.import_module("pytest")
-    except ImportError:
-        pass
+    preload_pytest()
     sys.path.insert(0, workspace)
     sys.argv = target
     runpy.run_path(target[0], run_name="__main__")

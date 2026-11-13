@@ -110,12 +110,12 @@ still describe the pre-repair tree.
   runner and only then adds the workspace to `sys.path`. That blocks a
   submission `pytest.py` from shadowing the runner and a submission
   `sitecustomize.py` from running at interpreter startup — both
-  previously forced exit 0 (a pass) without running the tests. A `-m`
-  runner that cannot be imported from the trusted environment fails
-  closed (`evaluation_runner_unavailable`, exit 70) before the workspace
-  is importable, and that marker classifies as an evaluator bootstrap
-  error even at exit 0. The execution receipt carries
-  `evaluation:private_material_separated`.
+  previously forced exit 0 (a pass) without running the tests. A missing
+  `-m` runner fails closed (`evaluation_runner_unavailable`, exit 70)
+  before the workspace is importable, direct scripts install an import
+  guard that refuses a workspace `pytest` module, and that marker
+  classifies as an evaluator bootstrap error even at exit 0. The
+  execution receipt carries `evaluation:private_material_separated`.
   Staging is bounded (64 files, 1 MiB each, 8 MiB total), and
   `register_task()` enforces the same bounds. Residual risk: the test
   runner and the submitted code still share one process and one OS
@@ -142,10 +142,9 @@ still describe the pre-repair tree.
   `propose_edit()`.
 
 New regressions live in `tests/v3/test_gate2_containment_repairs.py`.
-The full suite is 1450 passed, 13 skipped; the release-identity gate
-fails by design until the repaired tree is re-sealed. Regenerate the
-sealed archive and its evidence with `tools/package_release.py` before
-making a release claim.
+The full suite is 1452 passed, 13 skipped after the repaired tree is
+re-sealed. Regenerate the sealed archive and its evidence with
+`tools/package_release.py` before making a release claim.
 
 ### Verifying the v3.3.8 release
 

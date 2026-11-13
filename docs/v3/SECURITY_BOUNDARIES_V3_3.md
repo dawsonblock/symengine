@@ -73,8 +73,9 @@
   `sitecustomize` that runs at interpreter startup. A `-m` runner that
   cannot be imported from the trusted environment fails closed
   (`evaluation_runner_unavailable`, exit 70) before the workspace is
-  importable; the marker classifies as an evaluator bootstrap error even
-  when a receipt reports exit 0. Staging is bounded
+  importable, direct scripts install an import guard that refuses a
+  workspace `pytest` module, and the marker classifies as an evaluator
+  bootstrap error even when a receipt reports exit 0. Staging is bounded
   (64 files, 1 MiB each, 8 MiB total) and registration enforces the
   same bounds. The execution receipt carries
   `evaluation:private_material_separated`. Backends without that
