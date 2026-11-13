@@ -25,8 +25,8 @@
       "sha256": "f4e9590f3ebad5ffec1d03da3db058375438693dbcd93f2738ff3ea66da17b8d"
     },
     "CHANGELOG.md": {
-      "bytes": 56118,
-      "sha256": "fbb9e545fcd320c3ef9f737b5d65129cbcefb6ab04ea83c787101773ecb19ac4"
+      "bytes": 56235,
+      "sha256": "f8b72533bf8e8f90635797baa4f60c4755ef7db541167a73631fb9c9009d931a"
     },
     "LICENSE": {
       "bytes": 1083,
@@ -480,9 +480,13 @@
       "bytes": 5225,
       "sha256": "e7cd4b04763bfe099592c33a2dd1edcdd81bc3d4862cf8a472743dc9b34acef8"
     },
+    "evidence/evaluation/CORRECTIONS.md": {
+      "bytes": 997,
+      "sha256": "680a1d8c83aadf12714b93c3bb55f4d95dfb6edf9b91c08d268346dee7381195"
+    },
     "evidence/evaluation/five_arm_demo.json": {
-      "bytes": 20069,
-      "sha256": "f28d9938124e583cd36b8812a917c629ca1e1db71fc6a050f33144d5cf7d9c3f"
+      "bytes": 20065,
+      "sha256": "7d754bca52addd934bd167c96019bff242a44c2773cbd241b88dc738eb92fa6c"
     },
     "evidence/evaluation/real_agent_attempt_summary.json": {
       "bytes": 1292,
@@ -490,7 +494,7 @@
     },
     "evidence/evaluation/real_agent_five_arm.json": {
       "bytes": 32977,
-      "sha256": "2ea4be156ed4b62eaf44c8424fa23947ff552271f992b43e94ac15b5f92ec01f"
+      "sha256": "c7211e4d83e31976da9672f1809b489ec9a2248847ce0dfd23fdafe8b399edf3"
     },
     "evidence/evaluation/real_agent_gate.json": {
       "bytes": 1108,
@@ -1763,5 +1767,5 @@
   },
   "release": "SIS-v3.3.8",
   "schema_version": 1,
-  "source_commit": "cd918e3d4e12ea549fcff6bfd33d356e56d84e54"
+  "source_commit": "88b74b04834a3c13ebc348e2c619eb3454f4545f"
 }

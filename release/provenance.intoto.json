@@ -4,9 +4,9 @@
     "buildDefinition": {
       "buildType": "https://sis.local/release/v1",
       "externalParameters": {
-        "branch": "repair/v335-resource-security",
+        "branch": "fix/efficacy-evidence-contrast",
         "release": "SIS-v3.3.8",
-        "source_commit": "cd918e3d4e12ea549fcff6bfd33d356e56d84e54"
+        "source_commit": "88b74b04834a3c13ebc348e2c619eb3454f4545f"
       },
       "internalParameters": {
         "builder": "tools/package_release.py"
@@ -14,9 +14,9 @@
       "resolvedDependencies": [
         {
           "digest": {
-            "sha1": "cd918e3d4e12ea549fcff6bfd33d356e56d84e54"
+            "sha1": "88b74b04834a3c13ebc348e2c619eb3454f4545f"
           },
-          "uri": "git+https://sis.local/repair/v335-resource-security"
+          "uri": "git+https://sis.local/fix/efficacy-evidence-contrast"
         }
       ]
     },
@@ -25,9 +25,9 @@
         "id": "tools/package_release.py"
       },
       "metadata": {
-        "finishedOn": "2026-11-13T05:10:47Z",
-        "invocationId": "release-fa25e4ee5dc60c1f",
-        "startedOn": "2026-11-13T05:10:47Z"
+        "finishedOn": "2026-11-13T05:16:08Z",
+        "invocationId": "release-affe1fe443a5f34c",
+        "startedOn": "2026-11-13T05:16:08Z"
       }
     }
   },
@@ -35,7 +35,7 @@
   "subject": [
     {
       "digest": {
-        "sha256": "fa25e4ee5dc60c1f33e9759138de8d6dd2cf7f1779d7945af7d92d18566bc8e6"
+        "sha256": "affe1fe443a5f34c88767926fd5ced497eacc03b366ba0d77f3f158bffec273e"
       },
       "name": "SIS-v3.3.8.zip"
     }

@@ -1,9 +1,9 @@
 {
-  "base_commit": "cd918e3d4e12ea549fcff6bfd33d356e56d84e54",
-  "branch": "repair/v335-resource-security",
+  "base_commit": "88b74b04834a3c13ebc348e2c619eb3454f4545f",
+  "branch": "fix/efficacy-evidence-contrast",
   "builder": "tools/package_release.py -> tools/build_canonical_zip.py",
   "commit_binding": "every archive member is re-hashed against the working tree at build time (verify_against_tree); the source commit and dirty state are recorded in release/verification.json",
-  "generated_at": "2026-11-13T05:10:47Z",
+  "generated_at": "2026-11-13T05:16:08Z",
   "kind": "release_build_record",
   "manifest_scope": "all _included() source/evidence files; release/ and evidence/release/build_record.json are out-of-band and never inventoried into the archive",
   "post_build_verification": "release/verification.json \u2014 outside the archive by construction",
