@@ -530,28 +530,6 @@ remaining_unknowns:
 next_gate: "PR-07+: observe-learn-verify-reuse wiring + strategic/structural induction"
 ```
 
-## v3.1-alpha — trustworthy source-change capture (PR-06)
-
-```yaml
-phase_id: v31-source-change-capture
-tickets: [PR-06]
-status: implemented_and_tested
-changed_files:
-  - src/sis/v3/contracts.py           # SourceChangeV1 record + validation
-  - src/sis/v3/source_change.py       # NEW: capture_change + verify_capture
-  - tests/v3/test_source_change.py    # NEW: 7 tests
-observed_outcomes:
-  - "Full suite: 642 passed, 2 skipped"
-  - "all digests are computed by the capture path (scan_tree + per-file sha256 + self-generated unified diff); agent-reported digests can never enter the record"
-  - "expected_before_digest anchors capture to the attested workspace base; mismatch refuses"
-  - "added/removed/modified classification; binary files marked, text files unified-diffed"
-  - "identical trees refuse; tampered diff bytes detected by verify_capture; captures are deterministic under fixed now"
-remaining_unknowns:
-  - "capture binds filesystem trees only — mapping a change to a specific agent turn requires the episode/attempt correlation (adapter side)"
-  - "no semantic judgment: a captured change is evidence, not correctness"
-next_gate: "PR-07+: observe-learn-verify-reuse wiring + strategic/structural induction"
-```
-
 ## v3.1-alpha — evidence-bound induction (PR-07)
 
 ```yaml
