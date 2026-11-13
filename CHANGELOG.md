@@ -1,5 +1,36 @@
 # Changelog
 
+## 2026-11-13 — Gate 2 sandbox qualification: live containment and signed attestation
+
+Live qualification of the Docker evaluator sandbox, with evidence.
+
+Containment:
+
+- The evaluator Dockerfile pins `python:3.12-slim` by multi-architecture
+  index digest (`sha256:5e2bdb1b…`), so a rebuild cannot resolve to
+  different base bytes.
+- The containment probe gains four hostile checks: Docker-socket absence,
+  `no-new-privileges`, empty effective capabilities and `setuid(0)`
+  denial. All 13 checks pass in production mode against
+  `sis-evaluator:3.3.8@sha256:71dddad6…` on Docker 29.9.3.
+- The Docker integration tests run instead of skipping in this
+  environment: 1413 passed, 13 skipped, 0 failed.
+
+Attestation:
+
+- `tools/qualify_docker_isolation.py` runs one command, writes the
+  execution receipt, issues an `IsolationAttestationV1` from an isolator
+  seed that never enters the workspace, and verifies it against a
+  `ProductionIsolationPolicy`. A wrong image digest is rejected.
+- Evidence is recorded under `evidence/sandbox/`, and
+  `tests/v3/test_gate2_qualification.py` re-verifies the stored
+  attestation without a daemon.
+
+Limits: the signing key is local (trust root `qualification-only`) and
+release provenance remains unsigned. A production seal still needs an
+isolator key held independently of the evaluated machine. See
+`docs/v3/SANDBOX_QUALIFICATION_GATE2.md`.
+
 ## 2026-11-12 — Patch-verification binding and release-inventory repair (Gate 1)
 
 Post-seal correctness repair. `verify_proposal()` had no production call
