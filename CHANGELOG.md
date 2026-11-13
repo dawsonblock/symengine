@@ -56,6 +56,10 @@ Evaluation defaults:
   `--sandbox local` requires `--allow-local-executor`.
 - `scripts/v3/run_codex_episode.py` requires `--allow-local-executor`
   before it will construct the local backend.
+- `tools/package_release.py` regenerates `release/README.md` from
+  `release_manifest.json`, so the archive hash, source commit, file
+  count and test result cannot survive a new seal. The previous README
+  still named the pre-repair hash, commit and 448-file inventory.
 
 Correctness:
 

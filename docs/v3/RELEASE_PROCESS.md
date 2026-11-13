@@ -50,7 +50,10 @@ itself is out-of-band (`release/*.zip` is git-ignored).
    ```
 
    The tool refuses a dirty tree, re-hashes every member against the tree
-   it came from, and records the exact Git commit as `source_commit`.
+   it came from, and records the exact Git commit as `source_commit`. It
+   also regenerates `release/README.md` from `release_manifest.json`, so
+   the archive hash, source commit, file count and test result always
+   describe the current seal.
 4. Commit only the generated provenance:
 
    ```bash

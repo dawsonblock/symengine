@@ -137,6 +137,11 @@ still describe the pre-repair tree.
   not production qualification entrypoints: their receipts are
   `isolation:unverified_local` and cannot pass production
   classification.
+- **Release README.** `tools/package_release.py` now regenerates
+  `release/README.md` from `release_manifest.json`. The archive hash,
+  source commit, file count and test result can no longer survive a new
+  seal; the old README still named the pre-repair hash, commit and
+  448-file inventory.
 - **Patch verification.** `verify_proposal()` now rejects a target that
   resolves outside the base directory (`target_escapes_base`), matching
   `propose_edit()`.
