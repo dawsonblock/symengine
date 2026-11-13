@@ -6,7 +6,7 @@
       "externalParameters": {
         "branch": "integration/gate2",
         "release": "SIS-v3.3.8",
-        "source_commit": "1c48597f9a806df7b7e7b92a41e668d89191c48b"
+        "source_commit": "765fb2b2e011df7382d25056529192f2d0cfa677"
       },
       "internalParameters": {
         "builder": "tools/package_release.py"
@@ -14,7 +14,7 @@
       "resolvedDependencies": [
         {
           "digest": {
-            "sha1": "1c48597f9a806df7b7e7b92a41e668d89191c48b"
+            "sha1": "765fb2b2e011df7382d25056529192f2d0cfa677"
           },
           "uri": "git+https://sis.local/integration/gate2"
         }
@@ -25,9 +25,9 @@
         "id": "tools/package_release.py"
       },
       "metadata": {
-        "finishedOn": "2026-11-13T06:23:08Z",
-        "invocationId": "release-963860f5cff8b845",
-        "startedOn": "2026-11-13T06:23:08Z"
+        "finishedOn": "2026-11-13T06:25:41Z",
+        "invocationId": "release-da22b9ccc66c1274",
+        "startedOn": "2026-11-13T06:25:41Z"
       }
     }
   },
@@ -35,7 +35,7 @@
   "subject": [
     {
       "digest": {
-        "sha256": "963860f5cff8b845b24e3312482e80d132f97720e1873c7b9f86434c7a0269cb"
+        "sha256": "da22b9ccc66c12741af3200e46a5ff8a2e50a80187576915bd80a9635ae381c0"
       },
       "name": "SIS-v3.3.8.zip"
     }

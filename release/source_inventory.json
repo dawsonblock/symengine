@@ -1753,8 +1753,8 @@
       "sha256": "ed01889315a7a1ec8ec969f52e6145a1a043f661183f5e601e2aad9122eba94f"
     },
     "tools/qualify_docker_isolation.py": {
-      "bytes": 7539,
-      "sha256": "cc69d7eda9737aeb57e0fd99f8f01495ecaaa79ccf079e8269373b1aa998aad6"
+      "bytes": 7510,
+      "sha256": "9d67bc230d21080d96df91b1cb1185f821f84b7c3c88a7aa1c0aae9f7d52dcf0"
     },
     "tools/real_agent_campaign.py": {
       "bytes": 17300,
@@ -1791,5 +1791,5 @@
   },
   "release": "SIS-v3.3.8",
   "schema_version": 1,
-  "source_commit": "1c48597f9a806df7b7e7b92a41e668d89191c48b"
+  "source_commit": "765fb2b2e011df7382d25056529192f2d0cfa677"
 }
