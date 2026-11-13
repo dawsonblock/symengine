@@ -660,6 +660,28 @@ class DockerSandboxExecutor:
                 "python3", "-c",
                 "import os,sys; sys.exit(0 if os.getuid() != 0 else 1)"),
                 expect_success=True)
+            check("docker_socket_absent", (
+                "python3", "-c",
+                "import os,sys; "
+                "sys.exit(0 if not os.path.exists('/var/run/docker.sock') else 1)"),
+                expect_success=True)
+            check("no_new_privileges", (
+                "python3", "-c",
+                "import sys; "
+                "status = dict(line.split(':', 1) for line in "
+                "open('/proc/self/status') if ':' in line); "
+                "sys.exit(0 if status.get('NoNewPrivs', '').strip() == '1' else 1)"),
+                expect_success=True)
+            check("capabilities_dropped", (
+                "python3", "-c",
+                "import sys; "
+                "status = dict(line.split(':', 1) for line in "
+                "open('/proc/self/status') if ':' in line); "
+                "sys.exit(0 if int(status.get('CapEff', '0').strip() or '0', 16) == 0 else 1)"),
+                expect_success=True)
+            check("setuid_denied", (
+                "python3", "-c", "import os; os.setuid(0)"),
+                expect_success=False)
             small = ResourceLimits(
                 memory_bytes=128 * 1024 * 1024,
                 wall_seconds=30, output_bytes=65_536,

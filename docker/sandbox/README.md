@@ -1,7 +1,11 @@
 # Docker evaluator sandbox
 
-Build the evaluator image (the tag is for development; production must
-pin the base image and the resulting image by digest):
+The Dockerfile pins its base image by index digest
+(`python:3.12-slim@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b`,
+resolved 2026-11-12), so a rebuild cannot silently pick up different base
+bytes. Build the evaluator image (the tag is for development; production
+must also pin the resulting image by digest and record it in the isolation
+policy):
 
 ```bash
 docker build --platform linux/arm64 -t sis-evaluator:3.3.8 docker/sandbox
@@ -31,9 +35,10 @@ PYTHONPATH=src:. python3 tools/learn_recommend_cycle.py \
 ```
 
 The probe checks network denial, read-only root, workspace write,
-non-root execution, memory limit, pids limit, disk quota, CPU-time
-budget and combined output cap. The tool aborts before evaluating if any
-check fails.
+non-root execution, Docker-socket absence, `no-new-privileges`,
+dropped capabilities, `setuid` denial, memory limit, pids limit, disk
+quota, CPU-time budget and combined output cap. The tool aborts before
+evaluating if any check fails.
 
 The workspace is a quota-limited tmpfs inside the container. The host
 workspace is mounted read-only at `/submission`, copied into the tmpfs

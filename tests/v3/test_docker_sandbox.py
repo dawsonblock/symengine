@@ -263,6 +263,8 @@ class ContainerIntegrationTests(unittest.TestCase):
         self.assertEqual(names, {
             "network_denied", "root_write_denied",
             "workspace_write_allowed", "non_root_user",
+            "docker_socket_absent", "no_new_privileges",
+            "capabilities_dropped", "setuid_denied",
             "memory_limit_enforced", "pids_limit_enforced",
             "disk_limit_enforced", "cpu_time_enforced",
             "output_limit_enforced"})
