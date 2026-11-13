@@ -4,9 +4,9 @@
     "buildDefinition": {
       "buildType": "https://sis.local/release/v1",
       "externalParameters": {
-        "branch": "fix/efficacy-evidence-contrast",
+        "branch": "integration/gate2",
         "release": "SIS-v3.3.8",
-        "source_commit": "88b74b04834a3c13ebc348e2c619eb3454f4545f"
+        "source_commit": "1c48597f9a806df7b7e7b92a41e668d89191c48b"
       },
       "internalParameters": {
         "builder": "tools/package_release.py"
@@ -14,9 +14,9 @@
       "resolvedDependencies": [
         {
           "digest": {
-            "sha1": "88b74b04834a3c13ebc348e2c619eb3454f4545f"
+            "sha1": "1c48597f9a806df7b7e7b92a41e668d89191c48b"
           },
-          "uri": "git+https://sis.local/fix/efficacy-evidence-contrast"
+          "uri": "git+https://sis.local/integration/gate2"
         }
       ]
     },
@@ -25,9 +25,9 @@
         "id": "tools/package_release.py"
       },
       "metadata": {
-        "finishedOn": "2026-11-13T05:16:08Z",
-        "invocationId": "release-affe1fe443a5f34c",
-        "startedOn": "2026-11-13T05:16:08Z"
+        "finishedOn": "2026-11-13T06:23:08Z",
+        "invocationId": "release-963860f5cff8b845",
+        "startedOn": "2026-11-13T06:23:08Z"
       }
     }
   },
@@ -35,7 +35,7 @@
   "subject": [
     {
       "digest": {
-        "sha256": "affe1fe443a5f34c88767926fd5ced497eacc03b366ba0d77f3f158bffec273e"
+        "sha256": "963860f5cff8b845b24e3312482e80d132f97720e1873c7b9f86434c7a0269cb"
       },
       "name": "SIS-v3.3.8.zip"
     }

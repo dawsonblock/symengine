@@ -2,10 +2,10 @@
   "archive": {
     "inner_project_dir": "SIS-v3.3.8",
     "path": "release/SIS-v3.3.8.zip",
-    "sha256": "affe1fe443a5f34c88767926fd5ced497eacc03b366ba0d77f3f158bffec273e",
-    "source_files": 441
+    "sha256": "963860f5cff8b845b24e3312482e80d132f97720e1873c7b9f86434c7a0269cb",
+    "source_files": 447
   },
-  "branch": "fix/efficacy-evidence-contrast",
+  "branch": "integration/gate2",
   "docs": [
     "docs/v3/ARCHITECTURE_V3_3.md",
     "docs/v3/CODEX_ADAPTER.md",
@@ -29,6 +29,7 @@
     "docs/v3/QUALIFICATION_REPORT_V3_3_8.md",
     "docs/v3/RELEASE_NOTES_V3_3.md",
     "docs/v3/RELEASE_PROCESS.md",
+    "docs/v3/SANDBOX_QUALIFICATION_GATE2.md",
     "docs/v3/SECURITY_BOUNDARIES_V3_3.md",
     "docs/v3/SKILL_HOLDOUTS.md",
     "docs/v3/SKILL_INGESTION.md",
@@ -64,19 +65,19 @@
   "provenance": {
     "path": "release/provenance.intoto.json",
     "signed": false,
-    "statement_sha256": "83a2625f179cac6361d9177364f1f15219d3c14607d4a8d20107fb38506f0475",
-    "subject_sha256": "affe1fe443a5f34c88767926fd5ced497eacc03b366ba0d77f3f158bffec273e",
+    "statement_sha256": "1c2ba24608d2cb1ee78677a399e449e8ca452f924837b0a33870676148e102f5",
+    "subject_sha256": "963860f5cff8b845b24e3312482e80d132f97720e1873c7b9f86434c7a0269cb",
     "trust_root": "qualification-only"
   },
   "release": "SIS-v3.3.8",
   "schema_version": 1,
-  "source_commit": "88b74b04834a3c13ebc348e2c619eb3454f4545f",
+  "source_commit": "1c48597f9a806df7b7e7b92a41e668d89191c48b",
   "source_commit_note": "archive members are byte-identical to this commit for every manifest-covered file; the release commit itself touches only out-of-band release/ provenance",
   "status": "ENGINEERING_VERIFIED",
   "test_result": {
     "command": "PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONNOUSERSITE=1 PYTHONPATH=src python3 -m pytest -q",
     "failed": 0,
-    "passed": 1391,
-    "skipped": 28
+    "passed": 1413,
+    "skipped": 13
   }
 }
