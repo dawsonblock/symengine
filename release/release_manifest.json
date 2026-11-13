@@ -2,7 +2,7 @@
   "archive": {
     "inner_project_dir": "SIS-v3.3.8",
     "path": "release/SIS-v3.3.8.zip",
-    "sha256": "da22b9ccc66c12741af3200e46a5ff8a2e50a80187576915bd80a9635ae381c0",
+    "sha256": "3e924b509b62d67e5076c90a3bf0aaf13e0826b1dcba611ccf054fcef947bca4",
     "source_files": 447
   },
   "branch": "integration/gate2",
@@ -65,13 +65,13 @@
   "provenance": {
     "path": "release/provenance.intoto.json",
     "signed": false,
-    "statement_sha256": "4418271becf1ffdd6e85f8301275f31ead904ca412a5481aef90cd2cfe50ead2",
-    "subject_sha256": "da22b9ccc66c12741af3200e46a5ff8a2e50a80187576915bd80a9635ae381c0",
+    "statement_sha256": "19bd9c177ca717798ce75474a93153e04ce440bfa8fd802950a62dd16ea54851",
+    "subject_sha256": "3e924b509b62d67e5076c90a3bf0aaf13e0826b1dcba611ccf054fcef947bca4",
     "trust_root": "qualification-only"
   },
   "release": "SIS-v3.3.8",
   "schema_version": 1,
-  "source_commit": "765fb2b2e011df7382d25056529192f2d0cfa677",
+  "source_commit": "8466e97abf1ac1df65ab9a88fd73de0be827fb55",
   "source_commit_note": "archive members are byte-identical to this commit for every manifest-covered file; the release commit itself touches only out-of-band release/ provenance",
   "status": "ENGINEERING_VERIFIED",
   "test_result": {

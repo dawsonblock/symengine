@@ -25,8 +25,8 @@
       "sha256": "f4e9590f3ebad5ffec1d03da3db058375438693dbcd93f2738ff3ea66da17b8d"
     },
     "CHANGELOG.md": {
-      "bytes": 57628,
-      "sha256": "88511111d1e503bf125e36a4d2dd49965bb9baf47109443616f6a38cac9fd44b"
+      "bytes": 57947,
+      "sha256": "0c47cafd1f4f62c4d72174c3d7415e0ca70cad5e3e06c89a55079631a5e6e788"
     },
     "LICENSE": {
       "bytes": 1083,
@@ -313,8 +313,8 @@
       "sha256": "8966e3a3abec2209818b844a68659620337a12a40311d03f7a967601d0ccfb58"
     },
     "docs/v3/QUALIFICATION_REPORT_V3_3_8.md": {
-      "bytes": 4929,
-      "sha256": "5b349daab65413cdf3b7a9e921f933e0ba47afb0e4acad537ad32daa799647d5"
+      "bytes": 5033,
+      "sha256": "d410cd53c3afd0babaf263de171e46714625fc429b454895f9e76567ed8184f0"
     },
     "docs/v3/RELEASE_NOTES_V3_3.md": {
       "bytes": 7466,
@@ -546,7 +546,7 @@
     },
     "evidence/sandbox/docker_sandbox_probe.json": {
       "bytes": 3455,
-      "sha256": "dbf4c880413116deb4d5c8d6ce595331b3514a4b442b4c5d0e89c1278ec26023"
+      "sha256": "d09d0d0d55661ee22ed40d3c62449f78812491c30b3913fb84e86132cb366d22"
     },
     "evidence/sandbox/gate2_isolation/attestation.json": {
       "bytes": 1074,
@@ -1791,5 +1791,5 @@
   },
   "release": "SIS-v3.3.8",
   "schema_version": 1,
-  "source_commit": "765fb2b2e011df7382d25056529192f2d0cfa677"
+  "source_commit": "8466e97abf1ac1df65ab9a88fd73de0be827fb55"
 }
