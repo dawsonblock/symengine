@@ -34,6 +34,38 @@
       "stdout": ""
     },
     {
+      "exit_status": 0,
+      "expected": "success",
+      "name": "docker_socket_absent",
+      "ok": true,
+      "stderr": "",
+      "stdout": ""
+    },
+    {
+      "exit_status": 0,
+      "expected": "success",
+      "name": "no_new_privileges",
+      "ok": true,
+      "stderr": "",
+      "stdout": ""
+    },
+    {
+      "exit_status": 0,
+      "expected": "success",
+      "name": "capabilities_dropped",
+      "ok": true,
+      "stderr": "",
+      "stdout": ""
+    },
+    {
+      "exit_status": 1,
+      "expected": "failure",
+      "name": "setuid_denied",
+      "ok": true,
+      "stderr": "Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\nPermissionError: [Errno 1] Operation not permitted\n",
+      "stdout": ""
+    },
+    {
       "exit_status": 137,
       "expected": "failure",
       "name": "memory_limit_enforced",
@@ -73,9 +105,9 @@
     }
   ],
   "docker_server_version": "29.9.3",
-  "generated_at": "2026-11-12T00:06:15Z",
-  "image": "sis-evaluator:3.3.8",
-  "image_id": "76873b6813861866c2a90994f05d0d390a00cc911988e306862c3bb7659f1e50",
+  "generated_at": "2026-11-13T05:17:14Z",
+  "image": "sis-evaluator:3.3.8@sha256:71dddad6bb2f97c6de45309ae19a79301e1f03c89be59c016dd9eacdf05471df",
+  "image_id": "71dddad6bb2f97c6de45309ae19a79301e1f03c89be59c016dd9eacdf05471df",
   "kind": "docker_sandbox_probe",
   "note": "Factual containment probe, not a signed isolation attestation. Production qualification still requires an IsolationAttestationV1 from a separately trusted isolator.",
   "ok": true,
