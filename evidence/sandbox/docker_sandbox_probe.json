@@ -105,7 +105,7 @@
     }
   ],
   "docker_server_version": "29.9.3",
-  "generated_at": "2026-11-13T05:17:14Z",
+  "generated_at": "2026-11-13T06:26:55Z",
   "image": "sis-evaluator:3.3.8@sha256:71dddad6bb2f97c6de45309ae19a79301e1f03c89be59c016dd9eacdf05471df",
   "image_id": "71dddad6bb2f97c6de45309ae19a79301e1f03c89be59c016dd9eacdf05471df",
   "kind": "docker_sandbox_probe",

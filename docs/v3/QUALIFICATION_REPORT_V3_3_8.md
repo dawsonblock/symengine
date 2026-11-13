@@ -14,7 +14,7 @@ isolator.
 | V338-01 | New `sis.v3.docker_sandbox.DockerSandboxExecutor` implements the `WorkspaceExecutor` protocol: no network, read-only root, quota-limited tmpfs workspace fed from a read-only `/submission` bind, tmpfs `/tmp`, non-root uid, `cap-drop ALL`, `no-new-privileges`, memory/pids/CPU-time/disk bounds, capped output, wall-clock kill. | `src/sis/v3/docker_sandbox.py`, `tests/v3/test_docker_sandbox.py` |
 | V338-02 | `tools/learn_recommend_cycle.py --sandbox docker` runs every evaluator acceptance test inside the sandbox and aborts if the containment probe fails. | `tools/learn_recommend_cycle.py`, `evidence/qualification/learn_cycle_live_docker.json` |
 | V338-03 | `docker/sandbox/Dockerfile` builds the evaluator image with the pinned test runner and an unprivileged user. | `docker/sandbox/Dockerfile` |
-| V338-04 | Containment probe evidence: network denied, root write denied, workspace write allowed, non-root user, memory limit enforced (exit 137), pids limit enforced, disk quota enforced, CPU-time budget enforced, combined output cap enforced. | `evidence/sandbox/docker_sandbox_probe.json` |
+| V338-04 | Containment probe evidence: network denied, root write denied, workspace write allowed, non-root user, Docker socket absent, no-new-privileges, capabilities dropped, setuid denied, memory limit enforced (exit 137), pids limit enforced, disk quota enforced, CPU-time budget enforced, combined output cap enforced. | `evidence/sandbox/docker_sandbox_probe.json` |
 
 ## Docker-backed cycle
 
@@ -74,11 +74,11 @@ implementation this report describes. A `Workspace` handle is now
 resolved through a backend registry, and the Docker workspace is a
 quota-limited tmpfs with a read-only `/submission` bind, a copy-in before
 the command and a filtered copy-out afterwards. The probe now observes
-nine checks, `environment_digest` is domain version 2, and the copy-out
-has a drained stderr and a watchdog. The sealed archive and the
-`evidence/` snapshots in this report predate that repair; see the
-2026-11-11 CHANGELOG entry and regenerate the release before quoting this
-report.
+thirteen checks, records a digest-pinned image, `environment_digest` is
+domain version 2, and the copy-out has a drained stderr and a watchdog.
+The archive was re-sealed after that repair; see `release/README.md` for
+the current digest and `evidence/sandbox/docker_sandbox_probe.json` for
+the refreshed probe.
 
 The repair was re-sealed twice. The first re-seal ran with a working
 Docker daemon and recorded the same 1396 passed / 13 skipped. The second

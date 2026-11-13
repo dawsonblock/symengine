@@ -69,6 +69,14 @@ Efficacy analysis:
   their existing `decisive_contrast`; raw outcomes were not changed. See
   `evidence/evaluation/CORRECTIONS.md`.
 
+Sandbox evidence:
+
+- Refreshed `evidence/sandbox/docker_sandbox_probe.json` from
+  `DockerSandboxExecutor.probe()` against the digest-pinned
+  `sis-evaluator:3.3.8@sha256:71dd…` image. The probe records thirteen
+  checks, including Docker socket absence, no-new-privileges, dropped
+  capabilities and setuid denial.
+
 Release inventory:
 
 - `.coverage` and `.coverage.*` are structurally excluded from the release
