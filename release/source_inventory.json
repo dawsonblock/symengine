@@ -5,8 +5,8 @@
       "sha256": "93fa55f89899ab359ec1859952f316410b3beee00a51270d36fe0a0ca7f5fac0"
     },
     ".github/workflows/ci.yml": {
-      "bytes": 4063,
-      "sha256": "8f69946d4de4af09e7f15073f86a7c1b59dee2b5a46ea0a31e7a844d83b2c005"
+      "bytes": 4075,
+      "sha256": "b8dd5b1c75ca20c869e79bf6a03eb1b99b33dbb9fefe05f99b9721e61d1988fc"
     },
     ".gitignore": {
       "bytes": 263,
@@ -25,8 +25,8 @@
       "sha256": "f4e9590f3ebad5ffec1d03da3db058375438693dbcd93f2738ff3ea66da17b8d"
     },
     "CHANGELOG.md": {
-      "bytes": 71914,
-      "sha256": "c5f69507a7bc8ee4bedc2a13a393fbe52622602087b75fbc7f427526e04d7edd"
+      "bytes": 72708,
+      "sha256": "7e97ad12741c6269f5117fbbf8833ebbf8a9e8dcd7609cc59c2f284e92fbb070"
     },
     "LICENSE": {
       "bytes": 1083,
@@ -37,8 +37,8 @@
       "sha256": "84b93e332345b58afc0820a727d83393a9cf31d8771d02f01deec2d88525b729"
     },
     "UPGRADE_README.md": {
-      "bytes": 29268,
-      "sha256": "55452921b769624d849dcc75b3da50de825fc6a6cd7513d9095e615e1c8ffc10"
+      "bytes": 29744,
+      "sha256": "9d1d7ebbb125e6a3a90cb202414a1782b1412e28070c6ff16a092d2ea107584e"
     },
     "UPGRADE_RELEASE_NOTES_2026-10-24.md": {
       "bytes": 4370,
@@ -329,8 +329,8 @@
       "sha256": "2a4384f2d48350d91c4d8c9a2c2c188cf263b70fc2099a3750031b50115d6025"
     },
     "docs/v3/SANDBOX_QUALIFICATION_GATE2.md": {
-      "bytes": 4622,
-      "sha256": "47253c7bcfc40d9bab041f4ec7eb91d64d6bbb0c5c4f8019baee12a329de2934"
+      "bytes": 5450,
+      "sha256": "eb7c9b8301abdaa49a3b267737c146d89143ed053f22a603f0fa366c58b43495"
     },
     "docs/v3/SECURITY_BOUNDARIES_V3_3.md": {
       "bytes": 18067,
@@ -1481,8 +1481,8 @@
       "sha256": "0059ff2759259a63d7af168f32f2252252f52d0a7d26b7afa6e093c5909dfef7"
     },
     "tests/v3/test_gate2_qualification.py": {
-      "bytes": 4103,
-      "sha256": "511aec1f268a74ec8db79af08f6a15699dcd61f0815daf5cf530f4d06b1f6c9e"
+      "bytes": 7049,
+      "sha256": "8e88dc74cd7809013610006bba55a1324d63f2b46905135a20bb95359cac5dfc"
     },
     "tests/v3/test_governed_eval.py": {
       "bytes": 23867,
@@ -1673,8 +1673,8 @@
       "sha256": "19c26355e41081515b25f3c82b27fdf6e92958e06a73511d49e82735156ea4ed"
     },
     "tools/build_release.py": {
-      "bytes": 2672,
-      "sha256": "e0454782992de58b7c68ed1c9fe4a77d7fd85621797f6cbfbfc8dfe8c757ad27"
+      "bytes": 2663,
+      "sha256": "e85dd9e39db681d02b98912ef4422fb65c60bb86053a8e444d54838c3a241556"
     },
     "tools/check_release_ci.py": {
       "bytes": 1607,
@@ -1693,24 +1693,24 @@
       "sha256": "b43e8243bdc4342b46b0ecbbc6d237503539a01db3cfc9341e9788616f60570f"
     },
     "tools/demo_family_eval.py": {
-      "bytes": 2604,
-      "sha256": "9041e8256127218309c093729fdf1955439811e66e016c3c1c974aabc17c41bf"
+      "bytes": 2595,
+      "sha256": "82e494f723df8750a18af3739fe8116803597b742a3bd116406a10568ef58162"
     },
     "tools/demo_neural_comparison.py": {
       "bytes": 1770,
       "sha256": "fefc48c04074e89491103b7da16b9ae5338f4f7d5ecdbdd11107b9b59c11c756"
     },
     "tools/demo_paired_offline.py": {
-      "bytes": 1500,
-      "sha256": "ec764896e25869eb0438484505c4c00791d7aecab2251ba7ab74634cd5e2c460"
+      "bytes": 1463,
+      "sha256": "f2e0b93598204448d2bbed77b218f104ec13a6aec6eee33c16887a5857a1b734"
     },
     "tools/demo_skill_holdout.py": {
       "bytes": 2433,
       "sha256": "226d452d342efad1a31d86ee27db9582bf8e1334d0c17b80d7ac54874e8d317f"
     },
     "tools/demo_tabular_workflow.py": {
-      "bytes": 2749,
-      "sha256": "12b6c861adcb05d82e672ce1a32abdbacfc9867e26e8393eb087dd6b1ce88f08"
+      "bytes": 2738,
+      "sha256": "34ae8f070f77514aba5147287fd6c509da8d493f156dd0906ac3a8a4ef77c631"
     },
     "tools/evaluate_fixtures.py": {
       "bytes": 1597,
@@ -1749,12 +1749,12 @@
       "sha256": "38496a3569100b364818b725102d7b5e69d50153b4ace97ae59e2cd8255572c5"
     },
     "tools/linux_worker_probe.py": {
-      "bytes": 9193,
-      "sha256": "cd431b05a32203704cf74a5ac80c0815e9daf813c3eafc66ac6d790754358ed1"
+      "bytes": 9183,
+      "sha256": "6aac9bc83e3d263a98664c285cc8728845d018cf77182da766dc534d9a2f79ba"
     },
     "tools/live_study.py": {
-      "bytes": 15343,
-      "sha256": "b7ea52601aba54a1b841e6e5dcb3c36edf38653c889ace803af4102f938ab734"
+      "bytes": 15477,
+      "sha256": "c36c6fb701177d56f720a7770be9fa9afb76eb888226b26507d0a2a661b3381f"
     },
     "tools/migrate_authority.py": {
       "bytes": 14934,
@@ -1777,8 +1777,8 @@
       "sha256": "f80eb24bdd90a8cca32e7be737f04b8bd3ecaba8294126316650497bc4100351"
     },
     "tools/real_agent_campaign.py": {
-      "bytes": 17548,
-      "sha256": "a8071018a47c6a80fc4c7ce659a721e5e9f15967e7d5dcccf75dc7c05427eddf"
+      "bytes": 17520,
+      "sha256": "92818a8f5f342e995e4371f1f84a2223ca694a463b28c7e084ebfa5006175517"
     },
     "tools/reproduce_v332_defects.py": {
       "bytes": 6564,
@@ -1800,6 +1800,10 @@
       "bytes": 5605,
       "sha256": "4f7a3ab9c02d5e65a2f71d4e47b74c6df154e246fc678b0c26e5a465ebce1d9c"
     },
+    "tools/verify_external_attestation.py": {
+      "bytes": 5134,
+      "sha256": "5fe8132a7795c548bc04c8052ed958f67bceb937b6227239ee97b48587b5fb62"
+    },
     "tools/verify_provenance.py": {
       "bytes": 2047,
       "sha256": "ea32858fae8f1fc82665f70aa424a5b72672e1c3a93d76cdcd5deb0a45874088"
@@ -1811,5 +1815,5 @@
   },
   "release": "SIS-v3.3.8",
   "schema_version": 1,
-  "source_commit": "eadea6984cbee801715e84017995b488fc97fe7b"
+  "source_commit": "ca4b42862f69d2c45785c2843c16c209749699a2"
 }
