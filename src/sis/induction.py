@@ -249,9 +249,15 @@ def candidates(train, max_candidates=12000, observed_inputs=(), stats=None,
     evaluation signatures over the training inputs and only emits the
     combinations guaranteed to fit, plus constant completions for
     constant offsets/quotients. Relevant mids are visited first by
-    residual-variance then complexity ranking; the full search space
-    remains covered (dedup only removes observational equivalents and
-    AST duplicates).
+    residual-variance then complexity ranking. With more than twelve
+    numeric features the depth-1 binary space exceeds the candidate
+    budget, so binary candidates are ranked the same way and a
+    top-ranked mid with a constant residual is offered as its depth-2
+    completion before the raw enumeration. The completion must fit
+    training and development to stop the search; otherwise enumeration
+    continues. Dedup only removes observational equivalents and AST
+    duplicates; an early stop means a rule already fit training and
+    development, not that the space was exhausted.
 
     ``dev`` is the development partition that decides whether a shallow
     rule is suitable. Passing it is what makes early stopping sound: a
@@ -360,6 +366,7 @@ def candidates(train, max_candidates=12000, observed_inputs=(), stats=None,
             for op in ("upper", "lower", "reverse"):
                 yield {"op": op, "arg": leaf}
         terminals = numeric + [{"op": "const", "value": v} for v in (-2, -1, 0, 1, 2, 3)]
+        binary = []
         for op in ("add", "sub", "mul", "min", "max", "absdiff"):
             for a in range(len(terminals)):
                 for b in range(len(terminals)):
@@ -367,7 +374,44 @@ def candidates(train, max_candidates=12000, observed_inputs=(), stats=None,
                         continue
                     if op in ("add", "mul", "min", "max", "absdiff") and a > b:
                         continue
-                    yield {"op": op, "args": [terminals[a], terminals[b]]}
+                    binary.append({"op": op, "args": [terminals[a], terminals[b]]})
+        if len(numeric) > 12 and all(type(o) is int for o in outputs):
+            # With many features the binary space exceeds the candidate
+            # budget, so enumeration order decides what is reached at all.
+            # Residual variance is a cheap relevance signal: the pair that
+            # explains most of the output is visited first. Coverage is
+            # unchanged; only the order changes.
+            def binary_score(ast):
+                sig = cheap_signature(ast)[:n_train]
+                if any(s is _EVAL_ERR or s[0] != "int" for s in sig):
+                    return float("inf")
+                res = [o - s[1] for o, s in zip(outputs, sig)]
+                mean = sum(res) / len(res)
+                return sum((v - mean) ** 2 for v in res) / len(res)
+
+            binary.sort(key=lambda ast: (
+                binary_score(ast), cost(ast), fingerprint(ast)))
+            # A top-ranked mid whose residual is constant is one constant
+            # away from a depth-2 rule. Offer that completion before the
+            # raw enumeration so a large feature space does not spend the
+            # whole candidate budget before stage 2 can reach it. The
+            # acceptance test is the same one the search already applies:
+            # the completed rule must fit training and development.
+            for ast in binary[:8]:
+                sig = cheap_signature(ast)[:n_train]
+                if any(s is _EVAL_ERR or s[0] != "int" for s in sig):
+                    continue
+                res = tuple(o - s[1] for o, s in zip(outputs, sig))
+                if (len(set(res)) == 1 and res[0] != 0
+                        and abs(res[0]) <= 1_000_000_000):
+                    completed = {"op": "add", "args": [
+                        ast, {"op": "const", "value": res[0]}]}
+                    yield completed
+                    if (_matches(completed, train, outputs)
+                            and _matches(completed, dev)):
+                        return
+        for ast in binary:
+            yield ast
         for a in range(len(leaves)):
             for b in range(a + 1, len(leaves)):
                 if type(leaves[a][1]) == type(leaves[b][1]):

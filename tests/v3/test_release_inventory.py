@@ -42,5 +42,36 @@ class ReleaseToolingVersionTests(unittest.TestCase):
         self.assertEqual(package_release._package_version(ROOT), __version__)
 
 
+class ArchivePreservationTests(unittest.TestCase):
+    def setUp(self):
+        import tempfile
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.release = Path(self.temp.name) / "release"
+        self.release.mkdir()
+        self.archive = self.release / "SIS-v3.3.8.zip"
+
+    def test_an_existing_archive_is_moved_to_history(self):
+        self.archive.write_bytes(b"previous archive")
+        moved = package_release._preserve_archive(self.archive)
+        self.assertIsNotNone(moved)
+        self.assertFalse(self.archive.exists())
+        self.assertEqual(moved.read_bytes(), b"previous archive")
+        self.assertEqual(moved.parent.name, "history")
+        self.assertTrue(moved.name.startswith("SIS-v3.3.8."))
+
+    def test_a_second_preserve_does_not_clobber_the_first(self):
+        self.archive.write_bytes(b"previous archive")
+        first = package_release._preserve_archive(self.archive)
+        self.archive.write_bytes(b"previous archive")
+        second = package_release._preserve_archive(self.archive)
+        self.assertNotEqual(first, second)
+        self.assertTrue(first.exists())
+        self.assertTrue(second.exists())
+
+    def test_no_archive_is_a_no_op(self):
+        self.assertIsNone(package_release._preserve_archive(self.archive))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -193,7 +193,11 @@ def main() -> int:
     parser.add_argument("--real-agent", action="store_true")
     parser.add_argument("--manifest", type=Path)
     parser.add_argument("--output", "-o", type=Path, required=True)
+    parser.add_argument("--allow-local-executor", action="store_true",
+                        help="local execution is development-only")
     args = parser.parse_args()
+    if not args.allow_local_executor:
+        parser.error("local executor requires --allow-local-executor")
     if args.demo and args.real_agent:
         parser.error("choose --demo or --real-agent")
     if args.real_agent:

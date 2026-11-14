@@ -34,6 +34,12 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - run: python -m pip install -r requirements-lock.txt
       - run: python -m pip install -e . --no-deps
+      - name: Build evaluator sandbox image
+        # Linux runners have a Docker daemon; macOS runners do not. The
+        # integration tests skip when the image is absent, so building it
+        # here is what makes them run in CI.
+        if: runner.os == 'Linux'
+        run: docker build -t sis-evaluator:3.3.8 docker/sandbox
       - run: python -m pytest tests/ -q
         env:
           PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
@@ -91,6 +97,12 @@ jobs:
           python-version: '3.12'
       - run: python -m pip install -r requirements-lock.txt
       - run: python -m pip install -e . --no-deps
+      - name: Build evaluator sandbox image
+        # Linux runners have a Docker daemon; macOS runners do not. The
+        # integration tests skip when the image is absent, so building it
+        # here is what makes them run in CI.
+        if: runner.os == 'Linux'
+        run: docker build -t sis-evaluator:3.3.8 docker/sandbox
       - run: python -m pytest tests/ -q
         env:
           SIS_POSTGRES_DSN: postgresql://sis_test:sis_test@127.0.0.1:5432/sis_control

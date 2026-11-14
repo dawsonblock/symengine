@@ -1,5 +1,43 @@
 # Changelog
 
+## 2026-11-14 — Induction scaling, CI image build and archive retention
+
+Closes the remaining scaling, CI and retention gaps identified by the
+review. The induction change is an ordering strategy, not a relaxation of
+the acceptance criteria.
+
+- `candidates()` ranks depth-1 binary expressions by residual variance
+  when more than twelve numeric features are present, and offers the
+  constant-offset completion of a top-ranked mid before the raw
+  enumeration. The completion must fit training and development to stop
+  the search, the same criterion the engine already applies.
+- Benchmark (`x[n-2] * x[n-1] + 2`, 6/3/3 partition, default budgets):
+  - 64 fields: 129 candidates, 193 signature checks, no limits hit,
+    intended structure recovered; with `--equivalence z3` the report is
+    `exact_recovery_verified: true` over the declared 0..9 box.
+  - 32 fields: 65 candidates, 97 signature checks (was 4,267 candidates
+    and 500,000 signature checks, truncated).
+  - 8 and 16 fields: unchanged; the existing nonnegative-domain
+    ambiguity is still reported.
+  - A target without a constant-offset completion still truncates
+    honestly under the same budget.
+- CI builds `sis-evaluator:3.3.8` on Linux before the suite, so the
+  Docker integration tests run there instead of skipping.
+- `tools/package_release.py` moves an existing archive to
+  `release/history/` (named by its digest) before a reseal. The
+  directory is gitignored; it is a local safeguard, not a published
+  archive.
+- `tools/qualify_docker_isolation.py --trust-root production` refuses to
+  generate a key on the evaluated machine and requires `--seed-file`.
+  The signer public key must still be verified against a key held by the
+  relying party.
+- The remaining campaign harnesses (`five_arm_campaign.py`,
+  `governed_campaign.py`, `governed_live_campaign.py`, `live_study.py`,
+  `real_agent_campaign.py`, `skill_holdout.py`) now refuse to execute
+  without `--allow-local-executor`, matching the demonstration cycle and
+  episode runner. `skill_holdout.py --list` is exempt because it runs
+  nothing.
+
 ## 2026-11-14 — Docker evidence refresh and repository hygiene
 
 Regenerates the Docker containment evidence over the post-seal tree and

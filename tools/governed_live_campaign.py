@@ -212,7 +212,11 @@ def main() -> int:
     ap.add_argument("-o", "--output", type=Path, required=True)
     ap.add_argument("--wall", type=float, default=120,
                     help="per-arm wall budget seconds (codex exec cap)")
+    ap.add_argument("--allow-local-executor", action="store_true",
+                    help="local execution is development-only")
     args = ap.parse_args()
+    if not args.allow_local_executor:
+        ap.error("local executor requires --allow-local-executor")
     out_dir = args.output
     out_dir.mkdir(parents=True, exist_ok=True)
     wall = int(args.wall)

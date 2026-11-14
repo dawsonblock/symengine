@@ -58,7 +58,8 @@ class LiveCampaignWiringTests(unittest.TestCase):
             with tempfile.TemporaryDirectory() as temp:
                 argv = sys.argv
                 sys.argv = ["governed_live_campaign.py",
-                            "-o", temp, "--wall", "60"]
+                            "-o", temp, "--wall", "60",
+                            "--allow-local-executor"]
                 try:
                     rc = glc.main()
                 finally:

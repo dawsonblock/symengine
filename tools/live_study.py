@@ -195,7 +195,11 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("-o", "--output", type=Path, required=True)
     ap.add_argument("--wall", type=float, default=420)
+    ap.add_argument("--allow-local-executor", action="store_true",
+                    help="local execution is development-only")
     args = ap.parse_args()
+    if not args.allow_local_executor:
+        ap.error("local executor requires --allow-local-executor")
 
     root = Path(tempfile.mkdtemp(prefix="sis-live-study-"))
     registry, reg_seed = make_registry()

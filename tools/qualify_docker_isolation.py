@@ -96,6 +96,10 @@ def main(argv=None) -> int:
                         help="evidence directory (created, mode 0700)")
     parser.add_argument("--seed-file", type=Path, default=None,
                         help="isolator seed; generated when absent")
+    parser.add_argument("--trust-root", choices=("qualification-only", "production"),
+                        default="qualification-only",
+                        help="production requires --seed-file from an"
+                             " independently held key")
     args = parser.parse_args(argv)
 
     image_digest = _image_hex(args.image)
@@ -106,6 +110,10 @@ def main(argv=None) -> int:
     # key held outside the workspace.
     if args.seed_file:
         seed = bytes.fromhex(args.seed_file.read_text(encoding="ascii").strip())
+    elif args.trust_root == "production":
+        parser.error(
+            "production trust root requires --seed-file; the tool must not"
+            " generate an isolator key on the evaluated machine")
     else:
         seed = secrets.token_bytes(32)
 
@@ -174,17 +182,22 @@ def main(argv=None) -> int:
             "attestation_digest": attestation.digest,
             "signer_key_id": KEY_ID,
             "signer_public_key": public_key(seed).hex(),
-            "trust_root": "qualification-only",
+            "trust_root": args.trust_root,
             "receipt_security_errors": list(receipt.security_errors),
             "verified": verified.ok,
             "verification_reason": verified.reason,
             "negative_image_mismatch_ok": not mismatch.ok,
             "negative_image_mismatch_reason": mismatch.reason,
             "stdout": stdout.decode("utf-8", "replace")[:200],
-            "note": ("Locally signed containment evidence, not an externally "
-                     "trusted attestation. Production qualification still "
-                     "requires an isolator key held independently of this "
-                     "machine."),
+            "note": (
+                "Signed with a key supplied via --seed-file. Verify the"
+                " signer public key against the independent trust root"
+                " before accepting a production claim."
+                if args.trust_root == "production" else
+                "Locally signed containment evidence, not an externally "
+                "trusted attestation. Production qualification still "
+                "requires an isolator key held independently of this "
+                "machine."),
         }
         (output / "qualification.json").write_text(
             json.dumps(record, indent=2, sort_keys=True) + "\n")

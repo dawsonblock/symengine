@@ -178,7 +178,11 @@ def build_task(name, root, statements, verifier, registry, reg_seed):
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("-o", "--output", type=Path, required=True)
+    ap.add_argument("--allow-local-executor", action="store_true",
+                    help="local execution is development-only")
     args = ap.parse_args()
+    if not args.allow_local_executor:
+        ap.error("local executor requires --allow-local-executor")
     out_dir = args.output
     out_dir.mkdir(parents=True, exist_ok=True)
 

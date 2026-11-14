@@ -4,6 +4,7 @@ The integration tests require a working Docker daemon and the evaluator
 image. They are skipped otherwise, so the unit-level fail-closed checks
 still run in environments without Docker.
 """
+import os
 import shutil
 import subprocess
 import sys
@@ -304,3 +305,20 @@ class ContainerIntegrationTests(unittest.TestCase):
             "memory_limit_enforced", "pids_limit_enforced",
             "disk_limit_enforced", "cpu_time_enforced",
             "output_limit_enforced"})
+
+
+class QualificationToolTrustRootTests(unittest.TestCase):
+    def test_production_trust_root_refuses_a_generated_key(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        root = Path(__file__).resolve().parents[2]
+        env = dict(os.environ)
+        env["PYTHONPATH"] = str(root / "src")
+        proc = subprocess.run(
+            [sys.executable, str(root / "tools" / "qualify_docker_isolation.py"),
+             "--image", "sis-evaluator@sha256:" + "a" * 64,
+             "--output", str(Path(temp.name) / "evidence"),
+             "--trust-root", "production"],
+            capture_output=True, text=True, env=env, cwd=root)
+        self.assertEqual(proc.returncode, 2, proc.stderr)
+        self.assertIn("requires --seed-file", proc.stderr)

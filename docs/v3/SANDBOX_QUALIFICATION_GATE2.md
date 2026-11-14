@@ -45,6 +45,10 @@ tools reproduce the stored evidence.
 - The signing key is local (`gate2-local-isolator`, trust root
   `qualification-only`). A production seal needs an isolator key held
   independently of the evaluated machine.
+- `--trust-root production` requires `--seed-file` and refuses to
+  generate a key on the evaluated machine. Supplying a seed is not the
+  same as independent custody: the signer public key must still be
+  verified against a key held by the relying party.
 - `release/provenance.intoto.json` remains unsigned.
 - The probe is factual launch evidence; it does not prove kernel
   enforcement against a privileged attacker.

@@ -61,6 +61,28 @@ def _utcnow() -> str:
         timespec="seconds").replace("+00:00", "Z")
 
 
+def _preserve_archive(archive: Path) -> Path | None:
+    """Move an existing archive aside before a reseal overwrites it.
+
+    The ZIP is gitignored, so a rebuild is the only copy. Keep the
+    previous bytes under ``release/history/`` named by their digest; a
+    repeated reseal of the same bytes gets a numeric suffix instead of
+    clobbering the first copy.
+    """
+    if not archive.exists():
+        return None
+    history = archive.parent / "history"
+    history.mkdir(parents=True, exist_ok=True)
+    previous = _sha256(archive)[:12]
+    target = history / f"{archive.stem}.{previous}.zip"
+    counter = 1
+    while target.exists():
+        target = history / f"{archive.stem}.{previous}.{counter}.zip"
+        counter += 1
+    archive.replace(target)
+    return target
+
+
 def _git(root: Path, *args: str) -> str:
     return subprocess.check_output(
         ["git", "-C", str(root), *args], stderr=subprocess.DEVNULL
@@ -218,6 +240,7 @@ def package(root: Path, release: str, *, status: str, passed: int,
         json.dumps(build_record, indent=2, sort_keys=True) + "\n")
 
     started = _utcnow()
+    _preserve_archive(archive)
     report = build(root, archive, require_clean=not allow_dirty,
                    project=release)
     statement = provenance.build_statement(

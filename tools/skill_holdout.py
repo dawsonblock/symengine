@@ -197,7 +197,11 @@ def main() -> int:
                         help="print the registered/planned/excluded registry")
     parser.add_argument("--tier", choices=("A", "B"), default=None)
     parser.add_argument("--only", default=None)
+    parser.add_argument("--allow-local-executor", action="store_true",
+                        help="local execution is development-only")
     args = parser.parse_args()
+    if not args.list and not args.allow_local_executor:
+        parser.error("local executor requires --allow-local-executor")
 
     if args.list:
         print(json.dumps(describe(), indent=2, sort_keys=True))

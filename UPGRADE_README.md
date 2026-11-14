@@ -132,8 +132,10 @@ still describe the pre-repair tree.
   flag; `scripts/v3/run_codex_episode.py` requires it too. The remaining
   campaign scripts under `tools/` (`five_arm_campaign.py`,
   `governed_campaign.py`, `governed_live_campaign.py`, `live_study.py`,
-  `real_agent_campaign.py`, `skill_holdout.py`) still construct the
-  local backend directly. They are development/diagnostic harnesses,
+  `real_agent_campaign.py`, `skill_holdout.py`) construct the local
+  backend directly and now refuse to run without the same
+  `--allow-local-executor` flag (`skill_holdout.py --list` is exempt:
+  it executes nothing). They remain development/diagnostic harnesses,
   not production qualification entrypoints: their receipts are
   `isolation:unverified_local` and cannot pass production
   classification.
@@ -282,6 +284,32 @@ post-seal repairs, so they did not describe the current executor.
   image is unavailable.
 - The trust root remains `qualification-only`; this refresh is
   engineering evidence, not a production security certification.
+  `--trust-root production` refuses to generate a key locally and
+  requires `--seed-file`, but the signer public key must still be
+  verified against a key held by the relying party.
+- CI builds the evaluator image on Linux before running the suite, so
+  the Docker integration tests run there instead of skipping.
+- A reseal no longer destroys the previous ZIP: `tools/package_release.py`
+  moves it to `release/history/` named by its digest. The history
+  directory is gitignored; it is a local safeguard, not a published
+  archive.
+
+### Post-seal repair: large-feature induction prioritization
+
+`candidates()` ranks depth-1 binary expressions by residual variance when
+more than twelve numeric features are present, and offers the
+constant-offset completion of a top-ranked mid before the raw
+enumeration. The completion must fit training and development to stop
+the search; otherwise enumeration continues.
+
+On the 64-field benchmark (`x[n-2] * x[n-1] + 2`, 6/3/3 partition,
+default 12,000-candidate / 500,000-signature budgets) the search returns
+the intended structure in 129 candidates and 193 signature checks with no
+limits hit; `--equivalence z3` reports `exact_recovery_verified: true`
+over the declared 0..9 box. The 32-field case drops from 4,267 candidates
+and 500,000 signature checks (truncated) to 65 and 97. The 8- and 16-field
+results are unchanged, and a target without a constant-offset completion
+still truncates honestly under the same budget.
 
 ### Verifying the v3.3.8 release
 
