@@ -247,6 +247,13 @@ so `supports_split_custody` was false and every split task was rejected.
 - Configuring `--split-user` turns the policy on implicitly. The two
   settings are not independent: a worker told which second UID to use
   should not keep accepting shared custody for hidden tests.
+- Custody is now durable. `tasks.json` records the mode, a row written
+  before it was stored is recovered from its suite commitment, and a row
+  whose declared mode disagrees with that commitment fails closed
+  (`JournalIntegrityError`). Previously every reload — including the
+  worker's fresh child process — reset a split task to shared custody,
+  so the registered boundary was never enforced outside the process that
+  registered it.
 
 A worker without `--split-user` still refuses split tasks (fail-closed),
 but shared custody remains available for development. Production

@@ -26,6 +26,13 @@ tree.
 - Configuring `--split-user` enables the policy implicitly, so a worker
   that was told which second UID to use does not keep grading hidden
   tests beside the submission.
+- Custody is persisted in `tasks.json` and verified on load. A row
+  written before the field existed is recovered from its suite
+  commitment; a row whose declared mode disagrees with the commitment
+  raises `JournalIntegrityError` instead of loading. Without this, every
+  reload — and `evaluator_worker` builds a fresh verifier in each child
+  process — reset a split task to shared custody, silently removing the
+  boundary the registration was meant to hold.
 - A worker started without `--split-user` still rejects split tasks as
   before; shared custody remains the development path.
 

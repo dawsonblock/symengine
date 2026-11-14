@@ -213,7 +213,7 @@ def _main() -> int:
     task = TaskEnvelopeV1.from_json(raw)
 
     from .runner import RunnerError
-    from .verifier import EvaluationRejected, OutcomeVerifier
+    from .verifier import EvaluationRejected, JournalIntegrityError, OutcomeVerifier
 
     try:
         executor = build_worker_executor(
@@ -234,7 +234,7 @@ def _main() -> int:
             registry_dir=args.registry_dir,
             require_split_custody=require_split,
         )
-    except (ContractError, RunnerError) as exc:
+    except (ContractError, JournalIntegrityError, RunnerError) as exc:
         print(f"evaluator_configuration_invalid: {exc}", file=sys.stderr)
         return 2
     try:

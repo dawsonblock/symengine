@@ -241,6 +241,64 @@ class RegisteredTask:
     custody: str = "shared"
 
 
+def _suite_commitment(
+    *,
+    task_id: str,
+    criterion_version: str,
+    argv,
+    files: Mapping[str, bytes],
+    base_commit: str | None,
+    failure_class: str | None,
+    custody: str,
+) -> str:
+    """The commitment a registration binds for its task identity.
+
+    Shared custody is the historical default and is not named in the
+    payload, so a registration that predates the field keeps its
+    commitment. Registry load uses the same function to recover custody
+    for a row written before it was persisted.
+    """
+    payload = {
+        "task_id": task_id,
+        "criterion_version": criterion_version,
+        "argv": list(argv),
+        "files": {name: hashlib.sha256(data).hexdigest()
+                  for name, data in sorted(files.items())},
+        "base_commit": base_commit,
+    }
+    if failure_class is not None:
+        # Bound only when declared, so existing registrations keep their
+        # historical commitments.
+        payload["failure_class"] = failure_class
+    if custody != "shared":
+        payload["custody"] = custody
+    return canonical_digest("test_suite", 1, payload)
+
+
+def _recover_custody(item: dict, files: Mapping[str, bytes]) -> str:
+    """Recover custody for a registry row written before it was persisted.
+
+    Returning the shared default for a split row would silently downgrade
+    the boundary the registration was meant to hold, and the worker
+    reloads the registry in every child process. The commitment names
+    custody only when it is not shared, so matching both variants
+    recovers the original mode without trusting an absent field.
+    """
+    for candidate in ("shared", "split"):
+        if _suite_commitment(
+            task_id=item["task_id"],
+            criterion_version=item["criterion_version"],
+            argv=tuple(item["argv"]),
+            files=files,
+            base_commit=item["base_commit"],
+            failure_class=item.get("failure_class"),
+            custody=candidate,
+        ) == item["suite_commitment"]:
+            return candidate
+    raise JournalIntegrityError(
+        "task registry custody cannot be recovered from its commitment")
+
+
 class OutcomeVerifier:
     """Produces signed outcome receipts; never trusts submitter-reported results."""
 
@@ -368,22 +426,15 @@ class OutcomeVerifier:
             # scored as if the submission had failed.
             raise ContractError(
                 "split custody requires a Python acceptance command")
-        commitment_payload = {
-            "task_id": task_id,
-            "criterion_version": criterion_version,
-            "argv": list(command.argv),
-            "files": {name: hashlib.sha256(data).hexdigest() for name, data in sorted(material.items())},
-            "base_commit": base_commit,
-        }
-        if failure_class is not None:
-            # Bound into the commitment only when declared, so existing
-            # registrations keep their historical commitments.
-            commitment_payload["failure_class"] = failure_class
-        if custody != "shared":
-            # Likewise bound only when declared: a shared-custody
-            # registration keeps the commitment it already had.
-            commitment_payload["custody"] = custody
-        commitment = canonical_digest("test_suite", 1, commitment_payload)
+        commitment = _suite_commitment(
+            task_id=task_id,
+            criterion_version=criterion_version,
+            argv=command.argv,
+            files=material,
+            base_commit=base_commit,
+            failure_class=failure_class,
+            custody=custody,
+        )
         task = RegisteredTask(
             task_id=task_id,
             criterion_version=criterion_version,
@@ -792,15 +843,41 @@ class OutcomeVerifier:
             if not isinstance(document, dict) or set(document) != {"schema_version", "tasks"}:
                 raise JournalIntegrityError("task registry has an unexpected shape")
             for item in document["tasks"]:
+                files = {name: bytes.fromhex(data)
+                         for name, data in item["files"].items()}
+                custody = item.get("custody")
+                if custody is None:
+                    custody = _recover_custody(item, files)
+                elif custody not in ("shared", "split"):
+                    raise JournalIntegrityError(
+                        "task registry has an invalid custody mode")
+                else:
+                    # A declared mode must still agree with the
+                    # commitment: editing custody in the registry cannot
+                    # downgrade a split task to shared.
+                    expected = _suite_commitment(
+                        task_id=item["task_id"],
+                        criterion_version=item["criterion_version"],
+                        argv=tuple(item["argv"]),
+                        files=files,
+                        base_commit=item["base_commit"],
+                        failure_class=item.get("failure_class"),
+                        custody=custody,
+                    )
+                    if expected != item["suite_commitment"]:
+                        raise JournalIntegrityError(
+                            "task registry commitment does not match"
+                            " its registration")
                 task = RegisteredTask(
                     task_id=item["task_id"],
                     criterion_version=item["criterion_version"],
                     argv=tuple(item["argv"]),
-                    files={name: bytes.fromhex(data) for name, data in item["files"].items()},
+                    files=files,
                     base_commit=item["base_commit"],
                     suite_commitment=item["suite_commitment"],
                     statement_digest=item.get("statement_digest"),
                     failure_class=item.get("failure_class"),
+                    custody=custody,
                 )
                 self._tasks[task.task_id] = task
         if self._journal_path.exists():
@@ -911,6 +988,7 @@ class OutcomeVerifier:
                     "suite_commitment": task.suite_commitment,
                     "statement_digest": task.statement_digest,
                     "failure_class": task.failure_class,
+                    "custody": task.custody,
                 }
                 for task in sorted(self._tasks.values(), key=lambda t: t.task_id)
             ],

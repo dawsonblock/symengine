@@ -14,6 +14,7 @@ was graded against. These tests pin the split:
 """
 import contextlib
 import io
+import json
 import os
 import shlex
 import subprocess
@@ -52,7 +53,11 @@ from sis.v3.split_harness import (
     SplitClient,
     SplitProtocolError,
 )
-from sis.v3.verifier import EvaluationRejected, OutcomeVerifier
+from sis.v3.verifier import (
+    EvaluationRejected,
+    JournalIntegrityError,
+    OutcomeVerifier,
+)
 
 PY = sys.executable
 
@@ -481,6 +486,85 @@ class SplitCapableExecutor:
 
     supports_split_custody = True
     supports_private_material = True
+
+
+class TaskRegistryCustodyTests(unittest.TestCase):
+    """Custody must survive the registry round-trip the worker performs.
+
+    ``evaluator_worker`` builds a fresh verifier in the child process, so
+    a registration is only honoured if its custody mode is persisted.
+    """
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.submission = self.root / "submission"
+        self.submission.mkdir()
+        (self.submission / "solution.py").write_text(
+            "x = 1\n", encoding="utf-8")
+        self.registry_dir = self.root / "registry"
+
+    def make_verifier(self):
+        return OutcomeVerifier(
+            executor=SplitCapableExecutor(), key_dir=self.root / "keys",
+            registry_dir=self.registry_dir)
+
+    def register_split(self, verifier, task_id="split"):
+        return verifier.register_task(
+            actor_role="evaluator", task_id=task_id,
+            criterion_version="v1", argv=(PY, "acceptance.py"),
+            files={"acceptance.py": b"x = 1\n"}, custody="split")
+
+    def rewrite_registry(self, mutate):
+        path = self.registry_dir / "tasks.json"
+        document = json.loads(path.read_text())
+        mutate(document)
+        path.write_text(json.dumps(document))
+
+    def test_custody_survives_a_registry_reload(self):
+        self.register_split(self.make_verifier())
+        reloaded = self.make_verifier()
+        self.assertEqual(
+            reloaded.registered_task("split").custody, "split")
+
+    def test_a_legacy_row_recovers_split_from_its_commitment(self):
+        registered = self.register_split(self.make_verifier())
+
+        def drop_custody(document):
+            for item in document["tasks"]:
+                item.pop("custody", None)
+
+        self.rewrite_registry(drop_custody)
+        reloaded = self.make_verifier()
+        task = reloaded.registered_task("split")
+        self.assertEqual(task.custody, "split")
+        self.assertEqual(task.suite_commitment, registered.suite_commitment)
+
+    def test_an_unrecoverable_custody_mode_fails_closed(self):
+        self.register_split(self.make_verifier())
+
+        def corrupt(document):
+            for item in document["tasks"]:
+                item.pop("custody", None)
+                item["suite_commitment"] = "0" * 64
+
+        self.rewrite_registry(corrupt)
+        with self.assertRaisesRegex(
+                JournalIntegrityError, "custody"):
+            self.make_verifier()
+
+    def test_a_downgraded_custody_field_is_rejected(self):
+        self.register_split(self.make_verifier())
+
+        def downgrade(document):
+            for item in document["tasks"]:
+                item["custody"] = "shared"
+
+        self.rewrite_registry(downgrade)
+        with self.assertRaisesRegex(
+                JournalIntegrityError, "commitment"):
+            self.make_verifier()
 
 
 class SplitCustodyPolicyTests(unittest.TestCase):
