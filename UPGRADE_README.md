@@ -117,13 +117,13 @@ still describe the pre-repair tree.
   classifies as an evaluator bootstrap error even at exit 0. The
   execution receipt carries `evaluation:private_material_separated`.
   Staging is bounded (64 files, 1 MiB each, 8 MiB total), and
-  `register_task()` enforces the same bounds. Residual risk: the test
-  runner and the submitted code still share one process and one OS
-  principal, so a submission that deliberately enumerates `/private`
-  can still read the tests. The local backend's material is
-  mode-protected, not OS-read-only: a rewrite is detected after the run
-  (`sandbox:private_material_modified`, a sandbox failure) rather than
-  prevented. A process-split harness is not implemented.
+  `register_task()` enforces the same bounds. A `shared`-custody task
+  still runs the runner and the submitted code in one process, so a
+  submission that enumerates `/private` can read the tests. Register the
+  task with `custody="split"` to remove that path; see below. The local
+  backend's material is mode-protected, not OS-read-only: a rewrite is
+  detected after the run (`sandbox:private_material_modified`, a sandbox
+  failure) rather than prevented.
 - **Execution default.** `sis.v3.evaluator_worker` constructs a
   `DockerSandboxExecutor` by default and refuses to start without an
   image. Local execution requires `allow_local_executor=True` (CLI:
@@ -150,6 +150,79 @@ New regressions live in `tests/v3/test_gate2_containment_repairs.py`.
 The full suite is 1452 passed, 13 skipped after the repaired tree is
 re-sealed. Regenerate the sealed archive and its evidence with
 `tools/package_release.py` before making a release claim.
+
+### Post-seal repair: process-split acceptance custody
+
+A `shared`-custody task still runs the acceptance runner and the
+submitted code in one process and one OS principal. Registering the task
+with `custody="split"` removes that read path:
+
+```python
+verifier.register_task(
+    actor_role="evaluator", task_id="task-calc",
+    criterion_version="v1", argv=(sys.executable, "-m", "pytest",
+                                  "-q", "acceptance.py"),
+    files={"acceptance.py": acceptance_source}, custody="split")
+```
+
+The acceptance command now runs in the evaluator's process and never
+imports submitted code. A meta-path finder replaces each workspace
+module — including a submission laid out as a package, and that
+package's submodules — with a proxy whose attribute reads and calls are
+marshalled over a Unix socket to a worker. The worker runs under a
+principal that cannot read the private directory:
+
+- Local backend: a separate process under seatbelt with
+  `(deny file-read* (subpath <private>))`. It shares your UID, so the
+  kernel read denial is the boundary; the receipt carries
+  `split:custody:seatbelt_read_denied`.
+- Docker backend: a second numeric UID through `docker exec --user`,
+  with the material installed as the evaluator UID in a 0700 tmpfs
+  directory. The receipt carries `split:custody:separate_uid`. Configure
+  the second identity with `DockerSandboxExecutor(split_user="2002:2002")`;
+  it must differ from `user` and must not be root. The shipped
+  `evaluator_worker` does not set `split_user`, so split tasks are
+  rejected there until it does.
+
+Both paths carry `evaluation:process_split`. The wire codec is JSON over
+a closed type set, so submission-produced bytes are never unpickled in
+the evaluator process.
+
+Operators must know:
+
+- Split custody requires the backend capability. A split task on a
+  backend without it is rejected as `split_custody_unavailable` (an
+  evaluator bootstrap error) instead of falling back to shared custody.
+  `LinuxRootlessWorker` has no second principal — bwrap maps the
+  caller's UID into the namespace — so it refuses split tasks.
+- A receipt that does not carry `evaluation:process_split` is rejected
+  as `split_custody_unverified` (a sandbox failure).
+- The acceptance command must be a Python invocation; registration
+  refuses anything else. Handing the Python bootstrap to a shell or a
+  test binary would fail as if the submission had.
+- A harness failure is never a verdict about the submission. The
+  bootstrap pings the worker before running the command and exits with a
+  dedicated status if it is missing or dies; the receipt then carries
+  `sandbox:split_custody_unavailable` or `sandbox:split_worker_lost` and
+  the outcome is an error, not a failed submission.
+- Only primitives, callables and composites of primitives cross the
+  socket. A test that passes an arbitrary object, or expects a
+  non-primitive return value, fails the call rather than widening the
+  codec.
+- Split custody pins pytest to evaluator-owned configuration
+  (`-c`, `--confcutdir`, `-p no:cacheprovider`), so a workspace
+  `pytest.ini`, `pyproject.toml` or `conftest.py` cannot inject a plugin
+  into the process that holds the tests.
+- The Docker backend re-reads the container copy of the private
+  material, not the host staging directory, before issuing the receipt.
+- The Docker split is unit-tested against a Docker CLI double; it is not
+  live-qualified on every host. Re-run the Docker containment probe on
+  the exact image before claiming production isolation.
+- The split does not make the evaluator's own test code trustworthy. A
+  test that deliberately shells out to run the submission under the
+  evaluator principal re-opens the shared-custody path.
+
+Regressions live in `tests/v3/test_split_custody.py`.
 
 ### Verifying the v3.3.8 release
 

@@ -214,18 +214,36 @@
 - Local execution is `isolation:unverified_local`; seatbelt network
   denial is opportunistic, not a guarantee.
 - Private-material separation moves acceptance files out of the graded
-  workspace, but the test runner and the code under test still share one
-  process and one OS principal. A submission that deliberately
-  enumerates the private path can still read the tests at run time. True
-  secrecy requires a process-split harness that invokes the submission
-  through a separate principal; that is not implemented. Separation does
-  remove the incidental paths (same directory, tree digest, copy-out,
-  submission `conftest.py`, `PYTHONPATH`/startup hooks, runner
-  shadowing).
+  workspace. A `shared`-custody task still runs the test runner and the
+  code under test in one process and one OS principal, so a submission
+  that enumerates the private path can read the tests at run time.
+  `custody="split"` closes that read path: the runner never imports
+  submitted code, and the worker runs under a principal that cannot read
+  the private directory (a seatbelt read denial locally, a second
+  numeric UID in Docker). Separation also removes the incidental paths
+  (same directory, tree digest, copy-out, submission `conftest.py`,
+  `PYTHONPATH`/startup hooks, runner shadowing), and split custody pins
+  pytest configuration to the private directory so a workspace
+  `pytest.ini` cannot inject a plugin into the process holding the
+  tests.
+- Split custody is a boundary over module access, not a general
+  interprocess sandbox. Workspace modules — including packages and their
+  submodules — are proxied, and only primitives, callables and
+  composites of primitives cross the socket. A test that deliberately
+  shells out to run the submission under the evaluator principal
+  re-opens the shared path.
+- A harness failure is not evidence about a submission. The bootstrap
+  pings the worker before running the command and reports a missing or
+  lost worker by exit status, which the executors map to
+  `sandbox:split_custody_unavailable` / `sandbox:split_worker_lost`; a
+  non-Python acceptance command is refused at registration.
 - The Docker and Linux worker mounts are read-only, so the material
-  cannot be rewritten there. The local backend only clears write mode
-  bits; the submission runs as the same principal and can `chmod` them.
-  A post-run re-read detects a rewrite and the receipt carries
+  cannot be rewritten there. Docker split custody installs the material
+  as a 0700 tmpfs directory owned by the evaluator UID instead of a
+  mount, and re-reads that container copy before issuing the receipt.
+  The local backend only clears write mode bits; the submission
+  runs as the same principal and can `chmod` them. A post-run re-read
+  detects a rewrite and the receipt carries
   `sandbox:private_material_modified` (a sandbox failure, never a pass),
   but prevention requires the process split above or seatbelt.
 - The local backend's `command_spec_digest` includes the run-specific

@@ -21,6 +21,7 @@ how the command was launched, not a proof that the kernel enforced it.
 from __future__ import annotations
 
 import hashlib
+import io
 import os
 import re
 import secrets
@@ -32,6 +33,7 @@ import tempfile
 import threading
 import time
 from collections.abc import Mapping
+from dataclasses import replace
 from pathlib import Path
 
 from .contracts import ContractError, ExecutionReceiptV1, canonical_digest
@@ -40,6 +42,10 @@ from .runner import (MAX_WORKSPACE_FILES, CommandSpec, ResourceLimits,
                      mark_private_material_modified, private_command_spec,
                      private_material_modified, scan_tree,
                      stage_private_material)
+from .split_harness import (MARKER_SEPARATE_UID, MARKER_SPLIT,
+                            SPLIT_BOOTSTRAP_NAME, SPLIT_SOCKET_NAME,
+                            WORKER_SOURCE, split_bootstrap_argv,
+                            split_failure_marker, split_pytest_argv)
 from .workspace_guard import ManagedWorkspaceRegistry, protected_overlap
 
 _IMAGE_DIGEST = re.compile(
@@ -143,6 +149,7 @@ class DockerSandboxExecutor:
         tmpfs_bytes: int = 64 * 1024 * 1024,
         nofile_limit: int = 1024,
         user: str | None = None,
+        split_user: str | None = None,
         image_id: str | None = None,
     ) -> None:
         if not isinstance(image, str) or not image:
@@ -165,6 +172,13 @@ class DockerSandboxExecutor:
             raise ContractError("cpus must be in (0,64]")
         self._user = user or _default_user()
         self._uid, self._gid = _parse_user(self._user)
+        self._split_user = None
+        if split_user is not None:
+            split_uid, split_gid = _parse_user(split_user)
+            if split_uid == self._uid:
+                raise ContractError(
+                    "split_user must differ from the evaluator user")
+            self._split_user = f"{split_uid}:{split_gid}"
         self.root = Path(os.path.abspath(
             root if root is not None
             else tempfile.mkdtemp(prefix="sis-v3-docker-")))
@@ -210,6 +224,11 @@ class DockerSandboxExecutor:
         return self._production
 
     @property
+    def supports_split_custody(self) -> bool:
+        """Split custody needs a second, non-root container identity."""
+        return self._split_user is not None
+
+    @property
     def network_isolation(self) -> str:
         return "docker_none"
 
@@ -242,33 +261,82 @@ class DockerSandboxExecutor:
     def run(
         self, workspace: Workspace, spec: CommandSpec, *,
         private_files: Mapping[str, bytes] | None = None,
+        split_custody: bool = False,
     ) -> ExecutionReceiptV1:
         if not isinstance(spec, CommandSpec):
             raise ContractError("spec must be a CommandSpec")
+        if split_custody and not private_files:
+            raise ContractError("split custody requires private material")
+        if split_custody and not self.supports_split_custody:
+            raise RunnerError("split_custody_unavailable")
         with self._registry.execution(
                 workspace.workspace_id, workspace.path,
                 executor_identity=workspace.executor_identity) as record:
             material = None
             try:
-                if private_files:
+                if split_custody:
+                    # Private material is copied into the container's
+                    # tmpfs as the evaluator UID instead of being mounted:
+                    # a host bind mount would carry host ownership, which
+                    # need not match the container's evaluator UID.
                     material = stage_private_material(
-                        self.root, private_files, bootstrap=True)
-                    spec = private_command_spec(
-                        spec, names=private_files, prefix="/private",
-                        workspace="/workspace")
-                receipt = self._run_workspace(
-                    record, spec, private_host=material)
-                if material is not None and private_material_modified(
-                        material, private_files):
-                    receipt = mark_private_material_modified(receipt)
+                        self.root, private_files, private_mode=True,
+                        split_bootstrap=True)
+                    base = private_command_spec(
+                        spec, names=private_files, prefix=self._split_dir,
+                        workspace="/workspace", bootstrap=False)
+                    base = replace(base, argv=split_pytest_argv(
+                        base.argv, private_dir=self._split_dir))
+                    spec = replace(base, argv=split_bootstrap_argv(
+                        base.argv,
+                        bootstrap_path=(
+                            self._split_dir + "/" + SPLIT_BOOTSTRAP_NAME),
+                        transport=("--socket", self._split_socket),
+                        workspace="/workspace"))
+                    receipt = self._run_workspace(
+                        record, spec, split_material=material)
+                    # A harness failure is not a verdict about the
+                    # submission; the bootstrap reports it by exit status.
+                    marker = split_failure_marker(receipt.exit_status)
+                    if marker is not None:
+                        receipt = replace(
+                            receipt,
+                            security_errors=receipt.security_errors + (marker,))
+                else:
+                    if private_files:
+                        material = stage_private_material(
+                            self.root, private_files, bootstrap=True)
+                        spec = private_command_spec(
+                            spec, names=private_files, prefix="/private",
+                            workspace="/workspace")
+                    receipt = self._run_workspace(
+                        record, spec, private_host=material)
+                    if material is not None and private_material_modified(
+                            material, private_files):
+                        # The mounted directory is the copy the run could
+                        # reach, so re-read it here. Split custody installs
+                        # a container copy instead and verifies that one.
+                        receipt = mark_private_material_modified(receipt)
                 return receipt
             finally:
                 if material is not None:
                     shutil.rmtree(material, ignore_errors=True)
 
+    @property
+    def _split_socket(self) -> str:
+        return "/tmp/" + SPLIT_SOCKET_NAME
+
+    @property
+    def _split_dir(self) -> str:
+        # The container root is read-only, so the private directory lives
+        # on the tmpfs. It is created by the evaluator UID with mode 0700.
+        return "/tmp/sis-private"
+
     def _run_workspace(
         self, record, spec: CommandSpec, *, private_host: Path | None = None,
+        split_material: Path | None = None,
     ) -> ExecutionReceiptV1:
+        split = split_material is not None
         before = scan_tree(record.path)
         if before.external_symlinks:
             raise RunnerError("workspace contains external symlinks")
@@ -303,8 +371,12 @@ class DockerSandboxExecutor:
         ]
         if not _IMAGE_DIGEST.fullmatch(self._image):
             security_errors.append("docker:image_tag_only")
-        if private_host is not None:
+        if private_host is not None or split:
             security_errors.append("evaluation:private_material_separated")
+        if split:
+            security_errors.append(MARKER_SPLIT)
+            security_errors.append(MARKER_SEPARATE_UID)
+            security_errors.append(f"docker:split_user:{self._split_user}")
 
         stdout_chunks = bytearray()
         stderr_chunks = bytearray()
@@ -317,7 +389,7 @@ class DockerSandboxExecutor:
         try:
             self._start_container(
                 container, record, spec, limits, memory, pids, disk,
-                private_host)
+                private_host, split=split)
             with self._lock:
                 self._live[execution_id] = container
                 self._live_ws[execution_id] = record.workspace_id
@@ -326,6 +398,12 @@ class DockerSandboxExecutor:
             self._copy_in(container)
             if self._registry.is_closing(record.workspace_id):
                 raise RunnerError("workspace_is_closing")
+            if split:
+                self._install_split_material(container, split_material)
+                self._start_split_worker(container)
+                self._await_split_socket(container)
+                if self._registry.is_closing(record.workspace_id):
+                    raise RunnerError("workspace_is_closing")
             proc = self._exec_command(container, argv, spec, workdir)
 
             def pump(pipe, sink: bytearray, name: str) -> None:
@@ -402,7 +480,11 @@ class DockerSandboxExecutor:
                 security_errors.append("fs:workspace_state_unavailable")
             else:
                 try:
-                    self._copy_out(container, record, disk)
+                    # Files created by the submission are owned by the
+                    # worker UID in split mode; collect them as that UID.
+                    self._copy_out(
+                        container, record, disk,
+                        user=self._split_user if split else self._user)
                 except CopyOutBudgetError as exc:
                     # The archive exceeded a budget the run declared. The
                     # prepared workspace is preserved, but its post-run state
@@ -419,6 +501,12 @@ class DockerSandboxExecutor:
                     # slot for the copy-out process. The run is still
                     # classifiable as a resource limit, never a pass.
                     security_errors.append("fs:workspace_state_unavailable")
+                if split and self._split_material_modified(
+                        container, split_material):
+                    # The container copy, not the host staging directory,
+                    # is what the worker could reach.
+                    security_errors.append(
+                        "sandbox:private_material_modified")
         finally:
             with self._lock:
                 self._live.pop(execution_id, None)
@@ -512,8 +600,12 @@ class DockerSandboxExecutor:
     def _start_container(
         self, container: str, record, spec: CommandSpec,
         limits: ResourceLimits, memory: int, pids: int, disk: int,
-        private_host: Path | None = None,
+        private_host: Path | None = None, *, split: bool = False,
     ) -> None:
+        # Split custody runs the worker as a second UID, which must be
+        # able to read the copied-in workspace; the evaluator UID keeps
+        # write access. Only the two run principals can reach this tmpfs.
+        workspace_mode = "0777" if split else "0770"
         command = [
             self._docker, "run", "-d", "--name", container,
             "--network", "none",
@@ -521,7 +613,7 @@ class DockerSandboxExecutor:
             "--tmpfs", f"/tmp:rw,noexec,nosuid,size={self._tmpfs}",
             "--tmpfs",
             (f"/workspace:rw,nosuid,nodev,size={disk},"
-             f"uid={self._uid},gid={self._gid},mode=0770"),
+             f"uid={self._uid},gid={self._gid},mode={workspace_mode}"),
             "--user", self._user,
             "--cap-drop", "ALL",
             "--security-opt", "no-new-privileges",
@@ -583,6 +675,110 @@ class DockerSandboxExecutor:
                 "workspace_copy_in_failed:"
                 + (result.stderr or result.stdout).strip()[:200])
 
+    def _install_split_material(
+        self, container: str, material: Path,
+    ) -> None:
+        """Copy private material into the container as the evaluator UID.
+
+        The directory is created by the evaluator UID with mode 0700, so
+        the worker UID cannot traverse or read it. Files are read-only.
+        """
+        payload = io.BytesIO()
+        with tarfile.open(fileobj=payload, mode="w") as archive:
+            for path in sorted(material.rglob("*")):
+                archive.add(path, arcname=str(path.relative_to(material)))
+        try:
+            result = subprocess.run(
+                [self._docker, "exec", "-i", "--user", self._user, container,
+                 "sh", "-c",
+                 f"rm -rf {self._split_dir} && mkdir -p {self._split_dir} && "
+                 f"tar -x -C {self._split_dir} && "
+                 f"chmod 700 {self._split_dir}"],
+                input=payload.getvalue(), capture_output=True, timeout=120)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise RunnerError(
+                f"split_custody_install_failed:{exc}") from exc
+        if result.returncode != 0:
+            raise RunnerError(
+                "split_custody_install_failed:"
+                + (result.stderr or result.stdout).decode(
+                    "utf-8", "replace").strip()[:200])
+
+    def _split_material_modified(
+        self, container: str, material: Path,
+    ) -> bool:
+        """Compare the container's private copy to the staged material.
+
+        Split custody installs a copy into the container tmpfs, so the host
+        staging directory is not the copy the worker could reach. Any read
+        failure counts as modified: the receipt must never claim a tree it
+        did not verify.
+        """
+        expected = {}
+        for path in material.rglob("*"):
+            if path.is_file():
+                expected[path.relative_to(material).as_posix()] = (
+                    path.read_bytes())
+        try:
+            result = subprocess.run(
+                [self._docker, "exec", "--user", self._user, container,
+                 "tar", "-C", self._split_dir, "-cf", "-", "."],
+                capture_output=True, timeout=120)
+        except (OSError, subprocess.TimeoutExpired):
+            return True
+        if result.returncode != 0:
+            return True
+        observed = {}
+        try:
+            with tarfile.open(fileobj=io.BytesIO(result.stdout)) as archive:
+                for member in archive.getmembers():
+                    if not member.isfile():
+                        continue
+                    name = member.name
+                    while name.startswith("./"):
+                        name = name[2:]
+                    handle = archive.extractfile(member)
+                    if handle is None:
+                        return True
+                    observed[name] = handle.read()
+        except (tarfile.TarError, OSError, ValueError):
+            return True
+        return observed != expected
+
+    def _start_split_worker(self, container: str) -> None:
+        """Start the restricted worker as the second container UID."""
+        try:
+            result = subprocess.run(
+                [self._docker, "exec", "-d", "--user", self._split_user,
+                 "--workdir", "/workspace",
+                 "-e", "HOME=/tmp", "-e", "TMPDIR=/tmp",
+                 container, "python3", "-c", WORKER_SOURCE,
+                 "--socket", self._split_socket, "/workspace"],
+                capture_output=True, text=True, timeout=60)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise RunnerError(
+                f"split_custody_worker_start_failed:{exc}") from exc
+        if result.returncode != 0:
+            raise RunnerError(
+                "split_custody_worker_start_failed:"
+                + (result.stderr or result.stdout).strip()[:200])
+
+    def _await_split_socket(self, container: str, seconds: float = 30.0) -> None:
+        """Wait until the worker is listening, or fail closed."""
+        deadline = time.monotonic() + seconds
+        while time.monotonic() < deadline:
+            try:
+                result = subprocess.run(
+                    [self._docker, "exec", "--user", self._user, container,
+                     "test", "-S", self._split_socket],
+                    capture_output=True, timeout=15)
+            except (OSError, subprocess.TimeoutExpired):
+                result = None
+            if result is not None and result.returncode == 0:
+                return
+            time.sleep(0.1)
+        raise RunnerError("split_custody_unavailable")
+
     def _exec_command(
         self, container: str, argv: list[str], spec: CommandSpec,
         workdir: str,
@@ -609,7 +805,10 @@ class DockerSandboxExecutor:
         except OSError as exc:
             raise RunnerError(f"docker_unavailable:{exc}") from exc
 
-    def _copy_out(self, container: str, record, disk_bytes: int) -> None:
+    def _copy_out(
+        self, container: str, record, disk_bytes: int,
+        user: str | None = None,
+    ) -> None:
         """Copy the tmpfs workspace back through a filtered tar stream.
 
         The declared disk budget and file-count bound are enforced while the
@@ -633,8 +832,8 @@ class DockerSandboxExecutor:
         try:
             try:
                 proc = subprocess.Popen(
-                    [self._docker, "exec", "--user", self._user, container,
-                     "tar", "-C", "/workspace", "-cf", "-", "."],
+                    [self._docker, "exec", "--user", user or self._user,
+                     container, "tar", "-C", "/workspace", "-cf", "-", "."],
                     stdout=subprocess.PIPE,
                     stderr=errors,
                     start_new_session=(os.name == "posix"),

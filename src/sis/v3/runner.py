@@ -24,6 +24,7 @@ import re
 import secrets
 import shutil
 import signal
+import socket
 import subprocess
 import sys
 import tempfile
@@ -35,6 +36,19 @@ from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 from .contracts import ContractError, ExecutionReceiptV1, canonical_digest
+from .split_harness import (
+    MARKER_SEATBELT,
+    MARKER_SPLIT,
+    SPLIT_BOOTSTRAP_NAME,
+    SPLIT_BOOTSTRAP_SOURCE,
+    SPLIT_INI_NAME,
+    SPLIT_INI_SOURCE,
+    is_python_command,
+    split_bootstrap_argv,
+    split_failure_marker,
+    split_pytest_argv,
+    worker_argv,
+)
 from .workspace_guard import ManagedWorkspaceRegistry, protected_overlap
 
 try:
@@ -57,7 +71,6 @@ _ARG_TEXT = re.compile(r"^[^\x00]{1,1024}$", re.DOTALL)
 _ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,127}$")
 _SAFE_CWD = re.compile(r"^(?!/)(?![A-Za-z]:)(?!.*(?:^|/)\.\.(?:/|$))[A-Za-z0-9_.@/-]{0,512}$")
 _PRIVATE_NAME = re.compile(r"^(?!/)(?![A-Za-z]:)(?!.*(?:^|/)\.\.(?:/|$))[A-Za-z0-9_.@/-]{1,512}$")
-_PYTHON_COMMAND = re.compile(r"^python(?:\d+(?:\.\d+)?)?(?:\.exe)?$", re.IGNORECASE)
 
 _BOOTSTRAP_NAME = "_sis_bootstrap.py"
 # Staged read-only next to the private material and run as the Python entry
@@ -263,6 +276,8 @@ def normalize_private_files(
 def stage_private_material(
     root: str | Path, files: Mapping[str, bytes] | None, *,
     bootstrap: bool = False,
+    private_mode: bool = False,
+    split_bootstrap: bool = False,
 ) -> Path:
     """Write private material into a fresh directory outside any workspace.
 
@@ -270,26 +285,44 @@ def stage_private_material(
     descendant of one, so submitted code cannot reach the material through
     its own workspace tree, the tree digest, or the copy-out archive. When
     ``bootstrap`` is set, the trusted runner bootstrap is staged beside it.
+
+    ``private_mode`` stages owner-only modes for the split harness: the
+    directory is 0700 and every file 0400. A worker running as another UID
+    then cannot read the material, and the runner keeps access as owner.
+    ``split_bootstrap`` stages the proxy bootstrap instead of the plain one.
     """
     material = normalize_private_files(files)
     if bootstrap and _BOOTSTRAP_NAME in material:
         raise ContractError(f"{_BOOTSTRAP_NAME} is reserved for evaluator staging")
+    if split_bootstrap and SPLIT_BOOTSTRAP_NAME in material:
+        raise ContractError(
+            f"{SPLIT_BOOTSTRAP_NAME} is reserved for evaluator staging")
     directory = Path(tempfile.mkdtemp(dir=Path(root), prefix=".private-"))
     try:
         # A Docker bind mount preserves host ownership, and the container
         # user may be a different numeric UID than the host owner. The
         # material must therefore be traversable/readable by that UID; the
         # executor root itself is expected to be private.
-        os.chmod(directory, 0o755)
+        os.chmod(directory, 0o700 if private_mode else 0o755)
+        file_mode = 0o400 if private_mode else 0o444
         for name, data in sorted(material.items()):
             target = directory / name
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(data)
-            os.chmod(target, 0o444)
+            os.chmod(target, file_mode)
         if bootstrap:
             target = directory / _BOOTSTRAP_NAME
             target.write_bytes(_BOOTSTRAP_SOURCE.encode("utf-8"))
-            os.chmod(target, 0o444)
+            os.chmod(target, file_mode)
+        if split_bootstrap:
+            target = directory / SPLIT_BOOTSTRAP_NAME
+            target.write_bytes(SPLIT_BOOTSTRAP_SOURCE.encode("utf-8"))
+            os.chmod(target, file_mode)
+            # Evaluator-owned pytest configuration: split custody pins
+            # rootdir and conftest discovery here, never in the workspace.
+            target = directory / SPLIT_INI_NAME
+            target.write_bytes(SPLIT_INI_SOURCE)
+            os.chmod(target, file_mode)
     except BaseException:
         shutil.rmtree(directory, ignore_errors=True)
         raise
@@ -325,7 +358,7 @@ def private_command_spec(
         return arg
 
     argv = tuple(rewrite(arg) for arg in spec.argv)
-    if bootstrap and _PYTHON_COMMAND.fullmatch(Path(argv[0]).name):
+    if bootstrap and is_python_command(argv):
         argv = (
             argv[0],
             prefix.rstrip("/") + "/" + _BOOTSTRAP_NAME,
@@ -353,6 +386,21 @@ def private_material_modified(
     if bootstrap.exists():
         try:
             if bootstrap.read_bytes() != _BOOTSTRAP_SOURCE.encode("utf-8"):
+                return True
+        except OSError:
+            return True
+    split_bootstrap = root / SPLIT_BOOTSTRAP_NAME
+    if split_bootstrap.exists():
+        try:
+            if split_bootstrap.read_bytes() != SPLIT_BOOTSTRAP_SOURCE.encode(
+                    "utf-8"):
+                return True
+        except OSError:
+            return True
+    split_ini = root / SPLIT_INI_NAME
+    if split_ini.exists():
+        try:
+            if split_ini.read_bytes() != SPLIT_INI_SOURCE:
                 return True
         except OSError:
             return True
@@ -451,12 +499,14 @@ class WorkspaceExecutor(Protocol):
     """Lifecycle for an isolated disposable task workspace."""
 
     supports_private_material: bool
+    supports_split_custody: bool
 
     def prepare(self, base_dir: str | Path, *, label: str = "task") -> Workspace: ...
 
     def run(
         self, workspace: Workspace, spec: CommandSpec, *,
         private_files: Mapping[str, bytes] | None = None,
+        split_custody: bool = False,
     ) -> ExecutionReceiptV1: ...
 
     def destroy(self, workspace: Workspace) -> None: ...
@@ -610,6 +660,11 @@ class LocalSubprocessExecutor:
         return self._production
 
     @property
+    def supports_split_custody(self) -> bool:
+        """Split custody needs a kernel-enforced read denial for the worker."""
+        return bool(self._seatbelt)
+
+    @property
     def network_isolation(self) -> str:
         return "seatbelt_denied" if self._seatbelt else "not_enforced"
 
@@ -638,6 +693,7 @@ class LocalSubprocessExecutor:
     def run(
         self, workspace: Workspace, spec: CommandSpec, *,
         private_files: Mapping[str, bytes] | None = None,
+        split_custody: bool = False,
     ) -> ExecutionReceiptV1:
         if not isinstance(spec, CommandSpec):
             raise ContractError("spec must be a CommandSpec")
@@ -647,19 +703,68 @@ class LocalSubprocessExecutor:
             # validated. This backend is explicitly not that — no flag or
             # attestation can qualify it.
             raise RunnerError("local_backend_not_production_qualified")
+        if split_custody and not private_files:
+            raise ContractError("split custody requires private material")
+        if split_custody and not self._seatbelt:
+            # Without a kernel read denial the worker could read the
+            # private directory, so the split would be a rename, not a
+            # boundary.
+            raise RunnerError("split_custody_unavailable")
         with self._registry.execution(
                 workspace.workspace_id, workspace.path,
                 executor_identity=workspace.executor_identity) as record:
             material = None
+            parent_sock = child_sock = None
+            worker = None
+            worker_id = None
             try:
-                if private_files:
+                if split_custody:
                     material = stage_private_material(
-                        self.root, private_files, bootstrap=True)
-                    spec = private_command_spec(
+                        self.root, private_files, private_mode=True,
+                        split_bootstrap=True)
+                    parent_sock, child_sock = socket.socketpair()
+                    worker, worker_markers = self._start_split_worker(
+                        record, child_sock, material, spec)
+                    # The worker executes submitted code, so it belongs to
+                    # the same kill switch as the acceptance process: a
+                    # shutdown or a workspace destruction must reach it.
+                    worker_id = "split-" + secrets.token_hex(8)
+                    with self._lock:
+                        self._live[worker_id] = worker
+                        self._live_ws[worker_id] = record.workspace_id
+                    child_sock.close()
+                    child_sock = None
+                    base = private_command_spec(
                         spec, names=private_files, prefix=str(material),
-                        workspace=str(record.path))
-                receipt = self._run_workspace(
-                    record, spec, private=material is not None)
+                        workspace=str(record.path), bootstrap=False)
+                    base = replace(base, argv=split_pytest_argv(
+                        base.argv, private_dir=str(material)))
+                    spec = replace(base, argv=split_bootstrap_argv(
+                        base.argv,
+                        bootstrap_path=str(material / SPLIT_BOOTSTRAP_NAME),
+                        transport=("--fd", str(parent_sock.fileno())),
+                        workspace=str(record.path)))
+                    receipt = self._run_workspace(
+                        record, spec, private=True,
+                        pass_fds=(parent_sock.fileno(),),
+                        extra_markers=(MARKER_SPLIT, MARKER_SEATBELT,
+                                       *worker_markers))
+                    # A harness failure is not a verdict about the
+                    # submission; the bootstrap reports it by exit status.
+                    marker = split_failure_marker(receipt.exit_status)
+                    if marker is not None:
+                        receipt = replace(
+                            receipt,
+                            security_errors=receipt.security_errors + (marker,))
+                else:
+                    if private_files:
+                        material = stage_private_material(
+                            self.root, private_files, bootstrap=True)
+                        spec = private_command_spec(
+                            spec, names=private_files, prefix=str(material),
+                            workspace=str(record.path))
+                    receipt = self._run_workspace(
+                        record, spec, private=material is not None)
                 if material is not None and private_material_modified(
                         material, private_files):
                     # The local backend runs the submission as the same OS
@@ -667,11 +772,75 @@ class LocalSubprocessExecutor:
                     receipt = mark_private_material_modified(receipt)
                 return receipt
             finally:
+                if worker is not None:
+                    if worker_id is not None:
+                        with self._lock:
+                            self._live.pop(worker_id, None)
+                            self._live_ws.pop(worker_id, None)
+                    self._kill_group(worker)
+                    try:
+                        worker.wait(timeout=10)
+                    except subprocess.TimeoutExpired:
+                        worker.kill()
+                        worker.wait(timeout=10)
+                for sock in (parent_sock, child_sock):
+                    if sock is not None:
+                        try:
+                            sock.close()
+                        except OSError:
+                            pass
                 if material is not None:
                     shutil.rmtree(material, ignore_errors=True)
 
+    def _start_split_worker(
+        self, record, child_sock: socket.socket, material: Path,
+        spec: CommandSpec,
+    ) -> tuple[subprocess.Popen, list[str]]:
+        """Start the restricted worker under a read denial for ``material``.
+
+        The worker imports submitted code, so its seatbelt profile denies
+        ``file-read*`` on the private directory while still allowing the
+        workspace and scratch tree. It is a separate process but the same
+        UID; the kernel denial, not the UID, is the boundary.
+        """
+        scratch = record.path / ".scratch"
+        scratch.mkdir(exist_ok=True)
+        profile = _seatbelt_profile(
+            record.path, scratch, (*self.protected_paths, material))
+        if profile is None:
+            raise RunnerError("split_custody_unavailable")
+        argv = [
+            self._resolve_executable(sys.executable),
+            *worker_argv(("--fd", str(child_sock.fileno())), str(record.path)),
+        ]
+        argv = [self._seatbelt, "-p", profile, *argv]
+        env = _minimal_env(record.path)
+        env.update(spec.env)
+        markers: list[str] = []
+        preexec = None
+        if resource is not None and hasattr(os, "setsid"):
+            preexec = self._make_preexec(spec.limits, markers)
+        try:
+            proc = subprocess.Popen(
+                argv,
+                cwd=str(record.path),
+                env=env,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=(os.name == "posix"),
+                preexec_fn=preexec,
+                pass_fds=(child_sock.fileno(),),
+            )
+        except OSError as exc:
+            raise RunnerError(
+                f"split_custody_worker_start_failed:{exc}") from exc
+        return proc, markers
+
     def _run_workspace(
         self, record, spec: CommandSpec, *, private: bool = False,
+        pass_fds: tuple[int, ...] = (),
+        extra_markers: tuple[str, ...] = (),
     ) -> ExecutionReceiptV1:
         before = scan_tree(record.path)
         if before.external_symlinks:
@@ -683,6 +852,7 @@ class LocalSubprocessExecutor:
         security_errors: list[str] = ["isolation:unverified_local"]
         if private:
             security_errors.append("evaluation:private_material_separated")
+        security_errors.extend(extra_markers)
         security_errors.append(
             "network:seatbelt_denied" if self._seatbelt
             else "network:not_enforced")
@@ -732,6 +902,7 @@ class LocalSubprocessExecutor:
             stderr=subprocess.PIPE,
             start_new_session=(os.name == "posix"),
             preexec_fn=preexec,
+            pass_fds=pass_fds,
         )
         with self._lock:
             self._live[execution_id] = proc

@@ -64,6 +64,7 @@ from .runner import (
     normalize_private_files,
     tree_digest,
 )
+from .split_harness import MARKER_SPLIT, is_python_command
 from ..vault_storage import (
     assert_private_acl,
     create_private_file,
@@ -237,6 +238,7 @@ class RegisteredTask:
     suite_commitment: str
     statement_digest: str | None = None
     failure_class: str | None = None
+    custody: str = "shared"
 
 
 class OutcomeVerifier:
@@ -315,9 +317,18 @@ class OutcomeVerifier:
         base_commit: str | None = None,
         statement_digest: str | None = None,
         failure_class: str | None = None,
+        custody: str = "shared",
     ) -> RegisteredTask:
-        """Record evaluator-private acceptance material for a task identity."""
+        """Record evaluator-private acceptance material for a task identity.
+
+        ``custody="split"`` runs the acceptance command in the evaluator's
+        process and reaches submitted code only through an out-of-process
+        proxy, so a submission cannot read the tests it is graded against.
+        The backend must support it; evaluation fails closed otherwise.
+        """
         require_permission(actor_role, "outcome:evaluate")
+        if custody not in ("shared", "split"):
+            raise ContractError("custody must be 'shared' or 'split'")
         if statement_digest is not None and not (
             isinstance(statement_digest, str)
             and re.fullmatch(r"[0-9a-f]{64}", statement_digest)
@@ -335,6 +346,15 @@ class OutcomeVerifier:
         # are enforced here, so an over-bound registration fails at
         # registration instead of surfacing as an infrastructure error.
         material = normalize_private_files(dict(files or {}))
+        if custody == "split" and not material:
+            raise ContractError(
+                "split custody requires registered acceptance files")
+        if custody == "split" and not is_python_command(command.argv):
+            # The split harness is a Python bootstrap. Refusing here keeps
+            # a non-Python command from being handed the bootstrap and
+            # scored as if the submission had failed.
+            raise ContractError(
+                "split custody requires a Python acceptance command")
         commitment_payload = {
             "task_id": task_id,
             "criterion_version": criterion_version,
@@ -346,6 +366,10 @@ class OutcomeVerifier:
             # Bound into the commitment only when declared, so existing
             # registrations keep their historical commitments.
             commitment_payload["failure_class"] = failure_class
+        if custody != "shared":
+            # Likewise bound only when declared: a shared-custody
+            # registration keeps the commitment it already had.
+            commitment_payload["custody"] = custody
         commitment = canonical_digest("test_suite", 1, commitment_payload)
         task = RegisteredTask(
             task_id=task_id,
@@ -356,12 +380,14 @@ class OutcomeVerifier:
             suite_commitment=commitment,
             statement_digest=statement_digest,
             failure_class=failure_class,
+            custody=custody,
         )
         existing = self._tasks.get(task_id)
         if existing is not None:
             if (existing.suite_commitment != task.suite_commitment or
                     existing.statement_digest != task.statement_digest or
-                    existing.failure_class != task.failure_class):
+                    existing.failure_class != task.failure_class or
+                    existing.custody != task.custody):
                 raise EvaluationRejected("task_registration_conflict", task_id)
             return existing
         self._tasks[task_id] = task
@@ -472,6 +498,14 @@ class OutcomeVerifier:
             raise EvaluationRejected(
                 "evaluator_bootstrap_error", bootstrap.reason)
 
+        split = registration.custody == "split"
+        if split and not getattr(self.executor, "supports_split_custody", False):
+            # A split task must never silently fall back to shared custody:
+            # that is the configuration the registration was meant to avoid.
+            self.last_outcome_class = EVALUATOR_BOOTSTRAP_ERROR
+            raise EvaluationRejected(
+                "split_custody_unavailable",
+                type(self.executor).__name__)
         argv = registration.argv
         if len(argv) >= 3 and argv[1] == "-m" and argv[2] == "pytest":
             argv = self.runtime_profile.pytest_argv(argv)
@@ -491,12 +525,23 @@ class OutcomeVerifier:
             spec = CommandSpec(
                 argv=argv, limits=self.limits,
                 env=self.runtime_profile.environment())
-            if separated:
+            if split:
+                receipt_exec = self.executor.run(
+                    workspace, spec, private_files=private_files,
+                    split_custody=True)
+            elif separated:
                 receipt_exec = self.executor.run(
                     workspace, spec, private_files=private_files)
             else:
                 receipt_exec = self.executor.run(workspace, spec)
         except Exception as exc:
+            if str(exc).startswith("split_custody_"):
+                # The harness itself could not be established; the exit
+                # status says nothing about the submission.
+                self.last_outcome_class = EVALUATOR_BOOTSTRAP_ERROR
+                raise EvaluationRejected(
+                    "split_custody_unavailable",
+                    f"{type(exc).__name__}: {exc}") from exc
             self.last_outcome_class = INFRASTRUCTURE_ERROR
             raise EvaluationRejected(
                 "evaluator_infrastructure_error",
@@ -509,6 +554,12 @@ class OutcomeVerifier:
             except Exception:
                 pass
 
+        if split and MARKER_SPLIT not in (receipt_exec.security_errors or ()):
+            # The executor did not record the split it was asked for, so
+            # the tests may have run beside the submission.
+            self.last_outcome_class = SANDBOX_FAILURE
+            raise EvaluationRejected("split_custody_unverified",
+                                     receipt_exec.execution_id)
         stderr_tail = ""
         output = getattr(self.executor, "output", None)
         if callable(output):

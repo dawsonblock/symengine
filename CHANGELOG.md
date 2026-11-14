@@ -1,5 +1,62 @@
 # Changelog
 
+## 2026-11-13 — Process-split acceptance custody (post-seal)
+
+Closes the read path left by private-material separation: the acceptance
+runner and the submitted code shared one process, so a submission could
+read the tests it was graded against. Not a feature release; the sealed
+v3.3.8 archive still describes the pre-repair tree.
+
+- `register_task(custody="split")` runs the acceptance command in the
+  evaluator's process and reaches submitted code only through an
+  out-of-process proxy (`src/sis/v3/split_harness.py`). A meta-path
+  finder replaces each workspace module — including a submission laid
+  out as a package and its submodules — with a proxy whose attribute
+  reads and calls are marshalled over a Unix socket.
+- The worker runs under a separate principal that cannot read the
+  private directory: a seatbelt profile with
+  `(deny file-read* (subpath <private>))` on the local backend
+  (`split:custody:seatbelt_read_denied`), or a second numeric UID
+  through `docker exec --user` on the Docker backend
+  (`split:custody:separate_uid`).
+- The wire codec is JSON over a closed type set. Submission-produced
+  bytes are never unpickled in the evaluator process; an unsupported
+  argument or return type fails the call instead of widening the codec,
+  and a worker can only raise ordinary exceptions there (never
+  `SystemExit` or `KeyboardInterrupt`).
+- Split custody pins pytest configuration to the private directory
+  (`-c`, `--confcutdir`, `-p no:cacheprovider`). Without that, pytest
+  would read `pytest.ini`, `pyproject.toml` and `conftest.py` from the
+  graded workspace, and a submission could have its own plugin imported
+  into the process that holds the tests.
+- A harness failure is never a verdict about the submission. The
+  bootstrap pings the worker before running the command and exits with a
+  dedicated status if it is missing or dies; the executor maps that
+  status to `sandbox:split_custody_unavailable` or
+  `sandbox:split_worker_lost`, so the outcome is a sandbox failure
+  rather than `TASK_FAIL`.
+- Fail-closed: a split task on a backend without the capability is
+  rejected (`split_custody_unavailable`, an evaluator bootstrap error);
+  a receipt that does not carry `evaluation:process_split` is rejected
+  (`split_custody_unverified`, a sandbox failure); a non-Python
+  acceptance command is refused at registration instead of being handed
+  the Python bootstrap. `LinuxRootlessWorker` declares the capability
+  false because bwrap maps the caller's UID into the namespace.
+- Docker verifies the container copy of the private material, not the
+  host staging directory the worker never sees
+  (`sandbox:private_material_modified`).
+- `custody` is bound into the suite commitment only when declared, so
+  existing shared-custody registrations keep their historical
+  commitments.
+
+Limits: only primitives, callables and composites of primitives cross
+the socket, so a test that passes an arbitrary object or expects a
+non-primitive return value fails the call rather than widening the
+codec. The local backend shares a UID with the worker, so the seatbelt
+read denial — not the UID — is the boundary. The Docker split is covered
+by unit tests against a Docker CLI double; it is not live-qualified on
+this host. Regressions: `tests/v3/test_split_custody.py`.
+
 ## 2026-11-13 — Gate 2 containment repairs (post-seal)
 
 Security/correctness repair of the Docker evaluator boundary. This is not
@@ -75,12 +132,13 @@ patch symlink escape and the worker defaults. Full suite: 1452 passed,
 13 skipped after the repaired tree is re-sealed with
 `tools/package_release.py`.
 
-Limits: same-process, same-principal test runners can still read a
-private path they deliberately enumerate; process-split test custody is
-not implemented. The local backend's material is mode-protected, not
-OS-read-only, so tampering is detected after the fact rather than
-prevented. Regenerate the sealed archive with `tools/package_release.py`
-before a release claim.
+Limits: at the time of that repair, same-process, same-principal test
+runners could still read a private path they deliberately enumerate.
+That read path is closed by `custody="split"` in the entry above. The
+local backend's material is mode-protected, not OS-read-only, so
+tampering is detected after the fact rather than prevented. Regenerate
+the sealed archive with `tools/package_release.py` before a release
+claim.
 
 ## 2026-11-13 — Gate 2 sandbox qualification: live containment and signed attestation
 

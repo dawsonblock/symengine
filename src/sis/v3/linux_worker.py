@@ -261,6 +261,9 @@ class LinuxRootlessWorker:
     """Bubblewrap-based rootless worker; Linux only, fails closed elsewhere."""
 
     supports_private_material = True
+    #: Split custody needs a second OS principal; bwrap maps the caller's
+    #: UID into the namespace, so it cannot supply one.
+    supports_split_custody = False
 
     def __init__(self, root: str | Path, *,
                  config: LinuxWorkerConfig | None = None) -> None:
@@ -344,9 +347,14 @@ class LinuxRootlessWorker:
     def run(
         self, workspace: Workspace, spec: CommandSpec, *,
         private_files: Mapping[str, bytes] | None = None,
+        split_custody: bool = False,
     ) -> ExecutionReceiptV1:
         if not isinstance(spec, CommandSpec):
             raise ContractError("spec must be a CommandSpec")
+        if split_custody:
+            # bwrap maps the caller's UID into the namespace, so this
+            # backend has no second principal to run the worker under.
+            raise RunnerError("split_custody_unavailable")
         with self._registry.execution(
                 workspace.workspace_id, workspace.path,
                 executor_identity=workspace.executor_identity) as record:
