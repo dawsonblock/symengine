@@ -79,7 +79,7 @@ class SkillHoldoutCLITests(unittest.TestCase):
     def _run(self, *args):
         return subprocess.run(
             [sys.executable, str(REPO / "tools" / "skill_holdout.py"),
-             *args],
+             "--allow-local-executor", *args],
             capture_output=True, text=True, env=self._env(), cwd=REPO,
             timeout=300)
 

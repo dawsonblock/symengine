@@ -28,12 +28,10 @@ from sis.v3.checkpoints import (AuthorityStateVerifier, CheckpointConflict,
 from sis.v3.composition import _conflicts
 from sis.v3.control_plane import (SCHEMA_VERSION, ControlPlaneError,
                                   SqliteControlPlane)
-from sis.v3.evaluation_runtime import (SANDBOX_FAILURE, TASK_PASS,
-                                       classify_execution)
+from sis.v3.evaluation_runtime import (SANDBOX_FAILURE, classify_execution)
 from sis.v3.evidence_custody import EvidenceCustodyStore
 from sis.v3.learning_qualification import newcombe_difference_interval
 from sis.v3 import signatures
-from sis.v3.execution_identity import sign_execution_identity
 from sis.v3.serving import GovernedServingGateway
 from sis.v3.runner import (CommandSpec, LocalSubprocessExecutor,
                            ResourceLimits, RunnerError)

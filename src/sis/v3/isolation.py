@@ -10,8 +10,10 @@ workspace input tree, and the exact execution receipt it describes.
 ``verify_isolation_attestation`` re-checks every binding against the
 receipt at hand: an attestation issued for another command, worker, tree,
 nonce, policy or receipt does not verify, and neither does an expired or
-untrusted signature. Callers feed the boolean verdict to
-``classify_execution(production=True, isolation_attested=...)`` — the
+untrusted signature. Production classification goes through
+``sis.v3.evaluation_runtime.classify_production_execution``, which takes
+the attestation itself; ``classify_execution`` no longer accepts a
+caller-supplied verdict, and ``production=True`` always fails closed. The
 receipt's own markers are never consulted as evidence of isolation.
 
 The ``nonce`` is a uniqueness tag bound into the signed body, not a
@@ -72,6 +74,7 @@ class ProductionIsolationPolicy:
     required_policy_digest: str
     required_image_digest: str
     required_properties: frozenset[str]
+    revoked_keys: frozenset[str] = frozenset()
     require_expiry: bool = True
     max_attestation_age_seconds: int | None = 3600
 
@@ -109,6 +112,10 @@ class ProductionIsolationPolicy:
             if not isinstance(prop, str) or not prop:
                 raise ContractError(
                     "required_properties entries must be non-empty strings")
+        if not isinstance(self.revoked_keys, frozenset) or not all(
+                isinstance(key, str) and key for key in self.revoked_keys):
+            raise ContractError(
+                "revoked_keys must be a frozenset of non-empty strings")
         if type(self.require_expiry) is not bool:
             raise ContractError("require_expiry must be boolean")
         if self.max_attestation_age_seconds is not None and (
@@ -130,6 +137,7 @@ class ProductionIsolationPolicy:
             "required_policy_digest": self.required_policy_digest,
             "required_image_digest": self.required_image_digest,
             "required_properties": sorted(self.required_properties),
+            "revoked_keys": sorted(self.revoked_keys),
             "require_expiry": self.require_expiry,
             "max_attestation_age_seconds": self.max_attestation_age_seconds,
         })
@@ -244,6 +252,8 @@ def verify_production_isolation(
     def reject(reason: str) -> IsolationVerification:
         return IsolationVerification(ok=False, reason=reason, **base)
 
+    if att.signer_key_id in policy.revoked_keys:
+        return reject("signer_revoked")
     public_hex = policy.trusted_keys.get(att.signer_key_id)
     if public_hex is None:
         return reject("untrusted_signer")

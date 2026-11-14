@@ -83,10 +83,17 @@ class SearchBudget:
 
     ``max_candidates`` bounds unique observational candidates yielded.
     ``max_signature_checks`` bounds the actual comparison work, which
-    candidate counting alone does not. ``max_wall_seconds`` and
-    ``max_memory_bytes`` bound resources; ``None`` disables the memory
-    check, and enabling it starts ``tracemalloc`` for the duration of the
-    search (a measurable overhead, so it is opt-in).
+    candidate counting alone does not. ``max_wall_seconds`` bounds wall
+    time. ``max_memory_bytes`` is an incremental soft budget over Python
+    allocations traced from search start; ``None`` disables it. It is not
+    an OS RSS limit, does not see native-extension allocations, and is
+    sampled at resource-check points. Enabling it starts ``tracemalloc``
+    when no tracer is running; a caller-owned tracer is measured from its
+    current baseline and is never stopped by the search. If the tracer
+    disappears or restarts mid-search the cap fails closed. For an
+    OS-enforced hard bound, run the search through
+    :func:`sis.enforced_induction.run_induction_enforced`; this budget
+    remains soft and diagnostic.
     ``max_expression_depth`` excludes expressions deeper than the
     declared nesting level.
     """
@@ -129,7 +136,19 @@ class SearchBudget:
 
 @dataclass
 class SearchState:
-    """Mutable budget consumption shared across refinement rounds."""
+    """Mutable budget consumption shared across refinement rounds.
+
+    Memory accounting is an incremental soft budget over Python
+    allocations traced from ``start()``: ``observed_peak_bytes`` is the
+    largest sampled growth above the baseline, not process RSS. It cannot
+    see native-extension allocations or enforce a hard OS limit; use a
+    subprocess/cgroup/microVM limit for that. A caller-owned tracer is
+    never stopped; a tracer this search started is stopped by ``close()``.
+
+    The budget fails closed on lost measurement: if the tracer stops or
+    is replaced while the search runs, growth is unmeasurable and the
+    search reports ``resource_exhausted`` rather than claiming success.
+    """
 
     budget: SearchBudget
     started: float = field(default_factory=time.monotonic)
@@ -137,26 +156,76 @@ class SearchState:
     candidates: int = 0
     depth_excluded: int = 0
     limits_hit: list[str] = field(default_factory=list)
-    tracing_started: bool = False
+    memory_check_enabled: bool = False
+    owns_tracer: bool = False
+    baseline_traced_bytes: int = 0
+    observed_peak_bytes: int = 0
+    closed: bool = False
+    _last_peak_bytes: int = 0
 
     def hit(self, reason: str) -> None:
         if reason not in self.limits_hit:
             self.limits_hit.append(reason)
 
+    def start(self) -> None:
+        """Begin accounting; enable the memory cap regardless of tracer owner."""
+        self.started = time.monotonic()
+        self.closed = False
+        if self.budget.max_memory_bytes is None:
+            return
+        self.memory_check_enabled = True
+        if tracemalloc.is_tracing():
+            # A caller-owned tracer: measure growth from here, never
+            # reset or stop the caller's tracer.
+            current, peak = tracemalloc.get_traced_memory()
+            self.baseline_traced_bytes = current
+        else:
+            tracemalloc.start()
+            self.owns_tracer = True
+            self.baseline_traced_bytes = 0
+            current, peak = tracemalloc.get_traced_memory()
+        self.observed_peak_bytes = 0
+        self._last_peak_bytes = peak
+
+    def close(self) -> None:
+        """Stop tracing only when this search started it."""
+        self.closed = True
+        if self.owns_tracer:
+            tracemalloc.stop()
+            self.owns_tracer = False
+
     def spend_signature(self) -> bool:
-        self.signature_checks += 1
-        if self.signature_checks > self.budget.max_signature_checks:
+        if self.signature_checks >= self.budget.max_signature_checks:
             self.hit("max_signature_checks")
             return False
+        self.signature_checks += 1
         return True
 
     def check_resources(self) -> bool:
         if time.monotonic() - self.started > self.budget.max_wall_seconds:
             self.hit("max_wall_seconds")
             return False
-        if self.tracing_started:
-            current, _peak = tracemalloc.get_traced_memory()
-            if current > self.budget.max_memory_bytes:
+        if self.memory_check_enabled and not self.closed:
+            if not tracemalloc.is_tracing():
+                # Another component stopped the tracer this budget
+                # depends on. Growth is unmeasurable from here, so the
+                # cap cannot be shown to hold: fail closed instead of
+                # silently reporting success.
+                self.hit("memory_tracer_lost")
+                return False
+            current, peak = tracemalloc.get_traced_memory()
+            if peak < self._last_peak_bytes:
+                # A tracer's peak never shrinks while it runs, so a drop
+                # means the tracer was stopped and restarted (or its peak
+                # was reset) mid-search: the baseline no longer refers to
+                # this measurement.
+                self.hit("memory_tracer_restarted")
+                return False
+            self._last_peak_bytes = peak
+            growth = max(0, current - self.baseline_traced_bytes)
+            if growth > self.observed_peak_bytes:
+                self.observed_peak_bytes = growth
+            if growth > self.budget.max_memory_bytes:
                 self.hit("max_memory_bytes")
                 return False
         return True
@@ -164,7 +233,9 @@ class SearchState:
     @property
     def outcome(self) -> str:
         if any(reason in self.limits_hit
-               for reason in ("max_wall_seconds", "max_memory_bytes")):
+               for reason in ("max_wall_seconds", "max_memory_bytes",
+                              "memory_tracer_lost",
+                              "memory_tracer_restarted")):
             return "resource_exhausted"
         return "truncated" if self.limits_hit else "completed"
 
@@ -178,9 +249,15 @@ def candidates(train, max_candidates=12000, observed_inputs=(), stats=None,
     evaluation signatures over the training inputs and only emits the
     combinations guaranteed to fit, plus constant completions for
     constant offsets/quotients. Relevant mids are visited first by
-    residual-variance then complexity ranking; the full search space
-    remains covered (dedup only removes observational equivalents and
-    AST duplicates).
+    residual-variance then complexity ranking. With more than twelve
+    numeric features the depth-1 binary space exceeds the candidate
+    budget, so binary candidates are ranked the same way and a
+    top-ranked mid with a constant residual is offered as its depth-2
+    completion before the raw enumeration. The completion must fit
+    training and development to stop the search; otherwise enumeration
+    continues. Dedup only removes observational equivalents and AST
+    duplicates; an early stop means a rule already fit training and
+    development, not that the space was exhausted.
 
     ``dev`` is the development partition that decides whether a shallow
     rule is suitable. Passing it is what makes early stopping sound: a
@@ -289,6 +366,7 @@ def candidates(train, max_candidates=12000, observed_inputs=(), stats=None,
             for op in ("upper", "lower", "reverse"):
                 yield {"op": op, "arg": leaf}
         terminals = numeric + [{"op": "const", "value": v} for v in (-2, -1, 0, 1, 2, 3)]
+        binary = []
         for op in ("add", "sub", "mul", "min", "max", "absdiff"):
             for a in range(len(terminals)):
                 for b in range(len(terminals)):
@@ -296,7 +374,44 @@ def candidates(train, max_candidates=12000, observed_inputs=(), stats=None,
                         continue
                     if op in ("add", "mul", "min", "max", "absdiff") and a > b:
                         continue
-                    yield {"op": op, "args": [terminals[a], terminals[b]]}
+                    binary.append({"op": op, "args": [terminals[a], terminals[b]]})
+        if len(numeric) > 12 and all(type(o) is int for o in outputs):
+            # With many features the binary space exceeds the candidate
+            # budget, so enumeration order decides what is reached at all.
+            # Residual variance is a cheap relevance signal: the pair that
+            # explains most of the output is visited first. Coverage is
+            # unchanged; only the order changes.
+            def binary_score(ast):
+                sig = cheap_signature(ast)[:n_train]
+                if any(s is _EVAL_ERR or s[0] != "int" for s in sig):
+                    return float("inf")
+                res = [o - s[1] for o, s in zip(outputs, sig)]
+                mean = sum(res) / len(res)
+                return sum((v - mean) ** 2 for v in res) / len(res)
+
+            binary.sort(key=lambda ast: (
+                binary_score(ast), cost(ast), fingerprint(ast)))
+            # A top-ranked mid whose residual is constant is one constant
+            # away from a depth-2 rule. Offer that completion before the
+            # raw enumeration so a large feature space does not spend the
+            # whole candidate budget before stage 2 can reach it. The
+            # acceptance test is the same one the search already applies:
+            # the completed rule must fit training and development.
+            for ast in binary[:8]:
+                sig = cheap_signature(ast)[:n_train]
+                if any(s is _EVAL_ERR or s[0] != "int" for s in sig):
+                    continue
+                res = tuple(o - s[1] for o, s in zip(outputs, sig))
+                if (len(set(res)) == 1 and res[0] != 0
+                        and abs(res[0]) <= 1_000_000_000):
+                    completed = {"op": "add", "args": [
+                        ast, {"op": "const", "value": res[0]}]}
+                    yield completed
+                    if (_matches(completed, train, outputs)
+                            and _matches(completed, dev)):
+                        return
+        for ast in binary:
+            yield ast
         for a in range(len(leaves)):
             for b in range(a + 1, len(leaves)):
                 if type(leaves[a][1]) == type(leaves[b][1]):
@@ -583,9 +698,7 @@ def induce(train, validation=None, *, namespace="default", max_candidates=12000,
     probe_list = list(generated_probes(original_train[0]["inputs"]))
     observed = [x["inputs"] for x in dev_examples] + probe_list
     state = SearchState(budget)
-    if budget.max_memory_bytes is not None and not tracemalloc.is_tracing():
-        tracemalloc.start()
-        state.tracing_started = True
+    state.start()
     try:
         examples = list(original_train)
         rounds = 0
@@ -666,8 +779,7 @@ def induce(train, validation=None, *, namespace="default", max_candidates=12000,
                     break
             break
     finally:
-        if state.tracing_started:
-            tracemalloc.stop()
+        state.close()
 
     best = reported["best"]
     ambiguous = reported["ambiguous"]
@@ -720,6 +832,9 @@ def induce(train, validation=None, *, namespace="default", max_candidates=12000,
         "search_truncated": truncated,
         "search_outcome": outcome,
         "limits_hit": list(state.limits_hit),
+        "observed_peak_bytes": state.observed_peak_bytes,
+        "memory_limit_source": (
+            "tracemalloc_incremental" if state.memory_check_enabled else None),
         "budget": budget.as_dict(),
         "refinement_rounds": rounds,
         "counterexamples_added": counterexamples_added,

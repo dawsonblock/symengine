@@ -19,8 +19,10 @@ The contracts cover:
   payload digest, and bounded payload. `agent_event` represents a typed SDK
   event that is not safely classified as a tool call, edit, or completion.
 - `PatchProposalV1`: source blob, normalized relative target path, exact span
-  fingerprint, diff digest, purpose, procedure references, and evidence refs.
-  It describes a proposal; it is not a write command.
+  fingerprint, span offset and length, full patched-content digest, diff digest,
+  purpose, procedure references, and evidence refs. The patched digest and span
+  make verification replay the one permitted replacement instead of trusting
+  the supplied output bytes. It describes a proposal; it is not a write command.
 - `ExecutionReceiptV1`: worker/environment identity, before/after tree hashes,
   command specification, exit state, bounded resource counters, and output
   hashes.

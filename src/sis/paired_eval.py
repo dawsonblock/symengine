@@ -8,7 +8,7 @@ import json
 import math
 import time
 from .errors import InvalidInput
-from .validation import canonical, digest, check_examples, input_schema
+from .validation import canonical, digest, check_examples
 from .qualification import wilson_lower
 
 SYSTEM_PROMPT = (

@@ -13,7 +13,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from sis.v3 import signatures
-from sis.v3.contracts import canonical_json, loads_json
+from sis.v3.contracts import canonical_json
 from sis.v3.procedures import ProcedureStore
 
 import tools.migrate_authority as mig

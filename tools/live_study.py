@@ -195,7 +195,11 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("-o", "--output", type=Path, required=True)
     ap.add_argument("--wall", type=float, default=420)
+    ap.add_argument("--allow-local-executor", action="store_true",
+                    help="local execution is development-only")
     args = ap.parse_args()
+    if not args.allow_local_executor:
+        ap.error("local executor requires --allow-local-executor")
 
     root = Path(tempfile.mkdtemp(prefix="sis-live-study-"))
     registry, reg_seed = make_registry()
@@ -209,6 +213,7 @@ def main() -> int:
         db, operator_token_digest=operator_token_digest(TEST_TOKEN),
         trusted_evaluator_keys={eval_key: eval_pub.hex()})
     receipt_src = signed_receipt(eval_seed, eval_key, task_id="t-src",
+                                 failure_class=sig,
                                  repo_digest=src_tree)
     receipt_table = {receipt_src.digest: receipt_src}
     controller._resolve_receipt = receipt_table.__getitem__
@@ -247,6 +252,7 @@ def main() -> int:
             status="candidate", expires_at=None)
         seed(db, proc)
         receipt = signed_receipt(eval_seed, eval_key, task_id="r-" + name,
+                                 failure_class=sig,
                                  repo_digest=repo_tree)
         receipt_table[receipt.digest] = receipt
         drive(db, controller, proc.procedure_id, "qualified",

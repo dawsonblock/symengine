@@ -16,7 +16,6 @@ sys.path.insert(0, str(REPO / "tools"))
 sys.path.insert(0, str(REPO / "src"))
 sys.path.insert(0, str(REPO))
 
-import governed_campaign as gc  # noqa: E402
 import governed_live_campaign as glc  # noqa: E402
 
 # Schema-faithful adapter: (module, keyword, good_source) per task name.
@@ -59,7 +58,8 @@ class LiveCampaignWiringTests(unittest.TestCase):
             with tempfile.TemporaryDirectory() as temp:
                 argv = sys.argv
                 sys.argv = ["governed_live_campaign.py",
-                            "-o", temp, "--wall", "60"]
+                            "-o", temp, "--wall", "60",
+                            "--allow-local-executor"]
                 try:
                     rc = glc.main()
                 finally:

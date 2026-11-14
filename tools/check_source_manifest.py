@@ -20,6 +20,9 @@ SKIP_DIRS = {"__pycache__", ".git", ".venv", "dist", "build",
 SKIP_EXTS = {".pyc", ".pyo", ".sqlite3", ".db", ".log",
              ".sqlite3-wal", ".sqlite3-shm", ".sqlite3-journal",
              ".db-wal", ".db-shm", ".db-journal"}
+# Coverage state is produced by test runs, not shipped source. It must never
+# enter the release inventory, or a fresh checkout cannot reproduce the seal.
+SKIP_NAMES = {".coverage"}
 # `release/` holds out-of-band provenance: the archive, its checksums, and the
 # manifest that describes the archive. It must never be inventoried *into* the
 # archive, or every rebuild would embed the previous release (and its stale
@@ -49,6 +52,8 @@ def _valid_manifest(document):
 def _included(relative):
     path = PurePosixPath(relative)
     return (path.name not in {"SOURCE_SHA256.json", "RELEASE_SHA256.json"}
+            and path.name not in SKIP_NAMES
+            and not path.name.startswith(".coverage.")
             and not (path.parts and path.parts[0] in OUT_OF_BAND_DIRS)
             and relative not in OUT_OF_BAND_FILES
             and not any(part in SKIP_DIRS or part.endswith(".egg-info") for part in path.parts)

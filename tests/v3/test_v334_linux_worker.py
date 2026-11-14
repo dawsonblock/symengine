@@ -125,6 +125,18 @@ class BwrapArgvTests(unittest.TestCase):
         self.assertNotIn("/opt/sis-seccomp", argv)
         self.assertEqual(argv[argv.index("--") + 1:], list(self.spec.argv))
 
+    def test_private_material_is_bound_outside_the_workspace(self):
+        private = Path(self.temp.name) / "private"
+        private.mkdir()
+        argv = build_bwrap_argv(
+            LinuxWorkerConfig(), self.workspace, self.spec,
+            seccomp_dir=self.seccomp_dir, private_dir=private)
+        pairs = [
+            (argv[i + 1], argv[i + 2])
+            for i, item in enumerate(argv) if item == "--ro-bind"
+        ]
+        self.assertIn((str(private.resolve()), "/private"), pairs)
+
     def test_network_share_is_explicit(self):
         argv = self._argv(LinuxWorkerConfig(share_network=True))
         self.assertIn("--share-net", argv)

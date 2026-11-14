@@ -56,6 +56,22 @@ def _field_study(features, rows=9):
     return examples[:6], examples[6:]
 
 
+def _two_term_study(features, rows=9):
+    """``x[n-2] * x[n-1] + x0``: no single constant-offset completion."""
+    names = [f"x{i}" for i in range(features)]
+    examples = []
+    for i in range(rows):
+        inputs = {name: (i * 7 + j * 3) % 11 for j, name in enumerate(names)}
+        inputs[names[-2]] = i % 9 + 1
+        inputs[names[-1]] = (i * 2) % 9 + 1
+        examples.append({
+            "inputs": inputs,
+            "output": (inputs[names[-2]] * inputs[names[-1]]
+                       + inputs[names[0]]),
+        })
+    return examples[:6], examples[6:]
+
+
 class BudgetValidationTests(unittest.TestCase):
     """G4.2: every declared limit is validated before search starts."""
 
@@ -150,7 +166,7 @@ class BudgetEnforcementTests(unittest.TestCase):
         self.assertEqual(result["search_outcome"], "truncated")
         self.assertIn("max_signature_checks", result["limits_hit"])
         self.assertEqual(result["status"], "search_incomplete")
-        self.assertLessEqual(result["signature_checks"], 2)
+        self.assertLessEqual(result["signature_checks"], 1)
 
     def test_wall_clock_limit(self):
         result = induce(
@@ -241,10 +257,34 @@ class ScalabilityTests(unittest.TestCase):
                 evaluate(result["rule"], inputs),
                 (i + 1) * (i + 2) + 2)
 
-    def test_wide_budgets_truncate_instead_of_claiming_success(self):
+    def test_wide_field_search_recovers_the_rule_within_a_small_budget(self):
+        # Residual-variance ordering plus a constant-offset completion
+        # finds the relevant pair before the depth-1 space exhausts the
+        # budget, instead of stopping at a search_incomplete result.
         for features in (32, 64):
             with self.subTest(features=features):
                 train, dev = _field_study(features)
+                result = induce(
+                    train, dev=dev,
+                    budget=SearchBudget(
+                        max_candidates=500, max_signature_checks=5000))
+                self.assertIsNotNone(result["rule"], result["status"])
+                self.assertEqual(result["search_outcome"], "completed")
+                self.assertEqual(result["limits_hit"], [])
+                self.assertFalse(result["search_truncated"])
+                for i in range(6):
+                    inputs = {f"x{j}": (i + j) % 5
+                              for j in range(features)}
+                    inputs[f"x{features - 2}"] = i + 1
+                    inputs[f"x{features - 1}"] = i + 2
+                    self.assertEqual(
+                        evaluate(result["rule"], inputs),
+                        (i + 1) * (i + 2) + 2)
+
+    def test_a_truncated_search_never_claims_success(self):
+        for features in (32, 64):
+            with self.subTest(features=features):
+                train, dev = _two_term_study(features)
                 result = induce(
                     train, dev=dev,
                     budget=SearchBudget(
@@ -253,7 +293,7 @@ class ScalabilityTests(unittest.TestCase):
                 self.assertEqual(result["status"], "search_incomplete")
                 self.assertTrue(result["limits_hit"])
                 self.assertLessEqual(result["candidates_evaluated"], 500)
-                self.assertLessEqual(result["signature_checks"], 5001)
+                self.assertLessEqual(result["signature_checks"], 5000)
 
     def test_sixty_five_fields_rejected(self):
         inputs = {f"x{i}": 1 for i in range(65)}

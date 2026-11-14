@@ -241,7 +241,11 @@ def main() -> int:
     parser.add_argument("--output", "-o", type=Path,
                         default=Path("evidence/evaluation/real_agent_five_arm.json"))
     parser.add_argument("--max-tasks", type=int, default=None)
+    parser.add_argument("--allow-local-executor", action="store_true",
+                        help="local execution is development-only")
     args = parser.parse_args()
+    if not args.allow_local_executor:
+        parser.error("local executor requires --allow-local-executor")
 
     status = codex_agent_status()
     if not status["available"] or not status["authenticated"]:

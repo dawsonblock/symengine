@@ -151,7 +151,10 @@ Known defects and their fixes are recorded in
 
 | Document | Contents |
 | --- | --- |
+| [docs/INDEX.md](docs/INDEX.md) | Full documentation map: current set and historical record |
 | [docs/v3/ARCHITECTURE_V3_3.md](docs/v3/ARCHITECTURE_V3_3.md) | v3 subsystem design |
+| [docs/v3/RELEASE_PROCESS.md](docs/v3/RELEASE_PROCESS.md) | Branches, tags, seal ritual, verification |
+| [docs/v3/SANDBOX_QUALIFICATION_GATE2.md](docs/v3/SANDBOX_QUALIFICATION_GATE2.md) | Live Docker containment probe and signed isolation attestation |
 | [docs/V332_OPERATIONS.md](docs/V332_OPERATIONS.md) | Deployment, recovery, key rotation |
 | [docs/V332_AUTHORITY_CONSISTENCY.md](docs/V332_AUTHORITY_CONSISTENCY.md) | Authority-consistency defects and fixes |
 | [docs/V332_ACCEPTANCE_MATRIX.md](docs/V332_ACCEPTANCE_MATRIX.md) | Executed acceptance scenarios |

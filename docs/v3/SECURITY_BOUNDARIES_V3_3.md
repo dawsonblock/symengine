@@ -32,6 +32,61 @@
 - **Registry reads re-verify digests** — a tampered `candidate` row raises
   `candidate_tampered`; a tampered `experience` row raises
   `experience_tampered`. Corrupt JSON never deserializes into a record.
+- **Workspace handles are capabilities, not paths** — each executor keeps
+  a private registry of the workspaces it created, and `run()`/`destroy()`
+  accept a caller-supplied path only when it is exactly the registered
+  canonical path. A forged handle, a handle from another executor, a
+  mismatched executor identity, a symlinked workspace directory or a
+  deleted workspace raises before any mount, execution or delete
+  (`workspace_not_registered`, `workspace_path_substituted`,
+  `workspace_executor_identity_mismatch`, `workspace_path_symlink_escape`,
+  `workspace_path_missing`). Destruction marks the workspace closing,
+  refuses new runs, terminates in-flight executions and removes the
+  directory only after every started execution has left its critical
+  section; a removal that cannot be verified raises
+  `workspace_remove_failed`. Repeated destruction is a no-op.
+- **Docker workspaces are collected through a filtered, budgeted archive**
+  — the host tree is mounted read-only at `/submission` and copied into a
+  quota-limited tmpfs. The copy-out tar is extracted with
+  `filter="data"`, so absolute paths, `..` escapes, device nodes and
+  links that leave the workspace are rejected instead of materializing
+  on the host. The declared `disk_bytes` and file-count bound are
+  enforced **while the archive is read**: a regular member is rejected
+  before its bytes are written, sparse members are refused, and the tar
+  stream itself is capped. A violation stops extraction and reports a
+  reason-specific marker (`fs:disk_budget_exceeded`,
+  `fs:file_count_exceeded`, `fs:sparse_member_rejected`) plus
+  `fs:workspace_state_unavailable` (never a pass). The prepared
+  workspace is replaced only after a complete, in-budget extraction; a
+  failed swap restores the original tree instead of deleting it.
+- **Private acceptance material lives outside the graded tree** — a
+  backend that supports private material stages registered acceptance
+  files in a directory beside its managed workspaces and exposes it
+  read-only at `/private` (Docker, Linux worker) or as an absolute host
+  path (local). The material is never written into the submission
+  workspace, never included in its tree digest or copy-out archive, and
+  a submission's `conftest.py` is not loaded from the test root. The
+  graded workspace is **not** placed on `PYTHONPATH`: a Python
+  acceptance command runs through a staged, read-only bootstrap that
+  imports the test runner and only then adds the workspace to
+  `sys.path`, so a submission cannot shadow `pytest` or supply a
+  `sitecustomize` that runs at interpreter startup. A `-m` runner that
+  cannot be imported from the trusted environment fails closed
+  (`evaluation_runner_unavailable`, exit 70) before the workspace is
+  importable, direct scripts install an import guard that refuses a
+  workspace `pytest` module, and the marker classifies as an evaluator
+  bootstrap error even when a receipt reports exit 0. Staging is bounded
+  (64 files, 1 MiB each, 8 MiB total) and registration enforces the
+  same bounds. The execution receipt carries
+  `evaluation:private_material_separated`. Backends without that
+  capability keep the legacy co-located staging.
+- **Submitted code runs in Docker by default** — the evaluator worker
+  constructs a `DockerSandboxExecutor` and refuses to start without an
+  image; `LocalSubprocessExecutor` requires an explicit
+  `allow_local_executor` authorization (or `--allow-local-executor` on
+  the CLI, the demonstration cycle, and the live-episode script). Local
+  execution remains `isolation:unverified_local` and is never a
+  containment claim.
 - **Replayed episodes are rejected** — `MemoryStore.ingest` keys on
   `(episode_id, task_fingerprint)`; a mutated copy of an episode is a
   `DuplicateEpisode`, never a second vote.
@@ -158,6 +213,50 @@
 
 - Local execution is `isolation:unverified_local`; seatbelt network
   denial is opportunistic, not a guarantee.
+- Private-material separation moves acceptance files out of the graded
+  workspace. A `shared`-custody task still runs the test runner and the
+  code under test in one process and one OS principal, so a submission
+  that enumerates the private path can read the tests at run time.
+  `custody="split"` closes that read path: the runner never imports
+  submitted code, and the worker runs under a principal that cannot read
+  the private directory (a seatbelt read denial locally, a second
+  numeric UID in Docker). Separation also removes the incidental paths
+  (same directory, tree digest, copy-out, submission `conftest.py`,
+  `PYTHONPATH`/startup hooks, runner shadowing), and split custody pins
+  pytest configuration to the private directory so a workspace
+  `pytest.ini` cannot inject a plugin into the process holding the
+  tests. The shipped worker offers the Docker split only when started
+  with `--split-user`, and refuses private material under shared custody
+  when started with `--require-split-custody` (implied by
+  `--split-user`). Without either setting the shared-custody path above
+  remains available for development.
+- Split custody is a boundary over module access, not a general
+  interprocess sandbox. Workspace modules — including packages and their
+  submodules — are proxied, and only primitives, callables and
+  composites of primitives cross the socket. A test that deliberately
+  shells out to run the submission under the evaluator principal
+  re-opens the shared path.
+- A harness failure is not evidence about a submission. The bootstrap
+  pings the worker before running the command and reports a missing or
+  lost worker by exit status, which the executors map to
+  `sandbox:split_custody_unavailable` / `sandbox:split_worker_lost`; a
+  non-Python acceptance command is refused at registration.
+- The Docker and Linux worker mounts are read-only, so the material
+  cannot be rewritten there. Docker split custody installs the material
+  as a 0700 tmpfs directory owned by the evaluator UID instead of a
+  mount, and re-reads that container copy before issuing the receipt.
+  The local backend only clears write mode bits; the submission
+  runs as the same principal and can `chmod` them. A post-run re-read
+  detects a rewrite and the receipt carries
+  `sandbox:private_material_modified` (a sandbox failure, never a pass),
+  but prevention requires the process split above or seatbelt.
+- The local backend's `command_spec_digest` includes the run-specific
+  private-material directory, so it is not comparable across runs.
+  Docker and the Linux worker use the fixed `/private` mount point and
+  keep a stable digest.
+- The copy-out budget bounds host disk writes; it does not make a
+  malicious archive safe to parse in memory. The tar stream is capped,
+  but a future parser change must keep that cap.
 - Advisory text is delivered to the agent — the harness must treat it as
   untrusted context. SIS guarantees the channel is advisory; the agent's
   sandbox is responsible for action-level enforcement.

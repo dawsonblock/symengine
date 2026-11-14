@@ -124,7 +124,7 @@ class SkillHoldoutVault:
             raise RuleRejected('invalid evaluator HMAC')
     def seal(self,private_dataset,bundle):
         # Both exact candidate content and evaluation policy are frozen BEFORE a holdout can be scored.
-        index=validate_bundle(bundle)
+        validate_bundle(bundle)
         dataset=_check_dataset(private_dataset,bundle)
         body={'format':FMT,'evaluation_id':digest({'nonce':secrets.token_hex(32),
                'candidate':bundle['bundle_digest'],'study':dataset['study_id']}),

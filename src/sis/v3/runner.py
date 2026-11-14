@@ -24,17 +24,32 @@ import re
 import secrets
 import shutil
 import signal
+import socket
 import subprocess
 import sys
 import tempfile
 import threading
 import time
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 from .contracts import ContractError, ExecutionReceiptV1, canonical_digest
+from .split_harness import (
+    MARKER_SEATBELT,
+    MARKER_SPLIT,
+    SPLIT_BOOTSTRAP_NAME,
+    SPLIT_BOOTSTRAP_SOURCE,
+    SPLIT_INI_NAME,
+    SPLIT_INI_SOURCE,
+    is_python_command,
+    split_bootstrap_argv,
+    split_failure_marker,
+    split_pytest_argv,
+    worker_argv,
+)
+from .workspace_guard import ManagedWorkspaceRegistry, protected_overlap
 
 try:
     import resource
@@ -47,11 +62,89 @@ MAX_ENV_ITEMS = 32
 MAX_ENV_CHARS = 4_096
 MAX_STDIN_BYTES = 1 << 20
 MAX_WORKSPACE_FILES = 200_000
+MAX_PRIVATE_FILES = 64
+MAX_PRIVATE_FILE_BYTES = 1 << 20
+MAX_PRIVATE_TOTAL_BYTES = 8 << 20
 _READ_CHUNK = 65_536
 
 _ARG_TEXT = re.compile(r"^[^\x00]{1,1024}$", re.DOTALL)
 _ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,127}$")
 _SAFE_CWD = re.compile(r"^(?!/)(?![A-Za-z]:)(?!.*(?:^|/)\.\.(?:/|$))[A-Za-z0-9_.@/-]{0,512}$")
+_PRIVATE_NAME = re.compile(r"^(?!/)(?![A-Za-z]:)(?!.*(?:^|/)\.\.(?:/|$))[A-Za-z0-9_.@/-]{1,512}$")
+
+_BOOTSTRAP_NAME = "_sis_bootstrap.py"
+# Staged read-only next to the private material and run as the Python entry
+# point. It imports the test runner before the graded workspace becomes
+# importable, so a submission can neither shadow ``pytest`` nor supply a
+# ``sitecustomize`` that runs at interpreter startup.
+_BOOTSTRAP_SOURCE = '''"""SIS evaluator bootstrap (evaluator-owned, read-only).
+
+The graded workspace becomes importable only after the interpreter has
+started and the test runner has been imported. A submission therefore
+cannot supply ``sitecustomize`` or shadow ``pytest`` before the
+acceptance command runs.
+"""
+import importlib
+import runpy
+import sys
+import warnings
+
+warnings.filterwarnings(
+    "ignore", message=r".*found in sys\\.modules.*", category=RuntimeWarning)
+
+workspace = sys.argv[1]
+target = sys.argv[2:]
+if not target:
+    raise SystemExit(64)
+
+
+def block_missing_runner():
+    """Refuse a workspace pytest module when the trusted runner is absent."""
+    class BlockPytest:
+        def find_spec(self, name, path=None, target=None):
+            if (name == "pytest" or name.startswith("pytest.")
+                    or name == "_pytest" or name.startswith("_pytest.")):
+                raise ModuleNotFoundError(
+                    "evaluation_runner_unavailable: pytest")
+            return None
+    sys.meta_path.insert(0, BlockPytest())
+
+
+def preload_pytest():
+    try:
+        importlib.import_module("pytest")
+    except ImportError:
+        block_missing_runner()
+
+
+if target[0] == "-m":
+    if len(target) < 2:
+        raise SystemExit(64)
+    module = target[1]
+    # A -m runner must resolve from the trusted environment, before the
+    # graded workspace is importable. A missing runner is an evaluator
+    # bootstrap failure, never a submission-controlled module.
+    try:
+        importlib.import_module(module)
+    except ImportError:
+        sys.stderr.write("evaluation_runner_unavailable: " + module + "\\n")
+        raise SystemExit(70)
+    sys.path.insert(0, workspace)
+    sys.argv = [module, *target[2:]]
+    runpy.run_module(module, run_name="__main__", alter_sys=True)
+elif target[0] == "-c":
+    if len(target) < 2:
+        raise SystemExit(64)
+    preload_pytest()
+    sys.path.insert(0, workspace)
+    sys.argv = ["-c", *target[2:]]
+    exec(compile(target[1], "<string>", "exec"), {"__name__": "__main__"})
+else:
+    preload_pytest()
+    sys.path.insert(0, workspace)
+    sys.argv = target
+    runpy.run_path(target[0], run_name="__main__")
+'''
 
 
 class RunnerError(RuntimeError):
@@ -156,6 +249,175 @@ def command_spec_digest(spec: CommandSpec) -> str:
     })
 
 
+def normalize_private_files(
+    files: Mapping[str, bytes] | None,
+) -> dict[str, bytes]:
+    """Validate evaluator-private material before it is staged anywhere."""
+    if not files:
+        return {}
+    if len(files) > MAX_PRIVATE_FILES:
+        raise ContractError("private material exceeds the file-count bound")
+    normalized: dict[str, bytes] = {}
+    total = 0
+    for name, data in files.items():
+        if (not isinstance(name, str) or not _PRIVATE_NAME.fullmatch(name)
+                or any(part in {"", ".", ".."} for part in name.split("/"))):
+            raise ContractError(
+                "private material names must be normalized relative paths")
+        if not isinstance(data, bytes) or len(data) > MAX_PRIVATE_FILE_BYTES:
+            raise ContractError("private material must be bounded bytes")
+        total += len(data)
+        normalized[name] = data
+    if total > MAX_PRIVATE_TOTAL_BYTES:
+        raise ContractError("private material exceeds the byte bound")
+    return normalized
+
+
+def stage_private_material(
+    root: str | Path, files: Mapping[str, bytes] | None, *,
+    bootstrap: bool = False,
+    private_mode: bool = False,
+    split_bootstrap: bool = False,
+) -> Path:
+    """Write private material into a fresh directory outside any workspace.
+
+    The directory is a sibling of the backend's managed workspaces, never a
+    descendant of one, so submitted code cannot reach the material through
+    its own workspace tree, the tree digest, or the copy-out archive. When
+    ``bootstrap`` is set, the trusted runner bootstrap is staged beside it.
+
+    ``private_mode`` stages owner-only modes for the split harness: the
+    directory is 0700 and every file 0400. A worker running as another UID
+    then cannot read the material, and the runner keeps access as owner.
+    ``split_bootstrap`` stages the proxy bootstrap instead of the plain one.
+    """
+    material = normalize_private_files(files)
+    if bootstrap and _BOOTSTRAP_NAME in material:
+        raise ContractError(f"{_BOOTSTRAP_NAME} is reserved for evaluator staging")
+    if split_bootstrap and SPLIT_BOOTSTRAP_NAME in material:
+        raise ContractError(
+            f"{SPLIT_BOOTSTRAP_NAME} is reserved for evaluator staging")
+    directory = Path(tempfile.mkdtemp(dir=Path(root), prefix=".private-"))
+    try:
+        # A Docker bind mount preserves host ownership, and the container
+        # user may be a different numeric UID than the host owner. The
+        # material must therefore be traversable/readable by that UID; the
+        # executor root itself is expected to be private.
+        os.chmod(directory, 0o700 if private_mode else 0o755)
+        file_mode = 0o400 if private_mode else 0o444
+        for name, data in sorted(material.items()):
+            target = directory / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(data)
+            os.chmod(target, file_mode)
+        if bootstrap:
+            target = directory / _BOOTSTRAP_NAME
+            target.write_bytes(_BOOTSTRAP_SOURCE.encode("utf-8"))
+            os.chmod(target, file_mode)
+        if split_bootstrap:
+            target = directory / SPLIT_BOOTSTRAP_NAME
+            target.write_bytes(SPLIT_BOOTSTRAP_SOURCE.encode("utf-8"))
+            os.chmod(target, file_mode)
+            # Evaluator-owned pytest configuration: split custody pins
+            # rootdir and conftest discovery here, never in the workspace.
+            target = directory / SPLIT_INI_NAME
+            target.write_bytes(SPLIT_INI_SOURCE)
+            os.chmod(target, file_mode)
+    except BaseException:
+        shutil.rmtree(directory, ignore_errors=True)
+        raise
+    return directory
+
+
+def private_command_spec(
+    spec: CommandSpec, *,
+    names: Mapping[str, bytes] | set[str] | tuple[str, ...],
+    prefix: str,
+    workspace: str,
+    bootstrap: bool = True,
+) -> CommandSpec:
+    """Point registered private-file arguments at the staged directory.
+
+    Only exact argument matches (optionally ``./``-prefixed) are rewritten;
+    every other argument, the cwd, stdin and the limits stay unchanged. A
+    Python invocation is routed through the staged bootstrap, which imports
+    the test runner and only then adds ``workspace`` to ``sys.path``. The
+    workspace is never placed on ``PYTHONPATH``: a submission must not be
+    importable — and must not be able to supply ``sitecustomize`` — before
+    the acceptance command starts.
+    """
+    known = set(names)
+    if not known:
+        return spec
+
+    def rewrite(arg: str) -> str:
+        candidate = arg[2:] if arg.startswith("./") else arg
+        head, separator, tail = candidate.partition("::")
+        if head in known:
+            return prefix.rstrip("/") + "/" + head + separator + tail
+        return arg
+
+    argv = tuple(rewrite(arg) for arg in spec.argv)
+    if bootstrap and is_python_command(argv):
+        argv = (
+            argv[0],
+            prefix.rstrip("/") + "/" + _BOOTSTRAP_NAME,
+            workspace,
+            *argv[1:],
+        )
+    return CommandSpec(
+        argv=argv, env=dict(spec.env), cwd=spec.cwd,
+        stdin=spec.stdin, limits=spec.limits)
+
+
+def private_material_modified(
+    directory: str | Path, files: Mapping[str, bytes] | None,
+) -> bool:
+    """True when a staged private file no longer matches its registered bytes."""
+    material = normalize_private_files(files)
+    root = Path(directory)
+    for name, data in material.items():
+        try:
+            if (root / name).read_bytes() != data:
+                return True
+        except OSError:
+            return True
+    bootstrap = root / _BOOTSTRAP_NAME
+    if bootstrap.exists():
+        try:
+            if bootstrap.read_bytes() != _BOOTSTRAP_SOURCE.encode("utf-8"):
+                return True
+        except OSError:
+            return True
+    split_bootstrap = root / SPLIT_BOOTSTRAP_NAME
+    if split_bootstrap.exists():
+        try:
+            if split_bootstrap.read_bytes() != SPLIT_BOOTSTRAP_SOURCE.encode(
+                    "utf-8"):
+                return True
+        except OSError:
+            return True
+    split_ini = root / SPLIT_INI_NAME
+    if split_ini.exists():
+        try:
+            if split_ini.read_bytes() != SPLIT_INI_SOURCE:
+                return True
+        except OSError:
+            return True
+    return False
+
+
+def mark_private_material_modified(
+    receipt: ExecutionReceiptV1,
+) -> ExecutionReceiptV1:
+    """Append the tamper marker; classification maps ``sandbox:`` to failure."""
+    return replace(
+        receipt,
+        security_errors=receipt.security_errors
+        + ("sandbox:private_material_modified",),
+    )
+
+
 @dataclass(frozen=True)
 class TreeScan:
     digest: str
@@ -218,6 +480,14 @@ def tree_digest(root: Path) -> str:
 
 @dataclass(frozen=True)
 class Workspace:
+    """A handle to a disposable workspace.
+
+    ``path`` is informational. Backends resolve execution and deletion
+    through their private registry and reject a handle whose path does
+    not match the registered canonical path, so a caller cannot redirect
+    a mount, an execution, or a delete by supplying its own path.
+    """
+
     workspace_id: str
     path: Path
     before_tree_digest: str
@@ -228,9 +498,16 @@ class Workspace:
 class WorkspaceExecutor(Protocol):
     """Lifecycle for an isolated disposable task workspace."""
 
+    supports_private_material: bool
+    supports_split_custody: bool
+
     def prepare(self, base_dir: str | Path, *, label: str = "task") -> Workspace: ...
 
-    def run(self, workspace: Workspace, spec: CommandSpec) -> ExecutionReceiptV1: ...
+    def run(
+        self, workspace: Workspace, spec: CommandSpec, *,
+        private_files: Mapping[str, bytes] | None = None,
+        split_custody: bool = False,
+    ) -> ExecutionReceiptV1: ...
 
     def destroy(self, workspace: Workspace) -> None: ...
 
@@ -326,6 +603,8 @@ class LocalSubprocessExecutor:
     sandbox for hostile code without an OS-validated replacement.
     """
 
+    supports_private_material = True
+
     def __init__(
         self,
         root: str | Path | None = None,
@@ -344,23 +623,30 @@ class LocalSubprocessExecutor:
             # from a separately trusted isolator.
             raise ContractError(
                 "verified_isolation_unavailable_for_local_backend")
-        self.root = Path(root) if root is not None else Path(tempfile.mkdtemp(prefix="sis-v3-exec-"))
+        self.root = Path(os.path.abspath(
+            root if root is not None
+            else tempfile.mkdtemp(prefix="sis-v3-exec-")))
         self.root.mkdir(parents=True, exist_ok=True)
-        (self.root / "workspaces").mkdir(exist_ok=True)
+        self._registry = ManagedWorkspaceRegistry(
+            self.root, executor_identity=worker_identity, error=RunnerError)
         self.worker_identity = worker_identity
         self._production = bool(production)
         self._seatbelt = None if use_seatbelt is False else _seatbelt_binary()
-        self._protected: set[Path] = {
-            Path(path).resolve() for path in protected_paths}
-        self._workspaces: dict[str, Workspace] = {}
+        self._protected: set[Path] = set()
         self._live: dict[str, subprocess.Popen] = {}
         self._live_ws: dict[str, str] = {}
         self._outputs: dict[str, tuple[bytes, bytes]] = {}
         self._lock = threading.Lock()
+        for path in protected_paths:
+            self.protect(path)
 
     def protect(self, path: str | Path) -> None:
         """Deny the child read access to a key/authority/dataset path."""
         resolved = Path(path).resolve()
+        root = self.root.resolve()
+        if resolved.is_relative_to(root) or root.is_relative_to(resolved):
+            raise RunnerError(
+                "protected path must not overlap the executor root")
         with self._lock:
             self._protected.add(resolved)
 
@@ -374,6 +660,11 @@ class LocalSubprocessExecutor:
         return self._production
 
     @property
+    def supports_split_custody(self) -> bool:
+        """Split custody needs a kernel-enforced read denial for the worker."""
+        return bool(self._seatbelt)
+
+    @property
     def network_isolation(self) -> str:
         return "seatbelt_denied" if self._seatbelt else "not_enforced"
 
@@ -383,17 +674,27 @@ class LocalSubprocessExecutor:
             raise RunnerError("base_dir must be an existing directory")
         if base.resolve().is_relative_to(self.root.resolve()):
             raise RunnerError("base_dir must not live inside the executor root")
-        workspace_id = "ws-" + secrets.token_hex(8)
-        path = self.root / "workspaces" / workspace_id
+        if protected_overlap(base, self.protected_paths) is not None:
+            raise RunnerError("base_dir_overlaps_protected_material")
         self._reject_symlinks(base)
-        shutil.copytree(base, path, symlinks=False)
-        scan = scan_tree(path)
-        workspace = Workspace(workspace_id, path, scan.digest, self.worker_identity)
-        with self._lock:
-            self._workspaces[workspace_id] = workspace
-        return workspace
+        workspace_id, path = self._registry.allocate()
+        try:
+            shutil.copytree(base, path, symlinks=False)
+            scan = scan_tree(path)
+            record = self._registry.register(
+                workspace_id, path, before_tree_digest=scan.digest)
+        except BaseException:
+            shutil.rmtree(path, ignore_errors=True)
+            raise
+        return Workspace(
+            record.workspace_id, record.path, record.before_tree_digest,
+            record.executor_identity)
 
-    def run(self, workspace: Workspace, spec: CommandSpec) -> ExecutionReceiptV1:
+    def run(
+        self, workspace: Workspace, spec: CommandSpec, *,
+        private_files: Mapping[str, bytes] | None = None,
+        split_custody: bool = False,
+    ) -> ExecutionReceiptV1:
         if not isinstance(spec, CommandSpec):
             raise ContractError("spec must be a CommandSpec")
         if self._production:
@@ -402,14 +703,156 @@ class LocalSubprocessExecutor:
             # validated. This backend is explicitly not that — no flag or
             # attestation can qualify it.
             raise RunnerError("local_backend_not_production_qualified")
-        with self._lock:
-            if workspace.workspace_id not in self._workspaces:
-                raise RunnerError("workspace is not managed by this executor")
-        workdir = (workspace.path / spec.cwd).resolve()
-        if not workdir.is_dir() or not workdir.is_relative_to(workspace.path.resolve()):
+        if split_custody and not private_files:
+            raise ContractError("split custody requires private material")
+        if split_custody and not self._seatbelt:
+            # Without a kernel read denial the worker could read the
+            # private directory, so the split would be a rename, not a
+            # boundary.
+            raise RunnerError("split_custody_unavailable")
+        with self._registry.execution(
+                workspace.workspace_id, workspace.path,
+                executor_identity=workspace.executor_identity) as record:
+            material = None
+            parent_sock = child_sock = None
+            worker = None
+            worker_id = None
+            try:
+                if split_custody:
+                    material = stage_private_material(
+                        self.root, private_files, private_mode=True,
+                        split_bootstrap=True)
+                    parent_sock, child_sock = socket.socketpair()
+                    worker, worker_markers = self._start_split_worker(
+                        record, child_sock, material, spec)
+                    # The worker executes submitted code, so it belongs to
+                    # the same kill switch as the acceptance process: a
+                    # shutdown or a workspace destruction must reach it.
+                    worker_id = "split-" + secrets.token_hex(8)
+                    with self._lock:
+                        self._live[worker_id] = worker
+                        self._live_ws[worker_id] = record.workspace_id
+                    child_sock.close()
+                    child_sock = None
+                    base = private_command_spec(
+                        spec, names=private_files, prefix=str(material),
+                        workspace=str(record.path), bootstrap=False)
+                    base = replace(base, argv=split_pytest_argv(
+                        base.argv, private_dir=str(material)))
+                    spec = replace(base, argv=split_bootstrap_argv(
+                        base.argv,
+                        bootstrap_path=str(material / SPLIT_BOOTSTRAP_NAME),
+                        transport=("--fd", str(parent_sock.fileno())),
+                        workspace=str(record.path)))
+                    receipt = self._run_workspace(
+                        record, spec, private=True,
+                        pass_fds=(parent_sock.fileno(),),
+                        extra_markers=(MARKER_SPLIT, MARKER_SEATBELT,
+                                       *worker_markers))
+                    # A harness failure is not a verdict about the
+                    # submission; the bootstrap reports it by exit status.
+                    marker = split_failure_marker(receipt.exit_status)
+                    if marker is not None:
+                        receipt = replace(
+                            receipt,
+                            security_errors=receipt.security_errors + (marker,))
+                else:
+                    if private_files:
+                        material = stage_private_material(
+                            self.root, private_files, bootstrap=True)
+                        spec = private_command_spec(
+                            spec, names=private_files, prefix=str(material),
+                            workspace=str(record.path))
+                    receipt = self._run_workspace(
+                        record, spec, private=material is not None)
+                if material is not None and private_material_modified(
+                        material, private_files):
+                    # The local backend runs the submission as the same OS
+                    # principal, so mode bits are not a tamper boundary.
+                    receipt = mark_private_material_modified(receipt)
+                return receipt
+            finally:
+                if worker is not None:
+                    if worker_id is not None:
+                        with self._lock:
+                            self._live.pop(worker_id, None)
+                            self._live_ws.pop(worker_id, None)
+                    self._kill_group(worker)
+                    try:
+                        worker.wait(timeout=10)
+                    except subprocess.TimeoutExpired:
+                        worker.kill()
+                        worker.wait(timeout=10)
+                for sock in (parent_sock, child_sock):
+                    if sock is not None:
+                        try:
+                            sock.close()
+                        except OSError:
+                            pass
+                if material is not None:
+                    shutil.rmtree(material, ignore_errors=True)
+
+    def _start_split_worker(
+        self, record, child_sock: socket.socket, material: Path,
+        spec: CommandSpec,
+    ) -> tuple[subprocess.Popen, list[str]]:
+        """Start the restricted worker under a read denial for ``material``.
+
+        The worker imports submitted code, so its seatbelt profile denies
+        ``file-read*`` on the private directory while still allowing the
+        workspace and scratch tree. It is a separate process but the same
+        UID; the kernel denial, not the UID, is the boundary.
+        """
+        scratch = record.path / ".scratch"
+        scratch.mkdir(exist_ok=True)
+        profile = _seatbelt_profile(
+            record.path, scratch, (*self.protected_paths, material))
+        if profile is None:
+            raise RunnerError("split_custody_unavailable")
+        argv = [
+            self._resolve_executable(sys.executable),
+            *worker_argv(("--fd", str(child_sock.fileno())), str(record.path)),
+        ]
+        argv = [self._seatbelt, "-p", profile, *argv]
+        env = _minimal_env(record.path)
+        env.update(spec.env)
+        markers: list[str] = []
+        preexec = None
+        if resource is not None and hasattr(os, "setsid"):
+            preexec = self._make_preexec(spec.limits, markers)
+        try:
+            proc = subprocess.Popen(
+                argv,
+                cwd=str(record.path),
+                env=env,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=(os.name == "posix"),
+                preexec_fn=preexec,
+                pass_fds=(child_sock.fileno(),),
+            )
+        except OSError as exc:
+            raise RunnerError(
+                f"split_custody_worker_start_failed:{exc}") from exc
+        return proc, markers
+
+    def _run_workspace(
+        self, record, spec: CommandSpec, *, private: bool = False,
+        pass_fds: tuple[int, ...] = (),
+        extra_markers: tuple[str, ...] = (),
+    ) -> ExecutionReceiptV1:
+        before = scan_tree(record.path)
+        if before.external_symlinks:
+            raise RunnerError("workspace contains external symlinks")
+        workdir = (record.path / spec.cwd).resolve()
+        if not workdir.is_dir() or not workdir.is_relative_to(record.path.resolve()):
             raise RunnerError("command cwd escapes or is absent from the workspace")
 
         security_errors: list[str] = ["isolation:unverified_local"]
+        if private:
+            security_errors.append("evaluation:private_material_separated")
+        security_errors.extend(extra_markers)
         security_errors.append(
             "network:seatbelt_denied" if self._seatbelt
             else "network:not_enforced")
@@ -423,10 +866,10 @@ class LocalSubprocessExecutor:
         argv = list(spec.argv)
         argv[0] = self._resolve_executable(argv[0])
         if self._seatbelt:
-            scratch = workspace.path / ".scratch"
+            scratch = record.path / ".scratch"
             scratch.mkdir(exist_ok=True)
             profile = _seatbelt_profile(
-                workspace.path, scratch, self.protected_paths)
+                record.path, scratch, self.protected_paths)
             if profile is not None:
                 argv = [self._seatbelt, "-p", profile, *argv]
                 security_errors.append("isolation:seatbelt")
@@ -437,7 +880,7 @@ class LocalSubprocessExecutor:
                 security_errors.append("network:not_enforced")
                 security_errors.append("seatbelt:profile_unembeddable_path")
 
-        env = _minimal_env(workspace.path)
+        env = _minimal_env(record.path)
         env.update(spec.env)
 
         execution_id = "exec-" + secrets.token_hex(8)
@@ -448,6 +891,8 @@ class LocalSubprocessExecutor:
         usage_before = (
             resource.getrusage(resource.RUSAGE_CHILDREN) if resource is not None else None
         )
+        if self._registry.is_closing(record.workspace_id):
+            raise RunnerError("workspace_is_closing")
         proc = subprocess.Popen(
             argv,
             cwd=str(workdir),
@@ -457,10 +902,31 @@ class LocalSubprocessExecutor:
             stderr=subprocess.PIPE,
             start_new_session=(os.name == "posix"),
             preexec_fn=preexec,
+            pass_fds=pass_fds,
         )
         with self._lock:
             self._live[execution_id] = proc
-            self._live_ws[execution_id] = workspace.workspace_id
+            self._live_ws[execution_id] = record.workspace_id
+        if self._registry.is_closing(record.workspace_id):
+            # Destruction began between the pre-launch check and the
+            # registration above; never leave a process running against
+            # a workspace that is about to be removed.
+            self._kill_group(proc)
+            try:
+                proc.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait(timeout=10)
+            with self._lock:
+                self._live.pop(execution_id, None)
+                self._live_ws.pop(execution_id, None)
+            for pipe in (proc.stdout, proc.stderr, proc.stdin):
+                try:
+                    if pipe is not None and not pipe.closed:
+                        pipe.close()
+                except OSError:
+                    pass
+            raise RunnerError("workspace_is_closing")
 
         def pump(pipe, sink: bytearray, name: str) -> None:
             try:
@@ -518,7 +984,7 @@ class LocalSubprocessExecutor:
                 self._live_ws.pop(execution_id, None)
         wall = time.monotonic() - start
 
-        after = scan_tree(workspace.path)
+        after = scan_tree(record.path)
         if truncated["stdout"]:
             security_errors.append("output:stdout_truncated")
         if truncated["stderr"]:
@@ -553,7 +1019,7 @@ class LocalSubprocessExecutor:
             execution_id=execution_id,
             worker_identity=self.worker_identity,
             environment_digest=self._environment_digest(),
-            before_tree_digest=workspace.before_tree_digest,
+            before_tree_digest=before.digest,
             after_tree_digest=after.digest,
             command_spec_digest=command_spec_digest(spec),
             exit_status=proc.returncode if proc.returncode is not None else -1,
@@ -572,20 +1038,37 @@ class LocalSubprocessExecutor:
             return self._outputs[execution_id]
 
     def destroy(self, workspace: Workspace) -> None:
+        if not self._registry.destroy(
+                workspace.workspace_id, workspace.path,
+                executor_identity=workspace.executor_identity,
+                terminate=self._terminate_workspace):
+            raise RunnerError("workspace_remove_failed")
+
+    def _terminate_workspace(self, workspace_id: str) -> None:
         with self._lock:
-            self._workspaces.pop(workspace.workspace_id, None)
             targets = [
                 proc for exec_id, proc in self._live.items()
-                if self._live_ws.get(exec_id) == workspace.workspace_id
+                if self._live_ws.get(exec_id) == workspace_id
             ]
         for proc in targets:
             if proc.poll() is None:
                 self._kill_group(proc)
-        shutil.rmtree(workspace.path, ignore_errors=True)
+        for proc in targets:
+            if proc.poll() is None:
+                try:
+                    proc.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    try:
+                        proc.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        pass
 
     def terminate_all(self) -> None:
         with self._lock:
             procs = list(self._live.values())
+            self._live.clear()
+            self._live_ws.clear()
         for proc in procs:
             if proc.poll() is None:
                 self._kill_group(proc)

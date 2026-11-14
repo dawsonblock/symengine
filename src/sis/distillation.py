@@ -5,7 +5,7 @@ modifies any model's weights, and requires an external training pipeline.
 """
 import hashlib
 from .errors import InvalidInput, RuleRejected
-from .validation import check_inputs, canonical, digest, input_schema
+from .validation import check_inputs, canonical, input_schema
 from .skill_bundle import validate_bundle, predict
 
 FORMAT='sis.skill_distillation.v2'

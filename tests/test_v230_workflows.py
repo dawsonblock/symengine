@@ -1,14 +1,11 @@
 """v2.3 workflow security, canonical equivalence and persistent integration."""
-import copy
-import json
-import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
 
 from sis.errors import InvalidInput, RuleRejected
 from sis.service import Service
-from sis.workflow_engine import WorkflowSession, capture_plan, replay_capture, execute_plan, normalize_plan
+from sis.workflow_engine import WorkflowSession, capture_plan, replay_capture, execute_plan
 
 
 def dataset(a,b,group='A'):

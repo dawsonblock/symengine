@@ -24,6 +24,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -36,9 +37,6 @@ from sis.v3.contracts import (
 )
 from sis.v3.evaluation_runtime import (
     SANDBOX_FAILURE,
-    TASK_FAIL,
-    TASK_PASS,
-    TIMEOUT,
     classify_execution,
 )
 from sis.v3.memory import (
@@ -60,6 +58,10 @@ from sis.v3.verifier import (
 
 ROOT = Path(__file__).resolve().parents[2]
 NOW = "2026-11-08T12:00:00Z"
+# ``release/`` is out-of-band provenance and is never archived, so the
+# release-identity checks describe a checkout and cannot run from the
+# extracted bundle.
+RELEASE_BUNDLE = ROOT / "release" / "release_manifest.json"
 
 
 def _base_tree(root: Path) -> Path:
@@ -174,18 +176,12 @@ class FabricatedMarkerTests(unittest.TestCase):
             classify_execution(receipt, production=True), SANDBOX_FAILURE)
 
     def test_unverified_local_marker_disqualifies_even_when_attested(self):
-        # A receipt self-reporting local execution must never qualify in
-        # production, whatever verification object the caller supplies.
-        from sis.v3.isolation import IsolationVerification
+        # production=True is fail-closed; a local marker can never qualify.
         receipt = SimpleNamespace(
             security_errors=("isolation:unverified_local",),
             timeout=False, exit_status=0)
         self.assertEqual(
-            classify_execution(
-                receipt, production=True,
-                isolation_verification=IsolationVerification(
-                    ok=True, reason="ok")),
-            SANDBOX_FAILURE)
+            classify_execution(receipt, production=True), SANDBOX_FAILURE)
 
 
 class IsolationAttestationTests(unittest.TestCase):
@@ -286,35 +282,29 @@ class IsolationAttestationTests(unittest.TestCase):
             self._issue(), required_policy_digest="aa" * 32))
 
     def test_attested_production_classification(self):
-        from sis.v3.isolation import IsolationVerification
+        # A preconstructed positive verification object is not an
+        # attestation; the evaluator-owned route rejects it.
+        from sis.v3.evaluation_runtime import classify_production_execution
+        from sis.v3.isolation import (
+            IsolationVerification,
+            ProductionIsolationPolicy,
+        )
         digest = "a" * 64
-        verification = IsolationVerification(
-            ok=True, reason="ok", receipt_digest=digest,
-            verified_properties=("net:denied",))
         receipt = SimpleNamespace(
             security_errors=("net:denied",), timeout=False, exit_status=0,
-            digest=digest)
-        self.assertEqual(
-            classify_execution(
-                receipt, production=True,
-                isolation_verification=verification),
-            TASK_PASS)
-        receipt = SimpleNamespace(
-            security_errors=("net:denied",), timeout=False, exit_status=1,
-            digest=digest)
-        self.assertEqual(
-            classify_execution(
-                receipt, production=True,
-                isolation_verification=verification),
-            TASK_FAIL)
-        receipt = SimpleNamespace(
-            security_errors=("net:denied",), timeout=True, exit_status=-1,
-            digest=digest)
-        self.assertEqual(
-            classify_execution(
-                receipt, production=True,
-                isolation_verification=verification),
-            TIMEOUT)
+            digest=digest, command_spec_digest="b" * 64,
+            before_tree_digest="c" * 64, worker_identity="worker-A")
+        policy = ProductionIsolationPolicy(
+            allowed_backends=frozenset({"linux-rootless-worker"}),
+            trusted_keys=self.keys,
+            required_policy_digest="aa" * 32,
+            required_image_digest="bb" * 32,
+            required_properties=frozenset({"net:denied"}))
+        forged = IsolationVerification(
+            ok=True, reason="ok", receipt_digest=digest)
+        result = classify_production_execution(receipt, forged, policy)
+        self.assertEqual(result.outcome_class, SANDBOX_FAILURE)
+        self.assertFalse(result.verification.ok)
 
 
 def _v1_record(**over):
@@ -990,18 +980,28 @@ class SearchStarvationTests(unittest.TestCase):
         self.assertEqual(result["validation_passed"], 2, result["status"])
 
 
+@unittest.skipUnless(
+    RELEASE_BUNDLE.is_file(),
+    "release/ is out-of-band and absent from the archive; release "
+    "identity requires the checkout")
 class ReleaseIdentityTests(unittest.TestCase):
     """T5: release/ provenance must describe the source it ships."""
 
-    def test_release_inventory_matches_current_manifest(self):
-        manifest = json.loads(
-            (ROOT / "RELEASE_SHA256.json").read_text())["files"]
+    def test_release_inventory_matches_sealed_archive(self):
+        release = json.loads(
+            (ROOT / "release" / "release_manifest.json").read_text())
         inventory = json.loads(
             (ROOT / "release" / "source_inventory.json").read_text())
+        archive_path = ROOT / release["archive"]["path"]
+        inner = release["archive"]["inner_project_dir"]
+        with zipfile.ZipFile(archive_path) as archive:
+            embedded = json.loads(
+                archive.read(f"{inner}/RELEASE_SHA256.json"))["files"]
+        self.assertEqual(inventory["release"], release["release"])
         self.assertEqual(
-            set(inventory["files"]), set(manifest),
+            set(inventory["files"]), set(embedded),
             "release source_inventory covers a different file set")
-        for relative, digest in manifest.items():
+        for relative, digest in embedded.items():
             self.assertEqual(
                 inventory["files"][relative]["sha256"], digest,
                 f"release inventory hash drifted at {relative}")

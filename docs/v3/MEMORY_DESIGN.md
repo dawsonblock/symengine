@@ -45,22 +45,37 @@ never embedded.
   not have is rejected before any write.
 - `get`/`by_outcome` re-verify the stored digest on every read; tampered
   rows raise `experience_tampered` and fail closed.
+- Trusted reads require the exact record to be a chain member. The
+  store-wide invariant ("the chain covers exactly the rows present") is
+  evaluated at a different instant from the row read, so it cannot bind
+  the row a caller receives. Membership is one statement joining
+  `experience` to `memory_chain`, and a non-member — never ingested, row
+  removed, or inserted after the invariant check — raises
+  `experience_unchained`. Membership is not provenance: signature and
+  lineage still decide whether a member is trusted.
 
 ## Trust profiles — `MemoryTrustProfile`
 
 The store's trust configuration is explicit; there is no silent
-downgrade.
+downgrade. A profile is a closed enumeration, not a bag of caller-chosen
+flags: construction rejects any name other than `development` or
+`production`, requires every production control to be enabled, and
+requires a development profile to enable none.
 
 | profile | requirements | trust report |
 | --- | --- | --- |
 | `development()` (default) | none beyond the configured roots | `untrusted:development_profile` |
-| `production()` | trusted signer keys, custodian `chain_key`, external `MemoryWitness`, evaluator verifier | `trusted` only after chain + witness + signature + lineage |
+| `production()` | trusted signer keys, custodian `chain_key`, external `MemoryWitness`, evaluator verifier with `registered_task` | `trusted` only after chain + witness + signature + lineage |
 
-A production store refuses to construct when any root is missing.
-Production reads re-check lineage on every row, and `repair_chain`
+A production store refuses to construct when any root is missing,
+including a verifier that cannot perform registered-task verification.
+Production reads re-check chain membership and lineage on every row, and `repair_chain`
 refuses to chain legacy or untrusted rows — membership in a trusted
-chain is not provenance. `trust_status(record)` returns either
+chain is not provenance. `trust_status(record)` derives trust from the
+profile's full contract *and* the controls the store still holds; it
+does not key off the profile-name string alone. It returns either
 `trusted` or `untrusted:<reason>`; `is_trusted` is its Boolean form.
+
 
 ## External witness — `MemoryWitness`
 

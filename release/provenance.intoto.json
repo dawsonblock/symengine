@@ -1,0 +1,43 @@
+{
+  "_type": "https://in-toto.io/Statement/v1",
+  "predicate": {
+    "buildDefinition": {
+      "buildType": "https://sis.local/release/v1",
+      "externalParameters": {
+        "branch": "repair/v335-resource-security",
+        "release": "SIS-v3.3.8",
+        "source_commit": "eadea6984cbee801715e84017995b488fc97fe7b"
+      },
+      "internalParameters": {
+        "builder": "tools/package_release.py"
+      },
+      "resolvedDependencies": [
+        {
+          "digest": {
+            "sha1": "eadea6984cbee801715e84017995b488fc97fe7b"
+          },
+          "uri": "git+https://sis.local/repair/v335-resource-security"
+        }
+      ]
+    },
+    "runDetails": {
+      "builder": {
+        "id": "tools/package_release.py"
+      },
+      "metadata": {
+        "finishedOn": "2026-11-14T08:49:46Z",
+        "invocationId": "release-b06e11adf85d1eb9",
+        "startedOn": "2026-11-14T08:49:46Z"
+      }
+    }
+  },
+  "predicateType": "https://slsa.dev/provenance/v1",
+  "subject": [
+    {
+      "digest": {
+        "sha256": "b06e11adf85d1eb9b83a93ef85f0814eed1d997ceccfa941d24d6c73f586c826"
+      },
+      "name": "SIS-v3.3.8.zip"
+    }
+  ]
+}

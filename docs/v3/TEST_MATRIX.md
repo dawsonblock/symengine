@@ -50,6 +50,17 @@ The local run uses the Python and operating system values recorded in
 `STATUS.md`. Windows ACL behavior, live Codex SDK events, real Codex runs,
 Docker/Podman/microVM isolation, and external custody are not verified here.
 
+## v3.3.6 repair regressions
+
+| Area | Regression file | What it pins |
+| --- | --- | --- |
+| Trust profiles | `tests/v3/test_v336_trust_profile.py` (18 tests) | The audit bypass is rejected at profile construction; every missing production control fails; unsigned legacy records and forged profile objects never report `trusted`; removed store controls are detected |
+| Hard memory enforcement | `tests/v3/test_v336_memory_enforcement.py` (18 tests) | A hard-budget claim requires a valid `RLIMIT_AS` receipt with matching observed limits, a completed child and no memory kill; forged reports and timeouts never qualify |
+| Benchmark semantics | `tests/v3/test_v336_benchmark_semantics.py` (9 tests) | Candidate existence, intended structure, bounded equivalence, holdout accuracy and search completion are distinct; only a non-ambiguous, structurally recovered, equivalence-verified result claims exact recovery |
+
+The v3.3.5 tracer-restart counterexamples remain in
+`tests/v3/test_v335_memory_budget.py`; v3.3.6 does not weaken them.
+
 ## Interpreting tests
 
 Contract tests validate parsing, canonical identity, and bounds. Policy tests

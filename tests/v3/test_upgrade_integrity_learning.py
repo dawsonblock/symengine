@@ -1,7 +1,5 @@
 """Adversarial and transfer-focused tests for the upgraded SIS build."""
-import tempfile
 from dataclasses import replace
-from pathlib import Path
 
 import pytest
 

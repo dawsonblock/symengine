@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "symbolic-induction-engine"
-version = "3.3.4"
+version = "3.3.8"
 description = "Model-independent, bounded symbolic rule induction with evidence-gated persistence"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -31,3 +31,12 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+# Syntax errors and pyflakes only: a clean, non-negotiable baseline.
+# Style rules are intentionally not enforced yet.
+select = ["E9", "F"]

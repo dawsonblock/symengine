@@ -18,11 +18,15 @@ from __future__ import annotations
 import importlib.metadata
 import sys
 import tempfile
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 from .contracts import canonical_digest
-from .isolation import IsolationVerification
+from .isolation import (
+    IsolationVerification,
+    ProductionIsolationPolicy,
+    verify_production_isolation,
+)
 from .runner import CommandSpec, ResourceLimits, WorkspaceExecutor
 
 TASK_PASS = "TASK_PASS"
@@ -276,33 +280,29 @@ def classify_execution(
     stderr_tail: str = "",
     require_verified_isolation: bool = False,
     production: bool = False,
-    isolation_verification: IsolationVerification | None = None,
     infrastructure_error: str | None = None,
 ) -> str:
-    """Map an execution receipt to exactly one outcome class.
+    """Map receipt facts to one outcome class; never grants production authority.
 
-    ``isolation_verification`` is the typed verdict of
-    :func:`sis.v3.isolation.verify_production_isolation`, computed by the
-    harness over a separately signed attestation and the exact execution
-    receipt. A boolean "attested" flag is not accepted: production
-    requires the verification object to name this receipt and to carry
-    every mandatory property. A receipt's own ``isolation:*`` markers are
-    self-reported facts and never qualify it.
+    ``production=True`` is retained only to fail closed. A caller cannot
+    obtain a production pass from a receipt, a self-reported marker, or a
+    typed verification object. The evaluator-owned route is
+    :func:`classify_production_execution`, which verifies a signed
+    attestation against the exact execution receipt and policy first.
     """
     if infrastructure_error:
         return INFRASTRUCTURE_ERROR
     if not bootstrap_ok:
         return EVALUATOR_BOOTSTRAP_ERROR
+    if "evaluation_runner_unavailable:" in stderr_tail:
+        # The trusted test runner never resolved, so the exit status says
+        # nothing about the submission: fail closed as a bootstrap error.
+        return EVALUATOR_BOOTSTRAP_ERROR
     errors = set(getattr(receipt, "security_errors", ()) or ())
     if production:
-        if "isolation:unverified_local" in errors:
-            return SANDBOX_FAILURE
-        if not isinstance(isolation_verification, IsolationVerification):
-            return SANDBOX_FAILURE
-        if not isolation_verification.ok:
-            return SANDBOX_FAILURE
-        if isolation_verification.receipt_digest != getattr(receipt, "digest", None):
-            return SANDBOX_FAILURE
+        # No public production authority: the real route is
+        # classify_production_execution with a signed attestation.
+        return SANDBOX_FAILURE
     if require_verified_isolation and "isolation:unverified_local" in errors:
         return SANDBOX_FAILURE
     if getattr(receipt, "timeout", False):
@@ -323,6 +323,46 @@ def classify_execution(
     return TASK_FAIL
 
 
+@dataclass(frozen=True)
+class ProductionClassification:
+    """Evaluator-owned production verdict with the verified isolation report."""
+
+    outcome_class: str
+    verification: IsolationVerification
+
+
+def classify_production_execution(
+    receipt,
+    attestation,
+    policy: ProductionIsolationPolicy,
+    *,
+    bootstrap_ok: bool = True,
+    stderr_tail: str = "",
+    at_time: str | None = None,
+    infrastructure_error: str | None = None,
+) -> ProductionClassification:
+    """Verify signed isolation evidence, then classify the execution.
+
+    This is the only route that can return TASK_PASS under production
+    conditions. It requires the actual ``IsolationAttestationV1`` and a
+    :class:`ProductionIsolationPolicy`; a preconstructed positive
+    ``IsolationVerification`` is not an attestation and fails schema
+    parsing. A local ``isolation:unverified_local`` receipt is a sandbox
+    failure even when the attestation verifies.
+    """
+    verification = verify_production_isolation(
+        attestation, receipt, policy, at_time=at_time)
+    if not verification.ok:
+        return ProductionClassification(SANDBOX_FAILURE, verification)
+    errors = set(getattr(receipt, "security_errors", ()) or ())
+    if "isolation:unverified_local" in errors:
+        return ProductionClassification(SANDBOX_FAILURE, verification)
+    outcome = classify_execution(
+        receipt, bootstrap_ok=bootstrap_ok, stderr_tail=stderr_tail,
+        infrastructure_error=infrastructure_error)
+    return ProductionClassification(outcome, verification)
+
+
 def receipt_outcome_class(receipt, **kwargs) -> str:
     return classify_execution(receipt, **kwargs)
 
@@ -333,6 +373,7 @@ __all__ = [
     "EVIDENCE_FAILURE",
     "EvaluationRuntimeProfile",
     "GIB",
+    "ProductionClassification",
     "INFRASTRUCTURE_ERROR",
     "OUTCOME_CLASSES",
     "RESOURCE_LIMIT",
@@ -344,5 +385,6 @@ __all__ = [
     "TIMEOUT",
     "bootstrap_check",
     "classify_execution",
+    "classify_production_execution",
     "receipt_outcome_class",
 ]

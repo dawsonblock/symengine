@@ -30,7 +30,6 @@ pages, broken hash links, unauthorized revisions or projection drift.
 """
 from __future__ import annotations
 
-import hashlib
 import re
 import sqlite3
 import threading

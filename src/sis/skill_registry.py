@@ -9,7 +9,7 @@ from .errors import InvalidInput, RuleRejected
 from .validation import canonical, digest, check_inputs, check_scalar, check_examples, input_schema, namespace_name
 from .induction import generated_probes
 from .skill_program import execute, validate_program
-from .skill_learning import study as discover, matches, check_study
+from .skill_learning import study as discover
 from .registry import utc
 
 FIELDS=('id','namespace','schema','program','train_digest','validation_digest',

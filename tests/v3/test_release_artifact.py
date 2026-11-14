@@ -1,6 +1,5 @@
 """SIS3-101/102: fresh-extraction release verification + SQLite lifecycle."""
 import json
-import shutil
 import sys
 import tempfile
 import unittest

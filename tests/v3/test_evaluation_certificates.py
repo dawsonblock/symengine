@@ -15,10 +15,9 @@ import unittest
 from pathlib import Path
 
 from sis.v3 import signatures
-from sis.v3.candidates import CandidateConflict, CandidateError
+from sis.v3.candidates import CandidateConflict
 from sis.v3.contracts import canonical_digest
 from sis.v3.evaluation_certificate import (
-    CertificateError,
     DeliveryAttestationAuthority,
     EvaluationCertificateAuthority,
     ProtocolRegistry,

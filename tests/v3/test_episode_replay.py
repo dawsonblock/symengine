@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from sis.v3.contracts import ContractError, ObservationEventV1, canonical_digest, canonical_json
+from sis.v3.contracts import ContractError, ObservationEventV1, canonical_digest
 from sis.v3.episode_store import (
     ConflictError,
     EpisodeStore,

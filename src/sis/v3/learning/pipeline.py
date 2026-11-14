@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Callable, Mapping, Sequence
 
-from ..contracts import ProcedureRecordV1, SourceChangeV1
+from ..contracts import SourceChangeV1
 from ..procedures import ProcedureStore
 from .records import strategy_to_record, structure_to_record
 from .strategies import EpisodeEvidence, induce_strategies

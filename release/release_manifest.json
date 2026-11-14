@@ -1,11 +1,11 @@
 {
   "archive": {
-    "inner_project_dir": "SIS-v3.3.4",
-    "path": "release/SIS-v3.3.4.zip",
-    "sha256": "e43951ad4913eaeac9ac6145a2c928ef34e5b0501b0595201e7ff38f84b18465",
-    "source_files": 402
+    "inner_project_dir": "SIS-v3.3.8",
+    "path": "release/SIS-v3.3.8.zip",
+    "sha256": "b06e11adf85d1eb9b83a93ef85f0814eed1d997ceccfa941d24d6c73f586c826",
+    "source_files": 452
   },
-  "branch": "main",
+  "branch": "repair/v335-resource-security",
   "docs": [
     "docs/v3/ARCHITECTURE_V3_3.md",
     "docs/v3/CODEX_ADAPTER.md",
@@ -23,7 +23,13 @@
     "docs/v3/QUALIFICATION_REPORT.md",
     "docs/v3/QUALIFICATION_REPORT_V3_3_0.md",
     "docs/v3/QUALIFICATION_REPORT_V3_3_4.md",
+    "docs/v3/QUALIFICATION_REPORT_V3_3_5.md",
+    "docs/v3/QUALIFICATION_REPORT_V3_3_6.md",
+    "docs/v3/QUALIFICATION_REPORT_V3_3_7.md",
+    "docs/v3/QUALIFICATION_REPORT_V3_3_8.md",
     "docs/v3/RELEASE_NOTES_V3_3.md",
+    "docs/v3/RELEASE_PROCESS.md",
+    "docs/v3/SANDBOX_QUALIFICATION_GATE2.md",
     "docs/v3/SECURITY_BOUNDARIES_V3_3.md",
     "docs/v3/SKILL_HOLDOUTS.md",
     "docs/v3/SKILL_INGESTION.md",
@@ -51,27 +57,27 @@
     "evidence/sandbox/",
     "evidence/security/",
     "evidence/skills/",
-    "evidence/v332/"
+    "evidence/v332/",
+    "evidence/v335/",
+    "evidence/v336/"
   ],
   "notes": "release/ artifacts are out-of-band provenance and are intentionally absent from the archive manifest",
   "provenance": {
-    "key_id": "release-v334-key-1",
-    "path": "release/provenance.dsse.json",
-    "public_key_path": "release/provenance_public_key.hex",
-    "signed": true,
-    "statement_sha256": "b2094539ce89a210d28a63fc65c20c0090044cc1c0ab79ac4c9c752d5ece7fcb",
-    "subject_sha256": "e43951ad4913eaeac9ac6145a2c928ef34e5b0501b0595201e7ff38f84b18465",
+    "path": "release/provenance.intoto.json",
+    "signed": false,
+    "statement_sha256": "462a17a4c4ad1f82a3e6229f88e56d09d20c480a8f9ea5d585e43062647ec229",
+    "subject_sha256": "b06e11adf85d1eb9b83a93ef85f0814eed1d997ceccfa941d24d6c73f586c826",
     "trust_root": "qualification-only"
   },
-  "release": "SIS-v3.3.4",
+  "release": "SIS-v3.3.8",
   "schema_version": 1,
-  "source_commit": "28122956ac723c59bd580aa10e5547dd2bc643ab",
+  "source_commit": "eadea6984cbee801715e84017995b488fc97fe7b",
   "source_commit_note": "archive members are byte-identical to this commit for every manifest-covered file; the release commit itself touches only out-of-band release/ provenance",
   "status": "ENGINEERING_VERIFIED",
   "test_result": {
     "command": "PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONNOUSERSITE=1 PYTHONPATH=src python3 -m pytest -q",
     "failed": 0,
-    "passed": 1255,
+    "passed": 1496,
     "skipped": 13
   }
 }

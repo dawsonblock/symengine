@@ -13,10 +13,8 @@ from __future__ import annotations
 
 import hashlib
 import hmac
-import json
 import math
 import sqlite3
-from pathlib import Path
 from .errors import InvalidInput, RuleRejected
 from .validation import canonical, check_inputs, check_examples, check_task_description, digest, input_schema, namespace_name
 from .skill_bundle import validate_bundle, predict

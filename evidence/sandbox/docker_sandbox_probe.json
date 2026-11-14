@@ -1,0 +1,116 @@
+{
+  "backend": "docker_sandbox",
+  "checks": [
+    {
+      "exit_status": 1,
+      "expected": "failure",
+      "name": "network_denied",
+      "ok": true,
+      "stderr": "Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\n  File \"/usr/local/lib/python3.12/socket.py\", line 865, in create_connection\n    raise exceptions[0]\n  File \"/usr/local/lib/py",
+      "stdout": ""
+    },
+    {
+      "exit_status": 1,
+      "expected": "failure",
+      "name": "root_write_denied",
+      "ok": true,
+      "stderr": "Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\nOSError: [Errno 30] Read-only file system: '/probe-escape'\n",
+      "stdout": ""
+    },
+    {
+      "exit_status": 0,
+      "expected": "success",
+      "name": "workspace_write_allowed",
+      "ok": true,
+      "stderr": "",
+      "stdout": ""
+    },
+    {
+      "exit_status": 0,
+      "expected": "success",
+      "name": "non_root_user",
+      "ok": true,
+      "stderr": "",
+      "stdout": ""
+    },
+    {
+      "exit_status": 0,
+      "expected": "success",
+      "name": "docker_socket_absent",
+      "ok": true,
+      "stderr": "",
+      "stdout": ""
+    },
+    {
+      "exit_status": 0,
+      "expected": "success",
+      "name": "no_new_privileges",
+      "ok": true,
+      "stderr": "",
+      "stdout": ""
+    },
+    {
+      "exit_status": 0,
+      "expected": "success",
+      "name": "capabilities_dropped",
+      "ok": true,
+      "stderr": "",
+      "stdout": ""
+    },
+    {
+      "exit_status": 1,
+      "expected": "failure",
+      "name": "setuid_denied",
+      "ok": true,
+      "stderr": "Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\nPermissionError: [Errno 1] Operation not permitted\n",
+      "stdout": ""
+    },
+    {
+      "exit_status": 137,
+      "expected": "failure",
+      "name": "memory_limit_enforced",
+      "ok": true,
+      "stderr": "",
+      "stdout": ""
+    },
+    {
+      "exit_status": 1,
+      "expected": "failure",
+      "name": "pids_limit_enforced",
+      "ok": true,
+      "stderr": "Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\n  File \"/usr/local/lib/python3.12/subprocess.py\", line 1026, in __init__\n    self._execute_child(args, executable, preexec_fn,",
+      "stdout": ""
+    },
+    {
+      "exit_status": 1,
+      "expected": "failure",
+      "name": "disk_limit_enforced",
+      "ok": true,
+      "stderr": "Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\nOSError: [Errno 28] No space left on device\n",
+      "stdout": ""
+    },
+    {
+      "exit_status": 137,
+      "expected": "failure",
+      "name": "cpu_time_enforced",
+      "ok": true,
+      "stderr": "",
+      "stdout": ""
+    },
+    {
+      "expected": "<=65536",
+      "name": "output_limit_enforced",
+      "ok": true,
+      "retained_bytes": 65536
+    }
+  ],
+  "docker_server_version": "29.9.3",
+  "generated_at": "2026-11-14T08:18:20Z",
+  "image": "sis-evaluator:3.3.8@sha256:27415edf3cfb4d248536cc8b4ad196d1113d5ca23bf74f1ae3a9a07448d933f0",
+  "image_id": "27415edf3cfb4d248536cc8b4ad196d1113d5ca23bf74f1ae3a9a07448d933f0",
+  "kind": "docker_sandbox_probe",
+  "note": "Factual containment probe, not a signed isolation attestation. Production qualification still requires an IsolationAttestationV1 from a separately trusted isolator.",
+  "ok": true,
+  "schema_version": 1,
+  "worker_identity": "docker-sandbox-v1"
+}

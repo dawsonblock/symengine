@@ -80,7 +80,8 @@ class EndToEndLoopTests(unittest.TestCase):
         # Grant cross-repo scope to repo-b with distinct-identity transfer
         # evidence (repo digests must match registered base tree digests).
         transfer = [signed_receipt(seed_b, kid, task_id=f"tr-{r}",
-                                   repo_digest=_tree(r))
+                                   repo_digest=_tree(r),
+                                   failure_class="sig-1")
                     for r in ("repo-a", "repo-b")]
         issue_and_commit_grant(
             db, controller, self.grants, record=qualified,

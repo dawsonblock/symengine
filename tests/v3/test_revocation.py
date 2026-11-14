@@ -19,11 +19,9 @@ from sis.v3.catalog import Catalog
 from sis.v3.promotion import (
     PromotionController, PromotionRejected, operator_token_digest,
 )
-from sis.v3.repository_registry import RepositoryRegistry
 from sis.v3.revocation import (
     RevocationAuthority, sign_revocation, unsigned_revocation,
 )
-from sis.v3.scope_grants import ScopeGrantAuthority
 from sis.v3.secure_guidance import StrictGuidanceGateway
 
 from tests.v3.authority_testkit import (
@@ -112,7 +110,8 @@ class RevocationFixture(unittest.TestCase):
     def transfer_receipts(self, *repos):
         return [signed_receipt(self.eval_seed, self.eval_key,
                                task_id=f"tr-{repo}",
-                               repo_digest=_tree(repo))
+                               repo_digest=_tree(repo),
+                               failure_class="sig-x")
                 for repo in repos]
 
     def commit_grant(self, *, target_repo, receipts=None):
@@ -273,7 +272,7 @@ class RevocationEnforcementTests(RevocationFixture):
 
     def test_receipt_revocation_invalidates_grants_citing_it(self):
         receipts = self.transfer_receipts("repo-a", "repo-b")
-        grant = self.commit_grant(target_repo="repo-b", receipts=receipts)
+        self.commit_grant(target_repo="repo-b", receipts=receipts)
         self.assertEqual(self.recommend("repo-b").decision, "recommend")
         rev = self.issue_revocation(
             kind="receipt", target_digest=receipts[0].digest)

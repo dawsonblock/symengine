@@ -34,6 +34,12 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - run: python -m pip install -r requirements-lock.txt
       - run: python -m pip install -e . --no-deps
+      - name: Build evaluator sandbox image
+        # Linux runners have a Docker daemon; macOS runners do not. The
+        # integration tests skip when the image is absent, so building it
+        # here is what makes them run in CI.
+        if: runner.os == 'Linux'
+        run: docker build -t sis-evaluator:3.3.8 docker/sandbox
       - run: python -m pytest tests/ -q
         env:
           PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
@@ -48,6 +54,20 @@ jobs:
       - name: Run CLI and HTTP integration smoke
         if: runner.os == 'Linux'
         run: python tools/smoke_integration.py
+
+  lint:
+    # One pinned static gate over the production tree. The rules are
+    # deliberately limited to syntax errors and pyflakes so the check
+    # stays actionable; style rules are not enforced yet.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install ruff==0.16.0
+      - run: python -m ruff check src
+      - run: python -m compileall -q src tests tools
 
   postgres:
     # Qualifies the multi-process profile: the SQLite-only job skips the
@@ -77,6 +97,12 @@ jobs:
           python-version: '3.12'
       - run: python -m pip install -r requirements-lock.txt
       - run: python -m pip install -e . --no-deps
+      - name: Build evaluator sandbox image
+        # Linux runners have a Docker daemon; macOS runners do not. The
+        # integration tests skip when the image is absent, so building it
+        # here is what makes them run in CI.
+        if: runner.os == 'Linux'
+        run: docker build -t sis-evaluator:3.3.8 docker/sandbox
       - run: python -m pytest tests/ -q
         env:
           SIS_POSTGRES_DSN: postgresql://sis_test:sis_test@127.0.0.1:5432/sis_control

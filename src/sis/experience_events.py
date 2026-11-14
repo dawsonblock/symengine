@@ -8,7 +8,7 @@ capture can recalculate the unkeyed hashes. External labels remain necessary.
 from dataclasses import dataclass
 from .errors import InvalidInput
 from .skill_program import execute
-from .validation import NAME, check_inputs, check_scalar, digest, input_schema
+from .validation import NAME, check_inputs, check_scalar, digest
 
 MAX_EVENTS = 6  # v2.1 trace compiler's independent bound
 TOOLS = frozenset({'add','sub','mul','min','max','eq','lt','gt','and','or','concat'})

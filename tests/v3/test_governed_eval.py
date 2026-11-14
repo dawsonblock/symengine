@@ -458,7 +458,7 @@ class CampaignCLITests(unittest.TestCase):
             proc = subprocess.run(
                 [sys.executable,
                  str(REPO / "tools" / "governed_campaign.py"),
-                 "-o", str(out)],
+                 "-o", str(out), "--allow-local-executor"],
                 capture_output=True, text=True, env=_env(), cwd=REPO,
                 timeout=300)
             self.assertEqual(proc.returncode, 0, proc.stderr[-2000:])
@@ -478,6 +478,25 @@ class CampaignCLITests(unittest.TestCase):
             self.assertTrue(evidence["skill_bundle"])
             stdout = json.loads(proc.stdout)
             self.assertEqual(len(stdout["digest"]), 64)
+
+
+class LocalExecutorAuthorizationTests(unittest.TestCase):
+    def test_campaign_scripts_require_the_local_executor_flag(self):
+        scripts = (
+            "five_arm_campaign.py", "governed_campaign.py",
+            "governed_live_campaign.py", "live_study.py",
+            "real_agent_campaign.py", "skill_holdout.py",
+        )
+        with tempfile.TemporaryDirectory() as temp:
+            for name in scripts:
+                with self.subTest(script=name):
+                    proc = subprocess.run(
+                        [sys.executable, str(REPO / "tools" / name),
+                         "-o", str(Path(temp) / name)],
+                        capture_output=True, text=True, env=_env(),
+                        cwd=REPO, timeout=120)
+                    self.assertEqual(proc.returncode, 2, proc.stderr[-500:])
+                    self.assertIn("--allow-local-executor", proc.stderr)
 
 
 if __name__ == "__main__":

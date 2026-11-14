@@ -1,5 +1,560 @@
 # Changelog
 
+## 2026-11-14 — Induction scaling, CI image build and archive retention
+
+Closes the remaining scaling, CI and retention gaps identified by the
+review. The induction change is an ordering strategy, not a relaxation of
+the acceptance criteria.
+
+- `candidates()` ranks depth-1 binary expressions by residual variance
+  when more than twelve numeric features are present, and offers the
+  constant-offset completion of a top-ranked mid before the raw
+  enumeration. The completion must fit training and development to stop
+  the search, the same criterion the engine already applies.
+- Benchmark (`x[n-2] * x[n-1] + 2`, 6/3/3 partition, default budgets):
+  - 64 fields: 129 candidates, 193 signature checks, no limits hit,
+    intended structure recovered; with `--equivalence z3` the report is
+    `exact_recovery_verified: true` over the declared 0..9 box.
+  - 32 fields: 65 candidates, 97 signature checks (was 4,267 candidates
+    and 500,000 signature checks, truncated).
+  - 16 fields: 33 candidates, 49 signature checks with the intended
+    structure (was 1,251 candidates and 160,707 checks, ambiguous).
+  - 8 fields: unchanged; the existing nonnegative-domain ambiguity is
+    still reported.
+  - A target without a constant-offset completion still truncates
+    honestly under the same budget.
+- CI builds `sis-evaluator:3.3.8` on Linux before the suite, so the
+  Docker integration tests run there instead of skipping.
+- `tools/package_release.py` moves an existing archive to
+  `release/history/` (named by its digest) before a reseal. The
+  directory is gitignored; it is a local safeguard, not a published
+  archive.
+- `tools/qualify_docker_isolation.py --trust-root production` refuses to
+  generate a key on the evaluated machine and requires `--seed-file`.
+  The signer public key must still be verified against a key held by the
+  relying party.
+- The remaining campaign harnesses (`five_arm_campaign.py`,
+  `governed_campaign.py`, `governed_live_campaign.py`, `live_study.py`,
+  `real_agent_campaign.py`, `skill_holdout.py`) now refuse to execute
+  without `--allow-local-executor`, matching the demonstration cycle and
+  episode runner. `skill_holdout.py --list` is exempt because it runs
+  nothing.
+
+## 2026-11-14 — Docker evidence refresh and repository hygiene
+
+Regenerates the Docker containment evidence over the post-seal tree and
+closes the review findings that were still open. Not a feature release.
+
+- Added `tools/probe_docker_sandbox.py`, the missing reproducible driver
+  for `evidence/sandbox/docker_sandbox_probe.json`. It runs
+  `DockerSandboxExecutor.probe()` against a digest-pinned image.
+- Regenerated the probe (13/13) and
+  `evidence/sandbox/gate2_isolation/` against
+  `sis-evaluator:3.3.8@sha256:27415edf…` on Docker 29.9.3. The
+  attestation verifies (`reason: ok`) and the wrong-digest control is
+  rejected (`image_mismatch`). Trust root remains `qualification-only`.
+- Added real-container split-custody tests. They verify that the worker
+  UID cannot read the private tests and that a task reloaded in the
+  worker child keeps `custody="split"`; they skip when Docker or the
+  image is unavailable.
+- `OutcomeVerifier` now implies `require_split_custody` when the executor
+  has a configured `split_user`, matching the worker CLI instead of
+  leaving the API path weaker. `DockerSandboxExecutor.split_user` is
+  public.
+- Cleared the 64 pre-existing pyflakes findings in `tests/` (`ruff check
+  src tests` is now clean) and corrected stale documentation:
+  `QUALIFICATION_REPORT.md` is marked superseded, `STATUS.md` points at
+  the v3.3.8 report, the Gate 2 section no longer cites its historical
+  suite count as current, and the generated release README states that
+  the ZIP is distributed out-of-band.
+
+Suite on the refreshed tree: 1490 passed, 13 skipped, 0 failed.
+
+## 2026-11-14 — Split-custody worker configuration (post-seal)
+
+Makes the process-split boundary reachable through the shipped evaluator
+worker and lets a deployment refuse shared custody for hidden tests. Not a
+feature release; the sealed v3.3.8 archive still describes the pre-repair
+tree.
+
+- `evaluator_worker` accepts `--split-user uid[:gid]` (API:
+  `build_worker_executor(split_user=...)` and
+  `evaluate_via_subprocess(split_user=...)`) and passes it to
+  `DockerSandboxExecutor`, so `supports_split_custody` is true for a
+  deployment that configured the second identity. The Docker executor
+  validates the value: numeric, non-root and distinct from the evaluator
+  UID. The local backend refuses a split user because its boundary is a
+  seatbelt read denial, not a second UID.
+- `OutcomeVerifier(require_split_custody=True)` (CLI
+  `--require-split-custody`) fails closed in three places:
+  construction rejects a backend without a second principal
+  (`split_custody_required_but_unavailable`); `register_task()` refuses
+  private acceptance files under shared custody
+  (`split_custody_required_for_private_material`); `evaluate()` rejects a
+  registration that predates the policy (`split_custody_required`, an
+  evaluator bootstrap error).
+- Configuring `--split-user` enables the policy implicitly, so a worker
+  that was told which second UID to use does not keep grading hidden
+  tests beside the submission.
+- Custody is persisted in `tasks.json` and verified on load. A row
+  written before the field existed is recovered from its suite
+  commitment; a row whose declared mode disagrees with the commitment
+  raises `JournalIntegrityError` instead of loading. Without this, every
+  reload — and `evaluator_worker` builds a fresh verifier in each child
+  process — reset a split task to shared custody, silently removing the
+  boundary the registration was meant to hold.
+- A worker started without `--split-user` still rejects split tasks as
+  before; shared custody remains the development path.
+
+Limits: the Docker split is still unit-tested against a Docker CLI double
+and not live-qualified on every host. Re-run the Docker containment probe
+on the exact image before claiming production isolation. Regressions:
+`tests/v3/test_split_custody.py`.
+
+## 2026-11-13 — Process-split acceptance custody (post-seal)
+
+Closes the read path left by private-material separation: the acceptance
+runner and the submitted code shared one process, so a submission could
+read the tests it was graded against. Not a feature release; the sealed
+v3.3.8 archive still describes the pre-repair tree.
+
+- `register_task(custody="split")` runs the acceptance command in the
+  evaluator's process and reaches submitted code only through an
+  out-of-process proxy (`src/sis/v3/split_harness.py`). A meta-path
+  finder replaces each workspace module — including a submission laid
+  out as a package and its submodules — with a proxy whose attribute
+  reads and calls are marshalled over a Unix socket.
+- The worker runs under a separate principal that cannot read the
+  private directory: a seatbelt profile with
+  `(deny file-read* (subpath <private>))` on the local backend
+  (`split:custody:seatbelt_read_denied`), or a second numeric UID
+  through `docker exec --user` on the Docker backend
+  (`split:custody:separate_uid`).
+- The wire codec is JSON over a closed type set. Submission-produced
+  bytes are never unpickled in the evaluator process; an unsupported
+  argument or return type fails the call instead of widening the codec,
+  and a worker can only raise ordinary exceptions there (never
+  `SystemExit` or `KeyboardInterrupt`).
+- Split custody pins pytest configuration to the private directory
+  (`-c`, `--confcutdir`, `-p no:cacheprovider`). Without that, pytest
+  would read `pytest.ini`, `pyproject.toml` and `conftest.py` from the
+  graded workspace, and a submission could have its own plugin imported
+  into the process that holds the tests.
+- A harness failure is never a verdict about the submission. The
+  bootstrap pings the worker before running the command and exits with a
+  dedicated status if it is missing or dies; the executor maps that
+  status to `sandbox:split_custody_unavailable` or
+  `sandbox:split_worker_lost`, so the outcome is a sandbox failure
+  rather than `TASK_FAIL`.
+- Fail-closed: a split task on a backend without the capability is
+  rejected (`split_custody_unavailable`, an evaluator bootstrap error);
+  a receipt that does not carry `evaluation:process_split` is rejected
+  (`split_custody_unverified`, a sandbox failure); a non-Python
+  acceptance command is refused at registration instead of being handed
+  the Python bootstrap. `LinuxRootlessWorker` declares the capability
+  false because bwrap maps the caller's UID into the namespace.
+- Docker verifies the container copy of the private material, not the
+  host staging directory the worker never sees
+  (`sandbox:private_material_modified`).
+- `custody` is bound into the suite commitment only when declared, so
+  existing shared-custody registrations keep their historical
+  commitments.
+
+Limits: only primitives, callables and composites of primitives cross
+the socket, so a test that passes an arbitrary object or expects a
+non-primitive return value fails the call rather than widening the
+codec. The local backend shares a UID with the worker, so the seatbelt
+read denial — not the UID — is the boundary. The Docker split is covered
+by unit tests against a Docker CLI double; it is not live-qualified on
+this host. Regressions: `tests/v3/test_split_custody.py`.
+
+## 2026-11-13 — Gate 2 containment repairs (post-seal)
+
+Security/correctness repair of the Docker evaluator boundary. This is not
+a feature release and does not change any signed artifact; the sealed
+v3.3.8 archive and its evidence still describe the pre-repair tree.
+
+Containment:
+
+- `DockerSandboxExecutor._copy_out` enforces the run's `disk_bytes` and
+  the workspace file-count bound **while reading** the tar stream, not
+  after the host has written the archive. A regular member over budget
+  is rejected before extraction, sparse members are refused, and the
+  stream carries a hard cap. Violations preserve the workspace and
+  report a reason-specific marker (`fs:disk_budget_exceeded`,
+  `fs:file_count_exceeded`, `fs:sparse_member_rejected`), plus
+  `fs:workspace_state_unavailable` and `fs:copy_out_rejected:<reason>`.
+- A failed copy-out swap restores the prepared workspace instead of
+  deleting it (`shutil.rmtree` before `os.rename` removed).
+- `OutcomeVerifier` stages registered acceptance files outside the graded
+  workspace when the backend supports private material. Docker and the
+  Linux worker bind them read-only at `/private`; the local backend uses
+  an absolute sibling directory. Registered argv tokens are rewritten
+  and the receipt carries `evaluation:private_material_separated`.
+  Legacy backends keep the co-located staging.
+- The graded workspace is **not** placed on `PYTHONPATH`. A Python
+  acceptance command runs through a staged, read-only bootstrap that
+  imports the test runner and only then adds the workspace to
+  `sys.path`. This closes two forgeries: a submission `pytest.py` no
+  longer shadows the runner, and a submission `sitecustomize.py` is no
+  longer imported at interpreter startup. Both previously made a failing
+  acceptance test report exit 0, which classifies as a pass.
+- The bootstrap fails closed when the trusted runner cannot be imported:
+  a `-m` runner missing from the trusted environment writes
+  `evaluation_runner_unavailable: <module>` and exits 70 before the
+  workspace is importable, and direct scripts install an import guard
+  that refuses a workspace `pytest` module. `classify_execution` maps
+  that marker to an evaluator bootstrap error, even if a receipt reports
+  exit 0.
+- A post-run check re-reads the staged private files. A local backend
+  run that rewrote them carries `sandbox:private_material_modified` and
+  classifies as a sandbox failure, never a pass. Docker and the Linux
+  worker mounts are read-only; the check is defense in depth.
+- `register_task()` enforces the same private-material bounds as
+  staging (64 files, 1 MiB each, 8 MiB total, normalized relative
+  names), so an over-bound task fails at registration rather than as an
+  evaluation infrastructure error.
+
+Evaluation defaults:
+
+- `sis.v3.evaluator_worker` defaults to `DockerSandboxExecutor` and
+  requires an image. Local execution requires explicit
+  `allow_local_executor` authorization.
+- `tools/learn_recommend_cycle.py` defaults to `--sandbox docker`;
+  `--sandbox local` requires `--allow-local-executor`.
+- `scripts/v3/run_codex_episode.py` requires `--allow-local-executor`
+  before it will construct the local backend.
+- `tools/package_release.py` regenerates `release/README.md` from
+  `release_manifest.json`, so the archive hash, source commit, file
+  count and test result cannot survive a new seal. The previous README
+  still named the pre-repair hash, commit and 448-file inventory.
+
+Correctness:
+
+- `verify_proposal()` rejects a target path that resolves outside its
+  base directory (`target_escapes_base`), matching `propose_edit()`.
+
+Tests: `tests/v3/test_gate2_containment_repairs.py` covers the over-budget
+archive, member-count and stream rejection, sparse members, swap-failure
+and restore-failure preservation, private material separation (Docker
+argv and local execution), the bootstrap (startup and runner shadowing),
+tamper detection, staging/registration bounds, verifier staging, the
+patch symlink escape and the worker defaults. Full suite: 1452 passed,
+13 skipped after the repaired tree is re-sealed with
+`tools/package_release.py`.
+
+Limits: at the time of that repair, same-process, same-principal test
+runners could still read a private path they deliberately enumerate.
+That read path is closed by `custody="split"` in the entry above. The
+local backend's material is mode-protected, not OS-read-only, so
+tampering is detected after the fact rather than prevented. Regenerate
+the sealed archive with `tools/package_release.py` before a release
+claim.
+
+## 2026-11-13 — Gate 2 sandbox qualification: live containment and signed attestation
+
+Live qualification of the Docker evaluator sandbox, with evidence.
+
+Containment:
+
+- The evaluator Dockerfile pins `python:3.12-slim` by multi-architecture
+  index digest (`sha256:5e2bdb1b…`), so a rebuild cannot resolve to
+  different base bytes.
+- The containment probe gains four hostile checks: Docker-socket absence,
+  `no-new-privileges`, empty effective capabilities and `setuid(0)`
+  denial. All 13 checks pass in production mode against
+  `sis-evaluator:3.3.8@sha256:71dddad6…` on Docker 29.9.3.
+- The Docker integration tests run instead of skipping in this
+  environment: 1413 passed, 13 skipped, 0 failed.
+
+Attestation:
+
+- `tools/qualify_docker_isolation.py` runs one command, writes the
+  execution receipt, issues an `IsolationAttestationV1` from an isolator
+  seed that never enters the workspace, and verifies it against a
+  `ProductionIsolationPolicy`. A wrong image digest is rejected.
+- Evidence is recorded under `evidence/sandbox/`, and
+  `tests/v3/test_gate2_qualification.py` re-verifies the stored
+  attestation without a daemon.
+
+Limits: the signing key is local (trust root `qualification-only`) and
+release provenance remains unsigned. A production seal still needs an
+isolator key held independently of the evaluated machine. See
+`docs/v3/SANDBOX_QUALIFICATION_GATE2.md`.
+
+## 2026-11-12 — Patch-verification binding and release-inventory repair (Gate 1)
+
+Post-seal correctness repair. `verify_proposal()` had no production call
+site, but its output was not bound to the reviewed change: substituted
+patched bytes passed, an empty source skipped the source-digest check, and
+two different binary replacements shared one diff and one proposal digest.
+
+Patch binding:
+
+- `PatchProposalV1` now commits to `source_span_offset`,
+  `source_span_length` and `patched_content_digest`, so the proposal digest
+  covers the exact replacement span and the complete resulting bytes.
+- `verify_proposal()` checks the source digest unconditionally (including
+  empty files), checks the patched-content digest and size, replays the one
+  permitted span replacement against the source, and requires the supplied
+  diff to be the canonical diff of that source-to-output transformation.
+- New regressions in `tests/v3/test_patcher.py` cover substituted output,
+  empty-source digest bypass, distinct binary replacements, path
+  substitution, out-of-bounds spans and a diff that does not bind content.
+  Golden schema and contract examples carry the new fields.
+
+Benchmark semantics:
+
+- `tools/benchmark_induction.py` now includes the `if_eq` right operand in
+  `structural_form()`, so conditionals that differ only in the comparison
+  target are no longer treated as the same structure. Pinned by
+  `tests/v3/test_v336_benchmark_semantics.py`.
+
+Efficacy analysis:
+
+- `analyze_report()` built `contrasts["E_vs_A"]` with treatment `A` instead
+  of `E`, so that entry compared the baseline with itself. The entry now
+  uses the same A-vs-E contrast as `decisive_contrast`; pinned by
+  `tests/v3/test_learning_qualification.py`. The two historical report
+  files were corrected post hoc by replacing only that derived field with
+  their existing `decisive_contrast`; raw outcomes were not changed. See
+  `evidence/evaluation/CORRECTIONS.md`.
+
+Sandbox evidence:
+
+- Refreshed `evidence/sandbox/docker_sandbox_probe.json` from
+  `DockerSandboxExecutor.probe()` against the digest-pinned
+  `sis-evaluator:3.3.8@sha256:71dd…` image. The probe records thirteen
+  checks, including Docker socket absence, no-new-privileges, dropped
+  capabilities and setuid denial.
+
+Release inventory:
+
+- `.coverage` and `.coverage.*` are structurally excluded from the release
+  inventory in `tools/check_source_manifest.py`; the manifest was
+  regenerated over 440 files and verifies with `tools/verify_release.py`.
+- `release/README.md` now identifies `SIS-v3.3.8.zip`, records its SHA-256,
+  and states that the sealed archive predates this repair and remains
+  unsigned.
+
+## 2026-11-11 — SIS v3.3.8 workspace-ownership and sandbox-limit repair (V338-05…V338-09)
+
+Post-seal repair of the v3.3.8 containment line. It changes evaluator
+behavior, not any efficacy claim.
+
+V338-05 — a workspace handle is a capability, not a path:
+
+- `sis.v3.workspace_guard.ManagedWorkspaceRegistry` records every
+  workspace a backend creates. `run()` and `destroy()` resolve the
+  handle ID through that registry and accept a caller-supplied path only
+  when it is exactly the registered canonical path. A forged handle, a
+  handle from another executor, a mismatched executor identity, a
+  symlinked workspace directory, or a workspace whose directory has been
+  deleted is rejected before the backend mounts, executes within, or
+  deletes anything (`workspace_not_registered`,
+  `workspace_path_substituted`, `workspace_executor_identity_mismatch`,
+  `workspace_path_symlink_escape`, `workspace_path_missing`).
+- Destruction marks a workspace closing, refuses new runs, terminates
+  the executions still in flight, and removes the directory only after
+  every execution that already started has left its critical section.
+  Repeated destruction of the same handle is a no-op, and a removal that
+  cannot be verified raises `workspace_remove_failed` instead of being
+  reported as success.
+- 9 new ownership regressions in
+  `tests/v3/test_v338_workspace_ownership.py` (43 total), including the
+  concurrent execute/destroy race.
+
+V338-06 — the Docker workspace is a quota-limited tmpfs:
+
+- The host tree is mounted read-only at `/submission`, copied into the
+  tmpfs before the command runs, and copied back through a filtered tar
+  stream afterwards. `disk_bytes` is enforced by the filesystem during
+  execution instead of being audited after it.
+- The copy-out archive is extracted with `filter="data"`: absolute
+  paths, `..` escapes, device nodes and links that leave the workspace
+  are rejected. Four regressions in
+  `tests/v3/test_v338_workspace_ownership.py` pin each rejection.
+- A run stopped by the wall clock, the output cap or pids exhaustion
+  reports `fs:workspace_state_unavailable` instead of presenting the
+  pre-run tree as final.
+
+V338-07 — resource bounds compose with the executor:
+
+- `pids` and the output cap are the minimum of the executor limit and
+  the spec request; previously a larger spec value overrode the executor
+  cap. Output is now capped across both streams, not per stream.
+- CPU time is a kernel `RLIMIT_CPU` inherited by the command, so it is a
+  budget rather than only a scheduling share.
+- `nofile` is a bounded constructor parameter (`nofile_limit`, default
+  1024) instead of an undocumented 256 hard cap; the value is reported
+  as `docker:ulimit_nofile:<n>` and folded into the environment digest.
+- A root container identity is rejected at construction, and a host that
+  runs as root falls back to `65534:65534`.
+
+V338-08 — copy-out liveness:
+
+- The copy-out reader drained stdout but never stderr. A workspace with
+  thousands of unreadable entries makes GNU tar write far more than one
+  pipe buffer to stderr; the child then blocked before finishing the
+  archive and `run()` waited forever, leaking the container and the
+  workspace. stderr now goes to a temporary file, and a watchdog bounds
+  the copy-out. Regression:
+  `test_copy_out_does_not_stall_on_a_stderr_flood`.
+
+V338-09 — protected material and bootstrap staging:
+
+- `protect()` refuses a protected path that contains the executor root,
+  and the `protected_paths` constructor argument now runs the same check
+  instead of bypassing it. `prepare()` refuses any source tree that
+  overlaps protected key or registry material in either direction
+  (`base_dir_overlaps_protected_material`).
+- The runtime bootstrap check no longer stages its base tree under the
+  evaluator registry directory.
+
+Behavior changes for operators: `DockerSandboxExecutor(user=...)` must be
+a numeric `uid[:gid]` and must not be root; `destroy()` can raise
+`workspace_busy` or `workspace_remove_failed`; and a submission larger
+than `disk_bytes` now fails at copy-in instead of producing a
+`fs:disk_budget_exceeded` receipt. The sealed v3.3.8 archive and
+qualification evidence describe the pre-repair tree and must be
+regenerated with `tools/package_release.py` before any release claim.
+
+Repository hygiene in the same repair:
+
+- Ruff is pinned in `pyproject.toml` (`E9` and `F` over `src`); the CI
+  `lint` job runs it plus `compileall`. The 27 unused imports and six
+  unused variables it found are removed without changing behavior.
+- `tests/v3/test_docker_sandbox.py` probes for the ability to create a
+  container, so a daemon that is reachable but unusable skips the
+  integration class instead of failing it.
+- `docs/v3/RELEASE_PROCESS.md` records the branch, tag and seal ritual.
+  The sealed releases are tagged `SIS-v3.3.5` through `SIS-v3.3.8` on
+  their seal commits.
+
+## 2026-11-10 — SIS v3.3.6 trust, memory-enforcement and benchmark repair (V336-01…V336-04)
+
+V336-01 — memory trust profiles are a closed enumeration:
+
+- `MemoryTrustProfile` validates at construction. Only `development` and
+  `production` modes exist; a production profile must enable every
+  control (signed records, evaluator evidence, chain signature, witness,
+  registered-task verification), and a development profile must enable
+  none. The v3.3.5 bypass — `name="production"` with every flag false —
+  now raises `production_profile_requires_every_trust_control`.
+- `trust_status()` derives trust from `production_trust` plus the
+  controls the store actually holds (signer keys, chain key, witness,
+  verifier), not from the profile-name string. Renaming or flag-forging
+  a profile object cannot manufacture trust.
+- A production store refuses construction when the verifier lacks
+  `registered_task`, so missing registered-task verification fails
+  before any record is accepted.
+- 18 regressions in `tests/v3/test_v336_trust_profile.py`, including the
+  exact audit bypass, unsigned legacy records, partial custom profiles,
+  forged profile objects and removed controls.
+
+V336-02 — process-level hard-memory enforcement:
+
+- `sis.enforced_induction.run_induction_enforced` runs `induce` in a
+  separate Python process capped by `RLIMIT_AS` before the interpreter
+  starts. The in-process `tracemalloc` budget remains explicitly soft
+  and diagnostic; it is not the hard claim.
+- `MemoryEnforcementReceipt` is valid only when the child observed the
+  exact requested soft and hard limit. `EnforcedInduction.hard_memory_verified`
+  requires a valid receipt, a completed child and no memory kill; a
+  timeout, forged report, mismatched limit or signal death never reports
+  hard success.
+- 18 regressions in `tests/v3/test_v336_memory_enforcement.py`. macOS
+  cannot lower `RLIMIT_AS` below the interpreter's current address
+  space, so the meaningful-cap qualification remains a Linux-worker
+  gate; the protocol and refusal paths are tested on both.
+
+V336-03 — benchmark semantics:
+
+- `tools/benchmark_induction.py` no longer reports
+  `rule_recovered = rule is not None`. Candidate existence, intended
+  structure, bounded equivalence, holdout accuracy and search completion
+  are separate metrics; `exact_recovery_verified` is the only exact
+  recovery claim and requires a non-ambiguous result.
+- On the default non-negative domain the search returns
+  `absdiff(x[n-2] * x[n-1], -2)`, which matches every example but is a
+  different function; the tool now reports it as a candidate with the
+  wrong structure, not as recovery. `--input-min` adds negative values,
+  and `--equivalence z3` proves equivalence over the declared box.
+- 9 regressions in `tests/v3/test_v336_benchmark_semantics.py`.
+
+V336-04 — release seal:
+
+- Package version 3.3.6. The system interpreter (psycopg, cryptography
+  and z3 4.15.4) runs 1319 passed / 13 skipped; a fresh venv with pytest
+  8.4.2 and optional z3-solver 4.16.0, no PostgreSQL driver and no
+  `cryptography`, runs 1318 passed / 14 skipped (the extra skip is the
+  Ed25519 cross-check). Without z3 the same venv skips the three
+  z3-gated tests (1315 passed / 17 skipped). No failures in any
+  configuration. Release
+  packaging and independent artifact verification are recorded in
+  `docs/v3/QUALIFICATION_REPORT_V3_3_6.md` and `release/`.
+- Provenance signing still requires an externally trusted key; without
+  one the bundle is explicitly unsigned qualification evidence, not an
+  authentic release seal.
+
+## 2026-11-10 — SIS v3.3.5 resource-security repair (V335-01…V335-04)
+
+V335-01 — memory-budget lifecycle:
+
+- `SearchState.start()` enables `max_memory_bytes` whenever a cap is set,
+  whether or not the caller already owns a tracer. A caller-owned tracer
+  is measured from its current baseline and is never stopped; `close()`
+  stops only a tracer the search started.
+- The cap is an incremental soft budget over Python allocations
+  (`current - baseline`), sampled at resource-check points and reported
+  as `observed_peak_bytes` and `memory_limit_source`. It is not an OS RSS
+  limit and cannot see native-extension allocations.
+- The budget now fails closed when its measurement disappears. If the
+  tracer stops mid-search the check records `memory_tracer_lost`; if it
+  is stopped and restarted (or its peak is reset) it records
+  `memory_tracer_restarted`. Either way the search reports
+  `resource_exhausted` instead of returning success with a zero-growth
+  reading.
+- `spend_signature()` checks the cap before incrementing, so the reported
+  count never exceeds `max_signature_checks`.
+
+V335-02 — production verdict trust boundary:
+
+- `classify_execution(production=True)` is fail-closed and always returns
+  SANDBOX_FAILURE; the forgeable `isolation_verification` argument is
+  removed. Only `classify_production_execution(receipt, attestation,
+  policy, ...)` can return TASK_PASS, and only after parsing a real
+  `IsolationAttestationV1` and checking signer, backend allowlist,
+  policy/image digests, required properties, expiry, and the exact
+  receipt/command/workspace/worker binding.
+- `ProductionIsolationPolicy` gains `revoked_keys`; a revoked signer is
+  rejected as `signer_revoked`. The policy digest commits to the new
+  field, so every policy digest changes on upgrade, including a policy
+  with no revocations; a deployment that pins a digest must recompute it.
+
+V335-03 — explicit memory chain membership:
+
+- Trusted memory reads require the exact record being returned to own a
+  `memory_chain` entry. Membership is one statement joining `experience`
+  to `memory_chain`, so the row and its chain entry are read from the
+  same snapshot rather than inferred from a store-wide invariant
+  evaluated earlier.
+- A record that was never ingested, whose row was removed, or that
+  appears between the chain check and the row read raises
+  `experience_unchained` instead of being reported as trusted.
+  Membership is not provenance: signature and lineage checks still
+  decide trust.
+- Development stores keep reading legacy rows without chain enforcement.
+
+V335-04 — release seal:
+
+- Package version 3.3.5; `RELEASE_SHA256.json` and the release bundle are
+  regenerated for the repaired tree and resealed under the release
+  provenance key.
+- The full suite runs in a clean environment with pinned pytest 8.4.2;
+  results are recorded in `docs/v3/QUALIFICATION_REPORT_V3_3_5.md` and
+  `release/release_manifest.json`.
+
 ## 2026-11-09 — SIS v3.3.4 G1/G3 hardening (development line)
 
 Gate G1 — receipt identity:
@@ -566,7 +1121,7 @@ archive.
 - Added v1.9 fixtures, new security and experimental-design guide, and regression tests.
 - Does not claim trained neural weights or independent real-LLM results; this source release tests validation, masking and orchestration using mocks.
 
-# v1.8.0 — Frozen procedural evaluation and controlled pseudo-labels
+## v1.8.0 — Frozen procedural evaluation and controlled pseudo-labels
 
 - Hash-bound `skill-freeze` artifacts include independently checked active skill dependency closure and audit head.
 - Precommitted two-split procedural-skill holdouts under evaluator-owned SQLite vault/HMAC, one-use scoring, signed aggregate receipts, strict replay and crash-safe receipt recovery.
@@ -575,7 +1130,7 @@ archive.
 - Regression tests for forgery, modification, reuse, concurrent claims, distribution shift, archive/CLI integration, and failure paths.
 - Honest evidence boundaries: local software verification only; independent holdout ownership is required for credible generalization claims.
 
-# v1.7.0 — Governed bounded procedural skills
+## v1.7.0 — Governed bounded procedural skills
 
 - Added strict interpreted JSON program AST: conditionals, lexical bindings, bounded list reductions and skill composition with active dependency checks.
 - Added deterministic skill discovery and operator proposals, requiring disjoint caller-provided validation, ambiguity checks, and independent recomputation before promotion.
@@ -584,7 +1139,7 @@ archive.
 - Added skill CLI, HTTP endpoints, read-only LLM tool bridge and basic caller-controlled benchmarking.
 - Preserved v1.6 rule engine, evaluator, paired LLM tests, and existing database schema; skill chain has no external anchor and is not independently qualified.
 
-# v1.6.0 — Paired LLM evaluation (2026-10-20)
+## v1.6.0 — Paired LLM evaluation (2026-10-20)
 
 - Same-model, read-only baseline vs SIS-augmented benchmark with counterbalanced arm order.
 - No reference labels included in LLM request content; fail-closed registry audit and drift checks.

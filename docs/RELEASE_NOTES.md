@@ -60,7 +60,7 @@ trust-boundary defects; the red-to-green reproductions are in
 
 ---
 
-# SIS v3.3.2 — Authority Consistency & Runtime Closure (previous release)
+## SIS v3.3.2 — Authority Consistency & Runtime Closure (previous release)
 
 Status: **IMPLEMENTED_NOT_EFFICACY_QUALIFIED**
 
@@ -69,7 +69,7 @@ Superseded by v3.3.3. The detailed engineering record is in
 `docs/V332_OPERATIONS.md`; executed acceptance scenarios are in
 `docs/V332_ACCEPTANCE_MATRIX.md`.
 
-## What changed
+### What changed
 
 - Shared SQLite/PostgreSQL control plane: atomic nonce consumption and
   decision receipts across replicas.
@@ -82,14 +82,14 @@ Superseded by v3.3.3. The detailed engineering record is in
 - Signed SLSA-shaped release provenance, a dependency lock, and a PostgreSQL
   CI job.
 
-## Test evidence
+### Test evidence
 
 - Default suite: **986 passed, 8 skipped** (981 at the original M0–M5
   qualification; five release-tooling tests were added in review).
 - PostgreSQL suite (`SIS_POSTGRES_DSN`): **986 passed, 3 skipped**.
 - Five v3.3.1 defects reproduced on the baseline and closed on this tree.
 
-## Not qualified
+### Not qualified
 
 - Evaluator isolation (M6): the seatbelt/subprocess backend is not a validated
   OS boundary; hostile-code execution stays disabled in production.
@@ -98,7 +98,7 @@ Superseded by v3.3.3. The detailed engineering record is in
 - Full multi-host PostgreSQL deployment, a disaster-recovery drill, and SLSA
   *level* conformance.
 
-## Artifacts
+### Artifacts
 
 - `release/SIS-v3.3.2-AUTHORITY-CONSISTENCY.zip` (375 files), verified against
   `RELEASE_SHA256.json`.
@@ -106,9 +106,9 @@ Superseded by v3.3.3. The detailed engineering record is in
 
 ---
 
-# SIS v3.3.1 — Authority Closure and Governed Skill Learning (previous release)
+## SIS v3.3.1 — Authority Closure and Governed Skill Learning (previous release)
 
-## Release classification
+### Release classification
 
 **`IMPLEMENTED_NOT_EFFICACY_QUALIFIED`**
 
@@ -125,9 +125,9 @@ Superseded by v3.3.3. The detailed engineering record is in
   `BLOCKED_EXTERNAL_AGENT_QUOTA`; no efficacy claim is made. The runner
   now fails closed on no-action/error events.
 
-## What changed
+### What changed
 
-### Authority closure (P0)
+#### Authority closure (P0)
 
 - `AuthorityCheckpointV1`, `FileAuthorityCheckpointStore`,
   `AuthorityJournal`, `AuthorityStateVerifier`.
@@ -139,7 +139,7 @@ Superseded by v3.3.3. The detailed engineering record is in
 - Production serving requires a checkpoint-verified registry; a
   local-only database is not rollback resistant.
 
-### Evaluation evidence closure (P0)
+#### Evaluation evidence closure (P0)
 
 - `EvaluationCertificateV1`, `QualificationPolicy`,
   `QualificationValidator`, `ProtocolRegistry`.
@@ -152,7 +152,7 @@ Superseded by v3.3.3. The detailed engineering record is in
 - Production qualification requires a certificate; demonstration
   registries cannot serve production.
 
-### Execution identity and custody (P0)
+#### Execution identity and custody (P0)
 
 - `ExecutionIdentityV1` and `ExecutionIdentityAuthority`.
 - Tree/commit/family/workspace/task/nonce binding, expiry and replay
@@ -162,7 +162,7 @@ Superseded by v3.3.3. The detailed engineering record is in
 - Deleted, altered, revoked, superseded or unavailable evidence fails
   closed.
 
-### Skill ingestion (P1)
+#### Skill ingestion (P1)
 
 - Scope-aware candidate ids; identical content for two scopes produces
   two candidates; metadata conflict is explicit.
@@ -176,7 +176,7 @@ Superseded by v3.3.3. The detailed engineering record is in
   inline truncation), frontmatter variants, duplicate/symlink/size
   safeguards, never executes installation scripts.
 
-### Evaluator reliability and sandbox (P1)
+#### Evaluator reliability and sandbox (P1)
 
 - Pinned runtime profile (Python 3.12, pytest 8.4.2), plugin autoload
   disabled, explicit plugin policy.
@@ -189,7 +189,7 @@ Superseded by v3.3.3. The detailed engineering record is in
 - Seatbelt denies protected paths (keys, evaluator registry, authority
   stores) and network; receipts record isolation facts.
 
-### Learning qualification (P1)
+#### Learning qualification (P1)
 
 - Five-arm campaign (`A` baseline, `B` memory, `C` skills, `D` symbolic,
   `E` integrated), preregistered protocol, hidden/disjoint holdout,
@@ -201,7 +201,7 @@ Superseded by v3.3.3. The detailed engineering record is in
   The real-agent runner is implemented and was executed until the Codex
   quota blocked it; the gate remains externally blocked.
 
-## Test evidence
+### Test evidence
 
 - Baseline v3.3 branch: **804 passed, 2 skipped**.
 - v3.3.1: **926 passed, 3 skipped, 0 failed**
@@ -217,7 +217,7 @@ Superseded by v3.3.3. The detailed engineering record is in
 - Scripted holdouts: `write-skills`, `php2shell-check`, `write-tests` all
   qualified under the pinned 2 GiB profile; A 0/1, E 1/1 each.
 
-## Known limitations
+### Known limitations
 
 - Windows is an experimental CI target. The local vault ACL and SQLite
   lifecycle tests are POSIX-specific; Linux/macOS POSIX is the supported
@@ -232,7 +232,7 @@ Superseded by v3.3.3. The detailed engineering record is in
 - No valid powered real-agent efficacy result: the Codex quota blocked
   the attempt after four of eight tasks; no claim of improvement.
 
-## Artifacts
+### Artifacts
 
 - `release/SIS-v3.3.1-AUTHORITY-CLOSURE.zip`
 - `release/RELEASE_SHA256.json` (in-archive inventory)

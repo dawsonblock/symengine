@@ -1,7 +1,4 @@
 """Adversarial regression tests for bounded AST code repair, v2.4."""
-import copy
-import json
-import sqlite3
 import tempfile
 import unittest
 from pathlib import Path

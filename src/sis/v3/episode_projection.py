@@ -11,9 +11,8 @@ store, not this module.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
-from .contracts import ObservationEventV1
 from .episode_store import EpisodeStore
 
 _EVALUATOR_ACTORS = {"evaluator"}

@@ -10,7 +10,6 @@ from pathlib import Path
 from sis.errors import InvalidInput, RuleRejected
 from sis.service import Service
 from sis.bridge import ToolBridge
-from sis.skill_learning import study
 from sis.skill_program import execute, validate_program
 
 ROOT = Path(__file__).resolve().parents[1]

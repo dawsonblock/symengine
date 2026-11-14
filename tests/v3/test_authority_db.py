@@ -5,9 +5,7 @@ authorized qualification or zero visible qualification — never a half-state.
 """
 from __future__ import annotations
 
-import hashlib
 import multiprocessing
-import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
