@@ -212,10 +212,7 @@ def main() -> int:
     controller = PromotionController(
         db, operator_token_digest=operator_token_digest(TEST_TOKEN),
         trusted_evaluator_keys={eval_key: eval_pub.hex()})
-    receipt_src = signed_receipt(eval_seed, eval_key, task_id="t-src",
-                                 failure_class=sig,
-                                 repo_digest=src_tree)
-    receipt_table = {receipt_src.digest: receipt_src}
+    receipt_table = {}
     controller._resolve_receipt = receipt_table.__getitem__
     executor = LocalSubprocessExecutor(root / "exec")
     verifier = OutcomeVerifier(executor=executor, key_dir=root / "eval-keys",
@@ -236,6 +233,12 @@ def main() -> int:
 
         # Qualified procedure carrying the convention, granted to this repo.
         sig = "sig-" + name
+        # Each grant needs source evidence whose signed failure class
+        # matches this procedure; one shared source receipt cannot.
+        receipt_src = signed_receipt(
+            eval_seed, eval_key, task_id="t-src-" + name,
+            failure_class=sig, repo_digest=src_tree)
+        receipt_table[receipt_src.digest] = receipt_src
         proc = ProcedureRecordV1(
             schema_version=1, procedure_id="strat-" + name, revision=1,
             intent="Project convention for " + name,

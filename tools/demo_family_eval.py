@@ -6,7 +6,7 @@ import tempfile
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'src'))
 from sis.validation import digest,canonical
-from sis.family_eval import (DATASET_FORMAT,FamilyExperimentVault,evaluate,precommit)
+from sis.family_eval import (DATASET_FORMAT,FamilyExperimentVault,precommit)
 
 KEY=b'local-demo-key-not-independent-evaluator-secret'
 

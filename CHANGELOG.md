@@ -19,8 +19,10 @@ the acceptance criteria.
     and 500,000 signature checks, truncated).
   - 16 fields: 33 candidates, 49 signature checks with the intended
     structure (was 1,251 candidates and 160,707 checks, ambiguous).
-  - 8 fields: unchanged; the existing nonnegative-domain ambiguity is
-    still reported.
+  - 8 fields: on the default 0..9 domain the existing ambiguity is still
+    reported (the rival is observationally equivalent there). With
+    `--input-min -9 --equivalence z3` the search recovers the intended
+    structure exactly in 474 candidates and 38,938 checks.
   - A target without a constant-offset completion still truncates
     honestly under the same budget.
 - CI builds `sis-evaluator:3.3.8` on Linux before the suite, so the
@@ -33,12 +35,21 @@ the acceptance criteria.
   generate a key on the evaluated machine and requires `--seed-file`.
   The signer public key must still be verified against a key held by the
   relying party.
+- Added `tools/verify_external_attestation.py`: the production custody
+  path verifies an attestation signed by a key held elsewhere against the
+  receipt, image digest, policy digest and required properties, and fails
+  closed on any mismatch. The stored bundle remains qualification-only.
 - The remaining campaign harnesses (`five_arm_campaign.py`,
   `governed_campaign.py`, `governed_live_campaign.py`, `live_study.py`,
   `real_agent_campaign.py`, `skill_holdout.py`) now refuse to execute
   without `--allow-local-executor`, matching the demonstration cycle and
   episode runner. `skill_holdout.py --list` is exempt because it runs
   nothing.
+- Fixed a latent `NameError` in `tools/live_study.py`: the shared source
+  receipt was minted before the per-task failure class existed, so the
+  tool could never complete a grant. Each grant now mints source
+  evidence carrying the matching class. CI lint now covers `tests/` and
+  `tools/`, where the undefined name hid.
 
 ## 2026-11-14 — Docker evidence refresh and repository hygiene
 

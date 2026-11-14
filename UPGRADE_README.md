@@ -287,6 +287,10 @@ post-seal repairs, so they did not describe the current executor.
   `--trust-root production` refuses to generate a key locally and
   requires `--seed-file`, but the signer public key must still be
   verified against a key held by the relying party.
+- `tools/verify_external_attestation.py` verifies an attestation signed
+  by a key held elsewhere, binding it to a receipt, image digest, policy
+  digest and required properties. That is the production custody path;
+  the stored bundle remains qualification-only.
 - CI builds the evaluator image on Linux before running the suite, so
   the Docker integration tests run there instead of skipping.
 - A reseal no longer destroys the previous ZIP: `tools/package_release.py`
@@ -309,7 +313,10 @@ limits hit; `--equivalence z3` reports `exact_recovery_verified: true`
 over the declared 0..9 box. The 32-field case drops from 4,267 candidates
 and 500,000 signature checks (truncated) to 65 and 97, and the 16-field
 case from 1,251 candidates and 160,707 checks (ambiguous) to 33 and 49
-with the intended structure. The 8-field result is unchanged, and a
+with the intended structure. The 8-field default-domain result still
+reports the ambiguity, which is correct: the rival is observationally
+equivalent on 0..9. With `--input-min -9 --equivalence z3` it recovers
+the intended structure exactly in 474 candidates and 38,938 checks. A
 target without a constant-offset completion still truncates honestly
 under the same budget.
 

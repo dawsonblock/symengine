@@ -28,8 +28,7 @@ from sis.v3.contracts import GuidanceV1, TaskEnvelopeV1  # noqa: E402
 from sis.v3.evaluation_runtime import EvaluationRuntimeProfile  # noqa: E402
 from sis.v3.governed_eval import GOVERNED_ARMS, preregister  # noqa: E402
 from sis.v3.learning_qualification import (  # noqa: E402
-    CodexCliAgent, FiveArmCampaign, build_context_provider,
-    codex_agent_status, write_report)
+    CodexCliAgent, FiveArmCampaign, codex_agent_status, write_report)
 from sis.v3.runner import (LocalSubprocessExecutor, ResourceLimits,  # noqa: E402
                            tree_digest)
 from sis.v3.verifier import OutcomeVerifier  # noqa: E402

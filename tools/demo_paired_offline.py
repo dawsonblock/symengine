@@ -10,7 +10,6 @@ from sis.service import Service
 class FakeModel:
     def complete_with_metadata(self, messages, max_tokens=128):
         data = json.loads(messages[-1]['content'])
-        inputs = data['task_inputs']
         prediction = data.get('sis_read_only_prediction', {})
         answer = prediction['answer'] if prediction.get('status') == 'predicted' else -1
         return json.dumps({'abstain':False,'answer':answer}), {'prompt_tokens':20,'completion_tokens':8}

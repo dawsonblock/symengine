@@ -40,6 +40,24 @@ The policy digest binds the launch controls the executor enforces; the
 attestation binds the receipt, worker identity, policy and image. Both
 tools reproduce the stored evidence.
 
+## External isolator path
+
+The stored bundle is qualification-only. Production custody uses a
+receipt produced here and an attestation signed by a key held elsewhere:
+
+1. Produce the receipt (`tools/qualify_docker_isolation.py` writes it,
+   or run the executor directly).
+2. Hand `receipt.json` to the isolator, who signs it with its own key.
+3. Verify with `tools/verify_external_attestation.py`, passing the
+   isolator's public key, key id, image digest, policy digest and
+   required properties.
+
+The verifier writes an `external_isolation_verification.json` record and
+exits non-zero on any mismatch (wrong key, image, policy, missing
+property, receipt binding, freshness). It proves the attestation is
+bound to that receipt and policy; comparing the public key with the
+relying party's copy remains an out-of-band step.
+
 ## What this does not claim
 
 - The signing key is local (`gate2-local-isolator`, trust root

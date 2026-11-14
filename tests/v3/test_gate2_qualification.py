@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import sys
 import unittest
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -16,7 +17,10 @@ sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "tools"))
 
 import qualify_docker_isolation as gate2
+import verify_external_attestation as external
+from sis.v3 import signatures
 from sis.v3.isolation import (ProductionIsolationPolicy,
+                              issue_attestation_for_receipt,
                               verify_production_isolation)
 from sis.v3.contracts import ExecutionReceiptV1, IsolationAttestationV1
 
@@ -95,3 +99,66 @@ class StoredEvidenceTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ExternalAttestationTests(unittest.TestCase):
+    """The production path: a key held elsewhere signs, we verify."""
+
+    POLICY_DIGEST = "a" * 64
+    IMAGE_DIGEST = "b" * 64
+
+    def setUp(self):
+        path = EVIDENCE / "receipt.json"
+        if not path.exists():
+            self.skipTest("Gate 2 qualification receipt is not present")
+        self.receipt = ExecutionReceiptV1.from_json(path.read_bytes())
+        self.now = datetime.now(timezone.utc)
+        self.issued = self.now.isoformat(
+            timespec="seconds").replace("+00:00", "Z")
+        self.expires = (self.now + timedelta(minutes=5)).isoformat(
+            timespec="seconds").replace("+00:00", "Z")
+
+    def _attestation(self, seed, key_id="external-isolator"):
+        return issue_attestation_for_receipt(
+            self.receipt, seed, key_id,
+            backend="docker_sandbox",
+            policy_digest=self.POLICY_DIGEST,
+            image_digest=self.IMAGE_DIGEST,
+            properties=gate2.PROPERTIES,
+            issued_at=self.issued, expires_at=self.expires)
+
+    def test_an_externally_signed_attestation_verifies(self):
+        seed, public = signatures.generate_keypair()
+        attestation = self._attestation(seed)
+        result = external.verify(
+            self.receipt, attestation.to_dict(),
+            public_key=public.hex(), key_id="external-isolator",
+            image_digest=self.IMAGE_DIGEST,
+            policy_digest=self.POLICY_DIGEST,
+            properties=list(gate2.PROPERTIES), at_time=self.issued)
+        self.assertTrue(result.ok, result.reason)
+
+    def test_a_wrong_public_key_fails_closed(self):
+        seed, _public = signatures.generate_keypair()
+        _other_seed, other_public = signatures.generate_keypair()
+        attestation = self._attestation(seed)
+        result = external.verify(
+            self.receipt, attestation.to_dict(),
+            public_key=other_public.hex(), key_id="external-isolator",
+            image_digest=self.IMAGE_DIGEST,
+            policy_digest=self.POLICY_DIGEST,
+            properties=list(gate2.PROPERTIES), at_time=self.issued)
+        self.assertFalse(result.ok)
+        self.assertEqual(result.reason, "signature_invalid")
+
+    def test_a_different_image_digest_fails_closed(self):
+        seed, public = signatures.generate_keypair()
+        attestation = self._attestation(seed)
+        result = external.verify(
+            self.receipt, attestation.to_dict(),
+            public_key=public.hex(), key_id="external-isolator",
+            image_digest="c" * 64,
+            policy_digest=self.POLICY_DIGEST,
+            properties=list(gate2.PROPERTIES), at_time=self.issued)
+        self.assertFalse(result.ok)
+        self.assertEqual(result.reason, "image_mismatch")

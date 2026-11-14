@@ -69,7 +69,7 @@ def main(argv=None) -> int:
             return 1
         print(f"release manifest covers {len(current['files'])} files and is current")
         return 0
-    target = write_manifest(ROOT)
+    write_manifest(ROOT)
     print(f"wrote {MANIFEST_NAME} covering {len(current['files'])} files")
     return 0
 
