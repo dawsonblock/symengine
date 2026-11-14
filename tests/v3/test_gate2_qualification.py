@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import sys
+import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -162,3 +163,31 @@ class ExternalAttestationTests(unittest.TestCase):
             properties=list(gate2.PROPERTIES), at_time=self.issued)
         self.assertFalse(result.ok)
         self.assertEqual(result.reason, "image_mismatch")
+
+    def test_cli_writes_a_verification_record(self):
+        seed, public = signatures.generate_keypair()
+        attestation = self._attestation(seed)
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            receipt_path = root / "receipt.json"
+            receipt_path.write_bytes(self.receipt.canonical_bytes())
+            attestation_path = root / "attestation.json"
+            attestation_path.write_text(json.dumps(attestation.to_dict()))
+            output = root / "verification.json"
+            argv = [
+                "--receipt", str(receipt_path),
+                "--attestation", str(attestation_path),
+                "--public-key", public.hex(),
+                "--key-id", "external-isolator",
+                "--image-digest", self.IMAGE_DIGEST,
+                "--policy-digest", self.POLICY_DIGEST,
+                "--output", str(output),
+            ]
+            for prop in gate2.PROPERTIES:
+                argv += ["--property", prop]
+            self.assertEqual(external.main(argv), 0)
+            record = json.loads(output.read_text())
+            self.assertTrue(record["verified"])
+            self.assertEqual(record["reason"], "ok")
+            self.assertEqual(record["kind"],
+                             "external_isolation_verification")
