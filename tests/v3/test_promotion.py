@@ -33,6 +33,7 @@ class PromotionTests(unittest.TestCase):
         self._receipts = {}
         self.eval_executor = LocalSubprocessExecutor(self.root / "eval", use_seatbelt=False)
         self.verifier = OutcomeVerifier(
+            allow_shared_custody=True,
             executor=self.eval_executor,
             key_dir=self.root / "keys",
             registry_dir=self.root / "registry",
@@ -240,6 +241,7 @@ class ReceiptAuthorityTests(unittest.TestCase):
         self._receipts = {}
         self.eval_executor = LocalSubprocessExecutor(self.root / "eval", use_seatbelt=False)
         self.verifier = OutcomeVerifier(
+            allow_shared_custody=True,
             executor=self.eval_executor,
             key_dir=self.root / "keys",
             registry_dir=self.root / "registry",

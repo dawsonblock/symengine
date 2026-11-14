@@ -128,6 +128,7 @@ class BootstrapTests(unittest.TestCase):
 
     def test_bootstrap_probe_succeeds_in_clean_environment(self):
         verifier = OutcomeVerifier(
+            allow_shared_custody=True,
             executor=LocalSubprocessExecutor(self.root / "exec"),
             key_dir=self.root / "keys",
             registry_dir=self.root / "registry")
@@ -138,6 +139,7 @@ class BootstrapTests(unittest.TestCase):
 
     def test_bootstrap_failure_is_not_a_task_receipt(self):
         verifier = OutcomeVerifier(
+            allow_shared_custody=True,
             executor=LocalSubprocessExecutor(self.root / "exec"),
             key_dir=self.root / "keys",
             registry_dir=self.root / "registry",
@@ -180,6 +182,7 @@ class ReceiptOutcomeTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
         self.verifier = OutcomeVerifier(
+            allow_shared_custody=True,
             executor=LocalSubprocessExecutor(self.root / "exec"),
             key_dir=self.root / "keys",
             registry_dir=self.root / "registry")

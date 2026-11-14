@@ -17,6 +17,7 @@ class BenchmarkTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         self.eval_executor = LocalSubprocessExecutor(self.root / "eval", use_seatbelt=False)
         self.verifier = OutcomeVerifier(
+            allow_shared_custody=True,
             executor=self.eval_executor,
             key_dir=self.root / "keys",
             registry_dir=self.root / "registry",

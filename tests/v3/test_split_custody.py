@@ -26,8 +26,9 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from sis.v3 import split_harness
+from sis.v3 import signatures, split_harness
 from sis.v3.contracts import ContractError, TaskEnvelopeV1
+from sis.v3.isolation import ProductionIsolationPolicy
 from sis.v3.docker_sandbox import DockerSandboxExecutor
 from sis.v3.evaluation_runtime import EVALUATOR_BOOTSTRAP_ERROR, SANDBOX_FAILURE
 from sis.v3.evaluator_worker import (
@@ -133,10 +134,11 @@ class SplitFixture(unittest.TestCase):
         (self.submission / "solution.py").write_text(
             PROBE_SUBMISSION, encoding="utf-8")
 
-    def make_verifier(self, executor):
+    def make_verifier(self, executor, *, allow_shared_custody=False):
         return OutcomeVerifier(
             executor=executor, key_dir=self.root / "keys",
-            registry_dir=self.root / "registry")
+            registry_dir=self.root / "registry",
+            allow_shared_custody=allow_shared_custody)
 
     def envelope(self, task_id):
         return TaskEnvelopeV1(
@@ -179,6 +181,12 @@ class LocalSplitCustodyTests(SplitFixture):
         if not self.executor.supports_split_custody:
             self.skipTest("split custody requires seatbelt")
         self.addCleanup(self.executor.terminate_all)
+
+    def make_verifier(self, executor, *, allow_shared_custody=True):
+        # The local split fixture exercises both modes, including the
+        # shared-custody control, so it opts out explicitly.
+        return super().make_verifier(
+            executor, allow_shared_custody=allow_shared_custody)
 
     def evaluate(self, task_id, custody, expected):
         verifier = self.make_verifier(self.executor)
@@ -598,21 +606,128 @@ class SplitCustodyPolicyTests(unittest.TestCase):
         (self.submission / "solution.py").write_text(
             "x = 1\n", encoding="utf-8")
 
-    def make_verifier(self, executor=None, require_split_custody=None):
+    def make_verifier(self, executor=None, require_split_custody=None,
+                      allow_shared_custody=False):
         return OutcomeVerifier(
             executor=executor or SplitCapableExecutor(),
             key_dir=self.root / "keys",
             registry_dir=self.root / "registry",
-            require_split_custody=require_split_custody)
+            require_split_custody=require_split_custody,
+            allow_shared_custody=allow_shared_custody)
 
-    def envelope(self, task_id):
+    def envelope(self, task_id, isolation_profile="unverified_local"):
         return TaskEnvelopeV1(
             schema_version=1, task_id=task_id,
             repo_snapshot_digest=tree_digest(self.submission),
             base_commit=None, task_statement_digest="0" * 64,
-            permitted_commands=("x",), isolation_profile="unverified_local",
+            permitted_commands=("x",), isolation_profile=isolation_profile,
             time_budget_seconds=60, token_budget=1000, tool_budget=10,
             actor_id="a", evaluator_task_ref=task_id)
+
+    def production_policy(self):
+        _seed, public = signatures.generate_keypair()
+        return ProductionIsolationPolicy(
+            allowed_backends=frozenset({"linux-rootless-worker"}),
+            trusted_keys={"isolator-1": public.hex()},
+            required_policy_digest="aa" * 32,
+            required_image_digest="bb" * 32,
+            required_properties=frozenset({"fs:workspace_confined"}))
+
+    def test_private_material_defaults_to_split(self):
+        verifier = self.make_verifier()
+        task = verifier.register_task(
+            actor_role="evaluator", task_id="default-split",
+            criterion_version="v1", argv=(PY, "acceptance.py"),
+            files={"acceptance.py": b"x = 1\n"})
+        self.assertEqual(task.custody, "split")
+
+    def test_private_material_without_a_split_backend_fails_closed(self):
+        plain = LocalSubprocessExecutor(
+            self.root / "plain", use_seatbelt=False)
+        self.addCleanup(plain.terminate_all)
+        verifier = self.make_verifier(plain)
+        with self.assertRaisesRegex(
+                ContractError,
+                "split_custody_unavailable_for_private_material"):
+            verifier.register_task(
+                actor_role="evaluator", task_id="no-split-default",
+                criterion_version="v1", argv=(PY, "acceptance.py"),
+                files={"acceptance.py": b"x = 1\n"})
+
+    def test_shared_custody_requires_an_explicit_opt_out(self):
+        verifier = self.make_verifier()
+        with self.assertRaisesRegex(
+                ContractError, "shared_custody_requires_explicit_opt_out"):
+            verifier.register_task(
+                actor_role="evaluator", task_id="shared-no-opt-out",
+                criterion_version="v1", argv=(PY, "acceptance.py"),
+                files={"acceptance.py": b"x = 1\n"}, custody="shared")
+
+    def test_allow_shared_custody_permits_shared(self):
+        verifier = self.make_verifier(allow_shared_custody=True)
+        task = verifier.register_task(
+            actor_role="evaluator", task_id="shared-opt-out",
+            criterion_version="v1", argv=(PY, "acceptance.py"),
+            files={"acceptance.py": b"x = 1\n"}, custody="shared")
+        self.assertEqual(task.custody, "shared")
+        implicit = verifier.register_task(
+            actor_role="evaluator", task_id="shared-implicit",
+            criterion_version="v1", argv=(PY, "acceptance.py"),
+            files={"acceptance.py": b"x = 1\n"})
+        self.assertEqual(implicit.custody, "shared")
+
+    def test_allow_shared_custody_conflicts_with_require_split(self):
+        with self.assertRaisesRegex(
+                ContractError,
+                "allow_shared_custody_conflicts_with_require_split_custody"):
+            self.make_verifier(
+                require_split_custody=True, allow_shared_custody=True)
+
+    def test_allow_shared_custody_conflicts_with_a_production_policy(self):
+        with self.assertRaisesRegex(
+                ContractError,
+                "allow_shared_custody_conflicts_with_production_policy"):
+            OutcomeVerifier(
+                executor=SplitCapableExecutor(),
+                key_dir=self.root / "keys",
+                registry_dir=self.root / "registry",
+                isolation_policy=self.production_policy(),
+                allow_shared_custody=True)
+
+    def test_production_refuses_a_shared_registration(self):
+        verifier = OutcomeVerifier(
+            executor=SplitCapableExecutor(),
+            key_dir=self.root / "keys",
+            registry_dir=self.root / "registry",
+            isolation_policy=self.production_policy())
+        with self.assertRaisesRegex(
+                ContractError, "production_requires_split_custody"):
+            verifier.register_task(
+                actor_role="evaluator", task_id="prod-shared",
+                criterion_version="v1", argv=(PY, "acceptance.py"),
+                files={"acceptance.py": b"x = 1\n"}, custody="shared")
+
+    def test_production_rejects_a_legacy_shared_row(self):
+        permissive = self.make_verifier(allow_shared_custody=True)
+        permissive.register_task(
+            actor_role="evaluator", task_id="legacy-shared",
+            criterion_version="v1", argv=(PY, "acceptance.py"),
+            files={"acceptance.py": b"x = 1\n"}, custody="shared")
+        production = OutcomeVerifier(
+            executor=SplitCapableExecutor(),
+            key_dir=self.root / "keys",
+            registry_dir=self.root / "registry",
+            isolation_policy=self.production_policy())
+        with self.assertRaisesRegex(
+                EvaluationRejected, "production_requires_split_custody"):
+            production.evaluate(
+                actor_role="evaluator",
+                task=self.envelope(
+                    "legacy-shared", "worker_linux_rootless"),
+                submission_dir=self.submission,
+                evaluation_nonce="legacy-shared")
+        self.assertEqual(
+            production.last_outcome_class, EVALUATOR_BOOTSTRAP_ERROR)
 
     def test_a_backend_without_split_custody_cannot_require_it(self):
         plain = LocalSubprocessExecutor(
@@ -634,7 +749,7 @@ class SplitCustodyPolicyTests(unittest.TestCase):
             verifier.register_task(
                 actor_role="evaluator", task_id="implied",
                 criterion_version="v1", argv=(PY, "acceptance.py"),
-                files={"acceptance.py": b"x = 1\n"})
+                files={"acceptance.py": b"x = 1\n"}, custody="shared")
 
     def test_private_material_under_shared_custody_is_refused(self):
         verifier = self.make_verifier(require_split_custody=True)
@@ -643,7 +758,7 @@ class SplitCustodyPolicyTests(unittest.TestCase):
             verifier.register_task(
                 actor_role="evaluator", task_id="shared",
                 criterion_version="v1", argv=(PY, "acceptance.py"),
-                files={"acceptance.py": b"x = 1\n"})
+                files={"acceptance.py": b"x = 1\n"}, custody="shared")
         task = verifier.register_task(
             actor_role="evaluator", task_id="split",
             criterion_version="v1", argv=(PY, "acceptance.py"),
@@ -658,11 +773,11 @@ class SplitCustodyPolicyTests(unittest.TestCase):
         self.assertEqual(task.custody, "shared")
 
     def test_a_shared_registration_that_predates_the_policy_is_rejected(self):
-        permissive = self.make_verifier()
+        permissive = self.make_verifier(allow_shared_custody=True)
         permissive.register_task(
             actor_role="evaluator", task_id="legacy",
             criterion_version="v1", argv=(PY, "acceptance.py"),
-            files={"acceptance.py": b"x = 1\n"})
+            files={"acceptance.py": b"x = 1\n"}, custody="shared")
         strict = self.make_verifier(require_split_custody=True)
         with self.assertRaisesRegex(
                 EvaluationRejected, "split_custody_required"):
@@ -757,6 +872,27 @@ class WorkerSplitConfigurationTests(unittest.TestCase):
             capture_output=True, text=True, env=env)
         self.assertEqual(proc.returncode, 2, proc.stderr)
         self.assertIn("split_user_requires_docker_executor", proc.stderr)
+
+    def test_worker_cli_refuses_shared_and_required_together(self):
+        task_path = self.root / "task.json"
+        task_path.write_bytes(self.envelope().canonical_bytes())
+        src = str(Path(__file__).resolve().parents[2] / "src")
+        env = dict(os.environ)
+        env["PYTHONPATH"] = src + os.pathsep + env.get("PYTHONPATH", "")
+        proc = subprocess.run(
+            [PY, "-m", "sis.v3.evaluator_worker",
+             "--key-dir", str(self.key_dir),
+             "--registry-dir", str(self.registry_dir),
+             "--submission", str(self.submission),
+             "--nonce", "cli-conflict",
+             "--receipt-out", str(self.root / "receipt.json"),
+             "--task-json", str(task_path),
+             "--executor", "local", "--allow-local-executor",
+             "--require-split-custody", "--allow-shared-custody"],
+            capture_output=True, text=True, env=env)
+        self.assertEqual(proc.returncode, 2, proc.stderr)
+        self.assertIn(
+            "allow_shared_custody_conflicts_with_split_custody", proc.stderr)
 
     def test_worker_cli_enables_the_policy(self):
         from sis.v3 import evaluator_worker

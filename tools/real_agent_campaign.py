@@ -264,6 +264,7 @@ def main() -> int:
                 root / "exec",
                 protected_paths=(root / "keys", root / "registry")),
             key_dir=root / "keys", registry_dir=root / "registry",
+            allow_shared_custody=True,
             limits=ResourceLimits(
                 wall_seconds=180, cpu_seconds=60,
                 memory_bytes=profile.task_memory_bytes,
@@ -284,7 +285,8 @@ def main() -> int:
                 criterion_version="v1",
                 argv=(PY, "-m", "pytest", "-q", "eval_tests.py"),
                 files={"eval_tests.py": spec.test.encode()},
-                base_commit="abc1234", statement_digest=statement)
+                base_commit="abc1234", statement_digest=statement,
+                custody="shared")
             tasks.append((TaskEnvelopeV1(
                 schema_version=1, task_id=spec.task_id,
                 repo_snapshot_digest=tree_digest(repo),

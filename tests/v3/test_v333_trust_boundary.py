@@ -487,6 +487,7 @@ class ReceiptIdentityTests(unittest.TestCase):
 
     def _verifier(self, registry, keys, criterion="acceptance-v1"):
         verifier = OutcomeVerifier(
+            allow_shared_custody=True,
             executor=LocalSubprocessExecutor(
                 self.root / ("exec-" + registry), use_seatbelt=False),
             key_dir=self.root / keys,
@@ -516,6 +517,7 @@ class ReceiptIdentityTests(unittest.TestCase):
 
     def _restart(self, registry="registry-1", keys="keys-1"):
         return OutcomeVerifier(
+            allow_shared_custody=True,
             executor=LocalSubprocessExecutor(
                 self.root / "exec-restart", use_seatbelt=False),
             key_dir=self.root / keys,

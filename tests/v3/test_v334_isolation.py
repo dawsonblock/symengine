@@ -506,6 +506,7 @@ class ProductionVerifierTests(unittest.TestCase):
     def test_development_verifier_still_issues_v1(self):
         executor = ScriptedExecutor(self.root / "dev-exec")
         verifier = OutcomeVerifier(
+            allow_shared_custody=True,
             executor=executor, key_dir=self.root / "dev-keys",
             registry_dir=self.root / "dev-registry")
         verifier.register_task(
@@ -526,6 +527,7 @@ class ProductionVerifierTests(unittest.TestCase):
         (dev_submission / "calc.py").write_text(
             "def scale(a, b):\n    return a * b\n# dev\n", encoding="utf-8")
         development = OutcomeVerifier(
+            allow_shared_custody=True,
             executor=ScriptedExecutor(self.root / "dev-exec"),
             key_dir=self.root / "keys",
             registry_dir=self.root / "registry")
@@ -533,7 +535,7 @@ class ProductionVerifierTests(unittest.TestCase):
             actor_role="evaluator", task_id="task-scale",
             criterion_version="acceptance-v1",
             argv=(PY, "acceptance.py"),
-            files={"acceptance.py": ACCEPTANCE})
+            files={"acceptance.py": ACCEPTANCE}, custody="split")
         v1 = development.evaluate(
             actor_role="evaluator", task=_task(),
             submission_dir=dev_submission, evaluation_nonce="nonce-v1")

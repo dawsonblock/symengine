@@ -10,6 +10,40 @@
 v3.3.8 moves evaluator execution of untrusted submitted code into a
 Docker sandbox. It is a containment release, not an efficacy result.
 
+### Post-seal change: private evaluation defaults to split custody
+
+`OutcomeVerifier.register_task()` no longer defaults private acceptance
+material to shared custody. With `custody=None` (the default):
+
+- private material is registered as `split` when the backend provides a
+  second principal;
+- a backend without that capability fails closed with
+  `split_custody_unavailable_for_private_material` instead of grading
+  the submission beside its tests.
+
+`custody="shared"` now requires a verifier constructed with
+`allow_shared_custody=True`, which is refused together with
+`require_split_custody` or a production `isolation_policy`. A production
+verifier rejects a shared registration with
+`production_requires_split_custody`, and a legacy shared row is rejected
+at evaluation with the same reason.
+
+The evaluator worker accepts `--allow-shared-custody` for development;
+without it, a shared private task is rejected as
+`shared_custody_not_permitted`. The cycle configures the second Docker
+UID by default:
+
+```bash
+PYTHONPATH=src:. python3 tools/learn_recommend_cycle.py \
+  --agent scripted --sandbox docker --split-user 2002:2002 -o /tmp/cycle.json
+```
+
+The sandbox probe runs a fourteenth check (`split_identity_exec`) that
+executes a command as the second UID and requires both split markers.
+The development campaign harnesses name `custody="shared"` and opt out
+explicitly; they remain diagnostic tools. The seal is stale until build
+11 re-seals the tree.
+
 ### Build the evaluator image
 
 ```bash

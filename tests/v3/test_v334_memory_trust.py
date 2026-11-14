@@ -93,6 +93,7 @@ class MemoryFixture(unittest.TestCase):
         (submission / "calc.py").write_text(
             "def scale(a, b):\n    return a * b\n", encoding="utf-8")
         self.verifier = OutcomeVerifier(
+            allow_shared_custody=True,
             executor=LocalSubprocessExecutor(
                 self.root / "eval-exec", use_seatbelt=False),
             key_dir=self.root / "keys",

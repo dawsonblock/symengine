@@ -107,6 +107,7 @@ def evaluate_via_subprocess(
     require_image_digest: bool = True,
     split_user: str | None = None,
     require_split_custody: bool = False,
+    allow_shared_custody: bool = False,
 ) -> WorkerResult:
     """Evaluate a submission in a child process; returns the signed receipt."""
     if not isinstance(task, TaskEnvelopeV1):
@@ -117,6 +118,10 @@ def evaluate_via_subprocess(
         raise ContractError("executor must be 'docker' or 'local'")
     if split_user is not None and executor != "docker":
         raise EvaluatorWorkerError("split_user_requires_docker_executor")
+    if allow_shared_custody and (require_split_custody
+                                 or split_user is not None):
+        raise EvaluatorWorkerError(
+            "allow_shared_custody_conflicts_with_split_custody")
     if executor == "local" and not allow_local_executor:
         raise EvaluatorWorkerError(
             "local_executor_requires_explicit_authorization")
@@ -155,6 +160,8 @@ def evaluate_via_subprocess(
         argv += ["--split-user", split_user]
     if require_split_custody:
         argv += ["--require-split-custody"]
+    if allow_shared_custody:
+        argv += ["--allow-shared-custody"]
     if executor_root is not None:
         argv += ["--executor-root", str(executor_root)]
     argv += ["--task-json", "-"]  # task arrives on stdin, bounded
@@ -204,7 +211,17 @@ def _main() -> int:
     parser.add_argument("--require-split-custody", action="store_true",
                         help="refuse private acceptance material under"
                              " shared custody")
+    parser.add_argument("--allow-shared-custody", action="store_true",
+                        help="development only: permit shared custody for"
+                             " private acceptance material")
     args = parser.parse_args()
+
+    if args.allow_shared_custody and (args.require_split_custody
+                                      or args.split_user is not None):
+        print("evaluator_configuration_invalid:"
+              " allow_shared_custody_conflicts_with_split_custody",
+              file=sys.stderr)
+        return 2
 
     if args.task_json == "-":
         raw = sys.stdin.buffer.read(65_537)
@@ -233,9 +250,15 @@ def _main() -> int:
             executor=executor, key_dir=args.key_dir,
             registry_dir=args.registry_dir,
             require_split_custody=require_split,
+            allow_shared_custody=args.allow_shared_custody,
         )
     except (ContractError, JournalIntegrityError, RunnerError) as exc:
         print(f"evaluator_configuration_invalid: {exc}", file=sys.stderr)
+        return 2
+    if (verifier.registry_requires_split_custody()
+            and not getattr(executor, "supports_split_custody", False)):
+        print("executor_unavailable: split_custody_required_but_unavailable",
+              file=sys.stderr)
         return 2
     try:
         receipt = verifier.evaluate(

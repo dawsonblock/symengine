@@ -138,7 +138,8 @@ def _build_task(holdout: Holdout, root: Path, verifier, registry, seed):
         criterion_version="v1",
         argv=(sys.executable, "-m", "pytest", "-q", "eval_tests.py"),
         files={"eval_tests.py": holdout.test.encode()},
-        base_commit=BASE_COMMIT, statement_digest=statement_digest)
+        base_commit=BASE_COMMIT, statement_digest=statement_digest,
+        custody="shared")
     env = TaskEnvelopeV1(
         schema_version=1, task_id=holdout.task_id,
         repo_snapshot_digest=repo_tree, base_commit=BASE_COMMIT,
@@ -255,6 +256,7 @@ def main() -> int:
             protected_paths=(root / "eval-keys", root / "eval-reg",
                              root / "candidates.db", root / "memory.db")),
         key_dir=root / "eval-keys", registry_dir=root / "eval-reg",
+        allow_shared_custody=True,
         limits=ResourceLimits(wall_seconds=120, cpu_seconds=60,
                               memory_bytes=runtime_profile.task_memory_bytes,
                               process_count=None),

@@ -23,6 +23,7 @@ class BudgetEnforcementTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
         self.verifier = OutcomeVerifier(
+            allow_shared_custody=True,
             executor=LocalSubprocessExecutor(self.root / "eval", use_seatbelt=False),
             key_dir=self.root / "keys", registry_dir=self.root / "registry")
         self.verifier.register_task(

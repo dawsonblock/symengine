@@ -163,7 +163,8 @@ def build_task(name, root, statements, verifier, registry, reg_seed):
         actor_role="evaluator", task_id=task_id, criterion_version="v1",
         argv=(sys.executable, "-m", "pytest", "-q", "eval_tests.py"),
         files={"eval_tests.py": test.encode()}, base_commit="a1b2c3d",
-        statement_digest=hashlib.sha256(statement.encode()).hexdigest())
+        statement_digest=hashlib.sha256(statement.encode()).hexdigest(),
+        custody="shared")
     env = TaskEnvelopeV1(
         schema_version=1, task_id=task_id,
         repo_snapshot_digest=repo_tree, base_commit="a1b2c3d",
@@ -197,7 +198,8 @@ def main() -> int:
     executor = LocalSubprocessExecutor(root / "exec")
     verifier = OutcomeVerifier(executor=executor,
                                key_dir=root / "eval-keys",
-                               registry_dir=root / "eval-reg")
+                               registry_dir=root / "eval-reg",
+                               allow_shared_custody=True)
 
     def authenticated_receipt(digest):
         receipt = verifier.load_receipt(digest)

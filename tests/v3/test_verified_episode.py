@@ -42,6 +42,7 @@ class VerifiedEpisodeTests(unittest.TestCase):
         self.store = EpisodeStore(root / "evidence")
         self.anchor_dir = root / "anchor-custody"
         self.verifier = OutcomeVerifier(
+            allow_shared_custody=True,
             executor=self.eval_executor,
             key_dir=root / "evaluator-keys",
             registry_dir=root / "evaluator-registry",

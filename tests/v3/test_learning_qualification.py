@@ -192,6 +192,7 @@ class CampaignTests(unittest.TestCase):
         self.repo.mkdir()
         (self.repo / "solution.py").write_text("NO = 1\n")
         self.verifier = OutcomeVerifier(
+            allow_shared_custody=True,
             executor=LocalSubprocessExecutor(self.root / "exec"),
             key_dir=self.root / "keys",
             registry_dir=self.root / "registry")

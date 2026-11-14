@@ -58,6 +58,7 @@ class VerifierFixture(unittest.TestCase):
         self.key_dir = root / "evaluator-keys"
         self.registry_dir = root / "evaluator-registry"
         self.verifier = OutcomeVerifier(
+            allow_shared_custody=True,
             executor=self.eval_executor,
             key_dir=self.key_dir,
             registry_dir=self.registry_dir,
@@ -135,10 +136,12 @@ class EvaluatorLimitsTests(unittest.TestCase):
             executor = LocalSubprocessExecutor(
                 root / "exec", use_seatbelt=False)
             default = OutcomeVerifier(
+                allow_shared_custody=True,
                 executor=executor, key_dir=root / "keys",
                 registry_dir=root / "registry")
             self.assertEqual(default.limits.process_count, 64)
             relaxed = OutcomeVerifier(
+                allow_shared_custody=True,
                 executor=executor, key_dir=root / "relaxed-keys",
                 registry_dir=root / "relaxed-registry",
                 limits=ResourceLimits(wall_seconds=90, process_count=None))
@@ -293,6 +296,7 @@ class VerifierCustodyTests(VerifierFixture):
     def test_wrong_key_and_unknown_signer_fail(self):
         receipt = self.evaluate()
         other_verifier = OutcomeVerifier(
+            allow_shared_custody=True,
             executor=self.eval_executor,
             key_dir=Path(self.temp.name) / "other-keys",
             registry_dir=Path(self.temp.name) / "other-registry",
@@ -312,6 +316,7 @@ class VerifierCustodyTests(VerifierFixture):
     def test_nonce_reuse_survives_verifier_restart(self):
         self.evaluate(nonce="attempt-9")
         restarted = OutcomeVerifier(
+            allow_shared_custody=True,
             executor=self.eval_executor,
             key_dir=self.key_dir,
             registry_dir=self.registry_dir,
@@ -382,6 +387,7 @@ class VerifierCustodyTests(VerifierFixture):
         with self.assertRaisesRegex(EvaluationRejected, "statement_mismatch"):
             self.evaluate(task=mismatched, nonce="nonce-2")
         restarted = OutcomeVerifier(
+            allow_shared_custody=True,
             executor=self.eval_executor,
             key_dir=self.key_dir,
             registry_dir=self.registry_dir,
@@ -408,6 +414,7 @@ class VerifierCustodyTests(VerifierFixture):
         journal.write_bytes(b"{corrupt\n")
         with self.assertRaises(JournalIntegrityError):
             OutcomeVerifier(
+                allow_shared_custody=True,
                 executor=self.eval_executor,
                 key_dir=self.key_dir,
                 registry_dir=self.registry_dir,
@@ -446,6 +453,7 @@ class BackendDispatchTests(unittest.TestCase):
                 loaded = self.verifier.load_receipt(receipt.digest)
                 self.assertEqual(loaded, receipt)
                 fresh = OutcomeVerifier(
+                    allow_shared_custody=True,
                     executor=self.eval_executor,
                     key_dir=self.key_dir,
                     registry_dir=self.registry_dir,
@@ -470,6 +478,7 @@ class FailureClassRegistryTests(VerifierFixture):
         self.assertEqual(self.verifier.failure_class_for("task-money"),
                          "convention_unknown:money")
         reloaded = OutcomeVerifier(
+            allow_shared_custody=True,
             executor=self.eval_executor, key_dir=self.key_dir,
             registry_dir=self.registry_dir)
         self.assertEqual(reloaded.failure_class_for("task-money"),
@@ -507,6 +516,7 @@ class ReceiptFailureClassTests(VerifierFixture):
         self.assertTrue(verify_receipt_signature(
             receipt, self.verifier.keystore.public.hex()))
         reloaded = OutcomeVerifier(
+            allow_shared_custody=True,
             executor=self.eval_executor, key_dir=self.key_dir,
             registry_dir=self.registry_dir)
         self.assertEqual(

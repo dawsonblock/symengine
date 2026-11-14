@@ -77,6 +77,7 @@ def main() -> int:
         executor=_local_executor(args.allow_local_executor),
         key_dir=evidence / "evaluator-keys",
         registry_dir=evidence / "evaluator-registry",
+        allow_shared_custody=True,
     )
     hidden_test = (fixture / "acceptance_hidden.py").read_bytes()
     verifier.register_task(
@@ -85,6 +86,7 @@ def main() -> int:
         criterion_version="buggy-calc-acceptance-v1",
         argv=(sys.executable, "-m", "unittest", "acceptance_hidden", "-v"),
         files={"acceptance_hidden.py": hidden_test},
+        custody="shared",
     )
 
     store = EpisodeStore(evidence / "episodes")

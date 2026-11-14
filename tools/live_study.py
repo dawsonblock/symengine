@@ -216,7 +216,8 @@ def main() -> int:
     controller._resolve_receipt = receipt_table.__getitem__
     executor = LocalSubprocessExecutor(root / "exec")
     verifier = OutcomeVerifier(executor=executor, key_dir=root / "eval-keys",
-                               registry_dir=root / "eval-reg")
+                               registry_dir=root / "eval-reg",
+                               allow_shared_custody=True)
 
     statements, envelopes, repo_of = {}, [], {}
     for name, mod, src, statement, steps, test in TASKS:
@@ -273,7 +274,7 @@ def main() -> int:
             criterion_version="v1",
             argv=(sys.executable, "-m", "pytest", "-q", "eval_tests.py"),
             files={"eval_tests.py": test.encode()}, base_commit="a1b2c3d",
-            statement_digest=stmt_digest)
+            statement_digest=stmt_digest, custody="shared")
         env = TaskEnvelopeV1(
             schema_version=1, task_id=task_id,
             repo_snapshot_digest=repo_tree, base_commit="a1b2c3d",

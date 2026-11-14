@@ -72,6 +72,7 @@ def _build_demo(root: Path):
             root / "exec",
             protected_paths=(root / "keys", root / "registry")),
         key_dir=root / "keys", registry_dir=root / "registry",
+        allow_shared_custody=True,
         limits=ResourceLimits(wall_seconds=120, cpu_seconds=60,
                               memory_bytes=profile.task_memory_bytes,
                               process_count=None),
@@ -87,6 +88,7 @@ def _build_demo(root: Path):
                    b"from pathlib import Path\n\n"
                    b"def test_solution():\n"
                    b"    assert 'OK' in Path('solution.py').read_text()\n"},
+            custody="shared",
             base_commit="abc1234")
         tasks.append((TaskEnvelopeV1(
             schema_version=1, task_id=task_id,

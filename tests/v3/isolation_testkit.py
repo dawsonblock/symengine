@@ -16,6 +16,7 @@ from sis.v3.runner import (
     command_spec_digest,
     tree_digest,
 )
+from sis.v3.split_harness import MARKER_SEPARATE_UID, MARKER_SPLIT
 
 BOOTSTRAP_VERSION = b"8.4.2\n"
 PYTEST_VERSION = b"pytest 8.4.2\n"
@@ -23,6 +24,10 @@ PYTEST_VERSION = b"pytest 8.4.2\n"
 
 class ScriptedExecutor:
     """A receipt-producing executor with no real containment."""
+
+    # The double can model the split capability so production-path tests
+    # can register private material without weakening the verifier.
+    supports_split_custody = True
 
     def __init__(self, root, *, worker_identity="worker-A",
                  exit_status=0, timeout=False, security_errors=(),
@@ -49,7 +54,8 @@ class ScriptedExecutor:
             executor_identity=self.worker_identity,
         )
 
-    def run(self, workspace, spec):
+    def run(self, workspace, spec, *, private_files=None,
+            split_custody=False):
         self._counter += 1
         execution_id = f"exec-{self._counter}"
         stdout = b""
@@ -61,6 +67,12 @@ class ScriptedExecutor:
             stdout = PYTEST_VERSION
             exit_status = 0
         self._outputs[execution_id] = (stdout, b"")
+        errors = list(self.security_errors)
+        if private_files:
+            errors.append("evaluation:private_material_separated")
+        if split_custody:
+            errors.append(MARKER_SPLIT)
+            errors.append(MARKER_SEPARATE_UID)
         return ExecutionReceiptV1(
             schema_version=1,
             execution_id=execution_id,
@@ -74,7 +86,7 @@ class ScriptedExecutor:
             stderr_digest=None,
             resource_usage={"cpu_seconds": 0, "wall_seconds": 0},
             timeout=self.timeout,
-            security_errors=self.security_errors,
+            security_errors=tuple(errors),
         )
 
     def destroy(self, workspace):

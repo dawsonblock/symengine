@@ -1,5 +1,52 @@
 # Changelog
 
+## 2026-11-14 — Private evaluation defaults to split custody
+
+Closes the remaining custody default identified by the build-10 review.
+Private acceptance material no longer defaults to shared custody.
+
+- `OutcomeVerifier.register_task(custody=None)` resolves private
+  material to `split` when the backend has a second principal and fails
+  closed with `split_custody_unavailable_for_private_material`
+  otherwise. A registration without private files stays shared.
+- `custody="shared"` requires a verifier built with
+  `allow_shared_custody=True`; the flag conflicts with
+  `require_split_custody` and with a production `isolation_policy`.
+  Shared private material is refused at registration with
+  `shared_custody_requires_explicit_opt_out`.
+- Production is enforced in two places: `register_task()` refuses a
+  shared private registration with `production_requires_split_custody`,
+  and `evaluate()` rejects a legacy shared row with the same reason
+  before running it.
+- The worker accepts `--allow-shared-custody` (development only). It
+  conflicts with `--require-split-custody` and `--split-user`. A worker
+  without the opt-out rejects a shared private task as
+  `shared_custody_not_permitted`, and refuses to start when the loaded
+  registry needs split custody but the executor has no second principal.
+- `tools/learn_recommend_cycle.py` defaults to `--split-user 2002:2002`
+  for Docker, registers every private task with `custody="split"`, and
+  aborts when the probe's split check fails. Its report records
+  `private_test_custody`.
+- `DockerSandboxExecutor.probe()` adds `split_identity_exec` when a
+  split user is configured: a command runs as the second UID and the
+  receipt must carry both `evaluation:process_split` and
+  `split:custody:separate_uid`.
+- The development harnesses (`five_arm_campaign.py`,
+  `governed_campaign.py`, `governed_live_campaign.py`, `live_study.py`,
+  `real_agent_campaign.py`, `skill_holdout.py`,
+  `scripts/v3/run_codex_episode.py`) name `custody="shared"` and opt out
+  explicitly. `tests/v3/test_private_evaluation_entrypoints.py` scans
+  `tools/` and `scripts/` so an unmarked private registration or a
+  shared registration without the verifier opt-out fails the suite.
+- `tests/v3/isolation_testkit.ScriptedExecutor` models the split
+  capability so production-path tests register private material without
+  weakening the verifier.
+
+New regressions live in `tests/v3/test_split_custody.py`,
+`tests/v3/test_evaluator_worker.py` and
+`tests/v3/test_private_evaluation_entrypoints.py`. The tree is
+unsealed until build 11 reseals it.
+
 ## 2026-11-14 — Induction scaling, CI image build and archive retention
 
 Closes the remaining scaling, CI and retention gaps identified by the

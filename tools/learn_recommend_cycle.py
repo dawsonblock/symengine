@@ -202,7 +202,7 @@ def scripted_agent(ctx, *, tasks=TASKS):
     return {"tokens_used": 100, "tools_used": 1}
 
 
-def build_task(name, root, verifier, wall):
+def build_task(name, root, verifier, wall, custody):
     mod, buggy, statement, test, _, _ = TASKS[name]
     task_id = "task-" + name
     repo = root / "fixtures" / name
@@ -217,7 +217,8 @@ def build_task(name, root, verifier, wall):
         actor_role="evaluator", task_id=task_id, criterion_version="v1",
         argv=(sys.executable, "-m", "pytest", "-q", "eval_tests.py"),
         files={"eval_tests.py": test.encode()}, base_commit="a1b2c3d",
-        statement_digest=visible_digest, failure_class=TASKS[name][4])
+        statement_digest=visible_digest, failure_class=TASKS[name][4],
+        custody=custody)
     env = TaskEnvelopeV1(
         schema_version=1, task_id=task_id,
         repo_snapshot_digest=repo_tree, base_commit="a1b2c3d",
@@ -252,7 +253,16 @@ def main() -> int:
     ap.add_argument("--sandbox-image", default="sis-evaluator:3.3.8")
     ap.add_argument("--require-sandbox-digest", action="store_true",
                     help="refuse a sandbox image that is not digest-pinned")
+    ap.add_argument("--split-user", default=None,
+                    help="second Docker uid[:gid] for private-test custody"
+                         " (default 2002:2002)")
+    ap.add_argument("--allow-shared-custody", action="store_true",
+                    help="development only: grade private tests beside the"
+                         " submission instead of requiring split custody")
     args = ap.parse_args()
+    if args.allow_shared_custody and args.split_user is not None:
+        raise SystemExit(
+            "--allow-shared-custody and --split-user are mutually exclusive")
     wall = int(args.wall)
 
     root = Path(tempfile.mkdtemp(prefix="sis-learn-cycle-"))
@@ -260,22 +270,36 @@ def main() -> int:
     grants, grant_seed, grant_key = make_grant_authority(
         registry, require_cited_evidence=True)
     sandbox = None
+    custody = "shared" if args.allow_shared_custody else "split"
     if args.sandbox == "docker":
+        split_user = None if args.allow_shared_custody else (
+            args.split_user or "2002:2002")
         executor = DockerSandboxExecutor(
             root / "exec-docker", image=args.sandbox_image,
-            require_image_digest=args.require_sandbox_digest)
+            require_image_digest=args.require_sandbox_digest,
+            split_user=split_user)
         sandbox = executor.probe()
         if not sandbox["ok"]:
             raise SystemExit("docker sandbox probe failed; refusing to evaluate")
+        if custody == "split" and not any(
+                item["name"] == "split_identity_exec" and item["ok"]
+                for item in sandbox["checks"]):
+            raise SystemExit(
+                "split custody probe failed; refusing to evaluate")
     else:
         if not args.allow_local_executor:
             raise SystemExit(
                 "local execution is development-only and not a containment "
                 "boundary; pass --allow-local-executor to authorize it")
         executor = LocalSubprocessExecutor(root / "exec")
+        if custody == "split" and not executor.supports_split_custody:
+            raise SystemExit(
+                "local split custody requires seatbelt; pass "
+                "--allow-shared-custody for a development run")
     verifier = OutcomeVerifier(
         executor=executor,
-        key_dir=root / "eval-keys", registry_dir=root / "eval-reg")
+        key_dir=root / "eval-keys", registry_dir=root / "eval-reg",
+        allow_shared_custody=args.allow_shared_custody)
     # The promotion controller must trust the key that actually signed the
     # receipt, not a test key.
     eval_seed, eval_pub = verifier.keystore.load_or_create()
@@ -289,13 +313,13 @@ def main() -> int:
                         tool_budget=2_000)
 
     dev_env, dev_repo, dev_tree, dev_statement = build_task(
-        "money", root, verifier, wall)
+        "money", root, verifier, wall, custody)
     ev_env, ev_repo, ev_tree, ev_statement = build_task(
-        "money2", root, verifier, wall)
+        "money2", root, verifier, wall, custody)
     sib_env, sib_repo, sib_tree, sib_statement = build_task(
-        "money3", root, verifier, wall)
+        "money3", root, verifier, wall, custody)
     ctl_env, ctl_repo, ctl_tree, ctl_statement = build_task(
-        "slug2", root, verifier, wall)
+        "slug2", root, verifier, wall, custody)
 
     # ---- 1. real agent solves the dev tasks; evaluator verifies them ----- #
     agent = codex_agent if args.agent == "codex" else scripted_agent
@@ -457,6 +481,7 @@ def main() -> int:
         "served_holdout": (holdout_entry(served_report, sib_env)
                            if served_report else None),
         "memory_chain_verified": memory.verify_chain(),
+        "private_test_custody": custody,
         "evaluator_sandbox": (
             {"backend": "docker_sandbox", **sandbox}
             if sandbox is not None else {"backend": "local_subprocess"}),

@@ -122,6 +122,7 @@ def test_trusted_promotion_can_be_served_by_strict_gateway(tmp_path):
     seed, public = signatures.generate_keypair()
     kid = "key-" + hashlib.sha256(public).hexdigest()[:24]
     verifier = OutcomeVerifier(
+        allow_shared_custody=True,
         executor=LocalSubprocessExecutor(tmp_path / "exec", use_seatbelt=False),
         key_dir=tmp_path / "keys", registry_dir=tmp_path / "registry")
     verifier.register_task(actor_role="evaluator", task_id="t", criterion_version="v1",

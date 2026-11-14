@@ -1094,6 +1094,36 @@ class DockerSandboxExecutor:
                 "retained_bytes": retained,
                 "ok": retained <= 65_536,
             })
+            if self.split_user is not None:
+                # The second principal is only real if it can execute a
+                # command and the run records both split markers.
+                workspace = self.prepare(temp, label="split_identity")
+                try:
+                    receipt = self.run(
+                        workspace,
+                        CommandSpec(
+                            argv=("python3", "-c", "print('split-ok')"),
+                            limits=ResourceLimits(
+                                memory_bytes=256 * 1024 * 1024,
+                                wall_seconds=30, output_bytes=65_536,
+                                disk_bytes=16 * 1024 * 1024,
+                                process_count=32)),
+                        private_files={"acceptance.py": b"# probe\n"},
+                        split_custody=True)
+                    stdout, stderr = self.output(receipt.execution_id)
+                finally:
+                    self.destroy(workspace)
+                markers = receipt.security_errors or ()
+                checks.append({
+                    "name": "split_identity_exec",
+                    "expected": "success",
+                    "exit_status": receipt.exit_status,
+                    "ok": (receipt.exit_status == 0
+                           and MARKER_SPLIT in markers
+                           and MARKER_SEPARATE_UID in markers),
+                    "stdout": stdout.decode("utf-8", "replace")[:200],
+                    "stderr": stderr.decode("utf-8", "replace")[:200],
+                })
         finally:
             shutil.rmtree(temp, ignore_errors=True)
         return {
