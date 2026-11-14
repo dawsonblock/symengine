@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from sis.errors import InvalidInput, RuleRejected
-from sis.family_eval import (DATASET_FORMAT,precommit,validate_dataset,validate_protocol,
+from sis.family_eval import (DATASET_FORMAT,precommit,validate_protocol,
     evaluate,holm_adjust,FamilyExperimentVault,verify_report)
 from sis.validation import canonical,digest
 

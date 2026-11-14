@@ -15,18 +15,18 @@ from pathlib import Path
 from sis.v3 import signatures
 from sis.v3.authority_db import AuthorityConflict, AuthorityDB, AuthorityError
 from sis.v3.catalog import Catalog
-from sis.v3.contracts import ContractError, ProcedureRecordV1, canonical_json
+from sis.v3.contracts import ProcedureRecordV1
 from sis.v3.promotion import PromotionController, operator_token_digest
 from sis.v3.repository_registry import (
     RegistryError, RepositoryRegistry, sign_identity, unsigned_identity,
 )
 from sis.v3.scope_grants import (
-    ScopeGrantAuthority, ScopeGrantError, sign_grant, unsigned_grant,
+    ScopeGrantError, sign_grant, unsigned_grant,
 )
 from sis.v3.secure_guidance import StrictGuidanceGateway
 
 from tests.v3.authority_testkit import (
-    GRANT_SIGNER_KEY_ID, TEST_TOKEN, drive, evaluator_keypair,
+    TEST_TOKEN, drive, evaluator_keypair,
     issue_and_commit_grant, make_grant_authority, make_registry,
     register_repo, seed as seed_record, signed_receipt,
 )

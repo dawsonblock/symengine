@@ -17,6 +17,7 @@ import io
 import json
 import os
 import shlex
+import shutil
 import subprocess
 import sys
 import tarfile
@@ -60,6 +61,26 @@ from sis.v3.verifier import (
 )
 
 PY = sys.executable
+
+DOCKER_IMAGE = "sis-evaluator:3.3.8"
+
+
+def _docker_ready(image=DOCKER_IMAGE):
+    """A real split needs a working daemon and the evaluator image."""
+    if shutil.which("docker") is None:
+        return False
+    try:
+        subprocess.run(["docker", "info"], check=True,
+                       capture_output=True, timeout=30)
+        subprocess.run(["docker", "image", "inspect", image], check=True,
+                       capture_output=True, timeout=30)
+        probe = subprocess.run(
+            ["docker", "run", "--rm", "--network", "none",
+             "--entrypoint", "python3", image, "-c", "pass"],
+            capture_output=True, timeout=120)
+        return probe.returncode == 0
+    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        return False
 
 PROBE_SUBMISSION = (
     "import os\n"
@@ -577,7 +598,7 @@ class SplitCustodyPolicyTests(unittest.TestCase):
         (self.submission / "solution.py").write_text(
             "x = 1\n", encoding="utf-8")
 
-    def make_verifier(self, executor=None, require_split_custody=False):
+    def make_verifier(self, executor=None, require_split_custody=None):
         return OutcomeVerifier(
             executor=executor or SplitCapableExecutor(),
             key_dir=self.root / "keys",
@@ -601,6 +622,19 @@ class SplitCustodyPolicyTests(unittest.TestCase):
         with self.assertRaisesRegex(
                 ContractError, "split_custody_required_but_unavailable"):
             self.make_verifier(plain, require_split_custody=True)
+
+    def test_a_configured_split_identity_implies_the_policy(self):
+        class SplitIdentityExecutor(SplitCapableExecutor):
+            split_user = "2002:2002"
+
+        verifier = self.make_verifier(SplitIdentityExecutor())
+        self.assertTrue(verifier.require_split_custody)
+        with self.assertRaisesRegex(
+                ContractError, "split_custody_required_for_private_material"):
+            verifier.register_task(
+                actor_role="evaluator", task_id="implied",
+                criterion_version="v1", argv=(PY, "acceptance.py"),
+                files={"acceptance.py": b"x = 1\n"})
 
     def test_private_material_under_shared_custody_is_refused(self):
         verifier = self.make_verifier(require_split_custody=True)
@@ -779,6 +813,58 @@ class WorkerSplitConfigurationTests(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertIn(
             "split_custody_required_but_unavailable", stderr.getvalue())
+
+
+@unittest.skipUnless(
+    _docker_ready(), f"Docker daemon or image {DOCKER_IMAGE} unavailable")
+class RealDockerSplitCustodyTests(SplitFixture):
+    """The split boundary against a real container, not a CLI double."""
+
+    def setUp(self):
+        super().setUp()
+        self.executor = DockerSandboxExecutor(
+            self.root / "docker-exec", image=DOCKER_IMAGE,
+            require_image_digest=False, split_user="2002:2002")
+        self.addCleanup(self.executor.terminate_all)
+
+    def test_submission_cannot_read_the_private_tests(self):
+        verifier = self.make_verifier(self.executor)
+        verifier.register_task(
+            actor_role="evaluator", task_id="docker-split",
+            criterion_version="acceptance-v1",
+            argv=(PY, "-m", "pytest", "-q", "acceptance.py"),
+            files={"acceptance.py": probe_acceptance(
+                "PermissionError").encode()},
+            custody="split")
+        receipt = verifier.evaluate(
+            actor_role="evaluator", task=self.envelope("docker-split"),
+            submission_dir=self.submission, evaluation_nonce="docker-split")
+        self.assertEqual(
+            receipt.outcome, "pass", verifier.last_outcome_class)
+
+    def test_worker_reload_keeps_split_custody(self):
+        # The worker builds a fresh verifier in its child process, so this
+        # exercises registry reload and the implied policy end to end.
+        key_dir, registry_dir = self.root / "wkeys", self.root / "wregistry"
+        registrar = OutcomeVerifier(
+            executor=LocalSubprocessExecutor(
+                self.root / "registrar", use_seatbelt=False),
+            key_dir=key_dir, registry_dir=registry_dir)
+        registrar.register_task(
+            actor_role="evaluator", task_id="worker-split",
+            criterion_version="acceptance-v1",
+            argv=(PY, "-m", "pytest", "-q", "acceptance.py"),
+            files={"acceptance.py": probe_acceptance(
+                "PermissionError").encode()},
+            custody="split")
+        result = evaluate_via_subprocess(
+            key_dir=key_dir, registry_dir=registry_dir,
+            task=self.envelope("worker-split"),
+            submission_dir=self.submission,
+            evaluation_nonce="worker-split", executor="docker",
+            sandbox_image=DOCKER_IMAGE, require_image_digest=False,
+            split_user="2002:2002")
+        self.assertEqual(result.receipt.outcome, "pass")
 
 
 if __name__ == "__main__":

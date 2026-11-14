@@ -41,7 +41,7 @@ The image is tag-only in this development run; receipts carry
 signed isolation attestation; the Docker receipt markers are factual
 launch controls, not a containment proof.
 
-## Test result
+## Test result at the original seal
 
 Environment: Python 3.12.0 on macOS arm64, pinned `pytest==8.4.2`,
 `z3-solver==4.16.0`, Docker Desktop 4.99.0 / engine 29.9.3,
@@ -90,3 +90,24 @@ environment failure, not a code change), so `_docker_ready()` skipped the
 **1381 passed, 28 skipped, 0 failed**. The skip is the documented
 contract; the Docker-backed cycle evidence above still comes from the
 working run.
+
+## Post-seal evidence refresh (2026-11-14)
+
+The post-seal repairs (Gate 2 containment, process-split custody, worker
+split configuration, custody durability) changed the executor and the
+verifier. The Docker probe and attestation were regenerated over the
+current tree:
+
+- image `sis-evaluator:3.3.8@sha256:27415edf…`, Docker 29.9.3,
+  `production=True`;
+- probe 13/13 checks pass; no `docker:image_tag_only`;
+- `IsolationAttestationV1` verified (`reason: ok`); the negative control
+  is rejected (`image_mismatch`);
+- real-container split custody: the worker UID is denied the private
+  tests, and a task reloaded in the worker child keeps `custody="split"`;
+- suite: **1490 passed, 13 skipped, 0 failed.**
+
+The trust root remains `qualification-only`. This refresh binds the
+evidence to the current source and image; it does not replace an
+isolator key held independently of the evaluated machine. See
+[SANDBOX_QUALIFICATION_GATE2.md](SANDBOX_QUALIFICATION_GATE2.md).

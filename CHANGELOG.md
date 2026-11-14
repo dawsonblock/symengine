@@ -1,5 +1,35 @@
 # Changelog
 
+## 2026-11-14 — Docker evidence refresh and repository hygiene
+
+Regenerates the Docker containment evidence over the post-seal tree and
+closes the review findings that were still open. Not a feature release.
+
+- Added `tools/probe_docker_sandbox.py`, the missing reproducible driver
+  for `evidence/sandbox/docker_sandbox_probe.json`. It runs
+  `DockerSandboxExecutor.probe()` against a digest-pinned image.
+- Regenerated the probe (13/13) and
+  `evidence/sandbox/gate2_isolation/` against
+  `sis-evaluator:3.3.8@sha256:27415edf…` on Docker 29.9.3. The
+  attestation verifies (`reason: ok`) and the wrong-digest control is
+  rejected (`image_mismatch`). Trust root remains `qualification-only`.
+- Added real-container split-custody tests. They verify that the worker
+  UID cannot read the private tests and that a task reloaded in the
+  worker child keeps `custody="split"`; they skip when Docker or the
+  image is unavailable.
+- `OutcomeVerifier` now implies `require_split_custody` when the executor
+  has a configured `split_user`, matching the worker CLI instead of
+  leaving the API path weaker. `DockerSandboxExecutor.split_user` is
+  public.
+- Cleared the 64 pre-existing pyflakes findings in `tests/` (`ruff check
+  src tests` is now clean) and corrected stale documentation:
+  `QUALIFICATION_REPORT.md` is marked superseded, `STATUS.md` points at
+  the v3.3.8 report, the Gate 2 section no longer cites its historical
+  suite count as current, and the generated release README states that
+  the ZIP is distributed out-of-band.
+
+Suite on the refreshed tree: 1490 passed, 13 skipped, 0 failed.
+
 ## 2026-11-14 — Split-custody worker configuration (post-seal)
 
 Makes the process-split boundary reachable through the shipped evaluator

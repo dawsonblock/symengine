@@ -30,9 +30,7 @@ from sis.v3 import signatures
 from sis.v3.contracts import ContractError, TaskEnvelopeV1
 from sis.v3.evaluation_runtime import (
     SANDBOX_FAILURE,
-    TASK_FAIL,
     TASK_PASS,
-    TIMEOUT,
     classify_execution,
     classify_production_execution,
 )
@@ -47,7 +45,6 @@ from sis.v3.isolation import (
 from sis.v3.runner import CommandSpec, LocalSubprocessExecutor
 from sis.v3.verifier import (
     EvaluationRejected,
-    JournalIntegrityError,
     OutcomeVerifier,
 )
 from sis.v3.contracts import OutcomeReceiptV1, OutcomeReceiptV2

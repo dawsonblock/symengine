@@ -7,7 +7,6 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
 
 from sis.errors import InvalidInput, RuleRejected
 from sis.paired_eval import run_paired, exact_mcnemar_pvalue, _strict_answer

@@ -4,7 +4,7 @@ import unittest
 from dataclasses import replace
 from pathlib import Path
 
-from sis.v3.contracts import ContractError, OutcomeReceiptV1, ProcedureRecordV1
+from sis.v3.contracts import ContractError, ProcedureRecordV1
 from sis.v3.policy import AuthorizationDenied
 from sis.v3.procedures import (
     MiningContext,

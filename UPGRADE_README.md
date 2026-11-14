@@ -147,9 +147,11 @@ still describe the pre-repair tree.
   `propose_edit()`.
 
 New regressions live in `tests/v3/test_gate2_containment_repairs.py`.
-The full suite is 1452 passed, 13 skipped after the repaired tree is
-re-sealed. Regenerate the sealed archive and its evidence with
-`tools/package_release.py` before making a release claim.
+The suite for that repair was 1452 passed, 13 skipped. The current count
+is recorded in `release/release_manifest.json`; do not cite this
+historical number for a later tree. Regenerate the sealed archive and
+its evidence with `tools/package_release.py` before making a release
+claim.
 
 ### Post-seal repair: process-split acceptance custody
 
@@ -260,6 +262,26 @@ but shared custody remains available for development. Production
 deployments that hide acceptance material should pass both settings.
 
 New regressions live in `tests/v3/test_split_custody.py`.
+
+### Post-seal repair: Docker evidence refresh
+
+The stored containment probe and isolation attestation predated the
+post-seal repairs, so they did not describe the current executor.
+
+- `tools/probe_docker_sandbox.py` regenerates the 13-check probe from
+  `DockerSandboxExecutor.probe()`. It was missing from the tree; the
+  previous evidence had no reproducible driver.
+- `tools/qualify_docker_isolation.py` regenerated the receipt and
+  `IsolationAttestationV1` over the current tree and the digest-pinned
+  image `sis-evaluator:3.3.8@sha256:27415edf…`.
+- Result: probe 13/13, attestation verified (`reason: ok`), negative
+  control rejected (`image_mismatch`), no `docker:image_tag_only`.
+- Real-container split tests now run when the image is available: the
+  worker UID is denied the private tests, and a task reloaded in the
+  worker child keeps `custody="split"`. They skip when Docker or the
+  image is unavailable.
+- The trust root remains `qualification-only`; this refresh is
+  engineering evidence, not a production security certification.
 
 ### Verifying the v3.3.8 release
 

@@ -1,5 +1,4 @@
 import json
-import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -11,7 +10,6 @@ from sis.induction import induce, generated_probes
 from sis.model import CompatibleLLM
 from sis.registry import Registry
 from sis.service import Service
-from sis.smt import bounded_disagreement
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -211,9 +209,8 @@ class ModelTests(unittest.TestCase):
         self.assertEqual(CompatibleLLM(base_url='https://example.com/v1/chat/completions',model='remote').model,'remote')
 
     def test_no_valid_z3_if_not_installed(self):
-        try:
-            import z3
-        except ImportError:
+        import importlib.util
+        if importlib.util.find_spec("z3") is None:
             req=fixture('arithmetic_study.json')
             with self.assertRaises(InvalidInput):
                 induce(req['train'],req['validation'],use_z3=True)

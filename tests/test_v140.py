@@ -2,7 +2,6 @@
 import copy
 import json
 import os
-import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -11,7 +10,7 @@ import unittest
 from pathlib import Path
 
 from sis.errors import InvalidInput, RuleRejected
-from sis.sealed_eval import EvaluatorVault, _mac, _metrics, _key_from_env
+from sis.sealed_eval import EvaluatorVault, _metrics, _key_from_env
 from sis.vault_storage import private_directory
 from sis.validation import digest
 

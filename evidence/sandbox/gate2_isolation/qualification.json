@@ -1,14 +1,14 @@
 {
-  "attestation_digest": "9ee900d5508ff90b885ee74fa4c2f9417a95238c7f666e86c336433e8dc775f7",
+  "attestation_digest": "d31f28750cff95cf1e57fb6a7ae86b56606d45cc07b35077aa38c9c8ff8b44ff",
   "backend": "docker_sandbox",
-  "generated_at": "2026-11-13T06:20:46Z",
-  "image": "sis-evaluator:3.3.8@sha256:71dddad6bb2f97c6de45309ae19a79301e1f03c89be59c016dd9eacdf05471df",
-  "image_digest": "71dddad6bb2f97c6de45309ae19a79301e1f03c89be59c016dd9eacdf05471df",
+  "generated_at": "2026-11-14T08:18:33Z",
+  "image": "sis-evaluator:3.3.8@sha256:27415edf3cfb4d248536cc8b4ad196d1113d5ca23bf74f1ae3a9a07448d933f0",
+  "image_digest": "27415edf3cfb4d248536cc8b4ad196d1113d5ca23bf74f1ae3a9a07448d933f0",
   "kind": "docker_isolation_qualification",
   "negative_image_mismatch_ok": true,
   "negative_image_mismatch_reason": "image_mismatch",
   "note": "Locally signed containment evidence, not an externally trusted attestation. Production qualification still requires an isolator key held independently of this machine.",
-  "policy_digest": "c6feef95458a411f0b0092f4d1595d650b28065ff08eb026d7c698eec6a04cbd",
+  "policy_digest": "822a65ec2d2b573f8511be6dacaa7d22d9087ddcfa188032dbded9bc73947f70",
   "properties": [
     "net:denied",
     "fs:root_read_only",
@@ -22,7 +22,7 @@
     "limits:cpu_time",
     "output:capped"
   ],
-  "receipt_digest": "a3b1378b7594ce485e69225f211813ffe6359181310c427aac234be35e4bc123",
+  "receipt_digest": "524f33908156daafef1ec786e8f56f7c79fc9cfd47473b55d04d0ff6fe9da7f6",
   "receipt_security_errors": [
     "isolation:docker_sandbox",
     "docker:network_none",
@@ -40,7 +40,7 @@
   ],
   "schema_version": 1,
   "signer_key_id": "gate2-local-isolator",
-  "signer_public_key": "4d9ec958cf2dda3040f6c9c41c9946552d176d6a0833715bfe837765b3ced55b",
+  "signer_public_key": "f551d0265131e79de12a9cd9c46aadd0bbb3a09352d06491e488cfcbceb06fd8",
   "stdout": "qualified\n",
   "trust_root": "qualification-only",
   "verification_reason": "ok",

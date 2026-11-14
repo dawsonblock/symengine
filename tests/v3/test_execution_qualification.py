@@ -7,7 +7,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from sis.v3.adapters import CodexAdapter, CodexAdapterError
-from sis.v3.benchmark import BenchmarkHarness, BudgetCaps, UsageMeter
+from sis.v3.benchmark import BenchmarkHarness, BudgetCaps
 from sis.v3.contracts import TaskEnvelopeV1
 from sis.v3.runner import LocalSubprocessExecutor, tree_digest
 from sis.v3.verifier import OutcomeVerifier

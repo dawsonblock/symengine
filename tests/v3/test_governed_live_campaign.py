@@ -16,7 +16,6 @@ sys.path.insert(0, str(REPO / "tools"))
 sys.path.insert(0, str(REPO / "src"))
 sys.path.insert(0, str(REPO))
 
-import governed_campaign as gc  # noqa: E402
 import governed_live_campaign as glc  # noqa: E402
 
 # Schema-faithful adapter: (module, keyword, good_source) per task name.

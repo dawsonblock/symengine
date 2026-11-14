@@ -10,7 +10,7 @@ from pathlib import Path
 from sis.errors import InvalidInput
 from sis.v3 import signatures
 from sis.vault_storage import assert_private_acl, create_private_file
-from sis.v3.contracts import ContractError, OutcomeReceiptV1, TaskEnvelopeV1
+from sis.v3.contracts import ContractError, TaskEnvelopeV1
 from sis.v3.policy import AuthorizationDenied
 from sis.v3.runner import LocalSubprocessExecutor, ResourceLimits
 from sis.v3.verifier import (
@@ -114,9 +114,7 @@ class SignaturePrimitiveTests(unittest.TestCase):
             )
             from cryptography.hazmat.primitives.serialization import (
                 Encoding,
-                PrivateFormat,
                 PublicFormat,
-                NoEncryption,
             )
         except ModuleNotFoundError:
             self.skipTest("cryptography package not installed")

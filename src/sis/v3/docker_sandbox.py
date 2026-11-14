@@ -229,6 +229,11 @@ class DockerSandboxExecutor:
         return self._split_user is not None
 
     @property
+    def split_user(self) -> str | None:
+        """The configured second container identity, if any."""
+        return self._split_user
+
+    @property
     def network_isolation(self) -> str:
         return "docker_none"
 

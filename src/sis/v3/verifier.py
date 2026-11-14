@@ -314,10 +314,16 @@ class OutcomeVerifier:
         runtime_profile: EvaluationRuntimeProfile | None = None,
         protected_paths=(),
         isolation_policy: ProductionIsolationPolicy | None = None,
-        require_split_custody: bool = False,
+        require_split_custody: bool | None = None,
     ) -> None:
         self.executor = executor
         self.identity = identity
+        if require_split_custody is None:
+            # A backend configured with a second principal was configured
+            # to use it. Requiring split custody for hidden tests is the
+            # same implication the worker CLI applies for --split-user.
+            require_split_custody = getattr(
+                executor, "split_user", None) is not None
         # A deployment that requires split custody cannot be served by a
         # backend with no second principal. Refuse construction rather
         # than accepting registrations that could only fail later.

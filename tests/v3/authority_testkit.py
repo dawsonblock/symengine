@@ -9,7 +9,6 @@ with test-custody keys instead of evaluator-custody keys.
 from __future__ import annotations
 
 import hashlib
-from dataclasses import replace
 from pathlib import Path
 
 from sis.v3 import signatures

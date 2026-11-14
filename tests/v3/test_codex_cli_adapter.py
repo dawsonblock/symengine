@@ -5,7 +5,6 @@ Codex backend is touched.
 """
 import os
 import stat
-import sys
 import tempfile
 import time
 import unittest

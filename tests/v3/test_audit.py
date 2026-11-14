@@ -45,7 +45,7 @@ class AnchorTests(unittest.TestCase):
         self.assertEqual(report["divergences"][0]["kind"], "grew_after_anchor")
 
     def test_corrupt_episode_flagged(self):
-        e0 = self.store.append_event(_event(0))
+        self.store.append_event(_event(0))
         self.chain.anchor_episode(self.store, "ep-1")
         log = self.root / "evidence" / "episodes" / "ep-1.jsonl"
         log.write_bytes(log.read_bytes() + b'{"forged":1}\n')
