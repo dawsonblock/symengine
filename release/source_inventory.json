@@ -25,8 +25,8 @@
       "sha256": "f4e9590f3ebad5ffec1d03da3db058375438693dbcd93f2738ff3ea66da17b8d"
     },
     "CHANGELOG.md": {
-      "bytes": 67621,
-      "sha256": "3666e5b94c152fbf003f0f001f2c837285870abebf7ce6c892752480c98fa96b"
+      "bytes": 68089,
+      "sha256": "915bba1fc34ac662d1fa16fba32a87b102979c5b423b0814481ce554983a8c77"
     },
     "LICENSE": {
       "bytes": 1083,
@@ -37,8 +37,8 @@
       "sha256": "84b93e332345b58afc0820a727d83393a9cf31d8771d02f01deec2d88525b729"
     },
     "UPGRADE_README.md": {
-      "bytes": 25973,
-      "sha256": "f1f9e8fc5cb957edc24ede7e23043c5bbd3449a97ba109d127f9e69d54dfd22e"
+      "bytes": 26417,
+      "sha256": "89429163dc46d4138f169e810a4e9fe68298417a33c7d6111710563c49d9a11a"
     },
     "UPGRADE_RELEASE_NOTES_2026-10-24.md": {
       "bytes": 4370,
@@ -1069,8 +1069,8 @@
       "sha256": "aa5a7e1fb12c0c09a0c68d2cd22893d1c3c87f0234b095e32ce63f5df90f8872"
     },
     "src/sis/v3/evaluator_worker.py": {
-      "bytes": 10078,
-      "sha256": "962ab4ea31f449aa5f600bc42fafc318187b262b69284c25a990f084882b283c"
+      "bytes": 10124,
+      "sha256": "d1bc78fe4d287c400a4bdf33b05aa465178b45253d8390f16946d7af807c925c"
     },
     "src/sis/v3/evidence_custody.py": {
       "bytes": 36072,
@@ -1269,8 +1269,8 @@
       "sha256": "76449530b6b82beadb1c0f4b0d24ae4b478a6a649bbdaa64ee4b0a35a187c69f"
     },
     "src/sis/v3/verifier.py": {
-      "bytes": 47325,
-      "sha256": "90b15e17f21a11c43f169e0746400b3dba98aa3e71171f98d56df9f686cf9a42"
+      "bytes": 50278,
+      "sha256": "7d2fc5036e1b1cb8c16535a09140d12706c591fb93f57390716eb7b45b01f629"
     },
     "src/sis/v3/workspace_guard.py": {
       "bytes": 12082,
@@ -1601,8 +1601,8 @@
       "sha256": "c0a0c64c48b5a62838017ebb13362fe394c7a452b2bc99f83dfea0af6a28f677"
     },
     "tests/v3/test_split_custody.py": {
-      "bytes": 30799,
-      "sha256": "ee963378b7ef26c92f2b15b04e58dad80889c8c6896cb573d14ae11ddf93a200"
+      "bytes": 33771,
+      "sha256": "36943aec97a20e8d98c2b39cd978459e1611621f847461062e390e8d9f68d93d"
     },
     "tests/v3/test_upgrade_integrity_learning.py": {
       "bytes": 9354,
@@ -1807,5 +1807,5 @@
   },
   "release": "SIS-v3.3.8",
   "schema_version": 1,
-  "source_commit": "2ed267e31c8b686a6c1c81a6c5b793a9d8e666da"
+  "source_commit": "ae06c5acf274814723833148cdd8cd90bf60ac4d"
 }
