@@ -4,6 +4,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -88,6 +89,82 @@ class TestEvidenceValidationTests(unittest.TestCase):
                                         "schema_version": 2}))
             with self.assertRaisesRegex(SystemExit, "schema_version"):
                 package_release.load_test_evidence(path)
+
+
+def attestation(**overrides):
+    record = {
+        "schema_version": 1,
+        "kind": "external_isolation_verification",
+        "generated_at": "2026-11-14T22:00:00Z",
+        "verified": True,
+        "reason": "ok",
+        "public_key": "c" * 64,
+        "image_digest": "a" * 64,
+        "receipt_digest": "b" * 64,
+        "policy_digest": "d" * 64,
+        "required_properties": ["net:denied"],
+    }
+    record.update(overrides)
+    return record
+
+
+AT = datetime(2026, 11, 14, 22, 10, tzinfo=timezone.utc)
+
+
+class ExternalAttestationValidationTests(unittest.TestCase):
+    def test_a_fresh_bound_attestation_is_accepted(self):
+        package_release.validate_external_attestation(
+            attestation(),
+            expected_image_digest="a" * 64,
+            expected_receipt_digest="b" * 64,
+            at_time=AT)
+
+    def test_an_expired_attestation_is_rejected(self):
+        with self.assertRaisesRegex(SystemExit, "window"):
+            package_release.validate_external_attestation(
+                attestation(), at_time=datetime(
+                    2026, 11, 14, 23, 30, tzinfo=timezone.utc))
+
+    def test_a_failed_verification_is_rejected(self):
+        for overrides in ({"verified": False},
+                          {"reason": "image_mismatch"}):
+            with self.assertRaisesRegex(SystemExit, "rejected"):
+                package_release.validate_external_attestation(
+                    attestation(**overrides), at_time=AT)
+
+    def test_an_image_or_receipt_mismatch_is_rejected(self):
+        with self.assertRaisesRegex(SystemExit, "image_digest"):
+            package_release.validate_external_attestation(
+                attestation(), expected_image_digest="e" * 64, at_time=AT)
+        with self.assertRaisesRegex(SystemExit, "receipt_digest"):
+            package_release.validate_external_attestation(
+                attestation(), expected_receipt_digest="e" * 64, at_time=AT)
+
+    def test_missing_properties_or_key_are_rejected(self):
+        for overrides in ({"required_properties": []},
+                          {"public_key": "not-a-key"}):
+            with self.assertRaisesRegex(SystemExit, "rejected"):
+                package_release.validate_external_attestation(
+                    attestation(**overrides), at_time=AT)
+
+    def test_load_rejects_a_foreign_document(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "attestation.json"
+            path.write_text(json.dumps({"kind": "something_else"}))
+            with self.assertRaisesRegex(
+                    SystemExit, "external_isolation_verification"):
+                package_release.load_external_attestation(path)
+
+    def test_the_cli_refuses_a_missing_required_attestation(self):
+        result = subprocess.run(
+            [sys.executable, str(ROOT / "tools/package_release.py"),
+             "--status", "TEST", "--passed", "1",
+             "--require-external-attestation"],
+            capture_output=True, text=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(
+            "--require-external-attestation needs --external-attestation",
+            result.stderr)
 
 
 class RunTestsParsingTests(unittest.TestCase):

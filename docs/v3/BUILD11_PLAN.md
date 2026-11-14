@@ -380,6 +380,11 @@ Two sequencing traps:
   failing test totals.
 - **Phase 3.4 decided**: Windows remains experimental and non-blocking;
   build 11 does not claim Windows evaluator support.
+- **Phase 2 gates implemented**: release mode verifies a signed
+  `production` provenance envelope against the relying party's release
+  key and requires a verified external isolation attestation;
+  `package_release.py` refuses a stale or unbound external record. Only
+  the key ceremony and the actual external signature remain.
 - **Blocked**: Phase 2 needs an externally held release and isolator
   key. Phase 4 needs a corpus and a committed agent quota. Phase 5 has
   not started.

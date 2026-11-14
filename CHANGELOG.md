@@ -1,5 +1,33 @@
 # Changelog
 
+## 2026-11-14 — Release authenticity gates
+
+Closes the code side of the build-10 release-authenticity finding. The
+key ceremony remains external.
+
+- `tools/check_release_ci.py --mode release` now requires a signed
+  `production` provenance envelope and verifies it against the relying
+  party's release key, supplied with `--release-public-key` or
+  `SIS_RELEASE_PUBLIC_KEY`. A key shipped beside the artifact is not
+  accepted as its own trust anchor.
+- Release mode also requires `release_manifest.isolation.
+  external_attestation.verified` to be true. Passing
+  `--isolator-public-key` (or `SIS_ISOLATOR_PUBLIC_KEY`) pins the
+  recorded isolator key.
+- `tools/package_release.py` accepts `--external-attestation` and
+  `--require-external-attestation`. The record must be a fresh
+  `external_isolation_verification`, verified with reason `ok`, name
+  its required properties, and bind the probe image digest and stored
+  receipt digest. The release manifest records the record's digest,
+  signer, image, policy and receipt bindings.
+- `tests/v3/test_release_ci.py` covers unsigned provenance, a
+  qualification trust root, a missing or wrong release key, a missing
+  isolation attestation and a mismatched isolator key. The evidence
+  tests cover expired, failed, unbound and malformed external records.
+
+The stored bundle remains qualification-only; a production seal still
+needs an isolator key held independently of the evaluated machine.
+
 ## 2026-11-14 — Private evaluation defaults to split custody
 
 Closes the remaining custody default identified by the build-10 review.

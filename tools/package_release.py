@@ -41,8 +41,10 @@ def _package_version(root: Path) -> str:
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 import provenance
 from build_canonical_zip import build, source_binding
+from sis.v3.contracts import ExecutionReceiptV1
 from verify_release import verify_tree
 
 SMOKE_TEST = "tests/v3/test_candidates.py"
@@ -123,6 +125,93 @@ def validate_test_evidence(evidence: dict, commit: str) -> None:
         problems.append("evidence command does not run pytest")
     if problems:
         raise SystemExit("test evidence rejected: " + "; ".join(problems))
+
+
+def _parse_ts(value: str) -> datetime:
+    parsed = datetime.fromisoformat(
+        value[:-1] + "+00:00" if value.endswith("Z") else value)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
+def _probe_image_digest(root: Path) -> str | None:
+    try:
+        probe = json.loads(
+            (root / "evidence" / "sandbox" /
+             "docker_sandbox_probe.json").read_text())
+    except (OSError, ValueError):
+        return None
+    value = probe.get("image_id")
+    return value if isinstance(value, str) and re.fullmatch(
+        r"[0-9a-f]{64}", value) else None
+
+
+def _receipt_digest(root: Path) -> str | None:
+    try:
+        receipt = ExecutionReceiptV1.from_json(
+            (root / "evidence" / "sandbox" / "gate2_isolation" /
+             "receipt.json").read_bytes())
+    except (OSError, ValueError):
+        return None
+    return receipt.digest
+
+
+def load_external_attestation(path: Path) -> dict:
+    """Read a verification record from tools/verify_external_attestation.py."""
+    try:
+        record = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise SystemExit(f"external attestation is unreadable: {exc}") from exc
+    if (not isinstance(record, dict)
+            or record.get("kind") != "external_isolation_verification"):
+        raise SystemExit(
+            "external attestation is not an"
+            " external_isolation_verification document")
+    return record
+
+
+def validate_external_attestation(
+    record: dict, *,
+    expected_image_digest: str | None = None,
+    expected_receipt_digest: str | None = None,
+    max_age_seconds: int = 3600,
+    at_time: datetime | None = None,
+) -> None:
+    """Refuse an external attestation that does not bind this seal."""
+    problems = []
+    if record.get("schema_version") != 1:
+        problems.append("schema_version must be 1")
+    if record.get("verified") is not True:
+        problems.append("attestation is not verified")
+    if record.get("reason") != "ok":
+        problems.append("attestation reason is not ok")
+    public_key = record.get("public_key")
+    if not (isinstance(public_key, str)
+            and re.fullmatch(r"[0-9a-f]{64}", public_key)):
+        problems.append("public_key is not a lowercase hex Ed25519 key")
+    if not record.get("required_properties"):
+        problems.append("attestation names no required properties")
+    if expected_image_digest is not None and (
+            record.get("image_digest") != expected_image_digest):
+        problems.append("image_digest does not match the sealed probe")
+    if expected_receipt_digest is not None and (
+            record.get("receipt_digest") != expected_receipt_digest):
+        problems.append("receipt_digest does not match the stored receipt")
+    generated = record.get("generated_at")
+    try:
+        generated_at = _parse_ts(generated)
+    except (TypeError, ValueError):
+        problems.append("generated_at is missing or unparseable")
+    else:
+        now = at_time or datetime.now(timezone.utc)
+        age = (now - generated_at).total_seconds()
+        if age < 0 or age > max_age_seconds:
+            problems.append(
+                f"attestation is outside the {max_age_seconds}s window")
+    if problems:
+        raise SystemExit(
+            "external attestation rejected: " + "; ".join(problems))
 
 
 def _docs(root: Path) -> list[str]:
@@ -244,7 +333,9 @@ def package(root: Path, release: str, *, status: str,
             provenance_seed: bytes | None = None,
             provenance_key_id: str = "release-key-1",
             provenance_trust_root: str = "qualification-only",
-            test_evidence: dict | None = None) -> dict:
+            test_evidence: dict | None = None,
+            external_attestation: dict | None = None,
+            require_external_attestation: bool = False) -> dict:
     root = Path(root).resolve()
     out = root / "release"
     out.mkdir(parents=True, exist_ok=True)
@@ -260,6 +351,20 @@ def package(root: Path, release: str, *, status: str,
     elif passed is None:
         raise SystemExit(
             "package() requires passed counts or test evidence")
+    if external_attestation is not None:
+        expected_image = _probe_image_digest(root)
+        expected_receipt = _receipt_digest(root)
+        if require_external_attestation and (
+                expected_image is None or expected_receipt is None):
+            raise SystemExit(
+                "external attestation requires the probe and receipt"
+                " evidence in evidence/sandbox")
+        validate_external_attestation(
+            external_attestation,
+            expected_image_digest=expected_image,
+            expected_receipt_digest=expected_receipt)
+    elif require_external_attestation:
+        raise SystemExit("external attestation is required")
     build_record = {
         "schema_version": 1,
         "kind": "release_build_record",
@@ -397,6 +502,24 @@ def package(root: Path, release: str, *, status: str,
             "source": "operator",
         }
 
+    if external_attestation is not None:
+        isolation = {
+            "external_attestation": {
+                "verified": True,
+                "signer_key_id": external_attestation.get("signer_key_id"),
+                "public_key": external_attestation.get("public_key"),
+                "image_digest": external_attestation.get("image_digest"),
+                "policy_digest": external_attestation.get("policy_digest"),
+                "receipt_digest": external_attestation.get("receipt_digest"),
+                "generated_at": external_attestation.get("generated_at"),
+                "sha256": hashlib.sha256(
+                    provenance.canonical_json(
+                        external_attestation)).hexdigest(),
+            }
+        }
+    else:
+        isolation = {"external_attestation": None}
+
     release_manifest = {
         "schema_version": 1,
         "release": release,
@@ -409,6 +532,7 @@ def package(root: Path, release: str, *, status: str,
         ),
         "status": status,
         "test_result": test_result,
+        "isolation": isolation,
         "archive": {
             "path": f"release/{archive.name}",
             "sha256": report["zip_sha256"],
@@ -461,6 +585,12 @@ def main() -> int:
     parser.add_argument("--require-test-evidence", action="store_true",
                         help="refuse to seal without machine-readable"
                              " test evidence")
+    parser.add_argument("--external-attestation", type=Path, default=None,
+                        help="verification record from"
+                             " tools/verify_external_attestation.py")
+    parser.add_argument("--require-external-attestation", action="store_true",
+                        help="refuse to seal without a verified external"
+                             " isolation attestation")
     parser.add_argument("--allow-dirty", action="store_true")
     parser.add_argument("--provenance-key", type=Path,
                         help="file containing a 32-byte hex signing seed")
@@ -476,6 +606,18 @@ def main() -> int:
         evidence = load_test_evidence(args.test_evidence)
     elif args.passed is None:
         raise SystemExit("pass --test-evidence or --passed")
+    attestation_path = args.external_attestation
+    if attestation_path is None and args.require_external_attestation:
+        candidate = (args.root / "evidence" / "sandbox" / "gate2_isolation" /
+                     "external_verification.json")
+        if candidate.is_file():
+            attestation_path = candidate
+    if args.require_external_attestation and attestation_path is None:
+        raise SystemExit(
+            "--require-external-attestation needs --external-attestation")
+    external = None
+    if attestation_path is not None:
+        external = load_external_attestation(attestation_path)
     release = args.release or f"SIS-v{_package_version(args.root)}"
     seed = None
     if args.provenance_key is not None:
@@ -494,6 +636,8 @@ def main() -> int:
         provenance_key_id=args.provenance_key_id,
         provenance_trust_root=args.provenance_trust_root,
         test_evidence=evidence,
+        external_attestation=external,
+        require_external_attestation=args.require_external_attestation,
     )
     print(json.dumps({
         "release": result["release_manifest"]["release"],

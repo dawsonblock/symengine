@@ -58,7 +58,12 @@ itself is out-of-band (`release/*.zip` is git-ignored).
    PYTHONPATH=src:. python3 tools/package_release.py \
      --status ENGINEERING_VERIFIED \
      --test-evidence /tmp/sis-test-report.json \
-     --require-test-evidence
+     --require-test-evidence \
+     --provenance-key /secure/release-seed.hex \
+     --provenance-trust-root production \
+     --external-attestation \
+       evidence/sandbox/gate2_isolation/external_verification.json \
+     --require-external-attestation
    ```
 
    The tool refuses a dirty tree, re-hashes every member against the tree
@@ -68,6 +73,12 @@ itself is out-of-band (`release/*.zip` is git-ignored).
    describe the current seal. Test evidence from another commit, a dirty
    tree, a non-pinned pytest, or a run with failures or errors is
    refused; `--passed` remains only as an explicit operator override.
+
+   A production seal also needs the external isolation verification
+   record produced by `tools/verify_external_attestation.py` after the
+   isolator signs the receipt. The record must be fresh, verified, name
+   its required properties, and bind the probe image digest and stored
+   receipt digest; otherwise the build refuses.
 4. Commit only the generated provenance:
 
    ```bash
@@ -80,12 +91,19 @@ itself is out-of-band (`release/*.zip` is git-ignored).
    PYTHONPATH=src python3 tools/verify_release.py --compile .
    PYTHONPATH=src python3 tools/verify_release.py release/SIS-v3.3.8.zip
    PYTHONPATH=src:. python3 tools/check_release_ci.py --mode development
-   PYTHONPATH=src:. python3 tools/check_release_ci.py --mode release
+   PYTHONPATH=src:. python3 tools/check_release_ci.py --mode release \
+     --release-public-key /secure/release-public.hex \
+     --isolator-public-key /secure/isolator-public.hex
    ```
 
    Release mode additionally refuses a `release_manifest.json` whose
-   `test_result.source` is not `evidence` or that reports failed or
-   errored tests.
+   `test_result.source` is not `evidence`, that reports failed or
+   errored tests, whose provenance is unsigned or not `production`, or
+   that lacks a verified external isolation attestation. The public keys
+   come from the relying party (`--release-public-key` /
+   `SIS_RELEASE_PUBLIC_KEY` and `--isolator-public-key` /
+   `SIS_ISOLATOR_PUBLIC_KEY`); a key shipped beside the artifact is not
+   its own trust anchor.
 
 ## Why a doc change forces a re-seal
 
