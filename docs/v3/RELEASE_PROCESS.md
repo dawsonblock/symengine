@@ -39,21 +39,35 @@ to point at a different version.
 itself is out-of-band (`release/*.zip` is git-ignored).
 
 1. Land every source change and make sure the tree is clean.
-2. Run the full suite in the documented environment and record the exact
-   counts.
+2. Run the supported suite and write machine-readable evidence:
+
+   ```bash
+   PYTHONPATH=src python3 tools/run_tests.py \
+     --json /tmp/sis-test-report.json
+   ```
+
+   Keep the evidence outside the tree: an in-tree file would make the
+   working tree dirty before `package_release.py` runs.
+
+   The runner refuses a pytest version other than the pin in
+   `requirements-lock.txt`, and the evidence names the commit, command,
+   environment and parsed counts.
 3. Build the archive and provenance from that commit:
 
    ```bash
    PYTHONPATH=src:. python3 tools/package_release.py \
      --status ENGINEERING_VERIFIED \
-     --passed 1381 --skipped 28 --failed 0
+     --test-evidence /tmp/sis-test-report.json \
+     --require-test-evidence
    ```
 
    The tool refuses a dirty tree, re-hashes every member against the tree
    it came from, and records the exact Git commit as `source_commit`. It
    also regenerates `release/README.md` from `release_manifest.json`, so
    the archive hash, source commit, file count and test result always
-   describe the current seal.
+   describe the current seal. Test evidence from another commit, a dirty
+   tree, a non-pinned pytest, or a run with failures or errors is
+   refused; `--passed` remains only as an explicit operator override.
 4. Commit only the generated provenance:
 
    ```bash
@@ -66,7 +80,12 @@ itself is out-of-band (`release/*.zip` is git-ignored).
    PYTHONPATH=src python3 tools/verify_release.py --compile .
    PYTHONPATH=src python3 tools/verify_release.py release/SIS-v3.3.8.zip
    PYTHONPATH=src:. python3 tools/check_release_ci.py --mode development
+   PYTHONPATH=src:. python3 tools/check_release_ci.py --mode release
    ```
+
+   Release mode additionally refuses a `release_manifest.json` whose
+   `test_result.source` is not `evidence` or that reports failed or
+   errored tests.
 
 ## Why a doc change forces a re-seal
 

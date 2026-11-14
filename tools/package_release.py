@@ -89,6 +89,42 @@ def _git(root: Path, *args: str) -> str:
     ).decode().strip()
 
 
+def load_test_evidence(path: Path) -> dict:
+    """Read a test evidence document produced by ``tools/run_tests.py``."""
+    try:
+        evidence = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise SystemExit(f"test evidence is unreadable: {exc}") from exc
+    if not isinstance(evidence, dict) or evidence.get("kind") != "test_evidence":
+        raise SystemExit("test evidence is not a test_evidence document")
+    if evidence.get("schema_version") != 1:
+        raise SystemExit("test evidence schema_version must be 1")
+    return evidence
+
+
+def validate_test_evidence(evidence: dict, commit: str) -> None:
+    """Refuse evidence that does not describe a green run of this tree."""
+    problems = []
+    if evidence.get("source_commit") != commit:
+        problems.append("source_commit does not match the packaged tree")
+    if evidence.get("dirty"):
+        problems.append("evidence was produced from a dirty tree")
+    counts = evidence.get("counts") or {}
+    if counts.get("failed"):
+        problems.append("evidence reports failed tests")
+    if counts.get("errors"):
+        problems.append("evidence reports errored tests")
+    if evidence.get("exit_status") != 0:
+        problems.append("evidence exit_status is not 0")
+    if evidence.get("pytest_version") != evidence.get("pytest_pin"):
+        problems.append("evidence pytest version is not the pinned runner")
+    command = evidence.get("command") or []
+    if not any("pytest" in str(part) for part in command):
+        problems.append("evidence command does not run pytest")
+    if problems:
+        raise SystemExit("test evidence rejected: " + "; ".join(problems))
+
+
 def _docs(root: Path) -> list[str]:
     paths = sorted((root / "docs" / "v3").glob("*.md"))
     paths += sorted((root / "docs" / "audits").glob("*.md"))
@@ -202,17 +238,28 @@ def _release_readme(manifest: dict, out: Path) -> str:
     return "\n".join(lines)
 
 
-def package(root: Path, release: str, *, status: str, passed: int,
-            skipped: int, failed: int, allow_dirty: bool = False,
+def package(root: Path, release: str, *, status: str,
+            passed: int | None = None,
+            skipped: int = 0, failed: int = 0, allow_dirty: bool = False,
             provenance_seed: bytes | None = None,
             provenance_key_id: str = "release-key-1",
-            provenance_trust_root: str = "qualification-only") -> dict:
+            provenance_trust_root: str = "qualification-only",
+            test_evidence: dict | None = None) -> dict:
     root = Path(root).resolve()
     out = root / "release"
     out.mkdir(parents=True, exist_ok=True)
     archive = out / f"{release}.zip"
 
     binding = source_binding(root)
+    if test_evidence is not None:
+        validate_test_evidence(test_evidence, binding["commit"])
+        counts = test_evidence.get("counts") or {}
+        passed = counts.get("passed", 0)
+        skipped = counts.get("skipped", 0)
+        failed = counts.get("failed", 0)
+    elif passed is None:
+        raise SystemExit(
+            "package() requires passed counts or test evidence")
     build_record = {
         "schema_version": 1,
         "kind": "release_build_record",
@@ -322,6 +369,34 @@ def package(root: Path, release: str, *, status: str, passed: int,
             "fresh_extraction": {"verify_tree": tree_report, **fresh},
         }
 
+    if test_evidence is not None:
+        test_result = {
+            "command": " ".join(
+                str(part) for part in test_evidence["command"]),
+            "passed": passed,
+            "skipped": skipped,
+            "failed": failed,
+            "errors": (test_evidence.get("counts") or {}).get("errors", 0),
+            "source": "evidence",
+            "evidence": {
+                "sha256": hashlib.sha256(
+                    provenance.canonical_json(test_evidence)).hexdigest(),
+                "source_commit": test_evidence.get("source_commit"),
+                "pytest_version": test_evidence.get("pytest_version"),
+                "counts": test_evidence.get("counts"),
+            },
+        }
+    else:
+        test_result = {
+            "command": ("PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 "
+                        "PYTHONNOUSERSITE=1 PYTHONPATH=src "
+                        "python3 -m pytest -q"),
+            "passed": passed,
+            "skipped": skipped,
+            "failed": failed,
+            "source": "operator",
+        }
+
     release_manifest = {
         "schema_version": 1,
         "release": release,
@@ -333,12 +408,7 @@ def package(root: Path, release: str, *, status: str, passed: int,
             "out-of-band release/ provenance"
         ),
         "status": status,
-        "test_result": {
-            "command": "PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONNOUSERSITE=1 PYTHONPATH=src python3 -m pytest -q",
-            "passed": passed,
-            "skipped": skipped,
-            "failed": failed,
-        },
+        "test_result": test_result,
         "archive": {
             "path": f"release/{archive.name}",
             "sha256": report["zip_sha256"],
@@ -382,9 +452,15 @@ def main() -> int:
                         help="release archive name without .zip; defaults to"
                              " SIS-v<package version>")
     parser.add_argument("--status", required=True)
-    parser.add_argument("--passed", type=int, required=True)
+    parser.add_argument("--passed", type=int, default=None,
+                        help="operator-supplied count; prefer --test-evidence")
     parser.add_argument("--skipped", type=int, default=0)
     parser.add_argument("--failed", type=int, default=0)
+    parser.add_argument("--test-evidence", type=Path, default=None,
+                        help="JSON from tools/run_tests.py --json")
+    parser.add_argument("--require-test-evidence", action="store_true",
+                        help="refuse to seal without machine-readable"
+                             " test evidence")
     parser.add_argument("--allow-dirty", action="store_true")
     parser.add_argument("--provenance-key", type=Path,
                         help="file containing a 32-byte hex signing seed")
@@ -393,6 +469,13 @@ def main() -> int:
                         default="qualification-only",
                         help="qualification-only or production")
     args = parser.parse_args()
+    if args.require_test_evidence and args.test_evidence is None:
+        raise SystemExit("--require-test-evidence needs --test-evidence")
+    evidence = None
+    if args.test_evidence is not None:
+        evidence = load_test_evidence(args.test_evidence)
+    elif args.passed is None:
+        raise SystemExit("pass --test-evidence or --passed")
     release = args.release or f"SIS-v{_package_version(args.root)}"
     seed = None
     if args.provenance_key is not None:
@@ -410,6 +493,7 @@ def main() -> int:
         provenance_seed=seed,
         provenance_key_id=args.provenance_key_id,
         provenance_trust_root=args.provenance_trust_root,
+        test_evidence=evidence,
     )
     print(json.dumps({
         "release": result["release_manifest"]["release"],

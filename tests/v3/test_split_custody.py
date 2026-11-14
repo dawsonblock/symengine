@@ -824,17 +824,25 @@ class WorkerSplitConfigurationTests(unittest.TestCase):
                 split_user=self.split_user)
 
     def test_docker_executor_carries_the_split_user(self):
-        executor = build_worker_executor(
-            executor="docker", sandbox_image="sis-evaluator:3.3.8",
-            require_image_digest=False, split_user=self.split_user,
-            executor_root=self.root / "exec")
+        # Configuration test: never contact the daemon, so it also runs
+        # on hosts where Docker is absent.
+        with mock.patch.object(
+                DockerSandboxExecutor, "_require_docker",
+                return_value="test-server"):
+            executor = build_worker_executor(
+                executor="docker", sandbox_image="sis-evaluator:3.3.8",
+                require_image_digest=False, split_user=self.split_user,
+                executor_root=self.root / "exec")
         self.addCleanup(executor.terminate_all)
         self.assertTrue(executor.supports_split_custody)
 
     def test_docker_executor_without_a_split_user_has_no_split(self):
-        executor = build_worker_executor(
-            executor="docker", sandbox_image="sis-evaluator:3.3.8",
-            require_image_digest=False, executor_root=self.root / "exec")
+        with mock.patch.object(
+                DockerSandboxExecutor, "_require_docker",
+                return_value="test-server"):
+            executor = build_worker_executor(
+                executor="docker", sandbox_image="sis-evaluator:3.3.8",
+                require_image_digest=False, executor_root=self.root / "exec")
         self.addCleanup(executor.terminate_all)
         self.assertFalse(executor.supports_split_custody)
 

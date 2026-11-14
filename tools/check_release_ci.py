@@ -24,6 +24,16 @@ def check(root: Path, mode: str) -> int:
                 return 0
             raise ValueError("release manifest is stale")
         report = verify_tree(root)
+        release_manifest = root / "release" / "release_manifest.json"
+        if mode == "release" and release_manifest.is_file():
+            provenance = json.loads(release_manifest.read_text())
+            test_result = provenance.get("test_result") or {}
+            if test_result.get("source") != "evidence":
+                raise ValueError(
+                    "release manifest test result is not evidence-backed")
+            if test_result.get("failed") or test_result.get("errors"):
+                raise ValueError(
+                    "release manifest reports failed or errored tests")
     except (OSError, ValueError, KeyError, RuntimeError) as exc:
         print(f"release inventory check failed: {exc}", file=sys.stderr)
         return 1

@@ -47,6 +47,43 @@ New regressions live in `tests/v3/test_split_custody.py`,
 `tests/v3/test_private_evaluation_entrypoints.py`. The tree is
 unsealed until build 11 reseals it.
 
+## 2026-11-14 — Test-matrix portability and evidence-bound releases
+
+Makes the suite honest where Docker is absent and binds release test
+totals to an executed run.
+
+- The two Docker construction tests in
+  `tests/v3/test_split_custody.py` patch `_require_docker`, so they
+  test configuration instead of contacting a daemon. The full suite now
+  runs with `DOCKER_HOST` pointed at a nonexistent socket: 1509 passed,
+  33 skipped, 0 failed locally.
+- CI adds a `docker-absent` job with a dead `DOCKER_HOST` and requires
+  zero failures or errors.
+- `tools/run_tests.py` is the supported runner. It refuses a pytest
+  version other than the pin in `requirements-lock.txt` and writes
+  machine-readable evidence (commit, dirty flag, command, environment,
+  parsed counts, output digest).
+- `docker/sandbox/requirements.lock` pins pytest and every transitive
+  dependency with SHA-256 hashes; the evaluator image installs it with
+  `--require-hashes`. `tests/v3/test_evaluator_image_lock.py` keeps the
+  lock complete.
+- `tools/package_release.py` accepts `--test-evidence` and
+  `--require-test-evidence`. Evidence from another commit, a dirty
+  tree, a non-pinned pytest, or a run with failures or errors is
+  refused; `--passed` remains only as an explicit operator override.
+- `tools/check_release_ci.py --mode release` refuses a release manifest
+  whose `test_result.source` is not `evidence`, or that reports failed
+  or errored tests.
+- `ReleaseIdentityTests.test_release_commit_covers_current_source`
+  skips on a development tree whose `RELEASE_SHA256.json` is stale;
+  release mode remains the enforcing gate.
+- Windows remains experimental and non-blocking for build 11; the
+  release does not claim Windows evaluator support.
+
+New regressions live in `tests/v3/test_release_test_evidence.py`,
+`tests/v3/test_evaluator_image_lock.py` and
+`tests/v3/test_release_ci.py`.
+
 ## 2026-11-14 — Induction scaling, CI image build and archive retention
 
 Closes the remaining scaling, CI and retention gaps identified by the

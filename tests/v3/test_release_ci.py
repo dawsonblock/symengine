@@ -50,6 +50,30 @@ class ReleaseCITests(unittest.TestCase):
         self.assertEqual(result.returncode, 0)
         self.assertIn("not release verification", result.stdout)
 
+    def write_release_manifest(self, test_result):
+        release = self.root / "release"
+        release.mkdir(exist_ok=True)
+        (release / "release_manifest.json").write_text(
+            json.dumps({"test_result": test_result}))
+
+    def test_release_refuses_operator_entered_counts(self):
+        self.write_release_manifest({
+            "source": "operator", "passed": 10, "failed": 0})
+        result = self.run_check("release")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("not evidence-backed", result.stderr)
+
+    def test_release_accepts_evidence_backed_counts(self):
+        self.write_release_manifest({
+            "source": "evidence", "passed": 10, "failed": 0, "errors": 0})
+        self.assertEqual(self.run_check("release").returncode, 0)
+        self.assertEqual(self.run_check("development").returncode, 0)
+
+    def test_release_refuses_evidence_with_failures(self):
+        self.write_release_manifest({
+            "source": "evidence", "passed": 10, "failed": 1, "errors": 0})
+        self.assertNotEqual(self.run_check("release").returncode, 0)
+
     def test_missing_manifest_fails_both_modes(self):
         (self.root / "RELEASE_SHA256.json").unlink()
         for mode in ("release", "development"):

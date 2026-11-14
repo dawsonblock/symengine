@@ -362,6 +362,28 @@ Two sequencing traps:
 4. `Make Docker-absent configuration tests portable` — the two failing
    tests and the Docker-absent CI job.
 
+## Progress (2026-11-14)
+
+- **Phase 1 implemented** (`d16975f`): private material defaults to
+  split custody, production refuses shared registrations and legacy
+  rows, the worker gained `--allow-shared-custody` and a split preflight,
+  the cycle configures the second Docker UID and aborts on a failed
+  `split_identity_exec` probe, and a static scan covers `tools/` and
+  `scripts/`.
+- **Phase 3.1–3.3 and 3.5–3.6 implemented**: the two Docker
+  construction tests no longer contact the daemon; a `docker-absent` CI
+  job runs the suite with a dead `DOCKER_HOST` (local result: 1509
+  passed, 33 skipped, 0 failed); `tools/run_tests.py` writes
+  machine-readable evidence; the evaluator image installs a hashed
+  `requirements.lock`; `package_release.py --test-evidence` and
+  `check_release_ci.py --mode release` refuse operator-entered or
+  failing test totals.
+- **Phase 3.4 decided**: Windows remains experimental and non-blocking;
+  build 11 does not claim Windows evaluator support.
+- **Blocked**: Phase 2 needs an externally held release and isolator
+  key. Phase 4 needs a corpus and a committed agent quota. Phase 5 has
+  not started.
+
 ## Effect on the current seal
 
 Adding this document changes a manifest-covered file, so

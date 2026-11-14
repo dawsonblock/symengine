@@ -50,6 +50,29 @@ The local run uses the Python and operating system values recorded in
 `STATUS.md`. Windows ACL behavior, live Codex SDK events, real Codex runs,
 Docker/Podman/microVM isolation, and external custody are not verified here.
 
+`tools/run_tests.py` is the supported runner. It refuses a pytest version
+other than the pin in `requirements-lock.txt` and writes machine-readable
+evidence for `tools/package_release.py --test-evidence`. unittest discovery
+is not a supported qualification path.
+
+The `test-evidence` job runs the suite on Linux with Docker present
+through `tools/run_tests.py` and uploads a `test_report.json` artifact;
+that artifact (or a local run written outside the tree) is the input to
+`tools/package_release.py --test-evidence` for a build-11 seal.
+
+The `docker-absent` job runs the suite with `DOCKER_HOST` pointed at a
+socket that cannot exist and requires zero failures or errors. Docker
+integration tests skip; construction tests must not contact the daemon.
+
+**Windows decision for build 11:** Windows remains experimental and
+non-blocking. The evaluator relies on POSIX process semantics and no
+blocking Windows run exists, so build 11 does not claim Windows evaluator
+support. The job still runs for visibility.
+
+The evaluator image installs `docker/sandbox/requirements.lock` with
+`--require-hashes`; `tests/v3/test_evaluator_image_lock.py` keeps every
+requirement pinned and hashed.
+
 ## v3.3.6 repair regressions
 
 | Area | Regression file | What it pins |

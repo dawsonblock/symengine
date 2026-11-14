@@ -55,6 +55,51 @@ jobs:
         if: runner.os == 'Linux'
         run: python tools/smoke_integration.py
 
+  test-evidence:
+    # The release-qualification run: Linux, Docker present, pinned
+    # runner. The artifact is the only test evidence package_release.py
+    # should accept for a build-11 seal.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r requirements-lock.txt
+      - run: python -m pip install -e . --no-deps
+      - name: Build evaluator sandbox image
+        run: docker build -t sis-evaluator:3.3.8 docker/sandbox
+      - run: python tools/run_tests.py --json evidence/ci/test_report.json
+        env:
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
+          PYTHONNOUSERSITE: "1"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: test-evidence-linux-3.12
+          path: evidence/ci/test_report.json
+
+  docker-absent:
+    # The suite must skip cleanly, not fail, where no daemon exists.
+    # DOCKER_HOST points at a socket that cannot exist, so the CLI is
+    # present but every daemon probe fails.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r requirements-lock.txt
+      - run: python -m pip install -e . --no-deps
+      - run: python -m pytest tests/ -q
+        env:
+          DOCKER_HOST: unix:///nonexistent/docker.sock
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
+          PYTHONNOUSERSITE: "1"
+
   lint:
     # One pinned static gate over the production tree. The rules are
     # deliberately limited to syntax errors and pyflakes so the check

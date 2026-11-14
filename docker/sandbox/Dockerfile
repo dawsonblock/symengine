@@ -15,7 +15,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1
 
-RUN pip install --no-cache-dir pytest==8.4.2 \
+COPY requirements.lock /tmp/requirements.lock
+RUN pip install --no-cache-dir --require-hashes \
+        -r /tmp/requirements.lock \
+    && rm -f /tmp/requirements.lock \
     && rm -rf /root/.cache /tmp/*
 
 # The base image already has nobody at 65534; reuse it and keep HOME in
