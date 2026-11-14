@@ -2,8 +2,8 @@
   "archive": {
     "inner_project_dir": "SIS-v3.3.8",
     "path": "release/SIS-v3.3.8.zip",
-    "sha256": "160811837627baac0e1ccf44026e18a8dce55e3e68540cb4d33f7affc09684d7",
-    "source_files": 449
+    "sha256": "359c23029fc6b5e7e839fb9fd9e8037d1697e04a25e3b3fef9ead2bbed674014",
+    "source_files": 451
   },
   "branch": "repair/v335-resource-security",
   "docs": [
@@ -65,19 +65,19 @@
   "provenance": {
     "path": "release/provenance.intoto.json",
     "signed": false,
-    "statement_sha256": "f84e59cf939468740530f051b0e0cb07687882fe4b1f95dc27f7ad8d330a0c39",
-    "subject_sha256": "160811837627baac0e1ccf44026e18a8dce55e3e68540cb4d33f7affc09684d7",
+    "statement_sha256": "1cf4098c577998454b41b41b805a7fbe5641a433e6c9024d1dddfe3a55b2a2c8",
+    "subject_sha256": "359c23029fc6b5e7e839fb9fd9e8037d1697e04a25e3b3fef9ead2bbed674014",
     "trust_root": "qualification-only"
   },
   "release": "SIS-v3.3.8",
   "schema_version": 1,
-  "source_commit": "5a187d0d6bfd15aa671ae88dfaf49cb3178ba1e8",
+  "source_commit": "2ed267e31c8b686a6c1c81a6c5b793a9d8e666da",
   "source_commit_note": "archive members are byte-identical to this commit for every manifest-covered file; the release commit itself touches only out-of-band release/ provenance",
   "status": "ENGINEERING_VERIFIED",
   "test_result": {
     "command": "PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONNOUSERSITE=1 PYTHONPATH=src python3 -m pytest -q",
     "failed": 0,
-    "passed": 1452,
+    "passed": 1483,
     "skipped": 13
   }
 }
