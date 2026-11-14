@@ -18,7 +18,7 @@ isolator trusted independently of this machine.
 | Execution receipt | `isolation:docker_sandbox`; no `docker:image_tag_only` |
 | `IsolationAttestationV1` | verified (`reason: ok`) |
 | Negative control (wrong image digest) | rejected (`image_mismatch`) |
-| Full suite with Docker available | 1490 passed, 13 skipped, 0 failed |
+| Full suite with Docker available | 1496 passed, 13 skipped, 0 failed |
 | Real-container split custody | submission denied read of the private tests; worker reload keeps `custody="split"` |
 
 The probe checks network denial, read-only root, workspace write, non-root

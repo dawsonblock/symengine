@@ -17,8 +17,10 @@ the acceptance criteria.
     `exact_recovery_verified: true` over the declared 0..9 box.
   - 32 fields: 65 candidates, 97 signature checks (was 4,267 candidates
     and 500,000 signature checks, truncated).
-  - 8 and 16 fields: unchanged; the existing nonnegative-domain
-    ambiguity is still reported.
+  - 16 fields: 33 candidates, 49 signature checks with the intended
+    structure (was 1,251 candidates and 160,707 checks, ambiguous).
+  - 8 fields: unchanged; the existing nonnegative-domain ambiguity is
+    still reported.
   - A target without a constant-offset completion still truncates
     honestly under the same budget.
 - CI builds `sis-evaluator:3.3.8` on Linux before the suite, so the

@@ -307,9 +307,11 @@ default 12,000-candidate / 500,000-signature budgets) the search returns
 the intended structure in 129 candidates and 193 signature checks with no
 limits hit; `--equivalence z3` reports `exact_recovery_verified: true`
 over the declared 0..9 box. The 32-field case drops from 4,267 candidates
-and 500,000 signature checks (truncated) to 65 and 97. The 8- and 16-field
-results are unchanged, and a target without a constant-offset completion
-still truncates honestly under the same budget.
+and 500,000 signature checks (truncated) to 65 and 97, and the 16-field
+case from 1,251 candidates and 160,707 checks (ambiguous) to 33 and 49
+with the intended structure. The 8-field result is unchanged, and a
+target without a constant-offset completion still truncates honestly
+under the same budget.
 
 ### Verifying the v3.3.8 release
 

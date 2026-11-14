@@ -105,7 +105,7 @@ current tree:
   is rejected (`image_mismatch`);
 - real-container split custody: the worker UID is denied the private
   tests, and a task reloaded in the worker child keeps `custody="split"`;
-- suite: **1490 passed, 13 skipped, 0 failed.**
+- suite: **1496 passed, 13 skipped, 0 failed.**
 
 The trust root remains `qualification-only`. This refresh binds the
 evidence to the current source and image; it does not replace an
