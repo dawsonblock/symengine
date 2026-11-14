@@ -180,9 +180,8 @@ principal that cannot read the private directory:
   with the material installed as the evaluator UID in a 0700 tmpfs
   directory. The receipt carries `split:custody:separate_uid`. Configure
   the second identity with `DockerSandboxExecutor(split_user="2002:2002")`;
-  it must differ from `user` and must not be root. The shipped
-  `evaluator_worker` does not set `split_user`, so split tasks are
-  rejected there until it does.
+  it must differ from `user` and must not be root. `evaluator_worker`
+  exposes the same setting as `--split-user` (see the repair below).
 
 Both paths carry `evaluation:process_split`. The wire codec is JSON over
 a closed type set, so submission-produced bytes are never unpickled in
@@ -223,6 +222,37 @@ Operators must know:
   evaluator principal re-opens the shared-custody path.
 
 Regressions live in `tests/v3/test_split_custody.py`.
+
+### Post-seal repair: split-custody worker configuration
+
+The process-split boundary was unreachable through the shipped worker:
+`evaluator_worker` constructed its Docker executor without a second UID,
+so `supports_split_custody` was false and every split task was rejected.
+
+- `build_worker_executor()` and `evaluate_via_subprocess()` accept
+  `split_user`; the CLI adds `--split-user uid[:gid]`. The value is
+  validated by the Docker executor (numeric, non-root, distinct from the
+  evaluator UID). The local backend refuses a split user: its boundary
+  is a seatbelt read denial, not a second UID.
+- `OutcomeVerifier` accepts `require_split_custody=True` (CLI
+  `--require-split-custody`). With the policy on:
+  - construction fails with `split_custody_required_but_unavailable`
+    when the backend has no second principal, so an unsupported
+    deployment does not start;
+  - `register_task()` refuses private acceptance files under shared
+    custody with `split_custody_required_for_private_material`;
+  - `evaluate()` rejects a registration that predates the policy with
+    `split_custody_required` (an evaluator bootstrap error), so an old
+    shared-custody task cannot be graded beside its tests.
+- Configuring `--split-user` turns the policy on implicitly. The two
+  settings are not independent: a worker told which second UID to use
+  should not keep accepting shared custody for hidden tests.
+
+A worker without `--split-user` still refuses split tasks (fail-closed),
+but shared custody remains available for development. Production
+deployments that hide acceptance material should pass both settings.
+
+New regressions live in `tests/v3/test_split_custody.py`.
 
 ### Verifying the v3.3.8 release
 

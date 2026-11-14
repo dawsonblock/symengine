@@ -225,7 +225,11 @@
   `PYTHONPATH`/startup hooks, runner shadowing), and split custody pins
   pytest configuration to the private directory so a workspace
   `pytest.ini` cannot inject a plugin into the process holding the
-  tests.
+  tests. The shipped worker offers the Docker split only when started
+  with `--split-user`, and refuses private material under shared custody
+  when started with `--require-split-custody` (implied by
+  `--split-user`). Without either setting the shared-custody path above
+  remains available for development.
 - Split custody is a boundary over module access, not a general
   interprocess sandbox. Workspace modules — including packages and their
   submodules — are proxied, and only primitives, callables and

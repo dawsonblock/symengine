@@ -12,9 +12,11 @@ was graded against. These tests pin the split:
   back to shared custody;
 * the Docker backend runs the worker under a second numeric UID.
 """
+import contextlib
 import io
 import os
 import shlex
+import subprocess
 import sys
 import tarfile
 import tempfile
@@ -26,6 +28,11 @@ from sis.v3 import split_harness
 from sis.v3.contracts import ContractError, TaskEnvelopeV1
 from sis.v3.docker_sandbox import DockerSandboxExecutor
 from sis.v3.evaluation_runtime import EVALUATOR_BOOTSTRAP_ERROR, SANDBOX_FAILURE
+from sis.v3.evaluator_worker import (
+    EvaluatorWorkerError,
+    build_worker_executor,
+    evaluate_via_subprocess,
+)
 from sis.v3.linux_worker import LinuxRootlessWorker
 from sis.v3.runner import (
     CommandSpec,
@@ -467,6 +474,227 @@ class LinuxWorkerSplitTests(unittest.TestCase):
         # bwrap maps the caller's UID into the namespace, so the backend
         # has no second principal; it must never claim the capability.
         self.assertFalse(LinuxRootlessWorker.supports_split_custody)
+
+
+class SplitCapableExecutor:
+    """Registration-only double: the policy is checked before any run."""
+
+    supports_split_custody = True
+    supports_private_material = True
+
+
+class SplitCustodyPolicyTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.submission = self.root / "submission"
+        self.submission.mkdir()
+        (self.submission / "solution.py").write_text(
+            "x = 1\n", encoding="utf-8")
+
+    def make_verifier(self, executor=None, require_split_custody=False):
+        return OutcomeVerifier(
+            executor=executor or SplitCapableExecutor(),
+            key_dir=self.root / "keys",
+            registry_dir=self.root / "registry",
+            require_split_custody=require_split_custody)
+
+    def envelope(self, task_id):
+        return TaskEnvelopeV1(
+            schema_version=1, task_id=task_id,
+            repo_snapshot_digest=tree_digest(self.submission),
+            base_commit=None, task_statement_digest="0" * 64,
+            permitted_commands=("x",), isolation_profile="unverified_local",
+            time_budget_seconds=60, token_budget=1000, tool_budget=10,
+            actor_id="a", evaluator_task_ref=task_id)
+
+    def test_a_backend_without_split_custody_cannot_require_it(self):
+        plain = LocalSubprocessExecutor(
+            self.root / "plain", use_seatbelt=False)
+        self.addCleanup(plain.terminate_all)
+        self.assertFalse(plain.supports_split_custody)
+        with self.assertRaisesRegex(
+                ContractError, "split_custody_required_but_unavailable"):
+            self.make_verifier(plain, require_split_custody=True)
+
+    def test_private_material_under_shared_custody_is_refused(self):
+        verifier = self.make_verifier(require_split_custody=True)
+        with self.assertRaisesRegex(
+                ContractError, "split_custody_required_for_private_material"):
+            verifier.register_task(
+                actor_role="evaluator", task_id="shared",
+                criterion_version="v1", argv=(PY, "acceptance.py"),
+                files={"acceptance.py": b"x = 1\n"})
+        task = verifier.register_task(
+            actor_role="evaluator", task_id="split",
+            criterion_version="v1", argv=(PY, "acceptance.py"),
+            files={"acceptance.py": b"x = 1\n"}, custody="split")
+        self.assertEqual(task.custody, "split")
+
+    def test_a_task_without_private_material_may_stay_shared(self):
+        verifier = self.make_verifier(require_split_custody=True)
+        task = verifier.register_task(
+            actor_role="evaluator", task_id="public",
+            criterion_version="v1", argv=(PY, "-c", "pass"))
+        self.assertEqual(task.custody, "shared")
+
+    def test_a_shared_registration_that_predates_the_policy_is_rejected(self):
+        permissive = self.make_verifier()
+        permissive.register_task(
+            actor_role="evaluator", task_id="legacy",
+            criterion_version="v1", argv=(PY, "acceptance.py"),
+            files={"acceptance.py": b"x = 1\n"})
+        strict = self.make_verifier(require_split_custody=True)
+        with self.assertRaisesRegex(
+                EvaluationRejected, "split_custody_required"):
+            strict.evaluate(
+                actor_role="evaluator", task=self.envelope("legacy"),
+                submission_dir=self.submission, evaluation_nonce="legacy")
+        self.assertEqual(
+            strict.last_outcome_class, EVALUATOR_BOOTSTRAP_ERROR)
+
+
+class WorkerSplitConfigurationTests(unittest.TestCase):
+    """The shipped worker must be able to configure the second Docker UID."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.key_dir = self.root / "keys"
+        self.registry_dir = self.root / "registry"
+        self.submission = self.root / "submission"
+        for path in (self.key_dir, self.registry_dir, self.submission):
+            path.mkdir()
+        (self.submission / "solution.py").write_text(
+            "x = 1\n", encoding="utf-8")
+        # The split identity must differ from the process UID, which is
+        # what the Docker backend defaults to.
+        self.split_uid = 2002 if os.getuid() != 2002 else 2003
+        self.split_user = f"{self.split_uid}:{self.split_uid}"
+
+    def envelope(self):
+        return TaskEnvelopeV1(
+            schema_version=1, task_id="t1",
+            repo_snapshot_digest=tree_digest(self.submission),
+            base_commit=None, task_statement_digest="0" * 64,
+            permitted_commands=("x",), isolation_profile="unverified_local",
+            time_budget_seconds=60, token_budget=1000, tool_budget=10,
+            actor_id="a", evaluator_task_ref="t1")
+
+    def test_local_executor_refuses_a_split_user(self):
+        with self.assertRaisesRegex(
+                EvaluatorWorkerError, "split_user_requires_docker_executor"):
+            build_worker_executor(
+                executor="local", allow_local_executor=True,
+                split_user=self.split_user)
+
+    def test_docker_executor_carries_the_split_user(self):
+        executor = build_worker_executor(
+            executor="docker", sandbox_image="sis-evaluator:3.3.8",
+            require_image_digest=False, split_user=self.split_user,
+            executor_root=self.root / "exec")
+        self.addCleanup(executor.terminate_all)
+        self.assertTrue(executor.supports_split_custody)
+
+    def test_docker_executor_without_a_split_user_has_no_split(self):
+        executor = build_worker_executor(
+            executor="docker", sandbox_image="sis-evaluator:3.3.8",
+            require_image_digest=False, executor_root=self.root / "exec")
+        self.addCleanup(executor.terminate_all)
+        self.assertFalse(executor.supports_split_custody)
+
+    def test_a_root_split_user_is_refused(self):
+        with self.assertRaisesRegex(ContractError, "must not be root"):
+            build_worker_executor(
+                executor="docker", sandbox_image="sis-evaluator:3.3.8",
+                require_image_digest=False, split_user="0:0")
+
+    def test_subprocess_helper_refuses_a_split_user_for_local(self):
+        with self.assertRaisesRegex(
+                EvaluatorWorkerError, "split_user_requires_docker_executor"):
+            evaluate_via_subprocess(
+                key_dir=self.key_dir, registry_dir=self.registry_dir,
+                task=self.envelope(), submission_dir=self.submission,
+                evaluation_nonce="local-split", executor="local",
+                allow_local_executor=True, split_user=self.split_user)
+
+    def test_worker_cli_refuses_a_split_user_for_local(self):
+        task_path = self.root / "task.json"
+        task_path.write_bytes(self.envelope().canonical_bytes())
+        src = str(Path(__file__).resolve().parents[2] / "src")
+        env = dict(os.environ)
+        env["PYTHONPATH"] = src + os.pathsep + env.get("PYTHONPATH", "")
+        proc = subprocess.run(
+            [PY, "-m", "sis.v3.evaluator_worker",
+             "--key-dir", str(self.key_dir),
+             "--registry-dir", str(self.registry_dir),
+             "--submission", str(self.submission),
+             "--nonce", "cli-split",
+             "--receipt-out", str(self.root / "receipt.json"),
+             "--task-json", str(task_path),
+             "--executor", "local", "--allow-local-executor",
+             "--split-user", self.split_user],
+            capture_output=True, text=True, env=env)
+        self.assertEqual(proc.returncode, 2, proc.stderr)
+        self.assertIn("split_user_requires_docker_executor", proc.stderr)
+
+    def test_worker_cli_enables_the_policy(self):
+        from sis.v3 import evaluator_worker
+        task_path = self.root / "task.json"
+        task_path.write_bytes(self.envelope().canonical_bytes())
+        stderr = io.StringIO()
+        argv = [
+            "sis.v3.evaluator_worker",
+            "--key-dir", str(self.key_dir),
+            "--registry-dir", str(self.registry_dir),
+            "--submission", str(self.submission),
+            "--nonce", "cli-policy",
+            "--receipt-out", str(self.root / "receipt.json"),
+            "--task-json", str(task_path),
+            "--executor", "local", "--allow-local-executor",
+            "--require-split-custody",
+        ]
+        with mock.patch.object(sys, "argv", argv), \
+                mock.patch.object(
+                    evaluator_worker, "build_worker_executor",
+                    return_value=object()), \
+                contextlib.redirect_stderr(stderr):
+            code = evaluator_worker._main()
+        # The double has no split capability, so the policy refuses the
+        # configuration instead of grading beside the private material.
+        self.assertEqual(code, 2)
+        self.assertIn(
+            "split_custody_required_but_unavailable", stderr.getvalue())
+
+    def test_worker_cli_implies_the_policy_from_a_split_user(self):
+        from sis.v3 import evaluator_worker
+        task_path = self.root / "task.json"
+        task_path.write_bytes(self.envelope().canonical_bytes())
+        stderr = io.StringIO()
+        argv = [
+            "sis.v3.evaluator_worker",
+            "--key-dir", str(self.key_dir),
+            "--registry-dir", str(self.registry_dir),
+            "--submission", str(self.submission),
+            "--nonce", "cli-implied",
+            "--receipt-out", str(self.root / "receipt.json"),
+            "--task-json", str(task_path),
+            "--executor", "docker",
+            "--sandbox-image", "sis-evaluator:3.3.8",
+            "--allow-tagged-image",
+            "--split-user", self.split_user,
+        ]
+        with mock.patch.object(sys, "argv", argv), \
+                mock.patch.object(
+                    evaluator_worker, "build_worker_executor",
+                    return_value=object()), \
+                contextlib.redirect_stderr(stderr):
+            code = evaluator_worker._main()
+        self.assertEqual(code, 2)
+        self.assertIn(
+            "split_custody_required_but_unavailable", stderr.getvalue())
 
 
 if __name__ == "__main__":

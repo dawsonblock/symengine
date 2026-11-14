@@ -1,5 +1,39 @@
 # Changelog
 
+## 2026-11-14 — Split-custody worker configuration (post-seal)
+
+Makes the process-split boundary reachable through the shipped evaluator
+worker and lets a deployment refuse shared custody for hidden tests. Not a
+feature release; the sealed v3.3.8 archive still describes the pre-repair
+tree.
+
+- `evaluator_worker` accepts `--split-user uid[:gid]` (API:
+  `build_worker_executor(split_user=...)` and
+  `evaluate_via_subprocess(split_user=...)`) and passes it to
+  `DockerSandboxExecutor`, so `supports_split_custody` is true for a
+  deployment that configured the second identity. The Docker executor
+  validates the value: numeric, non-root and distinct from the evaluator
+  UID. The local backend refuses a split user because its boundary is a
+  seatbelt read denial, not a second UID.
+- `OutcomeVerifier(require_split_custody=True)` (CLI
+  `--require-split-custody`) fails closed in three places:
+  construction rejects a backend without a second principal
+  (`split_custody_required_but_unavailable`); `register_task()` refuses
+  private acceptance files under shared custody
+  (`split_custody_required_for_private_material`); `evaluate()` rejects a
+  registration that predates the policy (`split_custody_required`, an
+  evaluator bootstrap error).
+- Configuring `--split-user` enables the policy implicitly, so a worker
+  that was told which second UID to use does not keep grading hidden
+  tests beside the submission.
+- A worker started without `--split-user` still rejects split tasks as
+  before; shared custody remains the development path.
+
+Limits: the Docker split is still unit-tested against a Docker CLI double
+and not live-qualified on every host. Re-run the Docker containment probe
+on the exact image before claiming production isolation. Regressions:
+`tests/v3/test_split_custody.py`.
+
 ## 2026-11-13 — Process-split acceptance custody (post-seal)
 
 Closes the read path left by private-material separation: the acceptance

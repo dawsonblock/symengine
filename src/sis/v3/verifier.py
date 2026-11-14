@@ -256,9 +256,17 @@ class OutcomeVerifier:
         runtime_profile: EvaluationRuntimeProfile | None = None,
         protected_paths=(),
         isolation_policy: ProductionIsolationPolicy | None = None,
+        require_split_custody: bool = False,
     ) -> None:
         self.executor = executor
         self.identity = identity
+        # A deployment that requires split custody cannot be served by a
+        # backend with no second principal. Refuse construction rather
+        # than accepting registrations that could only fail later.
+        if (require_split_custody
+                and not getattr(executor, "supports_split_custody", False)):
+            raise ContractError("split_custody_required_but_unavailable")
+        self.require_split_custody = bool(require_split_custody)
         self.runtime_profile = runtime_profile or EvaluationRuntimeProfile()
         if (isolation_policy is not None
                 and not isinstance(isolation_policy, ProductionIsolationPolicy)):
@@ -325,6 +333,8 @@ class OutcomeVerifier:
         process and reaches submitted code only through an out-of-process
         proxy, so a submission cannot read the tests it is graded against.
         The backend must support it; evaluation fails closed otherwise.
+        A verifier constructed with ``require_split_custody=True`` refuses
+        to register private acceptance files under shared custody.
         """
         require_permission(actor_role, "outcome:evaluate")
         if custody not in ("shared", "split"):
@@ -346,6 +356,9 @@ class OutcomeVerifier:
         # are enforced here, so an over-bound registration fails at
         # registration instead of surfacing as an infrastructure error.
         material = normalize_private_files(dict(files or {}))
+        if self.require_split_custody and material and custody != "split":
+            raise ContractError(
+                "split_custody_required_for_private_material")
         if custody == "split" and not material:
             raise ContractError(
                 "split custody requires registered acceptance files")
@@ -471,6 +484,13 @@ class OutcomeVerifier:
         if (registration.statement_digest is not None and
                 registration.statement_digest != task.task_statement_digest):
             raise EvaluationRejected("statement_mismatch", task.task_id)
+        if (self.require_split_custody and registration.files
+                and registration.custody != "split"):
+            # A registration can predate the policy. It still hides
+            # acceptance material, so it must not run beside the tests.
+            self.last_outcome_class = EVALUATOR_BOOTSTRAP_ERROR
+            raise EvaluationRejected(
+                "split_custody_required", registration.task_id)
         if (self.isolation_policy is not None
                 and task.isolation_profile == "unverified_local"):
             raise EvaluationRejected(

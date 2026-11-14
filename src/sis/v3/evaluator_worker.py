@@ -12,6 +12,13 @@ The worker executes submitted code in the Docker sandbox by default. Local
 subprocess execution is development-only and requires an explicit
 ``allow_local_executor=True`` from the caller (or ``--allow-local-executor``
 on the CLI).
+
+``split_user`` (CLI ``--split-user``) configures the second numeric Docker
+identity that process-split custody needs; without it the Docker backend
+declares no split capability and a split task fails closed. Configuring it
+also turns on ``require_split_custody`` for the worker's verifier, so a task
+that hides acceptance files behind shared custody is refused instead of
+graded beside the tests.
 """
 from __future__ import annotations
 
@@ -52,16 +59,25 @@ def build_worker_executor(
     sandbox_image: str | None = None,
     allow_local_executor: bool = False,
     require_image_digest: bool = True,
+    split_user: str | None = None,
 ):
     """Construct the worker's executor; local execution is opt-in.
 
     Docker is the default because submitted code is hostile by assumption.
     A local subprocess is a development convenience, never a containment
     boundary, and is refused unless the caller says so explicitly.
+
+    ``split_user`` names the second Docker identity used by process-split
+    custody. The local backend's split boundary is a seatbelt read denial,
+    not a second UID, so a split user is refused there rather than
+    silently ignored.
     """
     if executor not in {"docker", "local"}:
         raise ContractError("executor must be 'docker' or 'local'")
     if executor == "local":
+        if split_user is not None:
+            raise EvaluatorWorkerError(
+                "split_user_requires_docker_executor")
         if not allow_local_executor:
             raise EvaluatorWorkerError(
                 "local_executor_requires_explicit_authorization")
@@ -72,7 +88,7 @@ def build_worker_executor(
     from .docker_sandbox import DockerSandboxExecutor
     return DockerSandboxExecutor(
         executor_root, image=sandbox_image,
-        require_image_digest=require_image_digest)
+        require_image_digest=require_image_digest, split_user=split_user)
 
 
 def evaluate_via_subprocess(
@@ -89,6 +105,8 @@ def evaluate_via_subprocess(
     sandbox_image: str | None = None,
     allow_local_executor: bool = False,
     require_image_digest: bool = True,
+    split_user: str | None = None,
+    require_split_custody: bool = False,
 ) -> WorkerResult:
     """Evaluate a submission in a child process; returns the signed receipt."""
     if not isinstance(task, TaskEnvelopeV1):
@@ -97,6 +115,8 @@ def evaluate_via_subprocess(
         raise ContractError("timeout out of range")
     if executor not in {"docker", "local"}:
         raise ContractError("executor must be 'docker' or 'local'")
+    if split_user is not None and executor != "docker":
+        raise EvaluatorWorkerError("split_user_requires_docker_executor")
     if executor == "local" and not allow_local_executor:
         raise EvaluatorWorkerError(
             "local_executor_requires_explicit_authorization")
@@ -131,6 +151,10 @@ def evaluate_via_subprocess(
         argv += ["--allow-local-executor"]
     if not require_image_digest:
         argv += ["--allow-tagged-image"]
+    if split_user is not None:
+        argv += ["--split-user", split_user]
+    if require_split_custody:
+        argv += ["--require-split-custody"]
     if executor_root is not None:
         argv += ["--executor-root", str(executor_root)]
     argv += ["--task-json", "-"]  # task arrives on stdin, bounded
@@ -175,6 +199,11 @@ def _main() -> int:
     parser.add_argument("--sandbox-image", default=None)
     parser.add_argument("--allow-local-executor", action="store_true")
     parser.add_argument("--allow-tagged-image", action="store_true")
+    parser.add_argument("--split-user", default=None,
+                        help="second numeric uid[:gid] for split custody")
+    parser.add_argument("--require-split-custody", action="store_true",
+                        help="refuse private acceptance material under"
+                             " shared custody")
     args = parser.parse_args()
 
     if args.task_json == "-":
@@ -193,13 +222,21 @@ def _main() -> int:
             sandbox_image=args.sandbox_image,
             allow_local_executor=args.allow_local_executor,
             require_image_digest=not args.allow_tagged_image,
+            split_user=args.split_user,
         )
     except (ContractError, EvaluatorWorkerError, RunnerError) as exc:
         print(f"executor_unavailable: {exc}", file=sys.stderr)
         return 2
-    verifier = OutcomeVerifier(
-        executor=executor, key_dir=args.key_dir, registry_dir=args.registry_dir,
-    )
+    require_split = args.require_split_custody or args.split_user is not None
+    try:
+        verifier = OutcomeVerifier(
+            executor=executor, key_dir=args.key_dir,
+            registry_dir=args.registry_dir,
+            require_split_custody=require_split,
+        )
+    except (ContractError, RunnerError) as exc:
+        print(f"evaluator_configuration_invalid: {exc}", file=sys.stderr)
+        return 2
     try:
         receipt = verifier.evaluate(
             actor_role="evaluator",
