@@ -20,9 +20,16 @@ Integrity rules for a confirmatory label:
 - the installed CLI version must match the manifest;
 - the manifest must be committed before the run (Git anchor);
 - private acceptance tests must run under split custody;
-- guidance must come from ``--guidance-bundle`` (frozen learned
-  components), not the built-in fixed control prompts;
-- token and tool usage must be fully metered by the agent runtime.
+- guidance must come from ``--guidance-bundle``: every step must name
+  an immutable candidate record, the training snapshots must be the
+  manifest's induction repositories, and the manifest must precommit
+  the bundle digest. The built-in fixed control prompts can never
+  qualify. Without ``--candidate-registry`` the bundle is recorded as
+  ``learned_unverified``;
+- token and tool usage must be fully metered by the agent runtime;
+- the manifest must be ``ready`` (powered, preregistered, no
+  placeholders, and its tasks must span at least five holdout
+  repositories).
 
 The run also writes ``<report>.evidence/`` with the signed receipt
 bytes, the evaluator public key, the exact manifest and a bundle digest,
@@ -49,7 +56,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from sis.v3.benchmark import BenchmarkHarness, BudgetCaps  # noqa: E402
+from sis.v3.benchmark import (  # noqa: E402
+    BenchmarkError, BenchmarkHarness, BudgetCaps)
 from sis.v3.contracts import (  # noqa: E402
     GuidanceV1, TaskEnvelopeV1, canonical_digest)
 from sis.v3.efficacy_manifest import validate_manifest  # noqa: E402
@@ -212,6 +220,7 @@ def _load_manifest(path: Path) -> tuple[dict, bytes]:
 
 
 _VERSION = re.compile(r"\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.\-]+)?")
+_HEX64 = re.compile(r"^[0-9a-f]{64}$")
 
 
 def _normalized_version(value) -> str | None:
@@ -249,25 +258,131 @@ def _git_anchor(path: Path) -> dict:
             "anchored": bool(commit) and not dirty}
 
 
-def _load_guidance_bundle(path: Path) -> dict:
+def _bundle_digest(document: Mapping) -> str:
+    body = {key: value for key, value in document.items()
+            if key != "bundle_digest"}
+    normalized = json.loads(json.dumps(body, sort_keys=True))
+    return canonical_digest("learned_guidance_bundle", 1, normalized)
+
+
+def _verify_bundle_candidates(registry, components: Mapping) -> bool:
+    """Require every step to resolve to a qualified candidate record."""
+    for arm, records in components.items():
+        for record in records:
+            candidate_id = record["candidate_id"]
+            candidate, state = registry.get(candidate_id)
+            if state != "qualified":
+                raise ValueError(
+                    f"guidance_candidate_not_qualified:{candidate_id}")
+            if candidate.digest != record["candidate_digest"]:
+                raise ValueError(
+                    f"guidance_candidate_digest_mismatch:{candidate_id}")
+            if candidate.content_digest != record["content_digest"]:
+                raise ValueError(
+                    f"guidance_candidate_content_mismatch:{candidate_id}")
+            basis = registry.serving_basis(candidate_id)
+            evidence = set(basis.get("evidence_refs") or ())
+            if record["evidence_digest"] not in evidence:
+                raise ValueError(
+                    f"guidance_evidence_not_bound:{candidate_id}")
+    return True
+
+
+def _load_guidance_bundle(path: Path, *, induction_digests,
+                          holdout_digests, precommitted_digest,
+                          registry=None) -> dict:
+    """Load a learned bundle only when its lineage is checkable.
+
+    A file that merely says ``"source": "learned"`` is not evidence. The
+    bundle must carry one immutable candidate record per guidance step,
+    name the induction repository snapshots it was learned from, match
+    the manifest's precommitted bundle digest, and — when a candidate
+    registry is supplied — resolve every candidate to a qualified record
+    whose evidence covers the declared digest.
+    """
     document = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(document, dict):
         raise ValueError("guidance bundle must be a JSON object")
+    if document.get("schema_version") != 2:
+        raise ValueError("guidance bundle schema_version must be 2")
+    if document.get("kind") != "learned_guidance_bundle":
+        raise ValueError(
+            "guidance bundle kind must be learned_guidance_bundle")
     if document.get("source") != "learned":
         raise ValueError("guidance bundle source must be 'learned'")
-    bundles = document.get("bundles")
-    if not isinstance(bundles, dict):
-        raise ValueError("guidance bundle needs a bundles object")
+    if not isinstance(precommitted_digest, str) \
+            or not _HEX64.match(precommitted_digest):
+        raise ValueError(
+            "manifest does not precommit guidance_bundle_digest")
+    training = document.get("training")
+    if not isinstance(training, Mapping):
+        raise ValueError("guidance bundle needs a training object")
+    digests = training.get("repository_digests")
+    if (not isinstance(digests, list) or not digests
+            or any(not isinstance(item, str) or not _HEX64.match(item)
+                   for item in digests)):
+        raise ValueError(
+            "training.repository_digests must be non-empty sha256 digests")
+    if len(set(digests)) != len(digests):
+        raise ValueError("training.repository_digests contains duplicates")
+    allowed = set(induction_digests)
+    if not set(digests) <= allowed:
+        raise ValueError(
+            "training repositories are not induction partitions of the"
+            " manifest")
+    if set(digests) & set(holdout_digests):
+        raise ValueError("training repositories overlap the holdout")
+    components = document.get("components")
+    if not isinstance(components, Mapping):
+        raise ValueError("guidance bundle needs a components object")
+    steps_by_arm: dict[str, list[str]] = {}
+    records_by_arm: dict[str, list[dict]] = {}
     for arm in ("B", "C", "D"):
-        steps = bundles.get(arm)
-        if (not isinstance(steps, list) or not steps
-                or any(not isinstance(step, str) or not step.strip()
-                       for step in steps)):
+        steps = components.get(arm)
+        if not isinstance(steps, list) or not steps:
             raise ValueError(
                 f"guidance bundle arm {arm} needs non-empty steps")
-    return {"source": "learned",
-            "bundles": {arm: list(bundles[arm])
-                        for arm in ("B", "C", "D")}}
+        texts: list[str] = []
+        records: list[dict] = []
+        for index, step in enumerate(steps):
+            label = f"guidance bundle arm {arm} step {index}"
+            if not isinstance(step, Mapping):
+                raise ValueError(label + " must be an object")
+            candidate_id = step.get("candidate_id")
+            if (not isinstance(candidate_id, str) or not candidate_id
+                    or len(candidate_id) > 256):
+                raise ValueError(label + " has no candidate_id")
+            record = {"candidate_id": candidate_id}
+            for name in ("candidate_digest", "content_digest",
+                         "evidence_digest"):
+                value = step.get(name)
+                if not isinstance(value, str) or not _HEX64.match(value):
+                    raise ValueError(label + f".{name} is not a digest")
+                record[name] = value
+            text = step.get("text")
+            if (not isinstance(text, str) or not text.strip()
+                    or len(text) > 4096):
+                raise ValueError(label + " has no bounded text")
+            texts.append(text)
+            records.append(record)
+        steps_by_arm[arm] = texts
+        records_by_arm[arm] = records
+    computed = _bundle_digest(document)
+    if document.get("bundle_digest") != computed:
+        raise ValueError("guidance bundle digest does not match its contents")
+    if precommitted_digest != computed:
+        raise ValueError(
+            "guidance bundle digest does not match the manifest"
+            " precommitment")
+    verified = False
+    if registry is not None:
+        verified = _verify_bundle_candidates(registry, records_by_arm)
+    return {"source": "learned" if verified else "learned_unverified",
+            "bundles": steps_by_arm,
+            "components": records_by_arm,
+            "bundle_digest": computed,
+            "training_repository_digests": tuple(sorted(digests)),
+            "candidates_verified": verified}
 
 
 def _guidance_from_steps(steps: Mapping[str, list[str]],
@@ -326,7 +441,11 @@ def _real_tasks(document: Mapping, verifier: OutcomeVerifier, *,
     tasks, prompts, classes = [], {}, {}
     for task in document["tasks"]:
         repository = repositories[task["repository_id"]]
-        repo_path = Path(repository["path"]).resolve()
+        raw_path = Path(repository["path"])
+        repo_path = raw_path.resolve()
+        if raw_path.is_symlink() or not repo_path.is_dir():
+            raise ValueError("repository_path_is_not_a_plain_directory:"
+                             + repository["repository_id"])
         snapshot = snapshots.get(repository["repository_id"])
         if snapshot is None:
             snapshot = tree_digest(repo_path)
@@ -419,6 +538,7 @@ def _export_evidence(output: Path, report_sha256: str, verifier,
 def run_real(output: Path, manifest_path: Path | None, *,
              allow_shared_custody: bool = False,
              guidance_path: Path | None = None,
+             candidate_registry: Path | None = None,
              agent_factory: Callable | None = None) -> int:
     status = codex_agent_status()
     report: dict = {
@@ -458,6 +578,11 @@ def run_real(output: Path, manifest_path: Path | None, *,
         "problems": validation["problems"],
         "tasks": validation["tasks"],
         "sample_size": validation["sample_size"],
+        "holdout_repositories_used": validation.get(
+            "holdout_repositories_used"),
+        "holdout_snapshots_used": validation.get("holdout_snapshots_used"),
+        "tasks_per_holdout_repository": validation.get(
+            "tasks_per_holdout_repository"),
         "placeholders": validation["placeholders"],
     }
     report["manifest"] = manifest_block
@@ -470,6 +595,13 @@ def run_real(output: Path, manifest_path: Path | None, *,
             "BLOCKED_MANIFEST",
             f"manifest still contains {validation['placeholders']} "
             "placeholder value(s)")
+    if not validation["ready"]:
+        return blocked(
+            "BLOCKED_MANIFEST",
+            "manifest_not_ready: the real-agent gate executes only a"
+            " powered, preregistered, repository-covered study"
+            + (" (" + "; ".join(validation["problems"]) + ")"
+               if validation["problems"] else ""))
 
     injected = agent_factory is not None
     expected_version = _normalized_version(
@@ -487,14 +619,36 @@ def run_real(output: Path, manifest_path: Path | None, *,
                 f"installed codex version {installed_version!r} does not "
                 f"match the manifest {expected_version!r}")
     anchor = _git_anchor(manifest_path)
+    learned = tuple(sorted(
+        item["repo_snapshot_digest"] for item in document["repositories"]
+        if item["partition"] == "induction"))
+    holdout_digests = tuple(sorted(
+        item["repo_snapshot_digest"] for item in document["repositories"]
+        if item["partition"] == "holdout"))
     learned_bundle = None
+    if candidate_registry is not None and guidance_path is None:
+        return blocked(
+            "BLOCKED_GUIDANCE",
+            "candidate_registry requires a guidance bundle")
     if guidance_path is not None:
+        registry = None
         try:
-            learned_bundle = _load_guidance_bundle(guidance_path)
-        except (OSError, ValueError) as exc:
+            if candidate_registry is not None:
+                from sis.v3.candidates import CandidateRegistry
+                registry = CandidateRegistry(candidate_registry)
+            learned_bundle = _load_guidance_bundle(
+                guidance_path,
+                induction_digests=learned,
+                holdout_digests=holdout_digests,
+                precommitted_digest=document.get("guidance_bundle_digest"),
+                registry=registry)
+        except (OSError, ValueError, RuntimeError) as exc:
             return blocked(
                 "BLOCKED_GUIDANCE", f"guidance_bundle_unreadable:{exc}")
-    guidance_source = ("learned" if learned_bundle is not None
+        finally:
+            if registry is not None:
+                registry.close()
+    guidance_source = (learned_bundle["source"] if learned_bundle is not None
                        else "fixed_control")
 
     protocol = document["protocol"]
@@ -503,9 +657,6 @@ def run_real(output: Path, manifest_path: Path | None, *,
         token_budget=protocol["budget"]["token_budget"],
         tool_budget=protocol["budget"]["tool_budget"])
     custody = "shared" if allow_shared_custody else None
-    learned = tuple(sorted(
-        item["repo_snapshot_digest"] for item in document["repositories"]
-        if item["partition"] == "induction"))
     provenance = {
         "agent": "injected" if injected else "codex-cli",
         "expected_cli_version": expected_version,
@@ -514,10 +665,15 @@ def run_real(output: Path, manifest_path: Path | None, *,
             not injected and installed_version == expected_version),
         "custody": "shared" if allow_shared_custody else "split",
         "guidance_source": guidance_source,
+        "guidance_candidates_verified": bool(
+            learned_bundle is not None
+            and learned_bundle["candidates_verified"]),
         "preregistration": anchor,
         "preregistration_anchored": anchor["anchored"],
         "holdout_repositories": len(
             (document.get("partitions") or {}).get("holdout") or []),
+        "holdout_repositories_used": validation.get(
+            "holdout_repositories_used"),
         "manifest_digest": validation["manifest_digest"],
     }
     with tempfile.TemporaryDirectory(prefix="sis-five-arm-real-") as temp:
@@ -582,7 +738,10 @@ def run_real(output: Path, manifest_path: Path | None, *,
                 context_provider=provider, served_map=served,
                 learned_repo_digests=learned, real_agent=True,
                 hidden_holdout=True, provenance=provenance,
-                arm_order_seed=int(validation["manifest_digest"][:16], 16))
+                arm_order_seed=int(validation["manifest_digest"][:16], 16),
+                repository_ids={
+                    task["task_id"]: task["repository_id"]
+                    for task in document["tasks"]})
             campaign.validate()
         except Exception as exc:
             close = getattr(agent, "close", None)
@@ -593,6 +752,14 @@ def run_real(output: Path, manifest_path: Path | None, *,
                 f"campaign_setup_failed:{type(exc).__name__}: {exc}")
         try:
             report = campaign.run()
+        except BenchmarkError as exc:
+            return blocked(
+                "BLOCKED_CUSTODY",
+                f"campaign_custody_failure:{type(exc).__name__}: {exc}")
+        except Exception as exc:
+            return blocked(
+                "BLOCKED_CAMPAIGN",
+                f"campaign_failed:{type(exc).__name__}: {exc}")
         finally:
             close = getattr(agent, "close", None)
             if callable(close):
@@ -610,6 +777,13 @@ def run_real(output: Path, manifest_path: Path | None, *,
             "source": guidance_source,
             "bundles": bundle_payload,
             "digest": canonical_digest("guidance_bundles", 1, bundle_payload),
+            "bundle_digest": (learned_bundle["bundle_digest"]
+                              if learned_bundle is not None else None),
+            "candidates_verified": (learned_bundle["candidates_verified"]
+                                    if learned_bundle is not None else None),
+            "training_repository_digests": (
+                list(learned_bundle["training_repository_digests"])
+                if learned_bundle is not None else None),
         }
         report["arm_order_seed"] = int(
             validation["manifest_digest"][:16], 16)
@@ -670,6 +844,10 @@ def main() -> int:
     parser.add_argument("--guidance-bundle", type=Path,
                         help="frozen learned guidance bundle (JSON); omit "
                              "for the fixed control prompts")
+    parser.add_argument("--candidate-registry", type=Path,
+                        help="candidate registry that must resolve every"
+                             " bundle step to a qualified record; without it"
+                             " a learned bundle is recorded as unverified")
     args = parser.parse_args()
     if not args.allow_local_executor:
         parser.error("local executor requires --allow-local-executor")
@@ -678,7 +856,8 @@ def main() -> int:
     if args.real_agent:
         return run_real(args.output, args.manifest,
                         allow_shared_custody=args.allow_shared_custody,
-                        guidance_path=args.guidance_bundle)
+                        guidance_path=args.guidance_bundle,
+                        candidate_registry=args.candidate_registry)
     return run_demo(args.output)
 
 

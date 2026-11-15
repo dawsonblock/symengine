@@ -59,9 +59,9 @@ version, prompt, budget and evaluator. Arm order is randomized per task.
 
 The template is [efficacy_manifest_template.json](efficacy_manifest_template.json).
 Replace every `<placeholder>`, provide at least ten repositories (at
-least five of them holdout repositories) and at least 103 paired
-holdout tasks, and commit the manifest before any
-holdout run.
+least five of them holdout repositories with distinct snapshots that
+each contribute tasks) and at least 103 paired holdout tasks, and
+commit the manifest before any holdout run.
 
 Validate the template while editing:
 
@@ -114,8 +114,9 @@ arms from the manifest, registers the evaluator-owned acceptance
 material, runs the agent against each repository snapshot and writes the
 paired report with a receipt digest per `(task, arm)`. The gate still
 fails closed with `BLOCKED_REAL_AGENT` when Codex is unavailable or
-unauthenticated, `BLOCKED_MANIFEST` when the manifest is invalid or a
-repository snapshot has drifted, `BLOCKED_SPLIT_CUSTODY` when the
+unauthenticated, `BLOCKED_MANIFEST` when the manifest is invalid, not ready (a
+diagnostic or unpowered plan) or a repository snapshot has drifted,
+`BLOCKED_SPLIT_CUSTODY` when the
 backend cannot keep acceptance tests out of the submission's process,
 `BLOCKED_AGENT_VERSION` when the installed CLI does not match the
 pinned `agent.cli_version`, and `BLOCKED_GUIDANCE` when a supplied
@@ -129,31 +130,58 @@ block and enforced by the classifier:
   `invalid`, never `exploratory`);
 - the installed CLI version matched the manifest;
 - private acceptance tests ran under split custody;
-- guidance came from `--guidance-bundle`, a frozen file of learned
-  components; the built-in `Recall…`/`Workflow…`/`Procedure…` prompts
-  are a fixed control condition and can never qualify;
-- the manifest was committed before the run (Git anchor);
+- guidance came from `--guidance-bundle`, a frozen file whose every
+  step resolves to a qualified candidate record; the built-in
+  `Recall…`/`Workflow…`/`Procedure…` prompts are a fixed control
+  condition and can never qualify;
+- the manifest was committed before the run (Git anchor) and carries
+  the precommitted `guidance_bundle_digest`;
 - token and tool usage were fully metered by the agent runtime
   (`budget_accounting: verified`).
 
 A learned bundle is a frozen JSON file supplied with
-`--guidance-bundle`:
+`--guidance-bundle`. A file that merely declares `"source": "learned"`
+is not evidence: every step names the immutable candidate record it was
+produced from, the training partitions are the manifest's induction
+repositories, and the manifest precommits the bundle digest before the
+run. Passing `--candidate-registry` additionally requires each
+candidate to resolve to a qualified record whose evidence covers the
+declared digest; without it the bundle is recorded as
+`learned_unverified` and can never support a confirmatory label.
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
+  "kind": "learned_guidance_bundle",
   "source": "learned",
-  "bundles": {
-    "B": ["<qualified memory step>"],
-    "C": ["<qualified skill step>"],
-    "D": ["<qualified symbolic step>"]
-  }
+  "training": {
+    "repository_digests": ["<induction repo snapshot sha256>"]
+  },
+  "components": {
+    "B": [{
+      "candidate_id": "cand-memory-1",
+      "candidate_digest": "<candidate record sha256>",
+      "content_digest": "<candidate content sha256>",
+      "evidence_digest": "<qualified evidence sha256>",
+      "text": "<qualified memory step>"
+    }],
+    "C": [{"candidate_id": "...", "candidate_digest": "...",
+           "content_digest": "...", "evidence_digest": "...",
+           "text": "<qualified skill step>"}],
+    "D": [{"candidate_id": "...", "candidate_digest": "...",
+           "content_digest": "...", "evidence_digest": "...",
+           "text": "<qualified symbolic step>"}]
+  },
+  "bundle_digest": "<canonical digest of the bundle body>"
 }
 ```
 
-Arm E receives the B, C and D steps in that order. The file is hashed
-and recorded in the report's `guidance` block; the built-in prompts are
-never mixed into a learned bundle.
+The manifest carries the same digest as `guidance_bundle_digest`; the
+gate refuses a bundle that does not match it, a bundle whose training
+repositories are outside the induction partition, or a bundle whose
+declared digest does not recompute. Arm E receives the B, C and D steps
+in that order. The built-in prompts are never mixed into a learned
+bundle.
 
 The run writes `<report>.evidence/` next to the report: the signed
 receipt bytes under `receipts/`, the evaluator public key, the exact

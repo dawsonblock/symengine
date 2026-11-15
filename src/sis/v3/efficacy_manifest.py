@@ -71,7 +71,9 @@ def _validate_protocol(protocol, problems: list[str],
     powered = protocol.get("powered")
     if type(powered) is not bool:
         _problem(problems, "protocol powered must be a bool")
-        powered = True
+        # Never let a malformed flag register as a powered plan; the
+        # problem already makes the manifest invalid.
+        powered = False
     analysis = protocol.get("power_analysis")
     if not isinstance(analysis, Mapping):
         analysis = {}
@@ -98,6 +100,8 @@ def _validate_protocol(protocol, problems: list[str],
     except (ContractError, TypeError, ValueError) as exc:
         _problem(problems, f"protocol is not preregistrable: {exc}")
         return {}
+    registered = dict(registered)
+    registered["powered"] = powered
     if registered.get("power_analysis", {}).get("underpowered_declared"):
         _problem(problems, "protocol is explicitly underpowered and cannot"
                            " be confirmatory")
@@ -210,7 +214,8 @@ def _validate_repositories(document, problems: list[str],
 
 
 def _validate_tasks(document, by_id: dict[str, dict], problems: list[str],
-                    allow_placeholders: bool, sample_size: int) -> list:
+                    allow_placeholders: bool, sample_size: int,
+                    protocol_budget: Mapping | None = None) -> list:
     tasks = document.get("tasks")
     if not isinstance(tasks, list) or not tasks:
         _problem(problems, "tasks must be a nonempty list")
@@ -218,6 +223,12 @@ def _validate_tasks(document, by_id: dict[str, dict], problems: list[str],
     if not allow_placeholders and len(tasks) < sample_size:
         _problem(problems, f"tasks={len(tasks)} is below the preregistered"
                            f" sample_size={sample_size}")
+    budget_floor = protocol_budget if isinstance(protocol_budget, Mapping) else {}
+    expected_budget = {
+        "time_budget_seconds": budget_floor.get("wall_seconds"),
+        "token_budget": budget_floor.get("token_budget"),
+        "tool_budget": budget_floor.get("tool_budget"),
+    }
     seen: set[str] = set()
     for index, task in enumerate(tasks):
         label = f"tasks[{index}]"
@@ -259,6 +270,14 @@ def _validate_tasks(document, by_id: dict[str, dict], problems: list[str],
             _problem(problems, label + ".budgets must name positive integer"
                                      " time_budget_seconds, token_budget and"
                                      " tool_budget")
+        elif not allow_placeholders:
+            for name, expected in expected_budget.items():
+                if expected is not None and budgets.get(name) != expected:
+                    _problem(
+                        problems,
+                        f"{label}.budgets.{name}={budgets.get(name)!r} does"
+                        f" not match the preregistered protocol"
+                        f" ({expected!r})")
         acceptance = task.get("acceptance")
         if not isinstance(acceptance, Mapping):
             _problem(problems, label + " has no acceptance record")
@@ -311,7 +330,56 @@ def validate_manifest(document, *, allow_placeholders: bool = False,
     by_id = _validate_repositories(document, problems, allow_placeholders)
     sample_size = int(protocol.get("sample_size", 0) or 0)
     tasks = _validate_tasks(
-        document, by_id, problems, allow_placeholders, sample_size)
+        document, by_id, problems, allow_placeholders, sample_size,
+        protocol_budget=protocol.get("budget"))
+    confirmatory = bool(
+        protocol.get("powered") is True
+        and protocol.get("analysis_kind") != "diagnostic")
+    holdout_ids = {
+        repository_id for repository_id, repository in by_id.items()
+        if repository.get("partition") == "holdout"}
+    used: dict[str, int] = {}
+    for task in tasks:
+        if not isinstance(task, Mapping):
+            continue
+        repository_id = task.get("repository_id")
+        if repository_id in holdout_ids:
+            used[repository_id] = used.get(repository_id, 0) + 1
+    used_snapshots = {
+        by_id[repository_id].get("repo_snapshot_digest")
+        for repository_id in used
+        if isinstance(by_id[repository_id].get("repo_snapshot_digest"), str)}
+    if confirmatory and not allow_placeholders:
+        if len(used) < MIN_HOLDOUT_REPOSITORIES:
+            _problem(
+                problems,
+                f"tasks use only {len(used)} holdout repositories; at least "
+                f"{MIN_HOLDOUT_REPOSITORIES} must contribute tasks — a task"
+                " count concentrated in fewer repositories overstates"
+                " independent evidence")
+        if len(used_snapshots) < MIN_HOLDOUT_REPOSITORIES:
+            _problem(
+                problems,
+                f"tasks use only {len(used_snapshots)} distinct holdout"
+                f" repository snapshots; at least {MIN_HOLDOUT_REPOSITORIES}"
+                " independent codebases are required (distinct repository"
+                " IDs with identical snapshots are the same codebase)")
+        declared = set(
+            (document.get("partitions") or {}).get("holdout") or []) \
+            if isinstance(document.get("partitions"), Mapping) else set()
+        unused = sorted(declared - set(used))
+        if unused:
+            _problem(problems,
+                     "declared holdout repositories contribute no tasks: "
+                     + ", ".join(unused))
+    guidance_digest = document.get("guidance_bundle_digest")
+    if guidance_digest is not None:
+        if _placeholder(guidance_digest) and allow_placeholders:
+            pass
+        elif (not isinstance(guidance_digest, str)
+              or not _HEX64.match(guidance_digest)):
+            _problem(problems,
+                     "guidance_bundle_digest is not a valid digest")
     agent = document.get("agent")
     if not isinstance(agent, Mapping):
         _problem(problems, "agent must be an object")
@@ -357,9 +425,6 @@ def validate_manifest(document, *, allow_placeholders: bool = False,
                              f" {repository_id}")
     placeholder_count = sum(
         1 for value in _walk(document) if _placeholder(value))
-    confirmatory = bool(
-        protocol.get("powered", True)
-        and protocol.get("analysis_kind") != "diagnostic")
     ready = (not problems and not placeholder_count and confirmatory
              and len(tasks) >= sample_size)
     return {
@@ -377,7 +442,11 @@ def validate_manifest(document, *, allow_placeholders: bool = False,
         "tasks": len(tasks),
         "repositories": len(by_id),
         "holdout_repositories": len(
-            (document.get("partitions") or {}).get("holdout") or []),
+            (document.get("partitions") or {}).get("holdout") or [])
+        if isinstance(document.get("partitions"), Mapping) else 0,
+        "holdout_repositories_used": len(used),
+        "holdout_snapshots_used": len(used_snapshots),
+        "tasks_per_holdout_repository": dict(sorted(used.items())),
         "placeholders": placeholder_count,
         "confirmatory": confirmatory,
         "manifest_digest": _canonical(document),

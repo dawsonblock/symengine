@@ -1,5 +1,67 @@
 # Changelog
 
+## 2026-11-15 — Revision 15 repairs: custody, power, coverage, execution and lineage
+
+The Revision 14 verification found five defects in the efficacy path.
+None of these repairs is an efficacy result; the sealed archive still
+describes the pre-repair tree.
+
+- **Workspace custody.** `BenchmarkHarness` staged repositories with
+  `shutil.copytree`'s default symlink-following behaviour, so a link in
+  a public repository could copy an evaluator-readable file into the
+  agent's workspace. `stage_repository()` now rejects a symlinked
+  source, rejects external symlinks and hard-linked files before and
+  after the copy, copies links verbatim (`symlinks=True`) and requires
+  the staged tree to hash identically to the source. A link swapped in
+  during the copy is observed as a link, never dereferenced.
+- **Powered classification.** `analyze_report()` recomputes the power
+  floor with `protocol_required_sample_size()` and requires an
+  explicitly powered plan. A diagnostic (`powered=False`) protocol, a
+  missing/inconsistent `power_analysis` block or a forged `required_n`
+  is `exploratory` at best and can never reach `EFFICACY_SUPPORTED`.
+  `run_governed_evaluation()` labels a diagnostic run `diagnostic`.
+- **Readiness at execution.** The real-agent gate refuses a manifest
+  whose validator result is not `ready`; a diagnostic manifest must use
+  the demo path.
+- **Holdout coverage and budgets.** Manifest validation counts the
+  holdout repositories that actually contribute tasks (at least five)
+  and the distinct snapshots among them (at least five independent
+  codebases), rejects a declared holdout repository with no tasks, and
+  reports `holdout_repositories_used`, `holdout_snapshots_used` and
+  `tasks_per_holdout_repository`.
+  Per-task budgets must equal the preregistered protocol budget. The
+  analysis reports solved counts per repository and a deterministic
+  repository-cluster bootstrap interval for the pooled `E - A` delta.
+- **Execution control.** At the wall limit the harness aborts the arm
+  through `ArmSupervisor`; `CodexCliAgent` registers a terminator that
+  kills the CLI process group. The harness waits for the worker to
+  exit; a worker that survives is `agent_timeout_unterminated` and its
+  workspace is retained, never removed or reused. A failed, cancelled,
+  timed-out or nonzero-exit CLI turn raises instead of returning a
+  normal result. One completed command/edit counts as one tool call,
+  cumulative `turn.completed` usage is taken once rather than summed,
+  and oversized JSONL lines are drained in bounded chunks.
+- **Learned guidance lineage.** `--guidance-bundle` accepts only a
+  schema-2 bundle whose steps name immutable candidate records
+  (`candidate_digest`, `content_digest`, `evidence_digest`), whose
+  training snapshots are the manifest's induction repositories, and
+  whose digest matches the manifest's precommitted
+  `guidance_bundle_digest`. `--candidate-registry` additionally requires
+  every candidate to resolve to a qualified record whose evidence
+  covers the declared digest; without it the bundle is
+  `learned_unverified` and cannot support a confirmatory label. A file
+  that merely says `"source": "learned"` is rejected.
+
+Regressions live in `tests/v3/test_benchmark.py`,
+`tests/v3/test_codex_cli_adapter.py`,
+`tests/v3/test_efficacy_manifest.py`,
+`tests/v3/test_execution_qualification.py`,
+`tests/v3/test_five_arm_real_run.py`,
+`tests/v3/test_governed_eval.py` and
+`tests/v3/test_learning_qualification.py`. Regenerate the archive and
+its evidence with `tools/package_release.py` before making a release
+claim.
+
 ## 2026-11-14 — Revision 14 repairs: sampler, provenance and evidence
 
 The Revision 13 audit found a release-blocking sampler crash and four

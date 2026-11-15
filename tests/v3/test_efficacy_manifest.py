@@ -126,6 +126,8 @@ class EfficacyManifestTests(unittest.TestCase):
         self.assertEqual(report["tasks"], 103)
         self.assertEqual(report["repositories"], 10)
         self.assertEqual(report["holdout_repositories"], 9)
+        self.assertEqual(report["holdout_repositories_used"], 9)
+        self.assertEqual(report["holdout_snapshots_used"], 9)
         self.assertTrue(report["confirmatory"])
 
     def test_partition_overlap_is_rejected(self):
@@ -205,6 +207,57 @@ class EfficacyManifestTests(unittest.TestCase):
         self.assertTrue(report["valid"], report["problems"])
         self.assertFalse(report["confirmatory"])
         self.assertFalse(report["ready"])
+
+    def test_a_non_boolean_powered_flag_is_rejected(self):
+        document = manifest()
+        document["protocol"]["powered"] = "yes"
+        report = validate_manifest(document)
+        self.assertFalse(report["valid"])
+        self.assertFalse(report["confirmatory"])
+        self.assertTrue(any("powered must be a bool" in problem
+                            for problem in report["problems"]))
+
+    def test_task_budgets_must_match_the_protocol(self):
+        document = manifest()
+        document["tasks"][0]["budgets"]["token_budget"] = 999
+        report = validate_manifest(document)
+        self.assertFalse(report["valid"])
+        self.assertTrue(any("does not match the preregistered protocol"
+                            in problem for problem in report["problems"]))
+
+    def test_declared_holdout_repositories_must_contribute_tasks(self):
+        document = manifest()
+        # Five repositories are declared, but every task is drawn from one.
+        target = document["repositories"][1]
+        for task in document["tasks"]:
+            task["repository_id"] = target["repository_id"]
+            task["base_commit"] = target["base_commit"]
+        report = validate_manifest(document)
+        self.assertFalse(report["valid"])
+        self.assertEqual(report["holdout_repositories_used"], 1)
+        self.assertTrue(any("contribute no tasks" in problem
+                            for problem in report["problems"]))
+        self.assertTrue(any("tasks use only 1 holdout repositories"
+                            in problem for problem in report["problems"]))
+
+    def test_coverage_is_reported_per_repository(self):
+        report = validate_manifest(manifest())
+        self.assertEqual(report["holdout_repositories_used"], 9)
+        self.assertEqual(report["holdout_snapshots_used"], 9)
+        self.assertEqual(sum(report["tasks_per_holdout_repository"].values()),
+                         103)
+
+    def test_holdout_repositories_must_be_distinct_codebases(self):
+        document = manifest()
+        shared = document["repositories"][1]["repo_snapshot_digest"]
+        for repository in document["repositories"]:
+            if repository["partition"] == "holdout":
+                repository["repo_snapshot_digest"] = shared
+        report = validate_manifest(document)
+        self.assertFalse(report["valid"])
+        self.assertEqual(report["holdout_snapshots_used"], 1)
+        self.assertTrue(any("distinct holdout" in problem
+                            for problem in report["problems"]))
 
 
 if __name__ == "__main__":

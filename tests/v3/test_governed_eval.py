@@ -301,6 +301,31 @@ class ConformanceTests(unittest.TestCase):
         conf = self._run(protocol)["governed"]["conformance"]
         self.assertTrue(conf["conforms"], conf["mismatches"])
 
+    def test_analysis_mode_follows_the_declared_plan(self):
+        diagnostic = preregister(
+            primary_metric="x", method="m", alpha=0.05, min_effect=1.0,
+            sample_size=1, powered=False, arms=("A", "E"),
+            budget={"wall_seconds": 60, "token_budget": 1000})
+        self.assertEqual(
+            self._run(diagnostic)["governed"]["analysis_mode"],
+            "diagnostic")
+        powered = preregister(
+            primary_metric="x", method="m", alpha=0.05, min_effect=1.0,
+            sample_size=103, arms=("A", "E"),
+            budget={"wall_seconds": 60, "token_budget": 1000})
+        self.assertEqual(
+            self._run(powered, n_tasks=103)["governed"]["analysis_mode"],
+            "confirmatory")
+
+    def test_a_plan_without_a_power_block_is_exploratory(self):
+        self.assertEqual(
+            self._run({"sample_size": 10})["governed"]["analysis_mode"],
+            "exploratory")
+        self.assertEqual(
+            self._run({"sample_size": 10, "powered": "yes",
+                       "power_analysis": {}})["governed"]["analysis_mode"],
+            "exploratory")
+
     def test_mixed_diagnostic_document_is_flagged(self):
         protocol = preregister(
             primary_metric="x", method="m", alpha=0.05, min_effect=1.0,

@@ -136,6 +136,70 @@ None of this is an efficacy result. The sealed archive still describes
 the pre-repair tree; regenerate it with `tools/package_release.py`
 before making a release claim.
 
+### Post-seal repair: Revision 15 efficacy-path integrity
+
+The Revision 14 verification found five defects in the efficacy path:
+workspace staging followed external symlinks, an unpowered diagnostic
+protocol could be classified confirmatory, holdout coverage was counted
+from declarations instead of tasks, a timed-out arm kept executing, and
+a guidance file could declare itself learned. The repairs:
+
+- **Workspace staging.** `BenchmarkHarness` no longer calls
+  `shutil.copytree` with its default symlink-following behaviour.
+  `stage_repository()` rejects a symlinked source, rejects external
+  symlinks and hard-linked files before and after the copy, copies
+  links verbatim (`symlinks=True`), and requires the staged tree to
+  hash identically to the source. A link swapped in during the copy is
+  observed as a link, never dereferenced into the workspace.
+- **Efficacy classification.** `analyze_report()` recomputes the
+  protocol's power floor with `protocol_required_sample_size()` and
+  requires an explicitly powered plan. A diagnostic (`powered=False`)
+  protocol, a missing/inconsistent `power_analysis` block or a forged
+  `required_n` is `exploratory` at best and can never reach
+  `EFFICACY_SUPPORTED`. `run_governed_evaluation()` labels a
+  diagnostic run `analysis_mode: diagnostic`, not `confirmatory`.
+- **Readiness at execution.** `tools/five_arm_campaign.py --real-agent`
+  refuses a manifest whose validator result is not `ready`; a
+  diagnostic manifest must use the demo path.
+- **Holdout coverage.** Manifest validation now counts the holdout
+  repositories that actually contribute tasks (at least five) and the
+  distinct repository snapshots among them (at least five independent
+  codebases), rejects a declared holdout repository with no tasks, and
+  reports `holdout_repositories_used`, `holdout_snapshots_used` and
+  `tasks_per_holdout_repository`.
+  Per-task budgets must equal the preregistered protocol budget. The
+  paired analysis reports solved counts per repository and a
+  deterministic repository-cluster bootstrap interval for the pooled
+  `E - A` delta.
+- **Execution control.** At the wall limit the harness aborts the arm
+  through `ArmSupervisor`: `CodexCliAgent` registers a terminator that
+  kills the CLI process group. The harness waits for the worker to
+  exit; a worker that survives is reported as
+  `agent_timeout_unterminated` and its workspace is retained, never
+  removed or reused. A failed, cancelled, timed-out or nonzero-exit CLI
+  turn raises instead of returning a normal agent result. One completed
+  command/edit counts as one tool call, cumulative `turn.completed`
+  usage is taken once rather than summed, and oversized JSONL lines are
+  drained in bounded chunks before allocation.
+- **Learned guidance lineage.** `--guidance-bundle` now accepts only a
+  schema-2 bundle whose steps name immutable candidate records
+  (`candidate_digest`, `content_digest`, `evidence_digest`), whose
+  training snapshots are the manifest's induction repositories, and
+  whose digest matches the manifest's precommitted
+  `guidance_bundle_digest`. Passing `--candidate-registry` verifies
+  each candidate is qualified and its evidence covers the declared
+  digest; without it the bundle is `learned_unverified` and cannot
+  support a confirmatory label. A file that merely says
+  `"source": "learned"` is rejected.
+
+Regression coverage lives in `tests/v3/test_benchmark.py`,
+`tests/v3/test_codex_cli_adapter.py`,
+`tests/v3/test_efficacy_manifest.py`,
+`tests/v3/test_learning_qualification.py`,
+`tests/v3/test_governed_eval.py` and
+`tests/v3/test_five_arm_real_run.py`. This repair does not reseal the
+archive and does not constitute an efficacy result.
+
 ### Qualification status
 
 The v3.3.9 archive is engineering-verified and qualification-only. A

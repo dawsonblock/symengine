@@ -64,7 +64,7 @@ def _manifest(root: Path) -> dict:
     for index in range(5):
         holdout = root / f"holdout-{index}"
         holdout.mkdir()
-        (holdout / "solution.py").write_text("NO = 1\n")
+        (holdout / "solution.py").write_text(f"NO = {index}\n")
         hidden = root / "private" / f"hidden-{index}.py"
         hidden.parent.mkdir(exist_ok=True)
         hidden.write_text("def test_placeholder():\n    assert True\n")
@@ -82,12 +82,13 @@ def _manifest(root: Path) -> dict:
         holdout_repos.append(item)
     protocol = preregister(
         primary_metric="paired solved_delta E vs A", method="mcnemar_exact",
-        alpha=0.05, min_effect=1.0, sample_size=2, powered=False,
+        alpha=0.05, min_effect=1.0, sample_size=9, powered=True,
+        expected_baseline=0.99, expected_treatment=0.01, power=0.8,
         budget={"wall_seconds": 30, "token_budget": 1000, "tool_budget": 10},
         arms=GOVERNED_ARMS)
-    protocol["powered"] = False
+    protocol["powered"] = True
     tasks = []
-    for index in range(2):
+    for index in range(9):
         repo = holdout_repos[index % len(holdout_repos)]
         tasks.append({
             "task_id": f"task-{index}",
@@ -127,6 +128,35 @@ def _write(root: Path, document: dict) -> Path:
     return path
 
 
+def _learned_bundle(document: dict) -> dict:
+    induction = [item for item in document["repositories"]
+                 if item["partition"] == "induction"]
+    components = {}
+    for arm in ("B", "C", "D"):
+        components[arm] = [{
+            "candidate_id": f"candidate-{arm}",
+            "candidate_digest": hashlib.sha256(
+                f"candidate-{arm}".encode()).hexdigest(),
+            "content_digest": hashlib.sha256(
+                f"content-{arm}".encode()).hexdigest(),
+            "evidence_digest": hashlib.sha256(
+                f"evidence-{arm}".encode()).hexdigest(),
+            "text": f"{arm} learned step",
+        }]
+    bundle = {
+        "schema_version": 2,
+        "kind": "learned_guidance_bundle",
+        "source": "learned",
+        "training": {
+            "repository_digests": sorted({
+                item["repo_snapshot_digest"] for item in induction})},
+        "components": components,
+    }
+    bundle["bundle_digest"] = campaign_tool._bundle_digest(bundle)
+    document["guidance_bundle_digest"] = bundle["bundle_digest"]
+    return bundle
+
+
 def _scripted_agent(prompts, budget, model):
     def agent(ctx):
         if ctx.guidance is not None and ctx.guidance.helpful_next_checks:
@@ -138,25 +168,39 @@ def _scripted_agent(prompts, budget, model):
 class CodexMeteringTests(unittest.TestCase):
     """The adapter nests usage under payload["summary"]; read that path."""
 
-    def test_token_usage_is_metered_from_the_nested_summary(self):
-        from sis.v3.benchmark import UsageMeter
+    @staticmethod
+    def _agent(events, workspace):
         from sis.v3.learning_qualification import CodexCliAgent
 
         class Adapter:
-            def start_task(self, prompt, workspace, **kwargs):
-                (Path(workspace) / "out.txt").write_text("ok")
-                yield SimpleNamespace(
-                    event_type="tool_request",
-                    payload={"summary": {"token_usage": {
-                        "input_tokens": 10, "output_tokens": 5}}})
-                yield SimpleNamespace(
-                    event_type="tool_result", payload={"summary": {}})
+            def start_task(self, prompt, workspace_path, **kwargs):
+                (Path(workspace_path) / "out.txt").write_text("ok")
+                yield from events
 
+        agent = object.__new__(CodexCliAgent)
+        agent._adapter = Adapter()
+        agent._model = None
+        agent._prompts = {"t1": "prompt"}
+        return agent
+
+    @staticmethod
+    def _event(event_type, method, summary):
+        return SimpleNamespace(
+            event_type=event_type,
+            payload={"sdk_method": method, "summary": summary})
+
+    def test_token_usage_is_metered_from_the_nested_summary(self):
+        from sis.v3.benchmark import UsageMeter
+        events = [
+            self._event("tool_result", "item.completed", {
+                "item_type": "command_execution",
+                "token_usage": {"input_tokens": 10, "output_tokens": 5}}),
+            self._event("completion", "turn.completed", {}),
+            self._event("completion", "sis/process_exit",
+                        {"cli_exit_status": 0}),
+        ]
         with tempfile.TemporaryDirectory() as temp:
-            agent = object.__new__(CodexCliAgent)
-            agent._adapter = Adapter()
-            agent._model = None
-            agent._prompts = {"t1": "prompt"}
+            agent = self._agent(events, temp)
             meter = UsageMeter()
             ctx = SimpleNamespace(
                 task=SimpleNamespace(task_id="t1"), workspace=Path(temp),
@@ -164,9 +208,65 @@ class CodexMeteringTests(unittest.TestCase):
             usage = agent(ctx)
         self.assertEqual(usage["tokens_used"], 15)
         self.assertEqual(meter.tokens, 15)
-        self.assertEqual(meter.tools, 2)
+        # One completed command is one tool call, not a start and a
+        # completion event counted separately.
+        self.assertEqual(meter.tools, 1)
         self.assertTrue(meter.tokens_verified)
         self.assertTrue(meter.tools_verified)
+
+    def test_cumulative_turn_usage_is_not_double_counted(self):
+        from sis.v3.benchmark import UsageMeter
+        events = [
+            self._event("tool_result", "item.completed", {
+                "item_type": "command_execution"}),
+            self._event("agent_event", "turn.completed", {
+                "token_usage": {"input_tokens": 80, "output_tokens": 20}}),
+            self._event("completion", "turn.completed", {
+                "token_usage": {"input_tokens": 120, "output_tokens": 30}}),
+            self._event("completion", "sis/process_exit",
+                        {"cli_exit_status": 0}),
+        ]
+        with tempfile.TemporaryDirectory() as temp:
+            agent = self._agent(events, temp)
+            meter = UsageMeter()
+            ctx = SimpleNamespace(
+                task=SimpleNamespace(task_id="t1"), workspace=Path(temp),
+                guidance=None, usage_meter=meter)
+            usage = agent(ctx)
+        self.assertEqual(usage["tokens_used"], 150)
+        self.assertEqual(meter.tokens, 150)
+
+    def test_failed_cli_turn_is_not_a_completed_agent_call(self):
+        events = [
+            self._event("tool_result", "item.completed", {
+                "item_type": "command_execution"}),
+            self._event("agent_event", "turn.failed", {}),
+            self._event("agent_event", "sis/process_exit",
+                        {"cli_exit_status": 1}),
+        ]
+        with tempfile.TemporaryDirectory() as temp:
+            agent = self._agent(events, temp)
+            ctx = SimpleNamespace(
+                task=SimpleNamespace(task_id="t1"), workspace=Path(temp),
+                guidance=None, usage_meter=None)
+            with self.assertRaisesRegex(RuntimeError,
+                                        "real_agent_error_event"):
+                agent(ctx)
+
+    def test_timed_out_cli_turn_is_not_a_completed_agent_call(self):
+        events = [
+            self._event("tool_result", "item.completed", {
+                "item_type": "command_execution"}),
+            self._event("agent_event", "sis/process_exit",
+                        {"cli_exit_status": 137, "timed_out": True}),
+        ]
+        with tempfile.TemporaryDirectory() as temp:
+            agent = self._agent(events, temp)
+            ctx = SimpleNamespace(
+                task=SimpleNamespace(task_id="t1"), workspace=Path(temp),
+                guidance=None, usage_meter=None)
+            with self.assertRaisesRegex(RuntimeError, "real_agent_timeout"):
+                agent(ctx)
 
     def test_token_total_prefers_the_billed_pair(self):
         from sis.v3.learning_qualification import _token_total
@@ -175,6 +275,74 @@ class CodexMeteringTests(unittest.TestCase):
                           "total_tokens": 999}), 15)
         self.assertEqual(_token_total({"total_tokens": 42}), 42)
         self.assertIsNone(_token_total({}))
+
+
+class GuidanceBundleLineageTests(unittest.TestCase):
+    """A bundle is learned only when its candidate records resolve."""
+
+    class _Registry:
+        def __init__(self, bundle, *, corrupt=False):
+            self.bundle = bundle
+            self.corrupt = corrupt
+
+        def _record(self, candidate_id):
+            for records in self.bundle["components"].values():
+                for record in records:
+                    if record["candidate_id"] == candidate_id:
+                        return record
+            raise AssertionError(candidate_id)
+
+        def get(self, candidate_id):
+            record = self._record(candidate_id)
+            digest = ("0" * 64 if self.corrupt
+                      else record["candidate_digest"])
+            return SimpleNamespace(
+                digest=digest,
+                content_digest=record["content_digest"]), "qualified"
+
+        def serving_basis(self, candidate_id):
+            record = self._record(candidate_id)
+            return {"evidence_refs": (record["evidence_digest"],)}
+
+    def _load(self, root, *, registry, document=None, bundle=None):
+        document = document or _manifest(root)
+        bundle = bundle or _learned_bundle(document)
+        path = root / "guidance.json"
+        path.write_text(json.dumps(bundle))
+        induction = tuple(sorted({
+            item["repo_snapshot_digest"] for item in document["repositories"]
+            if item["partition"] == "induction"}))
+        holdout = tuple(sorted({
+            item["repo_snapshot_digest"] for item in document["repositories"]
+            if item["partition"] == "holdout"}))
+        return campaign_tool._load_guidance_bundle(
+            path, induction_digests=induction,
+            holdout_digests=holdout,
+            precommitted_digest=bundle["bundle_digest"],
+            registry=registry), bundle
+
+    def test_a_qualified_registry_makes_the_bundle_learned(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            document = _manifest(root)
+            bundle = _learned_bundle(document)
+            loaded, _ = self._load(
+                root, registry=self._Registry(bundle),
+                document=document, bundle=bundle)
+        self.assertEqual(loaded["source"], "learned")
+        self.assertTrue(loaded["candidates_verified"])
+        self.assertEqual(loaded["bundles"]["B"], ["B learned step"])
+
+    def test_a_candidate_digest_mismatch_is_rejected(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            document = _manifest(root)
+            bundle = _learned_bundle(document)
+            with self.assertRaisesRegex(ValueError,
+                                        "candidate_digest_mismatch"):
+                self._load(root, registry=self._Registry(
+                    bundle, corrupt=True),
+                    document=document, bundle=bundle)
 
 
 class RealAgentGateTests(unittest.TestCase):
@@ -210,17 +378,17 @@ class RealAgentGateTests(unittest.TestCase):
             input_manifest = manifest.read_bytes()
         self.assertEqual(code, 1)
         analysis = report["learning_qualification"]
-        self.assertEqual(analysis["tasks"], 2)
+        self.assertEqual(analysis["tasks"], 9)
         self.assertTrue(analysis["real_agent"])
         # An injected agent is not a real codex-cli run.
         self.assertEqual(analysis["evidence_class"], "invalid")
         self.assertEqual(report["evidence_class"], "invalid")
         self.assertFalse(analysis["confirmatory_eligible"])
         self.assertEqual(analysis["provenance"]["agent"], "injected")
-        self.assertEqual(report["receipts_issued"], 4)
+        self.assertEqual(report["receipts_issued"], 18)
         rows = [arm for task in report["per_task"]
                 for arm in task["arms"].values()]
-        self.assertEqual(len(rows), 10)
+        self.assertEqual(len(rows), 45)
         self.assertTrue(all(row["receipt_digest"] for row in rows))
         for task in report["per_task"]:
             self.assertEqual(sorted(task["arm_order"]),
@@ -229,14 +397,19 @@ class RealAgentGateTests(unittest.TestCase):
         self.assertIn("bug_fix", report["guidance"]["bundles"])
         self.assertEqual(len(report["guidance"]["digest"]), 64)
         self.assertTrue(report["manifest"]["valid"])
-        self.assertEqual(analysis["decisive_contrast"]["wins"], 2)
+        self.assertTrue(report["manifest"]["ready"])
+        self.assertEqual(report["manifest"]["holdout_repositories_used"], 5)
+        self.assertEqual(analysis["decisive_contrast"]["wins"], 9)
         self.assertEqual(analysis["decisive_contrast"]["losses"], 0)
+        self.assertEqual(len(analysis["per_repository"]), 5)
+        self.assertEqual(
+            analysis["repository_clustered_uncertainty"]["repositories"], 5)
         self.assertEqual(
             analysis["decisive_contrast"]["difference_interval_method"],
             "newcombe_paired")
         # Durable evidence: signed receipt bytes and the public key survive
         # the verifier's temporary directory.
-        self.assertEqual(len(receipt_files), 4)
+        self.assertEqual(len(receipt_files), 18)
         self.assertEqual(set(bundle["receipts"]),
                          {path.stem for path in receipt_files})
         for digest, content_hash in receipt_hashes.items():
@@ -254,27 +427,142 @@ class RealAgentGateTests(unittest.TestCase):
     def test_learned_guidance_bundle_is_recorded(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            manifest = _write(root, _manifest(root))
+            document = _manifest(root)
+            bundle = _learned_bundle(document)
+            manifest = _write(root, document)
             guidance = root / "guidance.json"
-            guidance.write_text(json.dumps({
-                "schema_version": 1,
-                "source": "learned",
-                "bundles": {
-                    "B": ["learned memory step"],
-                    "C": ["learned skill step"],
-                    "D": ["learned procedure step"],
-                }}))
+            guidance.write_text(json.dumps(bundle))
             output = root / "report.json"
             campaign_tool.run_real(
                 output, manifest, allow_shared_custody=True,
                 guidance_path=guidance, agent_factory=_scripted_agent)
             report = json.loads(output.read_text(encoding="utf-8"))
-        self.assertEqual(report["guidance"]["source"], "learned")
-        self.assertEqual(
-            report["guidance"]["bundles"]["B"], ["learned memory step"])
+        # Without a candidate registry the lineage is not verified; the
+        # report says so instead of accepting the self-declaration.
+        self.assertEqual(report["guidance"]["source"], "learned_unverified")
+        self.assertEqual(report["guidance"]["bundle_digest"],
+                         bundle["bundle_digest"])
+        self.assertFalse(report["guidance"]["candidates_verified"])
         self.assertEqual(
             report["learning_qualification"]["provenance"]["guidance_source"],
-            "learned")
+            "learned_unverified")
+        self.assertEqual(
+            report["guidance"]["bundles"]["B"], ["B learned step"])
+
+    def test_a_self_declared_learned_bundle_is_rejected(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            document = _manifest(root)
+            document["guidance_bundle_digest"] = "0" * 64
+            manifest = _write(root, document)
+            guidance = root / "guidance.json"
+            guidance.write_text(json.dumps({
+                "schema_version": 1,
+                "source": "learned",
+                "bundles": {"B": ["x"], "C": ["y"], "D": ["z"]}}))
+            output = root / "report.json"
+            code = campaign_tool.run_real(
+                output, manifest, allow_shared_custody=True,
+                guidance_path=guidance, agent_factory=_scripted_agent)
+            report = json.loads(output.read_text(encoding="utf-8"))
+        self.assertEqual(code, 2)
+        self.assertEqual(report["release_gate"], "BLOCKED_GUIDANCE")
+        self.assertIn("schema_version", report["note"])
+
+    def test_a_bundle_without_manifest_precommitment_is_rejected(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            document = _manifest(root)
+            bundle = _learned_bundle(document)
+            del document["guidance_bundle_digest"]
+            manifest = _write(root, document)
+            guidance = root / "guidance.json"
+            guidance.write_text(json.dumps(bundle))
+            output = root / "report.json"
+            code = campaign_tool.run_real(
+                output, manifest, allow_shared_custody=True,
+                guidance_path=guidance, agent_factory=_scripted_agent)
+            report = json.loads(output.read_text(encoding="utf-8"))
+        self.assertEqual(code, 2)
+        self.assertEqual(report["release_gate"], "BLOCKED_GUIDANCE")
+        self.assertIn("precommit", report["note"])
+
+    def test_a_tampered_bundle_is_rejected(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            document = _manifest(root)
+            bundle = _learned_bundle(document)
+            bundle["components"]["B"][0]["text"] = "substituted text"
+            manifest = _write(root, document)
+            guidance = root / "guidance.json"
+            guidance.write_text(json.dumps(bundle))
+            output = root / "report.json"
+            code = campaign_tool.run_real(
+                output, manifest, allow_shared_custody=True,
+                guidance_path=guidance, agent_factory=_scripted_agent)
+            report = json.loads(output.read_text(encoding="utf-8"))
+        self.assertEqual(code, 2)
+        self.assertEqual(report["release_gate"], "BLOCKED_GUIDANCE")
+        self.assertIn("digest", report["note"])
+
+    def test_bundle_training_outside_the_induction_partition_is_rejected(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            document = _manifest(root)
+            bundle = _learned_bundle(document)
+            bundle["training"]["repository_digests"] = ["f" * 64]
+            bundle["bundle_digest"] = campaign_tool._bundle_digest(bundle)
+            document["guidance_bundle_digest"] = bundle["bundle_digest"]
+            manifest = _write(root, document)
+            guidance = root / "guidance.json"
+            guidance.write_text(json.dumps(bundle))
+            output = root / "report.json"
+            code = campaign_tool.run_real(
+                output, manifest, allow_shared_custody=True,
+                guidance_path=guidance, agent_factory=_scripted_agent)
+            report = json.loads(output.read_text(encoding="utf-8"))
+        self.assertEqual(code, 2)
+        self.assertEqual(report["release_gate"], "BLOCKED_GUIDANCE")
+        self.assertIn("induction partitions", report["note"])
+
+    def test_candidate_registry_without_a_bundle_is_blocked(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            manifest = _write(root, _manifest(root))
+            output = root / "report.json"
+            code = campaign_tool.run_real(
+                output, manifest, allow_shared_custody=True,
+                candidate_registry=root / "registry.db",
+                agent_factory=_scripted_agent)
+            report = json.loads(output.read_text(encoding="utf-8"))
+        self.assertEqual(code, 2)
+        self.assertEqual(report["release_gate"], "BLOCKED_GUIDANCE")
+        self.assertIn("requires a guidance bundle", report["note"])
+
+    def test_a_diagnostic_manifest_is_not_executed(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            document = _manifest(root)
+            diagnostic = preregister(
+                primary_metric="paired solved_delta E vs A",
+                method="mcnemar_exact", alpha=0.05, min_effect=1.0,
+                sample_size=4, powered=False,
+                budget={"wall_seconds": 30, "token_budget": 1000,
+                        "tool_budget": 10},
+                arms=GOVERNED_ARMS)
+            diagnostic["powered"] = False
+            document["protocol"] = diagnostic
+            document["preregistration"]["protocol_digest"] = (
+                diagnostic["protocol_digest"])
+            manifest = _write(root, document)
+            output = root / "report.json"
+            code = campaign_tool.run_real(
+                output, manifest, allow_shared_custody=True,
+                agent_factory=_scripted_agent)
+            report = json.loads(output.read_text(encoding="utf-8"))
+        self.assertEqual(code, 2)
+        self.assertEqual(report["release_gate"], "BLOCKED_MANIFEST")
+        self.assertIn("manifest_not_ready", report["note"])
 
     def test_cli_version_mismatch_is_blocked(self):
         original = campaign_tool._installed_codex_version
@@ -355,6 +643,52 @@ class RealAgentGateTests(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertEqual(report["release_gate"], "BLOCKED_MANIFEST")
         self.assertIn("repository_snapshot_mismatch", report["note"])
+
+    @unittest.skipUnless(
+        POSIX_CUSTODY,
+        "evaluator key custody is POSIX-only in this release")
+    def test_repository_custody_failure_is_blocked_not_crashed(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            document = _manifest(root)
+            holdout = next(item for item in document["repositories"]
+                           if item["partition"] == "holdout")
+            outside = root / "private" / "secret.txt"
+            outside.parent.mkdir(exist_ok=True)
+            outside.write_text("EVALUATOR-ONLY")
+            (Path(holdout["path"]) / "escape").symlink_to(outside)
+            holdout["repo_snapshot_digest"] = tree_digest(
+                Path(holdout["path"]))
+            manifest = _write(root, document)
+            output = root / "report.json"
+            code = campaign_tool.run_real(
+                output, manifest, allow_shared_custody=True,
+                agent_factory=_scripted_agent)
+            report = json.loads(output.read_text(encoding="utf-8"))
+        self.assertEqual(code, 2)
+        self.assertEqual(report["release_gate"], "BLOCKED_CUSTODY")
+        self.assertIn("external_symlinks", report["note"])
+
+    @unittest.skipUnless(POSIX_CUSTODY, "symlink fixture requires POSIX")
+    def test_a_symlinked_repository_root_is_blocked(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            document = _manifest(root)
+            holdout = next(item for item in document["repositories"]
+                           if item["partition"] == "holdout")
+            alias = root / "holdout-alias"
+            alias.symlink_to(Path(holdout["path"]),
+                             target_is_directory=True)
+            holdout["path"] = str(alias)
+            manifest = _write(root, document)
+            output = root / "report.json"
+            code = campaign_tool.run_real(
+                output, manifest, allow_shared_custody=True,
+                agent_factory=_scripted_agent)
+            report = json.loads(output.read_text(encoding="utf-8"))
+        self.assertEqual(code, 2)
+        self.assertEqual(report["release_gate"], "BLOCKED_MANIFEST")
+        self.assertIn("plain_directory", report["note"])
 
 
 if __name__ == "__main__":

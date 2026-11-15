@@ -21,15 +21,17 @@ from __future__ import annotations
 import json
 import math
 import os
+import random
 import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Mapping, Sequence
 
 from .benchmark import BenchmarkHarness, BudgetCaps
-from .contracts import GuidanceV1, TaskEnvelopeV1, canonical_digest
+from .contracts import ContractError, GuidanceV1, TaskEnvelopeV1, canonical_digest
 from .runner import tree_digest
 from .governed_eval import (GOVERNED_ARMS, assert_partition_disjoint,
+                            protocol_required_sample_size,
                             required_sample_size, run_governed_evaluation)
 
 ARM_LABELS = {
@@ -232,6 +234,77 @@ def failure_categories(report: Mapping) -> dict:
     return categories
 
 
+def per_repository_metrics(report: Mapping, *,
+                           arms: Sequence[str] = GOVERNED_ARMS) -> dict:
+    """Solved counts per holdout repository, when task rows name one."""
+    repositories: dict[str, dict] = {}
+    for row in report.get("per_task", []):
+        if not isinstance(row, Mapping):
+            continue
+        repository_id = row.get("repository_id")
+        if not isinstance(repository_id, str) or not repository_id:
+            continue
+        entry = repositories.setdefault(
+            repository_id,
+            {"tasks": 0, "solved": {arm: 0 for arm in arms}})
+        entry["tasks"] += 1
+        results = row.get("arms", {})
+        for arm in arms:
+            if _valid_solve(results.get(arm, {})):
+                entry["solved"][arm] += 1
+    return dict(sorted(repositories.items()))
+
+
+def repository_clustered_delta_interval(
+    report: Mapping, *, baseline: str = "A", treatment: str = "E",
+    draws: int = 2000, seed: int = 0,
+) -> dict | None:
+    """Cluster bootstrap over repositories for the pooled solve delta.
+
+    Tasks within one repository are correlated draws, so a task-level
+    interval understates uncertainty. This resamples whole repositories
+    with replacement and recomputes the pooled ``treatment - baseline``
+    solve-rate difference. Returns ``None`` when no task row names a
+    repository.
+    """
+    clusters: dict[str, list[int]] = {}
+    for row in report.get("per_task", []):
+        if not isinstance(row, Mapping):
+            continue
+        repository_id = row.get("repository_id")
+        if not isinstance(repository_id, str) or not repository_id:
+            continue
+        results = row.get("arms", {})
+        delta = (1 if _valid_solve(results.get(treatment, {})) else 0) - \
+                (1 if _valid_solve(results.get(baseline, {})) else 0)
+        clusters.setdefault(repository_id, []).append(delta)
+    if not clusters:
+        return None
+    if len(clusters) < 2:
+        return {"method": "repository_cluster_bootstrap",
+                "repositories": len(clusters), "draws": 0,
+                "interval_95": None,
+                "reason": "fewer_than_two_repositories"}
+    values = [clusters[name] for name in sorted(clusters)]
+    rng = random.Random(seed)
+    estimates = []
+    for _ in range(draws):
+        chosen = [values[rng.randrange(len(values))] for _ in values]
+        total = sum(len(item) for item in chosen)
+        if total:
+            estimates.append(
+                sum(sum(item) for item in chosen) / total)
+    if not estimates:
+        return None
+    estimates.sort()
+    low = estimates[max(0, int(0.025 * (len(estimates) - 1)))]
+    high = estimates[min(len(estimates) - 1,
+                         int(0.975 * (len(estimates) - 1)))]
+    return {"method": "repository_cluster_bootstrap",
+            "repositories": len(clusters), "draws": draws,
+            "interval_95": [round(low, 6), round(high, 6)]}
+
+
 def resource_overhead(report: Mapping) -> dict:
     metrics = report.get("governed", {}).get("metrics", {})
     out = {}
@@ -311,15 +384,42 @@ def analyze_report(
     decisive = paired_contrast(report, baseline="A", treatment="E")
     alpha = protocol.get("alpha", 0.05)
     sample_size = protocol.get("sample_size")
-    declared_power = protocol.get("power_analysis") or {}
-    required_n = declared_power.get("required_n")
-    if type(required_n) is not int or required_n < 1:
-        required_n = required_sample_size(0.6, 0.4)
-    minimum_n = max(
-        sample_size if type(sample_size) is int else 0, required_n)
+    sample_size_valid = type(sample_size) is int and sample_size >= 1
+    power_block = protocol.get("power_analysis")
+    declared_power = power_block if isinstance(power_block, Mapping) else {}
+    # A confirmatory label requires an explicitly powered preregistered
+    # plan. ``preregister()`` records power through ``power_analysis``;
+    # an explicit ``powered=False``, a non-boolean flag or a diagnostic
+    # plan has no floor a reviewer can verify.
+    power_flag = protocol.get("powered")
+    powered = ((power_flag is True or power_flag is None)
+               and protocol.get("analysis_kind") != "diagnostic")
+    power_problems: list[str] = []
+    required_n: int | None = None
+    if powered:
+        try:
+            required_n = protocol_required_sample_size(protocol)
+        except ContractError as exc:
+            power_problems.append(str(exc))
+    else:
+        power_problems.append(
+            "protocol is diagnostic or not explicitly powered")
+    minimum_n = max(sample_size if sample_size_valid else 0, required_n or 0)
     underpowered = n_tasks < minimum_n
+    power_gap = None
+    if not powered:
+        power_gap = ("protocol is diagnostic/unpowered; a confirmatory "
+                     "label requires an explicitly powered preregistered "
+                     "plan")
+    elif required_n is None:
+        power_gap = ("protocol power analysis is missing or inconsistent: "
+                     + "; ".join(power_problems))
+    elif not sample_size_valid:
+        power_gap = "protocol sample_size is not a positive integer"
     provenance_gaps: list[str] = []
     if real_agent:
+        if power_gap is not None:
+            provenance_gaps.append(power_gap)
         if provenance.get("agent") != "codex-cli":
             provenance_gaps.append(
                 "agent provenance is not a real codex-cli run")
@@ -367,6 +467,8 @@ def analyze_report(
         limitations.append(
             "scripted/demonstration agent: machinery evidence only, not a "
             "claim about real coding-agent efficacy")
+    if power_gap is not None and not real_agent:
+        limitations.append(power_gap)
     if underpowered:
         limitations.append(
             f"underpowered: ran {n_tasks} tasks; preregistered "
@@ -392,10 +494,12 @@ def analyze_report(
         "provenance": provenance,
         "confirmatory_eligible": bool(
             real_agent and hidden_holdout and conformance.get("conforms")
+            and powered and required_n is not None and sample_size_valid
             and not underpowered and not provenance_gaps),
         "sample_size_preregistered": sample_size,
         "required_sample_size_0_6_vs_0_4": required_sample_size(0.6, 0.4),
         "power_analysis": {
+            "powered": powered,
             "expected_baseline": declared_power.get(
                 "expected_baseline", 0.6),
             "expected_treatment": declared_power.get(
@@ -403,8 +507,10 @@ def analyze_report(
             "power": declared_power.get("power", 0.8),
             "alpha": alpha,
             "required_n": required_n,
+            "required_n_recomputed": required_n,
             "preregistered_n": sample_size,
             "minimum_n": minimum_n,
+            "problems": power_problems,
         },
         "underpowered": underpowered,
         "hidden_holdout": hidden_holdout,
@@ -432,6 +538,10 @@ def analyze_report(
         },
         "resource_overhead": resource_overhead(report),
         "failure_categories": failure_categories(report),
+        "per_repository": per_repository_metrics(report, arms=arms),
+        "repository_clustered_uncertainty":
+            repository_clustered_delta_interval(
+                report, baseline="A", treatment="E"),
         "integration_vs_components": {
             arm: contrasts.get(f"E_vs_{arm}")
             for arm in ("B", "C", "D")},
@@ -466,6 +576,7 @@ class FiveArmCampaign:
     frozen_candidates: Mapping | None = None
     provenance: Mapping | None = None
     arm_order_seed: int | str | None = None
+    repository_ids: Mapping[str, str] | None = None
 
     def validate(self) -> None:
         if tuple(self.arms) != tuple(GOVERNED_ARMS):
@@ -492,6 +603,11 @@ class FiveArmCampaign:
             misleading_tasks=self.misleading_tasks,
             served_map=self.served_map, arms=self.arms,
             arm_order_seed=self.arm_order_seed)
+        if self.repository_ids:
+            for row in report.get("per_task", []):
+                repository_id = self.repository_ids.get(row.get("task_id"))
+                if repository_id:
+                    row["repository_id"] = repository_id
         report["learning_qualification"] = analyze_report(
             report, protocol=self.protocol, real_agent=self.real_agent,
             hidden_holdout=self.hidden_holdout,
@@ -575,36 +691,85 @@ class CodexCliAgent:
         turn = self._adapter.start_task(
             prompt, ctx.workspace, model=self._model,
             sandbox="workspace_write")
+        supervisor = getattr(ctx, "supervisor", None)
+        if supervisor is not None:
+            supervisor.register_terminator(
+                lambda: self._cancel(turn.turn_id))
         tools = 0
-        tokens = 0
-        tokens_seen = False
+        delta_tokens = 0
+        terminal_tokens: int | None = None
         error_event = False
+        turn_completed = False
+        exit_status = None
+        timed_out = False
         for event in turn:
+            if supervisor is not None and supervisor.aborted:
+                raise RuntimeError("real_agent_aborted")
             payload = getattr(event, "payload", None)
-            if isinstance(payload, Mapping):
-                summary = payload.get("summary")
-                usage = (summary.get("token_usage")
-                         if isinstance(summary, Mapping)
-                         else payload.get("token_usage"))
-                if isinstance(usage, Mapping):
-                    total = _token_total(usage)
-                    if total is not None:
-                        tokens += total
-                        tokens_seen = True
-            if event.event_type in {"tool_request", "tool_result"}:
+            if not isinstance(payload, Mapping):
+                continue
+            summary = payload.get("summary")
+            summary = summary if isinstance(summary, Mapping) else {}
+            method = payload.get("sdk_method")
+            usage = summary.get("token_usage")
+            if not isinstance(usage, Mapping):
+                usage = payload.get("token_usage")
+            if isinstance(usage, Mapping):
+                total = _token_total(usage)
+                if total is not None:
+                    # ``turn.completed`` reports the cumulative total for
+                    # the turn; item-level records are deltas. Taking the
+                    # maximum keeps a cumulative record from being added
+                    # to itself, and a later terminal total supersedes an
+                    # earlier one.
+                    if method == "turn.completed":
+                        terminal_tokens = max(terminal_tokens or 0, total)
+                    else:
+                        delta_tokens += total
+            if method == "turn.completed":
+                turn_completed = True
+            elif method == "sis/process_exit":
+                exit_status = summary.get("cli_exit_status")
+                timed_out = bool(summary.get("timed_out"))
+            elif method in {"turn.failed", "turn.cancelled", "error"}:
+                error_event = True
+            if event.event_type == "error":
+                error_event = True
+            # Count a completed command/edit once. The start and
+            # completion events of one command are not two tool calls.
+            if (event.event_type in {"tool_result", "edit"}
+                    or (method == "item.completed"
+                        and summary.get("item_type")
+                        in {"mcp_tool_call", "web_search"})):
                 tools += 1
                 if ctx.usage_meter is not None:
                     ctx.usage_meter.record_tool_call()
-            if event.event_type == "error":
-                error_event = True
+        tokens = max(delta_tokens, terminal_tokens or 0)
+        tokens_seen = terminal_tokens is not None or delta_tokens > 0
         if error_event:
             raise RuntimeError("real_agent_error_event")
+        if timed_out:
+            raise RuntimeError("real_agent_timeout")
+        if exit_status is None:
+            raise RuntimeError("real_agent_missing_exit_status")
+        if exit_status != 0:
+            raise RuntimeError(f"real_agent_cli_exit:{exit_status}")
+        if not turn_completed:
+            raise RuntimeError("real_agent_turn_incomplete")
         if tools == 0 or tree_digest(ctx.workspace) == before:
             raise RuntimeError("real_agent_no_action")
         if tokens_seen and ctx.usage_meter is not None:
             ctx.usage_meter.record_tokens(tokens)
         return {"tokens_used": tokens if tokens_seen else None,
                 "tools_used": tools}
+
+    def _cancel(self, turn_id: str) -> None:
+        """Terminate the active CLI turn when the harness aborts the arm."""
+        try:
+            self._adapter.cancel(turn_id)
+        except Exception:
+            # The turn already exited; nothing left to terminate.
+            pass
 
     def close(self) -> None:
         self._adapter.close()
@@ -648,6 +813,8 @@ __all__ = [
     "newcombe_difference_interval",
     "newcombe_paired_difference_interval",
     "paired_contrast",
+    "per_repository_metrics",
+    "repository_clustered_delta_interval",
     "resource_overhead",
     "wilson_interval",
     "write_report",

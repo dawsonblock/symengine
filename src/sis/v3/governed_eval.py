@@ -371,7 +371,7 @@ def run_governed_evaluation(
         report, served=served, misleading_tasks=misleading_tasks)
     report["governed"] = {
         "protocol_digest": protocol.get("protocol_digest"),
-        "analysis_mode": "confirmatory",
+        "analysis_mode": _analysis_mode(protocol),
         "metrics": metrics,
         "arms": list(arms),
         "conformance": _protocol_conformance(
@@ -412,6 +412,17 @@ def run_candidate_probe(
             protocol, report, arms=None, n_tasks=len(tasks)),
     }
     return report
+
+
+def _analysis_mode(protocol: Mapping) -> str:
+    """Label the run by the plan it declares, not by the intended claim."""
+    flag = protocol.get("powered")
+    if protocol.get("analysis_kind") == "diagnostic" or flag is False:
+        return "diagnostic"
+    analysis = protocol.get("power_analysis")
+    if flag in (True, None) and isinstance(analysis, Mapping):
+        return "confirmatory"
+    return "exploratory"
 
 
 def _protocol_conformance(protocol: Mapping, report: Mapping, *,

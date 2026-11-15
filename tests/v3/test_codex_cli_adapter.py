@@ -91,6 +91,64 @@ class CodexCliAdapterTests(unittest.TestCase):
         last = events[-1]
         self.assertTrue(last.payload["summary"].get("timed_out"))
 
+    @unittest.skipIf(os.name == "nt", "POSIX shell fixture")
+    def test_oversized_line_is_drained_without_unbounded_read(self):
+        big = self.root / "big.txt"
+        big.write_text("x" * ((1 << 20) + 64) + "\n")
+        fake = self.root / "codex-big"
+        fake.write_text(
+            "#!/bin/sh\n"
+            f"cat '{big}'\n"
+            "printf '%s\\n' '{\"type\":\"turn.completed\"}'\n"
+            "exit 0\n")
+        fake.chmod(fake.stat().st_mode | stat.S_IXUSR)
+        adapter = CodexCliAdapter(codex_path=fake, wall_seconds=30)
+        turn = adapter.start_task("work", self.ws, sandbox="read_only")
+        events = list(turn.events)
+        methods = [e.payload["sdk_method"] for e in events]
+        oversized = [e for e in events
+                     if e.payload["sdk_method"] == "sis/oversized_line"]
+        self.assertEqual(len(oversized), 1)
+        self.assertGreater(
+            oversized[0].payload["summary"]["skipped_bytes"], 1 << 20)
+        # The following line is still parsed after the oversized one.
+        self.assertIn("turn.completed", methods)
+
+    @unittest.skipIf(os.name == "nt", "POSIX shell fixture")
+    def test_stderr_flood_does_not_deadlock_the_turn(self):
+        fake = self.root / "codex-stderr"
+        fake.write_text(
+            "#!/bin/sh\n"
+            "head -c 200000 /dev/zero >&2\n"
+            "printf '%s\\n' '{\"type\":\"turn.completed\"}'\n"
+            "exit 0\n")
+        fake.chmod(fake.stat().st_mode | stat.S_IXUSR)
+        adapter = CodexCliAdapter(codex_path=fake, wall_seconds=30)
+        start = time.monotonic()
+        turn = adapter.start_task("work", self.ws, sandbox="read_only")
+        events = list(turn.events)
+        elapsed = time.monotonic() - start
+        last = events[-1]
+        self.assertLess(elapsed, 10)
+        self.assertNotIn("timed_out", last.payload["summary"])
+        self.assertEqual(last.payload["summary"]["cli_exit_status"], 0)
+        self.assertEqual(last.payload["summary"]["stderr_bytes"], 64 * 1024)
+
+    def test_line_limit_counts_the_newline(self):
+        from io import BytesIO
+        from sis.v3.adapters.codex_cli import _MAX_LINE_BYTES
+
+        raw, _ = CodexCliAdapter._read_bounded_line(
+            BytesIO(b"x" * _MAX_LINE_BYTES))
+        self.assertEqual(len(raw), _MAX_LINE_BYTES)
+        raw, _ = CodexCliAdapter._read_bounded_line(
+            BytesIO(b"x" * (_MAX_LINE_BYTES - 1) + b"\n"))
+        self.assertEqual(len(raw), _MAX_LINE_BYTES)
+        raw, skipped = CodexCliAdapter._read_bounded_line(
+            BytesIO(b"x" * _MAX_LINE_BYTES + b"\n"))
+        self.assertIsNone(raw)
+        self.assertEqual(skipped, _MAX_LINE_BYTES + 1)
+
     def test_cancel_unknown_turn(self):
         fake = _make_fake(self.root, EVENTS)
         adapter = CodexCliAdapter(codex_path=fake)

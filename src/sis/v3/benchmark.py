@@ -15,9 +15,11 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import random
 import secrets
 import shutil
+import stat
 import tempfile
 import threading
 import time
@@ -27,17 +29,144 @@ from pathlib import Path
 
 from .contracts import ContractError, GuidanceV1, TaskEnvelopeV1, canonical_digest
 from .episode_store import EpisodeStore
-from .runner import tree_digest
+from .runner import scan_tree, tree_digest
 from .verifier import OutcomeVerifier
 
 ARMS = ("A", "B", "C", "D")
 # v3.3 governed evaluation adds a fifth optional arm (full integration).
 # It is opt-in via arms= — the four-arm default is unchanged.
 ALL_ARMS = ("A", "B", "C", "D", "E")
+# How long the harness waits for a cancelled arm to actually stop before
+# it declares the workspace unsafe to remove or reuse.
+_TERMINATION_GRACE_SECONDS = 10.0
 
 
 class BenchmarkError(RuntimeError):
     """The benchmark cannot produce an auditable result."""
+
+
+def _reject_hard_links(root: Path) -> None:
+    """Refuse a repository file with a link outside the repository.
+
+    ``scan_tree`` reads bytes, so a hard link to a file outside the
+    repository would copy that file's contents into the workspace just
+    like an external symlink. A file whose link count exceeds the number
+    of paths inside the repository has at least one link outside it;
+    internal hard links are allowed. Git checkouts do not contain hard
+    links, so this only affects locally supplied repositories.
+    """
+    counts: dict[tuple[int, int], int] = {}
+    entries: list[tuple[Path, os.stat_result]] = []
+    for dirpath, _dirnames, filenames in os.walk(root, followlinks=False):
+        for name in filenames:
+            full = Path(dirpath) / name
+            if full.is_symlink():
+                continue
+            try:
+                info = full.stat(follow_symlinks=False)
+            except OSError as exc:
+                raise BenchmarkError(
+                    f"repository_entry_unreadable:{full}") from exc
+            if not stat.S_ISREG(info.st_mode):
+                continue
+            key = (info.st_dev, info.st_ino)
+            counts[key] = counts.get(key, 0) + 1
+            entries.append((full, info))
+    for full, info in entries:
+        key = (info.st_dev, info.st_ino)
+        if info.st_nlink > counts.get(key, 0):
+            relative = full.relative_to(root).as_posix()
+            raise BenchmarkError(
+                "repository_contains_hard_links:" + relative)
+
+
+def stage_repository(base_dir: str | Path, workspace: str | Path) -> str:
+    """Copy a repository into a disposable workspace without dereferencing links.
+
+    ``shutil.copytree`` follows symlinks by default, so a link inside a
+    public repository can copy an evaluator-readable file from outside it
+    into the agent's workspace. This staging path rejects external links
+    and hard links before and after the copy, copies links verbatim
+    (``symlinks=True``), and re-scans the staged tree so a link swapped
+    in during the copy is observed as a link rather than followed. The
+    source and staged tree must hash identically; any drift during
+    staging aborts the arm. Returns the staged tree digest so the caller
+    can bind it to the task envelope.
+    """
+    source = Path(base_dir)
+    target = Path(workspace)
+    if source.is_symlink() or not source.is_dir():
+        raise BenchmarkError("repository_source_is_not_a_plain_directory")
+    _reject_hard_links(source)
+    before = scan_tree(source)
+    if before.external_symlinks:
+        raise BenchmarkError(
+            "repository_contains_external_symlinks:"
+            + ",".join(before.external_symlinks))
+    try:
+        shutil.copytree(source, target, dirs_exist_ok=True, symlinks=True)
+    except (OSError, shutil.Error) as exc:
+        raise BenchmarkError(f"repository_staging_failed:{exc}") from exc
+    after = scan_tree(target)
+    if after.external_symlinks:
+        raise BenchmarkError(
+            "repository_contains_external_symlinks:"
+            + ",".join(after.external_symlinks))
+    if after.digest != before.digest:
+        raise BenchmarkError("repository_changed_during_staging")
+    # A hard link swapped in during the copy is copied as an independent
+    # file; re-check the source so the secret bytes never reach an agent.
+    _reject_hard_links(source)
+    return after.digest
+
+
+class ArmSupervisor:
+    """Cancellation channel between the harness and one arm's agent.
+
+    Python cannot preempt an arbitrary in-process callable, so a timeout
+    alone cannot terminate the work. An agent that owns a subprocess
+    registers a terminator; when the wall budget expires the harness sets
+    ``aborted`` and runs every terminator, then waits for the worker to
+    exit. A workspace is only removed or reused after that wait succeeds.
+    """
+
+    def __init__(self) -> None:
+        self._aborted = threading.Event()
+        self._terminators: list[Callable[[], object]] = []
+        self._lock = threading.Lock()
+
+    @property
+    def aborted(self) -> bool:
+        return self._aborted.is_set()
+
+    def register_terminator(self, terminator: Callable[[], object]) -> None:
+        if not callable(terminator):
+            raise ContractError("terminator must be callable")
+        with self._lock:
+            already_aborted = self._aborted.is_set()
+            if not already_aborted:
+                self._terminators.append(terminator)
+        if already_aborted:
+            self._run(terminator)
+
+    def abort(self) -> None:
+        with self._lock:
+            if self._aborted.is_set():
+                return
+            self._aborted.set()
+            terminators = list(self._terminators)
+            self._terminators.clear()
+        for terminator in terminators:
+            self._run(terminator)
+
+    @staticmethod
+    def _run(terminator: Callable[[], object]) -> None:
+        try:
+            terminator()
+        except Exception:
+            # A terminator is best-effort cleanup; the harness still waits
+            # for the worker and quarantines the workspace if it survives.
+            pass
 
 
 @dataclass(frozen=True)
@@ -99,6 +228,7 @@ class ArmContext:
     usage_meter: UsageMeter | None = None
     guidance: GuidanceV1 | None = None
     context_digest: str | None = None  # placebo (B) or episode-context (C) digest
+    supervisor: ArmSupervisor | None = None
 
 
 @dataclass(frozen=True)
@@ -114,6 +244,7 @@ class ArmResult:
     tokens_used: int | None = None
     tools_used: int | None = None
     budget_accounting: str = "unverified"
+    workspace_retained: bool = False
 
 
 @dataclass
@@ -193,8 +324,12 @@ class BenchmarkHarness:
         context_provider: ContextFn | None,
     ) -> ArmResult:
         workspace = Path(tempfile.mkdtemp(prefix=f"arm-{arm}-", dir=self.work_root))
+        retain_workspace = False
         try:
-            shutil.copytree(base_dir, workspace, dirs_exist_ok=True)
+            staged_digest = stage_repository(base_dir, workspace)
+            if (task.repo_snapshot_digest
+                    and staged_digest != task.repo_snapshot_digest):
+                raise BenchmarkError("repository_snapshot_mismatch")
             guidance = context_provider(task, arm) if context_provider else None
             context_digest = None
             if arm in {"B", "C"}:
@@ -203,21 +338,21 @@ class BenchmarkHarness:
                     "nonce": secrets.token_hex(8),
                 })
             meter = UsageMeter()
+            supervisor = ArmSupervisor()
             ctx = ArmContext(
                 task=task, arm=arm, workspace=workspace,
                 budget=budget, usage_meter=meter, guidance=guidance,
-                context_digest=context_digest,
+                context_digest=context_digest, supervisor=supervisor,
             )
             start = time.monotonic()
             error = None
             usage = None
             # Hard wall-clock enforcement (PR-05): the agent runs in a
-            # daemon thread and the harness stops waiting at the budget —
-            # a runaway arm is flagged and its result recorded, never
-            # allowed to stall the suite. Python cannot preempt arbitrary
-            # in-process code, so a timed-out callable is abandoned in a
-            # daemon thread; subprocess-based agents must use the
-            # WorkspaceExecutor, which kills at the same bound.
+            # worker thread; at the budget the harness cancels it through
+            # the supervisor, then waits for the worker to exit. A
+            # subprocess agent registers a terminator that kills its
+            # process group. An agent that ignores cancellation leaves
+            # its workspace quarantined — never removed or reused.
             box: dict = {}
             def _drive() -> None:
                 try:
@@ -228,14 +363,22 @@ class BenchmarkHarness:
             worker.start()
             worker.join(timeout=budget.wall_seconds)
             timed_out = worker.is_alive()
+            # Record the agent's wall time before cancellation; the
+            # termination grace is harness overhead, not agent runtime.
+            elapsed = max(0.0, time.monotonic() - start)
+            wall = math.ceil(elapsed)  # integer-only canonical report; no floor bypass
             if timed_out:
-                error = "agent_timeout"
+                supervisor.abort()
+                worker.join(timeout=_TERMINATION_GRACE_SECONDS)
                 usage = None
+                if worker.is_alive():
+                    error = "agent_timeout_unterminated"
+                    retain_workspace = True
+                else:
+                    error = "agent_timeout"
             else:
                 error = box.get("error")
                 usage = box.get("usage")
-            elapsed = max(0.0, time.monotonic() - start)
-            wall = math.ceil(elapsed)  # integer-only canonical report; no floor bypass
             # Usage precedence (PR-05): metered counters (produced by the
             # runtime path the agent drove) outrank agent-reported usage;
             # missing data stays explicitly unverified.
@@ -256,10 +399,15 @@ class BenchmarkHarness:
             exceeded = (timed_out or elapsed > budget.wall_seconds or
                         (tokens is not None and tokens > budget.token_budget) or
                         (tools is not None and tools > budget.tool_budget))
-            submission_digest = tree_digest(workspace)
+            # A retained workspace may still be written by the runaway
+            # worker; hashing it would race the writer and could report a
+            # digest for a tree that never existed.
+            submission_digest = (None if retain_workspace
+                                 else tree_digest(workspace))
             if error is not None:
                 return ArmResult(task.task_id, arm, "error", None, submission_digest,
-                                 wall, exceeded, error, tokens, tools, accounting)
+                                 wall, exceeded, error, tokens, tools, accounting,
+                                 retain_workspace)
             cache_key = (task.task_id, submission_digest)
             cached = self._receipt_cache.get(cache_key)
             if cached is not None:
@@ -275,14 +423,15 @@ class BenchmarkHarness:
                 except Exception as exc:
                     return ArmResult(task.task_id, arm, "error", None, submission_digest,
                                      wall, exceeded, f"evaluation:{str(exc)[:200]}",
-                                     tokens, tools, accounting)
+                                     tokens, tools, accounting, retain_workspace)
                 outcome, receipt_digest = receipt.outcome, receipt.digest
                 self._receipt_cache[cache_key] = (outcome, receipt_digest)
             return ArmResult(task.task_id, arm, outcome,
                              receipt_digest, submission_digest, wall, exceeded,
-                             None, tokens, tools, accounting)
+                             None, tokens, tools, accounting, retain_workspace)
         finally:
-            shutil.rmtree(workspace, ignore_errors=True)
+            if not retain_workspace:
+                shutil.rmtree(workspace, ignore_errors=True)
 
     def _report(self, results: list[TaskResult], arms: tuple[str, ...], budget: BudgetCaps) -> dict:
         per_task = []
@@ -299,6 +448,8 @@ class BenchmarkHarness:
                     "tokens_used": res.tokens_used, "tools_used": res.tools_used,
                     "budget_accounting": res.budget_accounting,
                     **({"error": res.error} if res.error else {}),
+                    **({"workspace_retained": True}
+                       if res.workspace_retained else {}),
                 }
             per_task.append(entry)
 
@@ -342,7 +493,7 @@ class BenchmarkHarness:
             ),
             "paired": pairs,
             "per_task": per_task,
-            "budget_enforcement": "wall clock is hard-enforced: arms run in a watchdog thread abandoned at the limit (agent_timeout); token/tool budgets prefer harness-metered (verified) counters over agent-reported usage; missing usage is UNVERIFIED",
+            "budget_enforcement": "wall clock is hard-enforced: at the limit the harness aborts the arm through its supervisor (subprocess agents kill their process group) and waits for the worker to exit; a worker that survives is reported as agent_timeout_unterminated and its workspace is retained, never reused. Token/tool budgets prefer harness-metered (verified) counters over agent-reported usage; missing usage is UNVERIFIED",
             "harness_digest": None,
         }
 

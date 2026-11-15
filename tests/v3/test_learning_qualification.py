@@ -152,17 +152,88 @@ def eligible_provenance(**overrides):
     return provenance
 
 
+def powered_protocol(sample_size=103):
+    return preregister(
+        primary_metric="paired solved_delta E vs A", method="mcnemar_exact",
+        alpha=0.05, min_effect=0.2, sample_size=sample_size,
+        budget={"wall_seconds": 60, "token_budget": 1000,
+                "tool_budget": 100},
+        arms=GOVERNED_ARMS)
+
+
 class AnalysisTests(unittest.TestCase):
     def test_confirmatory_requires_real_agent_hidden_and_conforming(self):
         report = synthetic_report(103, a_pass=False, e_pass=True)
         analysis = analyze_report(
-            report, protocol={"sample_size": 103, "alpha": 0.05},
+            report, protocol=powered_protocol(),
             real_agent=True, hidden_holdout=True,
             provenance=eligible_provenance())
         self.assertEqual(analysis["evidence_class"], CONFIRMATORY)
         self.assertEqual(analysis["efficacy_claim"], "supported")
         self.assertEqual(analysis["release_gate"], "EFFICACY_SUPPORTED")
         self.assertTrue(analysis["confirmatory_eligible"])
+
+    def test_an_unpowered_protocol_is_never_confirmatory(self):
+        report = synthetic_report(103, a_pass=False, e_pass=True)
+        protocol = preregister(
+            primary_metric="paired solved_delta E vs A",
+            method="mcnemar_exact", alpha=0.05, min_effect=0.2,
+            sample_size=103, budget={"wall_seconds": 60,
+                                     "token_budget": 1000,
+                                     "tool_budget": 100},
+            arms=GOVERNED_ARMS, powered=False)
+        protocol["powered"] = False
+        analysis = analyze_report(
+            report, protocol=protocol, real_agent=True,
+            hidden_holdout=True, provenance=eligible_provenance())
+        self.assertEqual(analysis["evidence_class"], EXPLORATORY)
+        self.assertFalse(analysis["confirmatory_eligible"])
+        self.assertEqual(analysis["release_gate"],
+                         "IMPLEMENTED_NOT_EFFICACY_QUALIFIED")
+        self.assertFalse(analysis["power_analysis"]["powered"])
+        self.assertTrue(any("powered" in item
+                            for item in analysis["limitations"]))
+
+    def test_a_forged_power_floor_is_recomputed(self):
+        report = synthetic_report(103, a_pass=False, e_pass=True)
+        protocol = powered_protocol()
+        protocol["power_analysis"]["required_n"] = 4
+        analysis = analyze_report(
+            report, protocol=protocol, real_agent=True,
+            hidden_holdout=True, provenance=eligible_provenance())
+        self.assertEqual(analysis["evidence_class"], EXPLORATORY)
+        self.assertFalse(analysis["confirmatory_eligible"])
+        self.assertIn("power_analysis_required_n_mismatch",
+                      analysis["power_analysis"]["problems"])
+        self.assertIsNone(analysis["power_analysis"]["required_n"])
+
+    def test_a_malformed_power_block_is_exploratory_not_a_crash(self):
+        report = synthetic_report(103, a_pass=False, e_pass=True)
+        for malformed in ("opaque", [], 1):
+            with self.subTest(power_analysis=malformed):
+                analysis = analyze_report(
+                    report,
+                    protocol={"sample_size": 103, "alpha": 0.05,
+                              "powered": True,
+                              "power_analysis": malformed},
+                    real_agent=True, hidden_holdout=True,
+                    provenance=eligible_provenance())
+                self.assertEqual(analysis["evidence_class"], EXPLORATORY)
+                self.assertFalse(analysis["confirmatory_eligible"])
+                self.assertIn("power_analysis_missing",
+                              analysis["power_analysis"]["problems"])
+
+    def test_a_protocol_without_a_valid_sample_size_is_not_confirmatory(self):
+        report = synthetic_report(103, a_pass=False, e_pass=True)
+        protocol = powered_protocol()
+        protocol["sample_size"] = "many"
+        analysis = analyze_report(
+            report, protocol=protocol, real_agent=True,
+            hidden_holdout=True, provenance=eligible_provenance())
+        self.assertEqual(analysis["evidence_class"], EXPLORATORY)
+        self.assertFalse(analysis["confirmatory_eligible"])
+        self.assertTrue(any("sample_size" in item
+                            for item in analysis["limitations"]))
 
     def test_provenance_gaps_prevent_confirmatory(self):
         cases = {
@@ -241,7 +312,7 @@ class AnalysisTests(unittest.TestCase):
     def test_regression_is_preserved(self):
         report = synthetic_report(103, a_pass=True, e_pass=False)
         analysis = analyze_report(
-            report, protocol={"sample_size": 103, "alpha": 0.05},
+            report, protocol=powered_protocol(),
             real_agent=True, hidden_holdout=True,
             provenance=eligible_provenance())
         self.assertEqual(analysis["efficacy_claim"], "regressed")
@@ -284,6 +355,32 @@ class AnalysisTests(unittest.TestCase):
             analysis["integration_vs_components"]["B"]["wins"], 0)
         self.assertEqual(
             analysis["integration_vs_components"]["C"]["wins"], 10)
+
+    def test_per_repository_reporting_and_cluster_uncertainty(self):
+        report = synthetic_report(10, a_pass=False, e_pass=True)
+        for index, row in enumerate(report["per_task"]):
+            row["repository_id"] = f"repo-{index % 2}"
+        analysis = analyze_report(
+            report, protocol={"sample_size": 10, "alpha": 0.05},
+            real_agent=False, hidden_holdout=True)
+        self.assertEqual(analysis["per_repository"]["repo-0"]["tasks"], 5)
+        self.assertEqual(
+            analysis["per_repository"]["repo-0"]["solved"]["E"], 5)
+        self.assertEqual(
+            analysis["per_repository"]["repo-0"]["solved"]["A"], 0)
+        interval = analysis["repository_clustered_uncertainty"]
+        self.assertEqual(interval["method"],
+                         "repository_cluster_bootstrap")
+        self.assertEqual(interval["repositories"], 2)
+        self.assertIsNotNone(interval["interval_95"])
+
+    def test_no_repository_ids_means_no_cluster_estimate(self):
+        report = synthetic_report(10, a_pass=False, e_pass=True)
+        analysis = analyze_report(
+            report, protocol={"sample_size": 10, "alpha": 0.05},
+            real_agent=False, hidden_holdout=True)
+        self.assertEqual(analysis["per_repository"], {})
+        self.assertIsNone(analysis["repository_clustered_uncertainty"])
 
 
 class CampaignTests(unittest.TestCase):
