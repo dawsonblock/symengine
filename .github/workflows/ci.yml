@@ -48,6 +48,12 @@ jobs:
         # Release identity, never manifest success, selects the strict gate.
         # Every trust anchor comes from repository configuration, never from
         # the artifact under test. Missing secrets fail closed.
+        #
+        # Repository configuration (not visible to the IDE schema):
+        #   secrets: SIS_RELEASE_PUBLIC_KEY, SIS_TEST_EVIDENCE_PUBLIC_KEY,
+        #            SIS_ISOLATOR_PUBLIC_KEY
+        #   vars:    SIS_ISOLATION_IMAGE_DIGEST,
+        #            SIS_ISOLATION_POLICY_DIGEST, SIS_ISOLATION_PROPERTIES
         if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'release'
         env:
           SIS_RELEASE_PUBLIC_KEY: ${{ secrets.SIS_RELEASE_PUBLIC_KEY }}
@@ -68,6 +74,11 @@ jobs:
     # The release-qualification run: Linux, Docker present, pinned
     # runner. The artifact is the only test evidence package_release.py
     # should accept for a build-11 seal.
+    #
+    # Release-only: this job can sign evidence with the CI key. Running
+    # it on pull requests would expose that key to PR code. The `tests`
+    # job already exercises the suite on ordinary pushes and PRs.
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'release'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
