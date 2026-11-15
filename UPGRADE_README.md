@@ -149,8 +149,12 @@ a guidance file could declare itself learned. The repairs:
   `stage_repository()` rejects a symlinked source, rejects external
   symlinks and hard-linked files before and after the copy, copies
   links verbatim (`symlinks=True`), and requires the staged tree to
-  hash identically to the source. A link swapped in during the copy is
-  observed as a link, never dereferenced into the workspace.
+  hash identically to the source. Internal hard links are allowed; a
+  file whose link count exceeds its in-repository paths is refused. A
+  link swapped in during the copy is observed as a link, never
+  dereferenced into the workspace. Each staged digest is also bound to
+  the task envelope, so a repository that drifts after the manifest
+  check cannot be evaluated.
 - **Efficacy classification.** `analyze_report()` recomputes the
   protocol's power floor with `protocol_required_sample_size()` and
   requires an explicitly powered plan. A diagnostic (`powered=False`)
@@ -160,7 +164,10 @@ a guidance file could declare itself learned. The repairs:
   diagnostic run `analysis_mode: diagnostic`, not `confirmatory`.
 - **Readiness at execution.** `tools/five_arm_campaign.py --real-agent`
   refuses a manifest whose validator result is not `ready`; a
-  diagnostic manifest must use the demo path.
+  diagnostic manifest must use the demo path. A powered protocol that
+  also declares `analysis_kind: diagnostic`, or a diagnostic protocol
+  that carries a `power_analysis` block, is invalid; every task must
+  declare the holdout partition.
 - **Holdout coverage.** Manifest validation now counts the holdout
   repositories that actually contribute tasks (at least five) and the
   distinct repository snapshots among them (at least five independent
@@ -180,7 +187,10 @@ a guidance file could declare itself learned. The repairs:
   turn raises instead of returning a normal agent result. One completed
   command/edit counts as one tool call, cumulative `turn.completed`
   usage is taken once rather than summed, and oversized JSONL lines are
-  drained in bounded chunks before allocation.
+  drained in bounded chunks before allocation. Stderr is drained
+  continuously so a noisy CLI cannot deadlock the turn; on platforms
+  without process groups the adapter falls back to terminating the
+  process directly.
 - **Learned guidance lineage.** `--guidance-bundle` now accepts only a
   schema-2 bundle whose steps name immutable candidate records
   (`candidate_digest`, `content_digest`, `evidence_digest`), whose
@@ -190,7 +200,12 @@ a guidance file could declare itself learned. The repairs:
   each candidate is qualified and its evidence covers the declared
   digest; without it the bundle is `learned_unverified` and cannot
   support a confirmatory label. A file that merely says
-  `"source": "learned"` is rejected.
+  `"source": "learned"` is rejected. The served guidance carries the
+  candidate IDs, evidence IDs and bundle digest, and the exact bundle
+  bytes are exported with the evidence. A precommitted bundle must be
+  supplied; duplicate JSON keys and oversized manifests/bundles are
+  rejected, and a bundle whose candidate IDs, step count or step text
+  cannot satisfy the guidance contract is refused at load time.
 
 Regression coverage lives in `tests/v3/test_benchmark.py`,
 `tests/v3/test_codex_cli_adapter.py`,

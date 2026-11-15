@@ -174,7 +174,6 @@ class CodexCliAdapter:
     ) -> Iterator[ObservationEventV1]:
         prior: str | None = None
         seq = 0
-        emitted: list[ObservationEventV1] = []
 
         def emit(method: str, summary: dict[str, Any], event_type: str,
                  *, actor: str = "agent", extra: Mapping[str, Any] | None = None) -> ObservationEventV1:
@@ -190,7 +189,6 @@ class CodexCliAdapter:
             event = self._make_event(thread_id, turn_id, seq, actor, event_type, payload, prior)
             prior = event.digest
             seq += 1
-            emitted.append(event)
             return event
 
         assert proc.stdout is not None and proc.stderr is not None
@@ -397,13 +395,21 @@ class CodexCliAdapter:
 
     @staticmethod
     def _kill_group(proc: subprocess.Popen) -> None:
-        try:
-            os.killpg(proc.pid, signal.SIGKILL)
-        except (ProcessLookupError, PermissionError, OSError):
+        # os.killpg and signal.SIGKILL are POSIX-only. Windows has no
+        # process-group kill; proc.kill() is the available fallback.
+        killpg = getattr(os, "killpg", None)
+        if killpg is not None:
             try:
-                proc.kill()
-            except (ProcessLookupError, OSError):
+                killpg(proc.pid,
+                       getattr(signal, "SIGKILL", signal.SIGTERM))
+                return
+            except (ProcessLookupError, PermissionError, OSError,
+                    AttributeError):
                 pass
+        try:
+            proc.kill()
+        except (ProcessLookupError, OSError):
+            pass
 
     @staticmethod
     def _workspace(workspace: str | Path) -> Path:

@@ -440,7 +440,9 @@ def _protocol_conformance(protocol: Mapping, report: Mapping, *,
     no power claim, so only the declared-plan checks apply to them.
     """
     mismatches: list[str] = []
-    declared_budget = protocol.get("budget") or {}
+    declared_budget = protocol.get("budget")
+    if not isinstance(declared_budget, Mapping):
+        declared_budget = {}
     actual_budget = report.get("budget") or {}
     for key, expected in sorted(declared_budget.items()):
         if key not in actual_budget:

@@ -102,6 +102,14 @@ def _validate_protocol(protocol, problems: list[str],
         return {}
     registered = dict(registered)
     registered["powered"] = powered
+    declared_kind = protocol.get("analysis_kind")
+    expected_kind = None if powered else "diagnostic"
+    if declared_kind is not None and declared_kind != expected_kind:
+        _problem(problems,
+                 "protocol analysis_kind does not match its powered flag")
+    if not powered and isinstance(protocol.get("power_analysis"), Mapping):
+        _problem(problems,
+                 "a diagnostic protocol must not carry power_analysis")
     if registered.get("power_analysis", {}).get("underpowered_declared"):
         _problem(problems, "protocol is explicitly underpowered and cannot"
                            " be confirmatory")
@@ -248,6 +256,8 @@ def _validate_tasks(document, by_id: dict[str, dict], problems: list[str],
             _problem(problems, label + " names an unknown repository")
         elif repository.get("partition") != "holdout":
             _problem(problems, label + " must target a holdout repository")
+        if task.get("partition") != "holdout":
+            _problem(problems, label + ".partition must be holdout")
         base_commit = task.get("base_commit")
         if (not _placeholder(base_commit) or not allow_placeholders):
             if (not isinstance(base_commit, str)
@@ -332,9 +342,11 @@ def validate_manifest(document, *, allow_placeholders: bool = False,
     tasks = _validate_tasks(
         document, by_id, problems, allow_placeholders, sample_size,
         protocol_budget=protocol.get("budget"))
-    confirmatory = bool(
-        protocol.get("powered") is True
-        and protocol.get("analysis_kind") != "diagnostic")
+    document_protocol = document.get("protocol")
+    declared_kind = (document_protocol.get("analysis_kind")
+                     if isinstance(document_protocol, Mapping) else None)
+    confirmatory = bool(protocol.get("powered") is True
+                        and declared_kind != "diagnostic")
     holdout_ids = {
         repository_id for repository_id, repository in by_id.items()
         if repository.get("partition") == "holdout"}

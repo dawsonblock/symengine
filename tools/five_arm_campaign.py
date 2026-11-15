@@ -59,7 +59,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 from sis.v3.benchmark import (  # noqa: E402
     BenchmarkError, BenchmarkHarness, BudgetCaps)
 from sis.v3.contracts import (  # noqa: E402
-    GuidanceV1, TaskEnvelopeV1, canonical_digest)
+    ContractError, GuidanceV1, TaskEnvelopeV1, canonical_digest)
 from sis.v3.efficacy_manifest import validate_manifest  # noqa: E402
 from sis.v3.evaluation_runtime import EvaluationRuntimeProfile  # noqa: E402
 from sis.v3.governed_eval import GOVERNED_ARMS, preregister  # noqa: E402
@@ -210,13 +210,43 @@ def _fixed_guidance(failure_class: str, arm: str) -> GuidanceV1 | None:
         reason_code=None, approximate_tokens=60 * len(steps))
 
 
+def _json_object(raw: bytes, label: str) -> dict:
+    """Parse one JSON object, rejecting duplicate keys at every level."""
+    def pairs(items):
+        result = {}
+        for key, value in items:
+            if key in result:
+                raise ValueError(f"{label} has duplicate key: {key}")
+            result[key] = value
+        return result
+
+    document = json.loads(raw.decode("utf-8"), object_pairs_hook=pairs)
+    if not isinstance(document, dict):
+        raise ValueError(f"{label} must be a JSON object")
+    return document
+
+
+_MAX_MANIFEST_BYTES = 64 * 1024 * 1024
+_MAX_BUNDLE_BYTES = 8 * 1024 * 1024
+# GuidanceV1 binds at most three procedure IDs and eight checks of 512
+# characters; a bundle that exceeds those bounds could never be served.
+_MAX_GUIDANCE_STEPS = 3
+_MAX_STEP_TEXT = 512
+_CANDIDATE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:@-]{0,127}$")
+
+
+def _read_bounded(path: Path, limit: int, label: str) -> bytes:
+    with path.open("rb") as handle:
+        raw = handle.read(limit + 1)
+    if len(raw) > limit:
+        raise ValueError(f"{label} exceeds the size bound")
+    return raw
+
+
 def _load_manifest(path: Path) -> tuple[dict, bytes]:
     """Parse the manifest and keep the exact bytes that were validated."""
-    raw = path.read_bytes()
-    document = json.loads(raw.decode("utf-8"))
-    if not isinstance(document, dict):
-        raise ValueError("manifest must be a JSON object")
-    return document, raw
+    raw = _read_bounded(path, _MAX_MANIFEST_BYTES, "manifest")
+    return _json_object(raw, "manifest"), raw
 
 
 _VERSION = re.compile(r"\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.\-]+)?")
@@ -300,9 +330,8 @@ def _load_guidance_bundle(path: Path, *, induction_digests,
     registry is supplied — resolve every candidate to a qualified record
     whose evidence covers the declared digest.
     """
-    document = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(document, dict):
-        raise ValueError("guidance bundle must be a JSON object")
+    raw = _read_bounded(path, _MAX_BUNDLE_BYTES, "guidance bundle")
+    document = _json_object(raw, "guidance bundle")
     if document.get("schema_version") != 2:
         raise ValueError("guidance bundle schema_version must be 2")
     if document.get("kind") != "learned_guidance_bundle":
@@ -349,9 +378,10 @@ def _load_guidance_bundle(path: Path, *, induction_digests,
             if not isinstance(step, Mapping):
                 raise ValueError(label + " must be an object")
             candidate_id = step.get("candidate_id")
-            if (not isinstance(candidate_id, str) or not candidate_id
-                    or len(candidate_id) > 256):
-                raise ValueError(label + " has no candidate_id")
+            if (not isinstance(candidate_id, str)
+                    or not _CANDIDATE_ID.fullmatch(candidate_id)):
+                raise ValueError(
+                    label + " candidate_id is not a contract identifier")
             record = {"candidate_id": candidate_id}
             for name in ("candidate_digest", "content_digest",
                          "evidence_digest"):
@@ -361,12 +391,19 @@ def _load_guidance_bundle(path: Path, *, induction_digests,
                 record[name] = value
             text = step.get("text")
             if (not isinstance(text, str) or not text.strip()
-                    or len(text) > 4096):
+                    or len(text) > _MAX_STEP_TEXT):
                 raise ValueError(label + " has no bounded text")
+            record["text"] = text
             texts.append(text)
             records.append(record)
         steps_by_arm[arm] = texts
         records_by_arm[arm] = records
+    total_steps = sum(len(records) for records in records_by_arm.values())
+    if total_steps > _MAX_GUIDANCE_STEPS:
+        raise ValueError(
+            f"guidance bundle has {total_steps} steps across arms B-D;"
+            f" the guidance contract binds at most {_MAX_GUIDANCE_STEPS}"
+            " procedure IDs and arm E serves all three arms")
     computed = _bundle_digest(document)
     if document.get("bundle_digest") != computed:
         raise ValueError("guidance bundle digest does not match its contents")
@@ -374,6 +411,13 @@ def _load_guidance_bundle(path: Path, *, induction_digests,
         raise ValueError(
             "guidance bundle digest does not match the manifest"
             " precommitment")
+    for arm in ("B", "C", "D", "E"):
+        try:
+            _served_guidance(
+                {"components": records_by_arm, "bundle_digest": computed}, arm)
+        except ContractError as exc:
+            raise ValueError(
+                f"guidance bundle cannot serve arm {arm}: {exc}") from exc
     verified = False
     if registry is not None:
         verified = _verify_bundle_candidates(registry, records_by_arm)
@@ -382,24 +426,30 @@ def _load_guidance_bundle(path: Path, *, induction_digests,
             "components": records_by_arm,
             "bundle_digest": computed,
             "training_repository_digests": tuple(sorted(digests)),
-            "candidates_verified": verified}
+            "candidates_verified": verified,
+            "raw": raw}
 
 
-def _guidance_from_steps(steps: Mapping[str, list[str]],
-                         arm: str) -> GuidanceV1 | None:
+def _served_guidance(bundle: Mapping, arm: str) -> GuidanceV1 | None:
+    """Build the guidance served to one arm from its candidate records.
+
+    Accepts either the loaded bundle or the raw bundle document: both
+    carry ``components`` (candidate records) and ``bundle_digest``.
+    """
     if arm == "A":
         return None
-    if arm == "E":
-        checks = tuple(step for source in ("B", "C", "D")
-                       for step in steps[source])
-    else:
-        checks = tuple(steps[arm])
+    sources = ("B", "C", "D") if arm == "E" else (arm,)
+    records = [record for source in sources
+               for record in bundle["components"][source]]
+    checks = tuple(record["text"] for record in records)
     return GuidanceV1(
         schema_version=1, decision="recommend",
-        procedure_ids=("real-agent-guidance-bundle",), revision="0" * 64,
+        procedure_ids=tuple(record["candidate_id"] for record in records),
+        revision=bundle["bundle_digest"],
         matched_preconditions=({"kind": "language_is", "value": "python"},),
-        contraindications=(), evidence_ids=("0" * 64,),
-        policy_digest="0" * 64, helpful_next_checks=checks,
+        contraindications=(),
+        evidence_ids=tuple(record["evidence_digest"] for record in records),
+        policy_digest=bundle["bundle_digest"], helpful_next_checks=checks,
         reason_code=None, approximate_tokens=60 * len(checks))
 
 
@@ -486,7 +536,8 @@ def _codex_agent(prompts: Mapping[str, str], budget: BudgetCaps,
 
 def _export_evidence(output: Path, report_sha256: str, verifier,
                      manifest_path: Path, manifest_digest: str,
-                     manifest_bytes: bytes) -> dict:
+                     manifest_bytes: bytes,
+                     guidance: Mapping | None = None) -> dict:
     """Persist the signed receipts and verification material.
 
     The verifier's key and receipt store live in a temporary directory, so
@@ -523,6 +574,14 @@ def _export_evidence(output: Path, report_sha256: str, verifier,
         "public_key": public,
         "receipts": receipts,
     }
+    if guidance is not None:
+        raw = guidance["bytes"]
+        (directory / "guidance_bundle.json").write_bytes(raw)
+        bundle["guidance"] = {
+            "path": guidance["path"],
+            "sha256": hashlib.sha256(raw).hexdigest(),
+            "bundle_digest": guidance["bundle_digest"],
+        }
     bundle["bundle_digest"] = canonical_digest(
         "five_arm_evidence_bundle", 1, bundle)
     (directory / "bundle.json").write_text(
@@ -626,6 +685,10 @@ def run_real(output: Path, manifest_path: Path | None, *,
         item["repo_snapshot_digest"] for item in document["repositories"]
         if item["partition"] == "holdout"))
     learned_bundle = None
+    if guidance_path is None and document.get("guidance_bundle_digest") is not None:
+        return blocked(
+            "BLOCKED_GUIDANCE",
+            "manifest precommits a guidance bundle but none was supplied")
     if candidate_registry is not None and guidance_path is None:
         return blocked(
             "BLOCKED_GUIDANCE",
@@ -707,7 +770,7 @@ def run_real(output: Path, manifest_path: Path | None, *,
             bundle_payload = learned_bundle["bundles"]
 
             def provider(task, arm):
-                guidance = _guidance_from_steps(bundle_payload, arm)
+                guidance = _served_guidance(learned_bundle, arm)
                 served[(task.task_id, arm)] = bool(
                     guidance is not None and guidance.helpful_next_checks)
                 return guidance
@@ -798,10 +861,18 @@ def run_real(output: Path, manifest_path: Path | None, *,
         report_sha256 = hashlib.sha256(
             (json.dumps(report, indent=2, sort_keys=True) + "\n").encode()
         ).hexdigest()
+        guidance_export = None
+        if learned_bundle is not None:
+            guidance_export = {
+                "path": str(guidance_path),
+                "bytes": learned_bundle["raw"],
+                "bundle_digest": learned_bundle["bundle_digest"],
+            }
         try:
             bundle = _export_evidence(
                 output, report_sha256, verifier, manifest_path,
-                validation["manifest_digest"], manifest_bytes)
+                validation["manifest_digest"], manifest_bytes,
+                guidance=guidance_export)
         except Exception as exc:
             report["evidence_bundle"] = {
                 "error": f"{type(exc).__name__}: {exc}"}

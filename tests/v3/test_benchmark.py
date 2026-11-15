@@ -79,6 +79,17 @@ class BenchmarkTests(unittest.TestCase):
         )
         self.assertEqual(report["per_task"][0]["arms"]["A"]["outcome"], "error")
 
+    def test_worker_system_exit_is_an_error_not_a_pass(self):
+        def agent(ctx):
+            raise SystemExit(3)
+        report = self.harness.run(
+            [(self.task, self.repo)], agent, budget=self.budget,
+            arms=("A",),
+        )
+        row = report["per_task"][0]["arms"]["A"]
+        self.assertEqual(row["outcome"], "error")
+        self.assertIn("SystemExit", row["error"])
+
     def test_all_arms_same_pass_counts(self):
         def agent(ctx):
             (ctx.workspace / "calc.py").write_text("def scale(a, b):\n    return a * b\n")

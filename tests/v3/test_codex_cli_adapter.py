@@ -134,6 +134,29 @@ class CodexCliAdapterTests(unittest.TestCase):
         self.assertEqual(last.payload["summary"]["cli_exit_status"], 0)
         self.assertEqual(last.payload["summary"]["stderr_bytes"], 64 * 1024)
 
+    def test_kill_group_falls_back_when_process_groups_are_unavailable(self):
+        from unittest import mock
+
+        class Proc:
+            pid = 12345
+            killed = False
+
+            def kill(self):
+                self.killed = True
+
+        cases = (
+            ("killpg is absent", mock.patch(
+                "sis.v3.adapters.codex_cli.os.killpg", new=None)),
+            ("killpg raises AttributeError", mock.patch(
+                "sis.v3.adapters.codex_cli.os.killpg",
+                side_effect=AttributeError)),
+        )
+        for label, patcher in cases:
+            proc = Proc()
+            with self.subTest(label), patcher:
+                CodexCliAdapter._kill_group(proc)
+            self.assertTrue(proc.killed)
+
     def test_line_limit_counts_the_newline(self):
         from io import BytesIO
         from sis.v3.adapters.codex_cli import _MAX_LINE_BYTES

@@ -344,6 +344,61 @@ class GuidanceBundleLineageTests(unittest.TestCase):
                     bundle, corrupt=True),
                     document=document, bundle=bundle)
 
+    def test_a_bundle_beyond_the_procedure_bound_is_rejected(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            document = _manifest(root)
+            bundle = _learned_bundle(document)
+            extra = dict(bundle["components"]["B"][0])
+            extra["candidate_id"] = "candidate-B2"
+            bundle["components"]["B"].append(extra)
+            bundle["bundle_digest"] = campaign_tool._bundle_digest(bundle)
+            with self.assertRaisesRegex(ValueError, "at most 3"):
+                self._load(root, registry=None, document=document,
+                           bundle=bundle)
+
+    def test_a_candidate_id_outside_the_identifier_syntax_is_rejected(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            document = _manifest(root)
+            bundle = _learned_bundle(document)
+            bundle["components"]["B"][0]["candidate_id"] = "candidate/B"
+            bundle["bundle_digest"] = campaign_tool._bundle_digest(bundle)
+            with self.assertRaisesRegex(ValueError, "contract identifier"):
+                self._load(root, registry=None, document=document,
+                           bundle=bundle)
+
+    def test_a_step_text_beyond_the_contract_bound_is_rejected(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            document = _manifest(root)
+            bundle = _learned_bundle(document)
+            bundle["components"]["C"][0]["text"] = "x" * 513
+            bundle["bundle_digest"] = campaign_tool._bundle_digest(bundle)
+            with self.assertRaisesRegex(ValueError, "bounded text"):
+                self._load(root, registry=None, document=document,
+                           bundle=bundle)
+
+    def test_learned_guidance_binds_candidate_lineage(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            document = _manifest(root)
+            bundle = _learned_bundle(document)
+            guidance = campaign_tool._served_guidance(bundle, "B")
+            combined = campaign_tool._served_guidance(bundle, "E")
+        record = bundle["components"]["B"][0]
+        self.assertEqual(guidance.procedure_ids, ("candidate-B",))
+        self.assertEqual(guidance.evidence_ids,
+                         (record["evidence_digest"],))
+        self.assertEqual(guidance.revision, bundle["bundle_digest"])
+        self.assertEqual(guidance.policy_digest, bundle["bundle_digest"])
+        self.assertEqual(guidance.helpful_next_checks, ("B learned step",))
+        self.assertEqual(combined.helpful_next_checks,
+                         ("B learned step", "C learned step",
+                          "D learned step"))
+        self.assertEqual(combined.procedure_ids,
+                         ("candidate-B", "candidate-C", "candidate-D"))
+
 
 class RealAgentGateTests(unittest.TestCase):
     def setUp(self):
@@ -437,6 +492,12 @@ class RealAgentGateTests(unittest.TestCase):
                 output, manifest, allow_shared_custody=True,
                 guidance_path=guidance, agent_factory=_scripted_agent)
             report = json.loads(output.read_text(encoding="utf-8"))
+            evidence_dir = Path(report["evidence_bundle"]["path"])
+            exported_guidance = (
+                evidence_dir / "guidance_bundle.json").read_bytes()
+            evidence = json.loads(
+                (evidence_dir / "bundle.json").read_text(encoding="utf-8"))
+            input_guidance = guidance.read_bytes()
         # Without a candidate registry the lineage is not verified; the
         # report says so instead of accepting the self-declaration.
         self.assertEqual(report["guidance"]["source"], "learned_unverified")
@@ -448,6 +509,11 @@ class RealAgentGateTests(unittest.TestCase):
             "learned_unverified")
         self.assertEqual(
             report["guidance"]["bundles"]["B"], ["B learned step"])
+        self.assertEqual(exported_guidance, input_guidance)
+        self.assertEqual(evidence["guidance"]["sha256"],
+                         hashlib.sha256(input_guidance).hexdigest())
+        self.assertEqual(evidence["guidance"]["bundle_digest"],
+                         bundle["bundle_digest"])
 
     def test_a_self_declared_learned_bundle_is_rejected(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -538,6 +604,59 @@ class RealAgentGateTests(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertEqual(report["release_gate"], "BLOCKED_GUIDANCE")
         self.assertIn("requires a guidance bundle", report["note"])
+
+    def test_a_precommitted_bundle_must_be_supplied(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            document = _manifest(root)
+            document["guidance_bundle_digest"] = "a" * 64
+            manifest = _write(root, document)
+            output = root / "report.json"
+            code = campaign_tool.run_real(
+                output, manifest, allow_shared_custody=True,
+                agent_factory=_scripted_agent)
+            report = json.loads(output.read_text(encoding="utf-8"))
+        self.assertEqual(code, 2)
+        self.assertEqual(report["release_gate"], "BLOCKED_GUIDANCE")
+        self.assertIn("precommits a guidance bundle", report["note"])
+
+    def test_a_duplicate_manifest_key_is_rejected(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            manifest = _write(root, _manifest(root))
+            text = manifest.read_text(encoding="utf-8").replace(
+                '"schema_version": 1,',
+                '"schema_version": 1, "schema_version": 1,', 1)
+            manifest.write_text(text, encoding="utf-8")
+            output = root / "report.json"
+            code = campaign_tool.run_real(
+                output, manifest, allow_shared_custody=True,
+                agent_factory=_scripted_agent)
+            report = json.loads(output.read_text(encoding="utf-8"))
+        self.assertEqual(code, 2)
+        self.assertEqual(report["release_gate"], "BLOCKED_MANIFEST")
+        self.assertIn("duplicate key", report["note"])
+
+    def test_a_duplicate_bundle_key_is_rejected(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            document = _manifest(root)
+            bundle = _learned_bundle(document)
+            manifest = _write(root, document)
+            guidance = root / "guidance.json"
+            guidance.write_text(
+                json.dumps(bundle).replace(
+                    '"schema_version": 2,',
+                    '"schema_version": 2, "schema_version": 2,', 1),
+                encoding="utf-8")
+            output = root / "report.json"
+            code = campaign_tool.run_real(
+                output, manifest, allow_shared_custody=True,
+                guidance_path=guidance, agent_factory=_scripted_agent)
+            report = json.loads(output.read_text(encoding="utf-8"))
+        self.assertEqual(code, 2)
+        self.assertEqual(report["release_gate"], "BLOCKED_GUIDANCE")
+        self.assertIn("duplicate key", report["note"])
 
     def test_a_diagnostic_manifest_is_not_executed(self):
         with tempfile.TemporaryDirectory() as temp:

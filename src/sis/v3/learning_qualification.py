@@ -431,8 +431,7 @@ def analyze_report(
                 "private acceptance tests ran under shared custody")
         if provenance.get("guidance_source") != "learned":
             provenance_gaps.append(
-                "guidance bundles are fixed control prompts, not learned "
-                "components")
+                "guidance is not a verified learned bundle")
         if provenance.get("preregistration_anchored") is not True:
             provenance_gaps.append(
                 "manifest was not committed before the run")

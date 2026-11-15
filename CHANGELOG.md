@@ -12,8 +12,11 @@ describes the pre-repair tree.
   agent's workspace. `stage_repository()` now rejects a symlinked
   source, rejects external symlinks and hard-linked files before and
   after the copy, copies links verbatim (`symlinks=True`) and requires
-  the staged tree to hash identically to the source. A link swapped in
-  during the copy is observed as a link, never dereferenced.
+  the staged tree to hash identically to the source. Internal hard
+  links are allowed; a file whose link count exceeds its in-repository
+  paths is refused. A link swapped in during the copy is observed as a
+  link, never dereferenced. Each staged digest is bound to the task
+  envelope so post-manifest drift is refused.
 - **Powered classification.** `analyze_report()` recomputes the power
   floor with `protocol_required_sample_size()` and requires an
   explicitly powered plan. A diagnostic (`powered=False`) protocol, a
@@ -22,7 +25,10 @@ describes the pre-repair tree.
   `run_governed_evaluation()` labels a diagnostic run `diagnostic`.
 - **Readiness at execution.** The real-agent gate refuses a manifest
   whose validator result is not `ready`; a diagnostic manifest must use
-  the demo path.
+  the demo path. A powered protocol that also declares
+  `analysis_kind: diagnostic`, or a diagnostic protocol carrying a
+  `power_analysis` block, is invalid, and every task must declare the
+  holdout partition.
 - **Holdout coverage and budgets.** Manifest validation counts the
   holdout repositories that actually contribute tasks (at least five)
   and the distinct snapshots among them (at least five independent
@@ -40,7 +46,9 @@ describes the pre-repair tree.
   timed-out or nonzero-exit CLI turn raises instead of returning a
   normal result. One completed command/edit counts as one tool call,
   cumulative `turn.completed` usage is taken once rather than summed,
-  and oversized JSONL lines are drained in bounded chunks.
+  and oversized JSONL lines are drained in bounded chunks. Stderr is
+  drained continuously; platforms without process groups fall back to
+  terminating the process directly.
 - **Learned guidance lineage.** `--guidance-bundle` accepts only a
   schema-2 bundle whose steps name immutable candidate records
   (`candidate_digest`, `content_digest`, `evidence_digest`), whose
@@ -50,7 +58,13 @@ describes the pre-repair tree.
   every candidate to resolve to a qualified record whose evidence
   covers the declared digest; without it the bundle is
   `learned_unverified` and cannot support a confirmatory label. A file
-  that merely says `"source": "learned"` is rejected.
+  that merely says `"source": "learned"` is rejected. The served
+  guidance carries the candidate and evidence IDs, the exact bundle
+  bytes are exported with the evidence, a precommitted bundle must be
+  supplied, and duplicate JSON keys or oversized files are rejected. A
+  bundle whose candidate IDs, step count or step text cannot satisfy
+  the guidance contract is refused at load time instead of failing the
+  campaign.
 
 Regressions live in `tests/v3/test_benchmark.py`,
 `tests/v3/test_codex_cli_adapter.py`,

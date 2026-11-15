@@ -217,6 +217,46 @@ class EfficacyManifestTests(unittest.TestCase):
         self.assertTrue(any("powered must be a bool" in problem
                             for problem in report["problems"]))
 
+    def test_a_powered_protocol_cannot_declare_diagnostic(self):
+        document = manifest()
+        document["protocol"]["analysis_kind"] = "diagnostic"
+        report = validate_manifest(document)
+        self.assertFalse(report["valid"])
+        self.assertFalse(report["confirmatory"])
+        self.assertTrue(any("analysis_kind" in problem
+                            for problem in report["problems"]))
+
+    def test_a_diagnostic_protocol_cannot_carry_a_power_block(self):
+        document = manifest()
+        diagnostic = protocol(powered=False, sample_size=4)
+        diagnostic["power_analysis"] = {"required_n": 4}
+        document["protocol"] = diagnostic
+        document["preregistration"]["protocol_digest"] = (
+            diagnostic["protocol_digest"])
+        report = validate_manifest(document)
+        self.assertFalse(report["valid"])
+        self.assertTrue(any("must not carry power_analysis" in problem
+                            for problem in report["problems"]))
+
+    def test_a_null_power_block_is_treated_as_absent(self):
+        absent = object()
+
+        def report(block):
+            document = manifest()
+            diagnostic = protocol(powered=False, sample_size=4)
+            if block is not absent:
+                diagnostic["power_analysis"] = block
+            document["protocol"] = diagnostic
+            document["preregistration"]["protocol_digest"] = (
+                diagnostic["protocol_digest"])
+            return validate_manifest(document)
+
+        self.assertEqual(report(None)["problems"],
+                         report(absent)["problems"])
+        self.assertTrue(any(
+            "must not carry power_analysis" in problem
+            for problem in report({"required_n": 4})["problems"]))
+
     def test_task_budgets_must_match_the_protocol(self):
         document = manifest()
         document["tasks"][0]["budgets"]["token_budget"] = 999
@@ -258,6 +298,19 @@ class EfficacyManifestTests(unittest.TestCase):
         self.assertEqual(report["holdout_snapshots_used"], 1)
         self.assertTrue(any("distinct holdout" in problem
                             for problem in report["problems"]))
+
+    def test_a_task_must_declare_the_holdout_partition(self):
+        for declared in ("induction", None):
+            with self.subTest(declared=declared):
+                document = manifest()
+                if declared is None:
+                    del document["tasks"][0]["partition"]
+                else:
+                    document["tasks"][0]["partition"] = declared
+                report = validate_manifest(document)
+                self.assertFalse(report["valid"])
+                self.assertTrue(any("partition must be holdout" in problem
+                                    for problem in report["problems"]))
 
 
 if __name__ == "__main__":

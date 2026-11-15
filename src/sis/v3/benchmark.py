@@ -29,7 +29,7 @@ from pathlib import Path
 
 from .contracts import ContractError, GuidanceV1, TaskEnvelopeV1, canonical_digest
 from .episode_store import EpisodeStore
-from .runner import scan_tree, tree_digest
+from .runner import RunnerError, scan_tree, tree_digest
 from .verifier import OutcomeVerifier
 
 ARMS = ("A", "B", "C", "D")
@@ -69,7 +69,16 @@ def _reject_hard_links(root: Path) -> None:
                     f"repository_entry_unreadable:{full}") from exc
             if not stat.S_ISREG(info.st_mode):
                 continue
+            if info.st_nlink <= 1:
+                continue
             key = (info.st_dev, info.st_ino)
+            if info.st_ino == 0:
+                # Some filesystems do not expose stable inode numbers;
+                # without them an external link cannot be distinguished
+                # from an internal one, so any shared file is refused.
+                relative = full.relative_to(root).as_posix()
+                raise BenchmarkError(
+                    "repository_contains_hard_links:" + relative)
             counts[key] = counts.get(key, 0) + 1
             entries.append((full, info))
     for full, info in entries:
@@ -98,7 +107,10 @@ def stage_repository(base_dir: str | Path, workspace: str | Path) -> str:
     if source.is_symlink() or not source.is_dir():
         raise BenchmarkError("repository_source_is_not_a_plain_directory")
     _reject_hard_links(source)
-    before = scan_tree(source)
+    try:
+        before = scan_tree(source)
+    except (OSError, RunnerError) as exc:
+        raise BenchmarkError(f"repository_scan_failed:{exc}") from exc
     if before.external_symlinks:
         raise BenchmarkError(
             "repository_contains_external_symlinks:"
@@ -107,7 +119,10 @@ def stage_repository(base_dir: str | Path, workspace: str | Path) -> str:
         shutil.copytree(source, target, dirs_exist_ok=True, symlinks=True)
     except (OSError, shutil.Error) as exc:
         raise BenchmarkError(f"repository_staging_failed:{exc}") from exc
-    after = scan_tree(target)
+    try:
+        after = scan_tree(target)
+    except (OSError, RunnerError) as exc:
+        raise BenchmarkError(f"repository_scan_failed:{exc}") from exc
     if after.external_symlinks:
         raise BenchmarkError(
             "repository_contains_external_symlinks:"
@@ -357,7 +372,9 @@ class BenchmarkHarness:
             def _drive() -> None:
                 try:
                     box["usage"] = agent(ctx)
-                except Exception as exc:
+                except BaseException as exc:
+                    # A worker that dies with SystemExit/KeyboardInterrupt
+                    # must not look like a normally completed arm.
                     box["error"] = f"{type(exc).__name__}:{str(exc)[:200]}"
             worker = threading.Thread(target=_drive, daemon=True)
             worker.start()
