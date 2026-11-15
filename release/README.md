@@ -1,7 +1,7 @@
 # SIS release artifacts
 
 Latest sealed release: `SIS-v3.3.9.zip`
-SHA-256: `0dadc913549322fac49ccd71368cb8614f55cc4b02d0953423da7df1a5fa2ce2`
+SHA-256: `8c3716b4408bed602d42006d3df21203ef260587458f9d0e8d39b94de3a335da`
 
 `release/*.zip` is gitignored. The archive is distributed
 out-of-band with this bundle; the tracked `SHA256SUMS` verifies a
@@ -15,9 +15,9 @@ archive identity, source commit, test result and fresh-extraction checks.
 - Release: `SIS-v3.3.9`
 - Status: `ENGINEERING_VERIFIED`
 - Branch: `repair/v335-resource-security`
-- Source commit: `fdda0d12baaf31f2808fae111f2da8a9c9e4d9b0`
+- Source commit: `b5b045b1b686bffe937527c9d9dcd80684552660`
 - Source files: 461
-- Test result: 1577 passed, 14 skipped, 0 failed
+- Test result: 1578 passed, 14 skipped, 0 failed
 
 ## Provenance status
 
