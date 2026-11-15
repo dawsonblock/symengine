@@ -42,7 +42,7 @@ from .contracts import (
     canonical_digest,
     canonical_json,
 )
-from .learning_qualification import newcombe_difference_interval
+from .learning_qualification import newcombe_paired_difference_interval
 
 EVIDENCE_CLASSES = ("exploratory", "demonstration", "confirmatory", "invalid")
 PRODUCTION_EVIDENCE_CLASS = "confirmatory"
@@ -553,13 +553,17 @@ class QualificationValidator:
             # by the certificate signature, not by a separate evaluator
             # receipt — the issuer is trusted for the baseline column.
             losses = 0
+            wins = both = neither = 0
             base_solved = treat_solved = 0
             for item in receipts:
                 base_ok = item["baseline_outcome"] == "pass"
                 treat_ok = item["outcome"] == "pass"
                 base_solved += base_ok
                 treat_solved += treat_ok
+                wins += treat_ok and not base_ok
                 losses += base_ok and not treat_ok
+                both += base_ok and treat_ok
+                neither += not base_ok and not treat_ok
             n = len(receipts)
             check("paired_point_estimate",
                   interval.get("point_estimate_milli")
@@ -574,8 +578,8 @@ class QualificationValidator:
                 # tightest representable level.
                 z = NormalDist().inv_cdf(
                     (1 + min(max(conf, 1), 999) / 1000) / 2)
-            lower, upper = newcombe_difference_interval(
-                treat_solved, n, base_solved, n, z=z)
+            lower, upper = newcombe_paired_difference_interval(
+                wins, losses, both, neither, z=z)
             check("paired_interval_not_narrower",
                   interval.get("lower_milli", 1_000_001)
                   <= round(1000 * lower)

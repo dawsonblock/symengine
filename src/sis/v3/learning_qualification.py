@@ -87,6 +87,51 @@ def newcombe_difference_interval(
     return (max(-1.0, lower), min(1.0, upper))
 
 
+def newcombe_paired_difference_interval(
+    wins: int, losses: int, both: int, neither: int, *,
+    z: float = 1.959963984540054,
+) -> tuple[float, float]:
+    """Newcombe interval for a difference between paired proportions.
+
+    ``wins`` (treatment solved, baseline not) and ``losses`` (baseline
+    solved, treatment not) are the discordant pairs; ``both`` and
+    ``neither`` are the concordant pairs. The same tasks produce both
+    outcomes, so the two solve rates are not independent and
+    :func:`newcombe_difference_interval` overstates the variance. This is
+    Newcombe's method 10 for paired data: marginal Wilson intervals
+    combined with the observed pair correlation ``phi``.
+    """
+    for name, value in (("wins", wins), ("losses", losses),
+                        ("both", both), ("neither", neither)):
+        if type(value) is not int or value < 0:
+            raise ValueError(f"{name} must be a nonnegative integer")
+    n = wins + losses + both + neither
+    if n <= 0:
+        return (-1.0, 1.0)
+    successes_t = both + wins
+    successes_b = both + losses
+    p_t, p_b = successes_t / n, successes_b / n
+    l_t, u_t = wilson_interval(successes_t, n, z=z)
+    l_b, u_b = wilson_interval(successes_b, n, z=z)
+    delta = p_t - p_b
+    phi = 0.0
+    product = successes_t * (losses + neither) * successes_b * (wins + neither)
+    if product > 0:
+        cross = both * neither - wins * losses
+        if cross > n / 2:
+            cross -= n / 2
+        elif cross > 0:
+            cross = 0.0
+        phi = cross / math.sqrt(product)
+    lower = delta - math.sqrt(max(
+        0.0, (p_t - l_t) ** 2 - 2 * phi * (p_t - l_t) * (u_b - p_b)
+        + (u_b - p_b) ** 2))
+    upper = delta + math.sqrt(max(
+        0.0, (p_b - l_b) ** 2 - 2 * phi * (p_b - l_b) * (u_t - p_t)
+        + (u_t - p_t) ** 2))
+    return (max(-1.0, lower), min(1.0, upper))
+
+
 def _valid_solve(result: Mapping) -> bool:
     return (result.get("outcome") == "pass"
             and not result.get("budget_exceeded")
@@ -104,6 +149,7 @@ def paired_contrast(report: Mapping, *, baseline: str = "A",
     rows = _task_rows(report)
     n = len(rows)
     wins = losses = ties = 0
+    both_solved = neither_solved = 0
     base_solved = treat_solved = 0
     for results in rows.values():
         a = results.get(baseline, {})
@@ -118,9 +164,11 @@ def paired_contrast(report: Mapping, *, baseline: str = "A",
             losses += 1
         else:
             ties += 1
+            both_solved += a_ok
+            neither_solved += not a_ok
     p = mcnemar_exact(wins, losses)
-    lower, upper = newcombe_difference_interval(
-        treat_solved, n, base_solved, n)
+    lower, upper = newcombe_paired_difference_interval(
+        wins, losses, both_solved, neither_solved)
     return {
         "baseline": baseline,
         "treatment": treatment,
@@ -131,8 +179,11 @@ def paired_contrast(report: Mapping, *, baseline: str = "A",
         "wins": wins,
         "losses": losses,
         "ties": ties,
+        "both_solved": both_solved,
+        "neither_solved": neither_solved,
         "mcnemar_exact_p": round(p, 8),
         "difference_interval_95": [round(lower, 6), round(upper, 6)],
+        "difference_interval_method": "newcombe_paired",
         "significant": bool(p <= alpha and lower > 0),
     }
 
@@ -494,6 +545,7 @@ __all__ = [
     "failure_categories",
     "mcnemar_exact",
     "newcombe_difference_interval",
+    "newcombe_paired_difference_interval",
     "paired_contrast",
     "resource_overhead",
     "wilson_interval",

@@ -1,5 +1,60 @@
 # Changelog
 
+## 2026-11-14 — Authority-closure repairs: paired inference, executable gate, bounded sampling
+
+Three defects that stood between the Phase 6 scaffold and the Phase 6
+question are repaired. None of them is an efficacy result.
+
+- **Paired inference.** `paired_contrast()` reported a Newcombe interval
+  built from the two marginal solve rates, which treats the paired arms
+  as independent samples. It now uses Newcombe's method 10 for paired
+  data (`newcombe_paired_difference_interval`), combining the marginal
+  Wilson intervals with the observed pair correlation. With 100 paired
+  tasks, 8 treatment-only solves and 0 baseline-only solves, the old
+  interval was `[-5.76, +21.34]` percentage points and included zero
+  while exact McNemar rejected the null (`p=0.0078125`); the paired
+  interval is `[+2.35, +13.48]`. `evaluation_certificate` reconstructs
+  the paired interval from the receipt matrix, so a certificate carrying
+  the corrected interval still verifies.
+- **Executable real-agent gate.** `tools/five_arm_campaign.py
+  --real-agent --manifest` no longer returns
+  `BLOCKED_REAL_RUN_NOT_EXECUTED` for every supplied manifest. It
+  validates the manifest, verifies each repository snapshot digest,
+  registers the evaluator-owned acceptance material, runs the five arms
+  with `CodexCliAgent`, and writes the paired report with a receipt
+  digest per `(task, arm)` and the frozen guidance bundles. An invalid
+  manifest, repository drift, an unavailable agent and unavailable split
+  custody still fail closed.
+- **Bounded benchmark sampling.** `tools/benchmark_induction.py` drew
+  distinct samples by rejection with no feasibility check, so a valid
+  CLI request such as `--fields 2 --input-min 0 --input-max 1` (four
+  possible inputs, twelve requested) looped forever. Sampling now draws
+  from the domain's integer indices, and an impossible request exits 2
+  with a message before induction starts.
+- **Release CI archive delivery.** `release/*.zip` is git-ignored, so the
+  strict gate on a tag had no archive to verify. The `tests` job now
+  uses a supplied `release/SIS-*.zip` when present and otherwise fetches
+  the asset attached to the release (`gh release download`), then
+  re-hashes it against `release/release_manifest.json` and the signed
+  provenance. A missing archive fails with an explicit error naming the
+  tag. The job also checks the six repository secrets/variables before
+  calling the gate and reports every missing trust anchor in one
+  message. The release-only evidence job now fails with an explicit
+  error when `SIS_TEST_EVIDENCE_SIGNING_KEY` is absent instead of
+  uploading an unsigned report the seal rejects.
+- **Release-identity test portability.** `ReleaseIdentityTests` skipped
+  only when `release/release_manifest.json` was absent, so an extracted
+  source tree (manifest present, ZIP and `.git` absent) failed instead
+  of skipping. The guard now requires the archive the manifest names,
+  and the commit test skips when the release commit is not in local Git
+  history.
+
+Regressions live in `tests/v3/test_learning_qualification.py`,
+`tests/v3/test_five_arm_real_run.py` and
+`tests/v3/test_v336_benchmark_semantics.py`. The sealed archive and its
+evidence predate these repairs; regenerate them with
+`tools/package_release.py` before making a release claim.
+
 ## 2026-11-14 — Phase 6 efficacy-study scaffold
 
 Adds the preregistration and manifest validation needed before a real

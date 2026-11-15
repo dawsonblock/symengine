@@ -468,8 +468,36 @@ class ReleaseCITests(unittest.TestCase):
             "if: startsWith(github.ref, 'refs/tags/') ||"
             " github.event_name == 'release'", workflow)
         self.assertIn(
-            "run: python tools/check_release_ci.py --mode release", workflow)
+            "tools/check_release_ci.py --mode release", workflow)
         self.assertNotIn("if python tools/build_release.py --check", workflow)
+
+    def test_workflow_provisions_the_gitignored_archive_before_the_gate(self):
+        # release/*.zip is gitignored, so a tag checkout has no archive
+        # unless CI fetches the release asset first. The gate must stay
+        # after the download, and the download must never be treated as
+        # trusted input.
+        workflow = (ROOT / ".github/workflows/ci.yml").read_text()
+        self.assertIn("gh release download", workflow)
+        self.assertLess(
+            workflow.index("gh release download"),
+            workflow.index("tools/check_release_ci.py --mode release"))
+        self.assertIn("release/SIS-*.zip", workflow)
+        for anchor in ("SIS_RELEASE_PUBLIC_KEY", "SIS_TEST_EVIDENCE_PUBLIC_KEY",
+                       "SIS_ISOLATOR_PUBLIC_KEY",
+                       "SIS_ISOLATION_IMAGE_DIGEST",
+                       "SIS_ISOLATION_POLICY_DIGEST",
+                       "SIS_ISOLATION_PROPERTIES"):
+            self.assertIn(anchor, workflow)
+
+    def test_evidence_job_fails_closed_without_a_signing_key(self):
+        # The release-only evidence job used to fall back to an unsigned
+        # report, which package_release.py refuses; a missing key is now
+        # an explicit configuration error.
+        workflow = (ROOT / ".github/workflows/ci.yml").read_text()
+        self.assertIn(
+            "SIS_TEST_EVIDENCE_SIGNING_KEY is not configured", workflow)
+        for chunk in workflow.split("python tools/run_tests.py")[1:]:
+            self.assertIn("--signing-key", chunk[:200])
 
 
 if __name__ == "__main__":

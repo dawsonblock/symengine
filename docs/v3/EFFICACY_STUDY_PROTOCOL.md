@@ -105,9 +105,16 @@ Exit status `0` means ready; `2` means structurally valid but not ready
 
 The existing library interface is `sis.v3.learning_qualification.FiveArmCampaign`
 and `CodexCliAgent`; `tools/five_arm_campaign.py --real-agent --manifest`
-is the gate. The gate currently reports `BLOCKED_MANIFEST` until a
-manifest is supplied; a supplied manifest does not by itself execute the
-study.
+is the gate. A validated manifest is executed: the gate builds the five
+arms from the manifest, registers the evaluator-owned acceptance
+material, runs the agent against each repository snapshot and writes the
+paired report with a receipt digest per `(task, arm)`. The gate still
+fails closed with `BLOCKED_REAL_AGENT` when Codex is unavailable or
+unauthenticated, `BLOCKED_MANIFEST` when the manifest is invalid or a
+repository snapshot has drifted, and `BLOCKED_SPLIT_CUSTODY` when the
+backend cannot keep acceptance tests out of the submission's process.
+Executing a manifest is not evidence: the evidence class still comes
+from the paired analysis.
 
 ## Metrics
 

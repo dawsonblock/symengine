@@ -78,11 +78,14 @@ interface: it builds a prompt with the task and advisory guidance, runs
 counts tool events and returns usage. The evaluator independently
 verifies the resulting tree.
 
-`tools/five_arm_campaign.py --real-agent` writes a
-`BLOCKED_REAL_AGENT` / `BLOCKED_MANIFEST` report when a real run cannot
-be started. `tools/real_agent_campaign.py` is the executable runner used
-for the v3.3.1 attempt; it fails closed on error/no-action events so a
-quota failure cannot be scored as a task failure.
+`tools/five_arm_campaign.py --real-agent --manifest` executes a
+validated manifest: it builds the five arms, registers the evaluator's
+acceptance material and writes the paired report with receipt digests.
+It writes a `BLOCKED_REAL_AGENT` / `BLOCKED_MANIFEST` report when a real
+run cannot be started or the manifest is unusable. `tools/real_agent_campaign.py`
+is the executable runner used for the v3.3.1 attempt; it fails closed on
+error/no-action events so a quota failure cannot be scored as a task
+failure.
 
 ## v3.3.1 result
 

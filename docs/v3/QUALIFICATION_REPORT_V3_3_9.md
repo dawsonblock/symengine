@@ -111,7 +111,8 @@ The following scenarios are covered by executable tests:
   the repair plan has not been completed. Do not claim a general coding
   improvement until it is. Phase 6 is scaffolded in
   [EFFICACY_STUDY_PROTOCOL.md](EFFICACY_STUDY_PROTOCOL.md) with a
-  manifest template and validator; the real-agent gate still reports
-  `BLOCKED_MANIFEST`.
+  manifest template and validator; the real-agent gate executes a
+  validated manifest, but no preregistered manifest exists on the
+  development host, so no confirmatory run has been executed.
 - The Linux-with-Docker run used the host Docker daemon through a mounted
   socket; the CI workflow remains the canonical native-Linux run.

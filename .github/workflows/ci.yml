@@ -44,6 +44,27 @@ jobs:
         env:
           PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
           PYTHONNOUSERSITE: "1"
+      - name: Provision the separately distributed release archive
+        # release/*.zip is gitignored: the archive travels as a release
+        # asset, so a fresh checkout has no copy for the strict gate. A
+        # local file wins; otherwise fetch the asset for this tag. Nothing
+        # downloaded is trusted: the gate re-hashes it against
+        # release/release_manifest.json and the signed provenance.
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'release'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if ls release/SIS-*.zip >/dev/null 2>&1; then
+            echo "using the supplied release archive"
+            exit 0
+          fi
+          if ! gh release download "${GITHUB_REF_NAME}" \
+              --pattern 'SIS-*.zip' --dir release/; then
+            echo "::error::No release archive for ${GITHUB_REF_NAME}. Attach SIS-*.zip to that release or place it at release/ before the strict gate runs."
+            exit 1
+          fi
       - name: Verify release inventory (tags and published releases)
         # Release identity, never manifest success, selects the strict gate.
         # Every trust anchor comes from repository configuration, never from
@@ -55,6 +76,7 @@ jobs:
         #   vars:    SIS_ISOLATION_IMAGE_DIGEST,
         #            SIS_ISOLATION_POLICY_DIGEST, SIS_ISOLATION_PROPERTIES
         if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'release'
+        shell: bash
         env:
           SIS_RELEASE_PUBLIC_KEY: ${{ secrets.SIS_RELEASE_PUBLIC_KEY }}
           SIS_TEST_EVIDENCE_PUBLIC_KEY: ${{ secrets.SIS_TEST_EVIDENCE_PUBLIC_KEY }}
@@ -62,7 +84,21 @@ jobs:
           SIS_ISOLATION_IMAGE_DIGEST: ${{ vars.SIS_ISOLATION_IMAGE_DIGEST }}
           SIS_ISOLATION_POLICY_DIGEST: ${{ vars.SIS_ISOLATION_POLICY_DIGEST }}
           SIS_ISOLATION_PROPERTIES: ${{ vars.SIS_ISOLATION_PROPERTIES }}
-        run: python tools/check_release_ci.py --mode release
+        run: |
+          set -euo pipefail
+          missing=""
+          for name in SIS_RELEASE_PUBLIC_KEY SIS_TEST_EVIDENCE_PUBLIC_KEY \
+              SIS_ISOLATOR_PUBLIC_KEY SIS_ISOLATION_IMAGE_DIGEST \
+              SIS_ISOLATION_POLICY_DIGEST SIS_ISOLATION_PROPERTIES; do
+            if [ -z "${!name:-}" ]; then
+              missing="$missing $name"
+            fi
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::Release trust anchors are not configured:$missing"
+            exit 1
+          fi
+          python tools/check_release_ci.py --mode release
       - name: Verify development inventory when current
         if: ${{ !startsWith(github.ref, 'refs/tags/') && github.event_name != 'release' }}
         run: python tools/check_release_ci.py --mode development
@@ -91,24 +127,29 @@ jobs:
       - run: python -m pip install -e . --no-deps
       - name: Build evaluator sandbox image
         run: docker build -t sis-evaluator:3.3.9 docker/sandbox
-      - name: Run the suite and sign the evidence when a CI key is configured
+      - name: Run the suite and sign the test evidence
+        # This job only runs for tags and published releases, and its
+        # artifact is the seal evidence: an unsigned report cannot be
+        # accepted by package_release.py, so a missing key is a
+        # configuration error rather than a reason to degrade quietly.
+        shell: bash
         env:
           PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
           PYTHONNOUSERSITE: "1"
           SIS_TEST_EVIDENCE_SIGNING_KEY: ${{ secrets.SIS_TEST_EVIDENCE_SIGNING_KEY }}
           SIS_TEST_EVIDENCE_KEY_ID: ${{ vars.SIS_TEST_EVIDENCE_KEY_ID }}
         run: |
-          if [ -n "$SIS_TEST_EVIDENCE_SIGNING_KEY" ]; then
-            umask 077
-            printf '%s\n' "$SIS_TEST_EVIDENCE_SIGNING_KEY" > "$RUNNER_TEMP/test-evidence.key"
-            python tools/run_tests.py \
-              --json "$RUNNER_TEMP/sis-test-report.json" \
-              --signing-key "$RUNNER_TEMP/test-evidence.key" \
-              --key-id "${SIS_TEST_EVIDENCE_KEY_ID:-ci-test-runner}"
-          else
-            python tools/run_tests.py \
-              --json "$RUNNER_TEMP/sis-test-report.json"
+          set -euo pipefail
+          if [ -z "${SIS_TEST_EVIDENCE_SIGNING_KEY:-}" ]; then
+            echo "::error::SIS_TEST_EVIDENCE_SIGNING_KEY is not configured; a release seal requires signed test evidence."
+            exit 1
           fi
+          umask 077
+          printf '%s\n' "$SIS_TEST_EVIDENCE_SIGNING_KEY" > "$RUNNER_TEMP/test-evidence.key"
+          python tools/run_tests.py \
+            --json "$RUNNER_TEMP/sis-test-report.json" \
+            --signing-key "$RUNNER_TEMP/test-evidence.key" \
+            --key-id "${SIS_TEST_EVIDENCE_KEY_ID:-ci-test-runner}"
       - uses: actions/upload-artifact@v4
         with:
           name: test-evidence-linux-3.12

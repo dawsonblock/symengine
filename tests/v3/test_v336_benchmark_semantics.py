@@ -15,6 +15,9 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
+import os
+import subprocess
+import sys
 import unittest
 from pathlib import Path
 
@@ -181,6 +184,50 @@ class AdversarialDomainTests(unittest.TestCase):
         self.assertEqual(result["status"], "validation_failed")
         self.assertLess(
             result["holdout_passed"], result["holdout_count"])
+
+
+class SamplingFeasibilityTests(unittest.TestCase):
+    """An impossible partition must fail before any induction starts.
+
+    The old rejection loop drew distinct samples without checking that
+    the domain could supply them, so ``--fields 2 --input-min 0
+    --input-max 1`` (four possible inputs) with the default 12-example
+    partition spun forever.
+    """
+
+    def test_impossible_partition_fails_before_sampling(self):
+        with self.assertRaises(ValueError) as caught:
+            benchmark.study(2, seed=0, train_n=6, dev_n=3, holdout_n=3,
+                            input_min=0, input_max=1)
+        self.assertIn("impossible_sample", str(caught.exception))
+
+    def test_exhaustive_domain_is_allowed(self):
+        train, dev, holdout = benchmark.study(
+            2, seed=0, train_n=3, dev_n=0, holdout_n=1,
+            input_min=0, input_max=1)
+        rows = train + dev + holdout
+        self.assertEqual(len(rows), 4)
+        self.assertEqual(
+            len({tuple(sorted(row["inputs"].items())) for row in rows}), 4)
+
+    def test_feasible_small_domain_returns_distinct_rows(self):
+        train, dev, holdout = benchmark.study(
+            2, seed=0, train_n=3, dev_n=1, holdout_n=2,
+            input_min=0, input_max=2)
+        rows = train + dev + holdout
+        self.assertEqual(len(rows), 6)
+        self.assertEqual(
+            len({tuple(sorted(row["inputs"].items())) for row in rows}), 6)
+
+    def test_cli_rejects_an_impossible_domain_without_hanging(self):
+        proc = subprocess.run(
+            [sys.executable, str(ROOT / "tools" / "benchmark_induction.py"),
+             "--fields", "2", "--input-min", "0", "--input-max", "1",
+             "--train", "6", "--dev", "3", "--holdout", "3"],
+            capture_output=True, text=True, timeout=30,
+            env={**os.environ, "PYTHONPATH": str(ROOT / "src")})
+        self.assertEqual(proc.returncode, 2, proc.stderr[-500:])
+        self.assertIn("impossible sample", proc.stderr)
 
 
 class ReportSemanticsTests(unittest.TestCase):

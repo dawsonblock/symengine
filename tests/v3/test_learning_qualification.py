@@ -20,6 +20,7 @@ from sis.v3.learning_qualification import (
     codex_agent_status,
     mcnemar_exact,
     newcombe_difference_interval,
+    newcombe_paired_difference_interval,
     paired_contrast,
     wilson_interval,
 )
@@ -101,6 +102,38 @@ class StatisticsTests(unittest.TestCase):
         self.assertEqual(contrast["delta"], 1.0)
         self.assertLess(contrast["mcnemar_exact_p"], 0.05)
         self.assertGreater(contrast["difference_interval_95"][0], 0)
+
+    def test_paired_interval_uses_the_pairing(self):
+        # 100 paired tasks: 8 treatment-only solves, 0 baseline-only,
+        # 48 both solved, 44 neither. Exact McNemar rejects the null
+        # (p=0.0078125), so the interval must exclude zero. The
+        # independent-sample interval over the same marginals does not.
+        low, high = newcombe_paired_difference_interval(8, 0, 48, 44)
+        self.assertGreater(low, 0.0)
+        self.assertLess(high, 0.2)
+        independent_low, independent_high = newcombe_difference_interval(
+            56, 100, 48, 100)
+        self.assertLess(independent_low, 0.0)
+        self.assertGreater(independent_high, high)
+
+        report = synthetic_report(100, a_pass=False, e_pass=False)
+        for index, row in enumerate(report["per_task"]):
+            row["arms"]["A"] = {
+                "outcome": "pass" if index < 48 else "fail"}
+            row["arms"]["E"] = {
+                "outcome": "pass" if index < 48 or index >= 92 else "fail"}
+        contrast = paired_contrast(report, baseline="A", treatment="E")
+        self.assertEqual(contrast["both_solved"], 48)
+        self.assertEqual(contrast["neither_solved"], 44)
+        self.assertEqual(contrast["difference_interval_method"],
+                         "newcombe_paired")
+        self.assertGreater(contrast["difference_interval_95"][0], 0)
+        self.assertTrue(contrast["significant"])
+
+    def test_paired_interval_of_all_ties_stays_near_zero(self):
+        low, high = newcombe_paired_difference_interval(0, 0, 50, 50)
+        self.assertLess(abs(low), 0.05)
+        self.assertLess(abs(high), 0.05)
 
 
 class AnalysisTests(unittest.TestCase):

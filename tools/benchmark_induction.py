@@ -104,18 +104,45 @@ def verify_equivalence(rule, target, schema, *, mode: str,
     return False, f"z3:{reason}", witness
 
 
+def distinct_inputs(features: int, *, low: int, high: int, count: int,
+                    seed: int) -> list[list[int]]:
+    """Draw ``count`` distinct input rows, or fail before drawing.
+
+    The previous rejection loop could spin forever when the requested
+    partition exceeded the size of the input domain. ``random.sample``
+    over the domain's integer indices terminates by construction, and the
+    explicit feasibility check turns an impossible request into an
+    immediate error.
+    """
+    domain = high - low + 1
+    possible = domain ** features
+    if count > possible:
+        raise ValueError(
+            f"impossible_sample: {count} distinct inputs requested, but "
+            f"{features} fields over [{low},{high}] admit only {possible}")
+    rng = random.Random(seed)
+    rows = []
+    for index in rng.sample(range(possible), count):
+        values = []
+        for _ in range(features):
+            index, digit = divmod(index, domain)
+            values.append(low + digit)
+        rows.append(values[::-1])
+    return rows
+
+
 def study(features: int, *, seed: int, train_n: int, dev_n: int,
           holdout_n: int, input_min: int = 0, input_max: int = 9):
+    if features < 2:
+        raise ValueError("features must be at least 2")
+    if train_n < 0 or dev_n < 0 or holdout_n < 0:
+        raise ValueError("partition sizes must be nonnegative")
     names = [f"x{i}" for i in range(features)]
-    rng = random.Random(seed)
+    total = train_n + dev_n + holdout_n
     rows: list[dict] = []
-    seen: set[tuple] = set()
-    while len(rows) < train_n + dev_n + holdout_n:
-        inputs = {name: rng.randint(input_min, input_max) for name in names}
-        key = tuple(inputs[name] for name in names)
-        if key in seen:
-            continue
-        seen.add(key)
+    for values in distinct_inputs(
+            features, low=input_min, high=input_max, count=total, seed=seed):
+        inputs = dict(zip(names, values))
         rows.append({
             "inputs": inputs,
             "output": inputs[names[-2]] * inputs[names[-1]] + 2,
@@ -259,6 +286,19 @@ def main(argv=None) -> int:
         parser.error("--fields values must be in [2,64]")
     if not -1000 <= args.input_min <= args.input_max <= 1000:
         parser.error("--input-min/--input-max must satisfy -1000 <= min <= max <= 1000")
+    if args.train < 0 or args.dev < 0 or args.holdout < 0:
+        parser.error("--train/--dev/--holdout must be nonnegative")
+    total = args.train + args.dev + args.holdout
+    if total < 1:
+        parser.error("the study needs at least one example")
+    domain = args.input_max - args.input_min + 1
+    for value in fields:
+        possible = domain ** value
+        if total > possible:
+            parser.error(
+                f"impossible sample: {total} distinct inputs requested for "
+                f"{value} fields over [{args.input_min},{args.input_max}], "
+                f"which admits only {possible}")
 
     budget = SearchBudget(
         max_candidates=args.max_candidates,

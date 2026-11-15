@@ -138,6 +138,34 @@ file therefore invalidates the seal until `package_release.py` runs
 again. That is intentional: a release claim must name the exact bytes it
 covers.
 
+## Release CI
+
+The strict gate runs on tags and published releases, and `release/*.zip`
+is git-ignored, so a fresh checkout has no archive for it to verify. The
+`tests` job therefore provisions the archive before the gate:
+
+1. a local `release/SIS-*.zip` is used if present (operator-supplied or
+   restored from cache);
+2. otherwise `gh release download <tag> --pattern 'SIS-*.zip'` fetches
+   the asset attached to that release.
+
+Nothing downloaded is trusted: `check_release_ci.py --mode release`
+re-hashes the archive against `release/release_manifest.json`, checks
+the source binding and re-verifies the signed provenance. A missing
+archive fails with an explicit error naming the tag.
+
+The gate's trust anchors come from repository configuration
+(`secrets.SIS_RELEASE_PUBLIC_KEY`, `secrets.SIS_TEST_EVIDENCE_PUBLIC_KEY`,
+`secrets.SIS_ISOLATOR_PUBLIC_KEY`, `vars.SIS_ISOLATION_IMAGE_DIGEST`,
+`vars.SIS_ISOLATION_POLICY_DIGEST`, `vars.SIS_ISOLATION_PROPERTIES`).
+They are deliberately invisible to the workflow file, so an IDE schema
+validator reports each reference as "context access might be invalid";
+that warning is expected. The job checks all six before calling the
+gate and fails with one error naming every missing anchor. The
+release-only `test-evidence` job likewise fails with an explicit error
+when `SIS_TEST_EVIDENCE_SIGNING_KEY` is absent rather than uploading an
+unsigned report the seal cannot use.
+
 ## Test environment
 
 ```bash

@@ -79,6 +79,38 @@ exhaustion from a hard-limit termination, and can be signed with
 `sign_receipt()`. A resource-exhausted run reports
 `status: resource_exhausted` and is never a successful evaluation.
 
+### Post-seal repair: paired inference and the executable gate
+
+Three Phase 6 blockers were repaired after the v3.3.9 seal.
+
+- `paired_contrast()` now reports Newcombe's paired interval
+  (`newcombe_paired_difference_interval`) instead of an interval built
+  from two independent marginal solve rates. The paired arms run on the
+  same tasks, so the independent interval could include zero while exact
+  McNemar rejected the null. The certificate verifier reconstructs the
+  paired interval from the receipt matrix.
+- `tools/five_arm_campaign.py --real-agent --manifest` now executes a
+  validated manifest instead of always returning
+  `BLOCKED_REAL_RUN_NOT_EXECUTED`. It verifies repository snapshot
+  digests, registers evaluator-owned acceptance material, runs the five
+  arms and records a receipt digest per `(task, arm)`. Pass
+  `--allow-shared-custody` only for development; otherwise split custody
+  is required and its absence fails closed.
+- `tools/benchmark_induction.py` fails immediately on an impossible
+  sampling request (for example two fields over `[0,1]` with the default
+  twelve examples) instead of looping before induction starts.
+- The release CI job now provisions the git-ignored archive before the
+  strict gate: a supplied `release/SIS-*.zip` wins, otherwise the tag's
+  release asset is downloaded and re-hashed. It also names every missing
+  trust anchor in one error. `ReleaseIdentityTests` now skips an
+  extracted tree that has the manifest but not the ZIP or Git history,
+  instead of failing.
+
+The sealed archive and its evidence still describe the pre-repair tree;
+regenerate them with `tools/package_release.py` before making a release
+claim. Running a manifest is not evidence: the evidence class comes from
+the paired analysis.
+
 ### Qualification status
 
 The v3.3.9 archive is engineering-verified and qualification-only. A

@@ -61,7 +61,29 @@ NOW = "2026-11-08T12:00:00Z"
 # ``release/`` is out-of-band provenance and is never archived, so the
 # release-identity checks describe a checkout and cannot run from the
 # extracted bundle.
-RELEASE_BUNDLE = ROOT / "release" / "release_manifest.json"
+
+
+def _sealed_archive(root: Path = ROOT) -> Path | None:
+    """Return the archive the release manifest names, when it is present.
+
+    The manifest is tracked but ``release/*.zip`` is git-ignored and
+    distributed out-of-band, so a checkout without the supplied archive
+    cannot answer a release-identity question. Checking only for the
+    manifest (as this module once did) turned that absence into a test
+    failure instead of a skip.
+    """
+    manifest = root / "release" / "release_manifest.json"
+    if not manifest.is_file():
+        return None
+    try:
+        release = json.loads(manifest.read_text())
+        archive = root / release["archive"]["path"]
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    return archive if archive.is_file() else None
+
+
+SEALED_ARCHIVE = _sealed_archive()
 
 
 def _base_tree(root: Path) -> Path:
@@ -982,10 +1004,33 @@ class SearchStarvationTests(unittest.TestCase):
         self.assertEqual(result["validation_passed"], 2, result["status"])
 
 
+class ReleaseMaterialGuardTests(unittest.TestCase):
+    """A missing out-of-band ZIP is absent material, not a test failure."""
+
+    def test_manifest_without_the_archive_is_not_material(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "release").mkdir()
+            (root / "release" / "release_manifest.json").write_text(
+                json.dumps({"archive": {"path": "release/SIS-test.zip"}}))
+            self.assertIsNone(_sealed_archive(root))
+            (root / "release" / "SIS-test.zip").write_bytes(
+                b"PK\x05\x06" + b"\x00" * 18)
+            self.assertEqual(
+                _sealed_archive(root), root / "release" / "SIS-test.zip")
+
+    def test_unreadable_manifest_is_not_material(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "release").mkdir()
+            (root / "release" / "release_manifest.json").write_text("{")
+            self.assertIsNone(_sealed_archive(root))
+
+
 @unittest.skipUnless(
-    RELEASE_BUNDLE.is_file(),
+    SEALED_ARCHIVE is not None,
     "release/ is out-of-band and absent from the archive; release "
-    "identity requires the checkout")
+    "identity requires the supplied sealed ZIP")
 class ReleaseIdentityTests(unittest.TestCase):
     """T5: release/ provenance must describe the source it ships."""
 
@@ -1012,11 +1057,18 @@ class ReleaseIdentityTests(unittest.TestCase):
         release = json.loads(
             (ROOT / "release" / "release_manifest.json").read_text())
         commit = release["source_commit"]
-        subprocess.run(
-            ["git", "-C", str(ROOT), "cat-file", "-e", f"{commit}^{{commit}}"],
-            check=True, capture_output=True)
-        head = subprocess.check_output(
-            ["git", "-C", str(ROOT), "rev-parse", "HEAD"]).decode().strip()
+        try:
+            subprocess.run(
+                ["git", "-C", str(ROOT), "cat-file", "-e",
+                 f"{commit}^{{commit}}"],
+                check=True, capture_output=True)
+            head = subprocess.check_output(
+                ["git", "-C", str(ROOT), "rev-parse", "HEAD"]
+            ).decode().strip()
+        except (OSError, subprocess.CalledProcessError):
+            self.skipTest(
+                "extracted source tree: the release commit is not in Git "
+                "history")
         sys.path.insert(0, str(ROOT / "tools"))
         from build_release import manifest_document
         manifest = json.loads(
