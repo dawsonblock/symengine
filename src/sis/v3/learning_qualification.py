@@ -617,10 +617,17 @@ def write_report(report: Mapping, path: str | Path) -> Path:
     return path
 
 
+def _digest_safe(value):
+    """Normalize floats so canonical_digest accepts an analysis report."""
+    return json.loads(
+        json.dumps(value, sort_keys=True),
+        parse_float=lambda item: f"float:{item}")
+
+
 def campaign_digest(report: Mapping) -> str:
     return canonical_digest("five_arm_report", 1, {
         "protocol": report.get("protocol_digest"),
-        "qualification": report.get("learning_qualification"),
+        "qualification": _digest_safe(report.get("learning_qualification")),
     })
 
 

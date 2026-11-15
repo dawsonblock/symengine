@@ -2,9 +2,10 @@
 """Validate a five-arm efficacy manifest without running the study.
 
 Strict mode requires a powered preregistered protocol, at least ten
-repositories, at least ``sample_size`` paired tasks, repository-disjoint
-partitions, hidden tests outside the public repository, and no placeholder
-values. ``--allow-placeholders`` validates the shipped template instead.
+repositories (at least five of them holdout repositories), at least
+``sample_size`` paired tasks, repository-disjoint partitions, hidden
+tests outside the public repository, and no placeholder values.
+``--allow-placeholders`` validates the shipped template instead.
 
 Usage:
     python3 tools/check_efficacy_manifest.py \

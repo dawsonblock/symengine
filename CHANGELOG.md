@@ -39,6 +39,10 @@ efficacy result.
   least five holdout repositories, so a task count cannot be met from
   one or two correlated codebases. Repository-clustered analysis is
   documented as a required companion metric.
+- **Review follow-ups.** `campaign_digest()` now normalizes the float
+  values in an analysis report, which `canonical_digest` rejects; the
+  helper had been unusable since v3.3.2. The gate also refuses a
+  manifest that still contains placeholder values.
 
 Regressions live in `tests/v3/test_five_arm_real_run.py`,
 `tests/v3/test_learning_qualification.py`,

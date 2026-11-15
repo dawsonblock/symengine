@@ -17,6 +17,7 @@ from sis.v3.learning_qualification import (
     FiveArmCampaign,
     analyze_report,
     build_context_provider,
+    campaign_digest,
     codex_agent_status,
     mcnemar_exact,
     newcombe_difference_interval,
@@ -202,6 +203,17 @@ class AnalysisTests(unittest.TestCase):
         self.assertEqual(analysis["evidence_class"], EXPLORATORY)
         self.assertEqual(
             analysis["provenance"]["token_accounting"], "unverified")
+
+    def test_campaign_digest_accepts_float_analysis(self):
+        report = synthetic_report(3, a_pass=False, e_pass=True)
+        analysis = analyze_report(
+            report, protocol={"sample_size": 3, "alpha": 0.05},
+            real_agent=False, hidden_holdout=True)
+        document = {"protocol_digest": "0" * 64,
+                    "learning_qualification": analysis}
+        digest = campaign_digest(document)
+        self.assertEqual(len(digest), 64)
+        self.assertEqual(digest, campaign_digest(document))
 
     def test_scripted_run_is_demonstration_not_efficacy(self):
         report = synthetic_report(29, a_pass=False, e_pass=True)
