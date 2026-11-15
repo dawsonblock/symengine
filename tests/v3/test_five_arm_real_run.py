@@ -276,6 +276,37 @@ class RealAgentGateTests(unittest.TestCase):
             report["learning_qualification"]["provenance"]["guidance_source"],
             "learned")
 
+    def test_cli_version_mismatch_is_blocked(self):
+        original = campaign_tool._installed_codex_version
+        campaign_tool._installed_codex_version = lambda binary: "9.9.9"
+        try:
+            with tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                output = root / "report.json"
+                code = campaign_tool.run_real(
+                    output, _write(root, _manifest(root)),
+                    allow_shared_custody=True)
+                report = json.loads(output.read_text(encoding="utf-8"))
+        finally:
+            campaign_tool._installed_codex_version = original
+        self.assertEqual(code, 2)
+        self.assertEqual(report["release_gate"], "BLOCKED_AGENT_VERSION")
+        self.assertIn("does not match", report["note"])
+
+    def test_placeholder_manifest_is_blocked(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            document = _manifest(root)
+            document["notes"] = "<operator note>"
+            output = root / "report.json"
+            code = campaign_tool.run_real(
+                output, _write(root, document), allow_shared_custody=True,
+                agent_factory=_scripted_agent)
+            report = json.loads(output.read_text(encoding="utf-8"))
+        self.assertEqual(code, 2)
+        self.assertEqual(report["release_gate"], "BLOCKED_MANIFEST")
+        self.assertIn("placeholder", report["note"])
+
     def test_missing_manifest_is_blocked(self):
         with tempfile.TemporaryDirectory() as temp:
             output = Path(temp) / "report.json"
