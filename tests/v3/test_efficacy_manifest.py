@@ -136,6 +136,25 @@ class EfficacyManifestTests(unittest.TestCase):
         self.assertTrue(any("overlap" in problem
                             for problem in report["problems"]))
 
+    def test_holdout_repository_minimum_is_enforced(self):
+        document = manifest()
+        holdout = [item for item in document["repositories"]
+                   if item["partition"] == "holdout"]
+        for repo in holdout[4:]:
+            repo["partition"] = "induction"
+            repo.pop("hidden_tests", None)
+        document["partitions"]["induction"] = ["repo-00"] + [
+            item["repository_id"] for item in holdout[4:]]
+        document["partitions"]["holdout"] = [
+            item["repository_id"] for item in holdout[:4]]
+        for task in document["tasks"]:
+            task["repository_id"] = holdout[0]["repository_id"]
+            task["base_commit"] = holdout[0]["base_commit"]
+        report = validate_manifest(document)
+        self.assertFalse(report["valid"])
+        self.assertTrue(any("holdout repositories" in problem
+                            for problem in report["problems"]))
+
     def test_hidden_tests_inside_the_public_repo_are_rejected(self):
         document = manifest()
         for repo in document["repositories"]:

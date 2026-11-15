@@ -252,11 +252,33 @@ def analyze_report(
     hidden_holdout: bool,
     frozen_candidates: Mapping | None = None,
     arms: Sequence[str] = GOVERNED_ARMS,
+    provenance: Mapping | None = None,
 ) -> dict:
-    """Attach honest qualification analysis to a governed report."""
+    """Attach honest qualification analysis to a governed report.
+
+    ``provenance`` records facts the classifier cannot infer from the
+    report: which agent ran, whether the CLI version matched, the custody
+    mode, whether guidance came from learned components, and whether the
+    manifest was committed before the run. A real-agent run without those
+    facts is never confirmatory.
+    """
     metrics = report.get("governed", {}).get("metrics", {})
     conformance = report.get("governed", {}).get("conformance", {})
     n_tasks = len(report.get("per_task", []))
+    provenance = dict(provenance or {})
+    accountings = {
+        row.get("budget_accounting")
+        for task in report.get("per_task", [])
+        for row in task.get("arms", {}).values()}
+    if accountings and accountings == {"verified"}:
+        token_accounting = "verified"
+    elif "partial" in accountings:
+        token_accounting = "partial"
+    elif accountings == {"reported"}:
+        token_accounting = "reported"
+    else:
+        token_accounting = "unverified"
+    provenance["token_accounting"] = token_accounting
     contrasts = {}
     for arm in arms:
         if arm == "A":
@@ -275,11 +297,35 @@ def analyze_report(
     minimum_n = max(
         sample_size if type(sample_size) is int else 0, required_n)
     underpowered = n_tasks < minimum_n
+    provenance_gaps: list[str] = []
+    if real_agent:
+        if provenance.get("agent") != "codex-cli":
+            provenance_gaps.append(
+                "agent provenance is not a real codex-cli run")
+        if provenance.get("cli_version_matches") is not True:
+            provenance_gaps.append(
+                "installed CLI version does not match the manifest")
+        if provenance.get("custody") != "split":
+            provenance_gaps.append(
+                "private acceptance tests ran under shared custody")
+        if provenance.get("guidance_source") != "learned":
+            provenance_gaps.append(
+                "guidance bundles are fixed control prompts, not learned "
+                "components")
+        if provenance.get("preregistration_anchored") is not True:
+            provenance_gaps.append(
+                "manifest was not committed before the run")
+        if token_accounting != "verified":
+            provenance_gaps.append(
+                "token and tool usage were not fully metered")
+    injected = provenance.get("agent") not in (None, "codex-cli")
     if not real_agent:
         evidence_class = DEMONSTRATION
+    elif injected:
+        evidence_class = INVALID
     elif not hidden_holdout or not conformance.get("conforms"):
         evidence_class = INVALID
-    elif underpowered:
+    elif provenance_gaps or underpowered:
         evidence_class = EXPLORATORY
     else:
         evidence_class = CONFIRMATORY
@@ -310,6 +356,7 @@ def analyze_report(
         limitations.append(
             "protocol did not conform: "
             + ", ".join(conformance.get("mismatches", [])))
+    limitations.extend(provenance_gaps)
     if evidence_class == CONFIRMATORY and efficacy == "no_evidence":
         limitations.append(
             "confirmatory run found no statistically supported improvement; "
@@ -321,6 +368,10 @@ def analyze_report(
         "protocol": dict(protocol),
         "arms": {arm: ARM_LABELS.get(arm, arm) for arm in arms},
         "tasks": n_tasks,
+        "provenance": provenance,
+        "confirmatory_eligible": bool(
+            real_agent and hidden_holdout and conformance.get("conforms")
+            and not underpowered and not provenance_gaps),
         "sample_size_preregistered": sample_size,
         "required_sample_size_0_6_vs_0_4": required_sample_size(0.6, 0.4),
         "power_analysis": {
@@ -392,6 +443,8 @@ class FiveArmCampaign:
     real_agent: bool = False
     hidden_holdout: bool = True
     frozen_candidates: Mapping | None = None
+    provenance: Mapping | None = None
+    arm_order_seed: int | str | None = None
 
     def validate(self) -> None:
         if tuple(self.arms) != tuple(GOVERNED_ARMS):
@@ -416,11 +469,13 @@ class FiveArmCampaign:
             protocol=dict(self.protocol),
             learned_repo_digests=self.learned_repo_digests,
             misleading_tasks=self.misleading_tasks,
-            served_map=self.served_map, arms=self.arms)
+            served_map=self.served_map, arms=self.arms,
+            arm_order_seed=self.arm_order_seed)
         report["learning_qualification"] = analyze_report(
             report, protocol=self.protocol, real_agent=self.real_agent,
             hidden_holdout=self.hidden_holdout,
-            frozen_candidates=self.frozen_candidates, arms=self.arms)
+            frozen_candidates=self.frozen_candidates, arms=self.arms,
+            provenance=self.provenance)
         return report
 
 
@@ -500,17 +555,32 @@ class CodexCliAgent:
             prompt, ctx.workspace, model=self._model,
             sandbox="workspace_write")
         tools = 0
+        tokens = 0
+        tokens_seen = False
         error_event = False
         for event in turn:
+            payload = getattr(event, "payload", None)
+            if isinstance(payload, Mapping):
+                usage = payload.get("token_usage")
+                if isinstance(usage, Mapping):
+                    for value in usage.values():
+                        if type(value) is int and value >= 0:
+                            tokens += value
+                            tokens_seen = True
             if event.event_type in {"tool_request", "tool_result"}:
                 tools += 1
+                if ctx.usage_meter is not None:
+                    ctx.usage_meter.record_tool_call()
             if event.event_type == "error":
                 error_event = True
         if error_event:
             raise RuntimeError("real_agent_error_event")
         if tools == 0 or tree_digest(ctx.workspace) == before:
             raise RuntimeError("real_agent_no_action")
-        return {"tokens_used": None, "tools_used": tools}
+        if tokens_seen and ctx.usage_meter is not None:
+            ctx.usage_meter.record_tokens(tokens)
+        return {"tokens_used": tokens if tokens_seen else None,
+                "tools_used": tools}
 
     def close(self) -> None:
         self._adapter.close()

@@ -61,6 +61,24 @@ class BudgetEnforcementTests(unittest.TestCase):
         self.assertEqual(arm["error"], "agent_timeout")
         self.assertEqual(report["solved_counts"]["A"], 0)
 
+    def test_arm_order_is_randomized_and_recorded(self):
+        def agent(ctx):
+            (ctx.workspace / "calc.py").write_text(
+                "def scale(a, b):\n    return a * b\n")
+
+        report = self.harness.run(
+            [(self.task, self.repo)], agent,
+            budget=self.budget_or_default(),
+            arms=("A", "B", "C", "D", "E"), arm_order_seed="seed-1")
+        order = report["per_task"][0]["arm_order"]
+        self.assertEqual(sorted(order), ["A", "B", "C", "D", "E"])
+        self.assertNotEqual(order, ["A", "B", "C", "D", "E"])
+        repeat = self.harness.run(
+            [(self.task, self.repo)], agent,
+            budget=self.budget_or_default(),
+            arms=("A", "B", "C", "D", "E"), arm_order_seed="seed-1")
+        self.assertEqual(order, repeat["per_task"][0]["arm_order"])
+
     def test_usage_meter_verified_accounting(self):
         def agent(ctx):
             ctx.usage_meter.record_tokens(1234)

@@ -219,6 +219,33 @@ class SamplingFeasibilityTests(unittest.TestCase):
         self.assertEqual(
             len({tuple(sorted(row["inputs"].items())) for row in rows}), 6)
 
+    def test_large_domains_sample_without_overflow(self):
+        # 10**32 and 10**64 exceed sys.maxsize: len(range(possible))
+        # raises OverflowError, so random.sample could not be used.
+        for fields in (32, 64):
+            rows = benchmark.distinct_inputs(
+                fields, low=0, high=9, count=12, seed=0)
+            self.assertEqual(len(rows), 12)
+            self.assertEqual(len({tuple(row) for row in rows}), 12)
+            self.assertTrue(all(len(row) == fields for row in rows))
+            self.assertTrue(all(0 <= value <= 9
+                                for row in rows for value in row))
+
+    def test_study_partitions_a_large_domain(self):
+        train, dev, holdout = benchmark.study(
+            32, seed=0, train_n=6, dev_n=3, holdout_n=3)
+        self.assertEqual(len(train) + len(dev) + len(holdout), 12)
+
+    def test_cli_runs_the_large_field_benchmark(self):
+        proc = subprocess.run(
+            [sys.executable, str(ROOT / "tools" / "benchmark_induction.py"),
+             "--fields", "32", "--max-candidates", "100",
+             "--max-wall-seconds", "1"],
+            capture_output=True, text=True, timeout=90,
+            env={**os.environ, "PYTHONPATH": str(ROOT / "src")})
+        self.assertEqual(proc.returncode, 0, proc.stderr[-500:])
+        self.assertNotIn("OverflowError", proc.stderr)
+
     def test_cli_rejects_an_impossible_domain_without_hanging(self):
         proc = subprocess.run(
             [sys.executable, str(ROOT / "tools" / "benchmark_induction.py"),

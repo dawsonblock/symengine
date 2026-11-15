@@ -13,8 +13,21 @@ evaluator-owned acceptance tests, base commits and a preregistered
 protocol); the tool then executes the five arms with
 :class:`sis.v3.learning_qualification.FiveArmCampaign` and
 :class:`sis.v3.learning_qualification.CodexCliAgent` and writes the
-paired report with per-arm receipt digests. Fixed guidance bundles are
-frozen before the run and recorded in the report.
+paired report with per-arm receipt digests.
+
+Integrity rules for a confirmatory label:
+
+- the installed CLI version must match the manifest;
+- the manifest must be committed before the run (Git anchor);
+- private acceptance tests must run under split custody;
+- guidance must come from ``--guidance-bundle`` (frozen learned
+  components), not the built-in fixed control prompts;
+- token and tool usage must be fully metered by the agent runtime.
+
+The run also writes ``<report>.evidence/`` with the signed receipt
+bytes, the evaluator public key, the exact manifest and a bundle digest,
+so the report is auditable after the verifier's temporary directory is
+gone.
 
 Usage:
     python3 tools/five_arm_campaign.py --demo -o evidence/evaluation/demo.json
@@ -26,9 +39,12 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
+import subprocess
 import sys
 import tempfile
 from collections.abc import Callable, Mapping
+from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
@@ -193,6 +209,88 @@ def _load_manifest(path: Path) -> dict:
     return document
 
 
+_VERSION = re.compile(r"\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.\-]+)?")
+
+
+def _normalized_version(value) -> str | None:
+    if not isinstance(value, str):
+        return None
+    match = _VERSION.search(value)
+    return match.group(0) if match else None
+
+
+def _installed_codex_version(binary: str | None) -> str | None:
+    if not binary:
+        return None
+    try:
+        proc = subprocess.run([binary, "--version"], capture_output=True,
+                              text=True, timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return _normalized_version((proc.stdout or "") + " " + (proc.stderr or ""))
+
+
+def _git_anchor(path: Path) -> dict:
+    """Record the commit that last touched the manifest and its cleanliness."""
+    parent = path.resolve().parent
+    git = ["git", "-C", str(parent)]
+    try:
+        commit = subprocess.check_output(
+            git + ["log", "-1", "--format=%H", "--", path.name],
+            text=True, stderr=subprocess.DEVNULL).strip()
+        dirty = subprocess.check_output(
+            git + ["status", "--porcelain", "--", path.name],
+            text=True, stderr=subprocess.DEVNULL).strip()
+    except (OSError, subprocess.CalledProcessError):
+        return {"commit": None, "clean": False, "anchored": False}
+    return {"commit": commit or None, "clean": not dirty,
+            "anchored": bool(commit) and not dirty}
+
+
+def _load_guidance_bundle(path: Path) -> dict:
+    document = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(document, dict):
+        raise ValueError("guidance bundle must be a JSON object")
+    if document.get("source") != "learned":
+        raise ValueError("guidance bundle source must be 'learned'")
+    bundles = document.get("bundles")
+    if not isinstance(bundles, dict):
+        raise ValueError("guidance bundle needs a bundles object")
+    for arm in ("B", "C", "D"):
+        steps = bundles.get(arm)
+        if (not isinstance(steps, list) or not steps
+                or any(not isinstance(step, str) or not step.strip()
+                       for step in steps)):
+            raise ValueError(
+                f"guidance bundle arm {arm} needs non-empty steps")
+    return {"source": "learned",
+            "bundles": {arm: list(bundles[arm])
+                        for arm in ("B", "C", "D")}}
+
+
+def _guidance_from_steps(steps: Mapping[str, list[str]],
+                         arm: str) -> GuidanceV1 | None:
+    if arm == "A":
+        return None
+    if arm == "E":
+        checks = tuple(step for source in ("B", "C", "D")
+                       for step in steps[source])
+    else:
+        checks = tuple(steps[arm])
+    return GuidanceV1(
+        schema_version=1, decision="recommend",
+        procedure_ids=("real-agent-guidance-bundle",), revision="0" * 64,
+        matched_preconditions=({"kind": "language_is", "value": "python"},),
+        contraindications=(), evidence_ids=("0" * 64,),
+        policy_digest="0" * 64, helpful_next_checks=checks,
+        reason_code=None, approximate_tokens=60 * len(checks))
+
+
+def _utcnow() -> str:
+    return datetime.now(timezone.utc).isoformat(
+        timespec="seconds").replace("+00:00", "Z")
+
+
 def _acceptance_material(task: Mapping,
                          repository: Mapping) -> dict[str, bytes]:
     acceptance = task["acceptance"]
@@ -261,8 +359,59 @@ def _codex_agent(prompts: Mapping[str, str], budget: BudgetCaps,
                          prompts=prompts)
 
 
+def _export_evidence(output: Path, report_sha256: str, verifier,
+                     manifest_path: Path, manifest_digest: str) -> dict:
+    """Persist the signed receipts and verification material.
+
+    The verifier's key and receipt store live in a temporary directory, so
+    a report that only names receipt digests cannot be checked after the
+    run. The bundle keeps the signed receipt bytes, the public key, the
+    exact manifest and the report digest beside the report.
+    """
+    directory = output.with_name(output.name + ".evidence")
+    receipts_dir = directory / "receipts"
+    receipts_dir.mkdir(parents=True, exist_ok=True)
+    receipts = {}
+    for digest in verifier.issued_receipts():
+        receipt = verifier.load_receipt(digest)
+        if receipt.digest != digest:
+            raise RuntimeError("receipt_digest_mismatch")
+        payload = receipt.canonical_bytes()
+        (receipts_dir / f"{digest}.json").write_bytes(payload)
+        receipts[digest] = hashlib.sha256(payload).hexdigest()
+    public = verifier.public_key_record()
+    (directory / "public_key.json").write_text(
+        json.dumps(public, indent=2, sort_keys=True) + "\n")
+    (directory / "manifest.json").write_bytes(manifest_path.read_bytes())
+    bundle = {
+        "schema_version": 1,
+        "kind": "five_arm_evidence_bundle",
+        "generated_at": _utcnow(),
+        "manifest": {"path": str(manifest_path),
+                     "digest": manifest_digest},
+        "report": {
+            "path": str(output),
+            "sha256": report_sha256,
+            "excludes": "evidence_bundle",
+        },
+        "public_key": public,
+        "receipts": receipts,
+    }
+    bundle["bundle_digest"] = canonical_digest(
+        "five_arm_evidence_bundle", 1, bundle)
+    (directory / "bundle.json").write_text(
+        json.dumps(bundle, indent=2, sort_keys=True) + "\n")
+    return {
+        "path": str(directory),
+        "bundle_digest": bundle["bundle_digest"],
+        "receipts": len(receipts),
+        "public_key": public,
+    }
+
+
 def run_real(output: Path, manifest_path: Path | None, *,
              allow_shared_custody: bool = False,
+             guidance_path: Path | None = None,
              agent_factory: Callable | None = None) -> int:
     status = codex_agent_status()
     report: dict = {
@@ -309,6 +458,32 @@ def run_real(output: Path, manifest_path: Path | None, *,
             "BLOCKED_MANIFEST",
             "manifest_invalid: " + "; ".join(validation["problems"]))
 
+    injected = agent_factory is not None
+    expected_version = _normalized_version(
+        document["agent"].get("cli_version"))
+    installed_version = (None if injected
+                         else _installed_codex_version(status["binary"]))
+    if not injected:
+        if expected_version is None:
+            return blocked(
+                "BLOCKED_AGENT_VERSION",
+                "manifest agent.cli_version is not a version string")
+        if installed_version != expected_version:
+            return blocked(
+                "BLOCKED_AGENT_VERSION",
+                f"installed codex version {installed_version!r} does not "
+                f"match the manifest {expected_version!r}")
+    anchor = _git_anchor(manifest_path)
+    learned_bundle = None
+    if guidance_path is not None:
+        try:
+            learned_bundle = _load_guidance_bundle(guidance_path)
+        except (OSError, ValueError) as exc:
+            return blocked(
+                "BLOCKED_GUIDANCE", f"guidance_bundle_unreadable:{exc}")
+    guidance_source = ("learned" if learned_bundle is not None
+                       else "fixed_control")
+
     protocol = document["protocol"]
     budget = BudgetCaps(
         wall_seconds=protocol["budget"]["wall_seconds"],
@@ -318,6 +493,20 @@ def run_real(output: Path, manifest_path: Path | None, *,
     learned = tuple(sorted(
         item["repo_snapshot_digest"] for item in document["repositories"]
         if item["partition"] == "induction"))
+    provenance = {
+        "agent": "injected" if injected else "codex-cli",
+        "expected_cli_version": expected_version,
+        "cli_version": installed_version,
+        "cli_version_matches": bool(
+            not injected and installed_version == expected_version),
+        "custody": "shared" if allow_shared_custody else "split",
+        "guidance_source": guidance_source,
+        "preregistration": anchor,
+        "preregistration_anchored": anchor["anchored"],
+        "holdout_repositories": len(
+            (document.get("partitions") or {}).get("holdout") or []),
+        "manifest_digest": validation["manifest_digest"],
+    }
     with tempfile.TemporaryDirectory(prefix="sis-five-arm-real-") as temp:
         root = Path(temp)
         profile = EvaluationRuntimeProfile(
@@ -344,19 +533,28 @@ def run_real(output: Path, manifest_path: Path | None, *,
             return blocked(
                 gate, f"campaign_setup_failed:{type(exc).__name__}: {exc}")
 
-        bundles = {
-            failure_class: {
-                arm: list(_fixed_guidance(failure_class, arm)
-                          .helpful_next_checks)
-                for arm in ("B", "C", "D", "E")}
-            for failure_class in sorted(set(classes.values()))}
         served: dict = {}
+        if learned_bundle is not None:
+            bundle_payload = learned_bundle["bundles"]
 
-        def provider(task, arm):
-            guidance = _fixed_guidance(classes[task.task_id], arm)
-            served[(task.task_id, arm)] = bool(
-                guidance is not None and guidance.helpful_next_checks)
-            return guidance
+            def provider(task, arm):
+                guidance = _guidance_from_steps(bundle_payload, arm)
+                served[(task.task_id, arm)] = bool(
+                    guidance is not None and guidance.helpful_next_checks)
+                return guidance
+        else:
+            bundle_payload = {
+                failure_class: {
+                    arm: list(_fixed_guidance(failure_class, arm)
+                              .helpful_next_checks)
+                    for arm in ("B", "C", "D", "E")}
+                for failure_class in sorted(set(classes.values()))}
+
+            def provider(task, arm):
+                guidance = _fixed_guidance(classes[task.task_id], arm)
+                served[(task.task_id, arm)] = bool(
+                    guidance is not None and guidance.helpful_next_checks)
+                return guidance
 
         factory = agent_factory or _codex_agent
         try:
@@ -370,7 +568,8 @@ def run_real(output: Path, manifest_path: Path | None, *,
                 tasks=tasks, agent=agent, budget=budget, protocol=protocol,
                 context_provider=provider, served_map=served,
                 learned_repo_digests=learned, real_agent=True,
-                hidden_holdout=True)
+                hidden_holdout=True, provenance=provenance,
+                arm_order_seed=int(validation["manifest_digest"][:16], 16))
             campaign.validate()
         except Exception as exc:
             close = getattr(agent, "close", None)
@@ -394,15 +593,36 @@ def run_real(output: Path, manifest_path: Path | None, *,
         report["evaluator_runtime"] = profile.as_dict()
         report["evaluator_runtime_digest"] = profile.digest
         report["bootstrap"] = verifier.bootstrap().as_dict()
-        report["guidance_bundles"] = bundles
-        report["guidance_bundle_digest"] = canonical_digest(
-            "guidance_bundles", 1, bundles)
+        report["guidance"] = {
+            "source": guidance_source,
+            "bundles": bundle_payload,
+            "digest": canonical_digest("guidance_bundles", 1, bundle_payload),
+        }
+        report["arm_order_seed"] = int(
+            validation["manifest_digest"][:16], 16)
         report["receipts_issued"] = len(verifier.issued_receipts())
         report["note"] = (
-            "Real Codex CLI execution over the supplied manifest. Guidance "
-            "bundles are fixed before the run and recorded here; every arm "
-            "row carries an evaluator-verified outcome and receipt digest. "
-            "The evidence class follows the paired analysis, not this note.")
+            "Real-agent execution over the supplied manifest. Guidance is "
+            "recorded with its source; fixed prompts are a control "
+            "condition, not learned components. Every arm row carries an "
+            "evaluator-verified outcome and receipt digest. The evidence "
+            "class follows the paired analysis and provenance, not this "
+            "note.")
+        report_sha256 = hashlib.sha256(
+            (json.dumps(report, indent=2, sort_keys=True) + "\n").encode()
+        ).hexdigest()
+        try:
+            bundle = _export_evidence(
+                output, report_sha256, verifier, manifest_path,
+                validation["manifest_digest"])
+        except Exception as exc:
+            report["evidence_bundle"] = {
+                "error": f"{type(exc).__name__}: {exc}"}
+            report["release_gate"] = "INVALID_EVIDENCE_BUNDLE"
+            write_report(report, output)
+            print(json.dumps(report["evidence_bundle"], indent=2))
+            return 1
+        report["evidence_bundle"] = bundle
         write_report(report, output)
         print(json.dumps({
             "kind": report["kind"],
@@ -411,8 +631,10 @@ def run_real(output: Path, manifest_path: Path | None, *,
             "efficacy_claim": analysis["efficacy_claim"],
             "release_gate": analysis["release_gate"],
             "underpowered": analysis["underpowered"],
+            "confirmatory_eligible": analysis["confirmatory_eligible"],
             "decisive_contrast": analysis["decisive_contrast"],
             "receipts_issued": report["receipts_issued"],
+            "evidence_bundle": bundle["path"],
             "output": str(output),
         }, indent=2))
         return 0 if analysis["evidence_class"] in (
@@ -431,6 +653,9 @@ def main() -> int:
                         help="development-only: grade private acceptance "
                              "tests beside the submission instead of split "
                              "custody")
+    parser.add_argument("--guidance-bundle", type=Path,
+                        help="frozen learned guidance bundle (JSON); omit "
+                             "for the fixed control prompts")
     args = parser.parse_args()
     if not args.allow_local_executor:
         parser.error("local executor requires --allow-local-executor")
@@ -438,7 +663,8 @@ def main() -> int:
         parser.error("choose --demo or --real-agent")
     if args.real_agent:
         return run_real(args.output, args.manifest,
-                        allow_shared_custody=args.allow_shared_custody)
+                        allow_shared_custody=args.allow_shared_custody,
+                        guidance_path=args.guidance_bundle)
     return run_demo(args.output)
 
 

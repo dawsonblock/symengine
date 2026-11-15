@@ -80,12 +80,17 @@ verifies the resulting tree.
 
 `tools/five_arm_campaign.py --real-agent --manifest` executes a
 validated manifest: it builds the five arms, registers the evaluator's
-acceptance material and writes the paired report with receipt digests.
-It writes a `BLOCKED_REAL_AGENT` / `BLOCKED_MANIFEST` report when a real
-run cannot be started or the manifest is unusable. `tools/real_agent_campaign.py`
-is the executable runner used for the v3.3.1 attempt; it fails closed on
-error/no-action events so a quota failure cannot be scored as a task
-failure.
+acceptance material and writes the paired report with receipt digests
+plus a `<report>.evidence/` bundle. A confirmatory label additionally
+requires recorded provenance: a real `codex-cli` agent, a matching
+installed version, split custody, learned guidance from
+`--guidance-bundle`, a committed manifest and fully metered usage. The
+built-in prompts are a fixed control condition. It writes a
+`BLOCKED_REAL_AGENT` / `BLOCKED_MANIFEST` / `BLOCKED_AGENT_VERSION`
+report when a real run cannot be started or the inputs are unusable.
+`tools/real_agent_campaign.py` is the executable runner used for the
+v3.3.1 attempt; it fails closed on error/no-action events so a quota
+failure cannot be scored as a task failure.
 
 ## v3.3.1 result
 

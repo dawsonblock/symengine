@@ -104,12 +104,33 @@ def verify_equivalence(rule, target, schema, *, mode: str,
     return False, f"z3:{reason}", witness
 
 
+def _sample_indices(rng: random.Random, possible: int,
+                    count: int) -> list[int]:
+    """Draw ``count`` distinct indices from ``[0, possible)``.
+
+    ``random.sample(range(possible), count)`` asks ``len(range(...))``
+    for a machine-sized integer, which overflows once the domain exceeds
+    ``sys.maxsize`` (32 decimal fields already do). Floyd's algorithm
+    needs O(count) state and never materialises the domain, so it works
+    for arbitrary-precision sizes.
+    """
+    chosen: set[int] = set()
+    indices: list[int] = []
+    for upper in range(possible - count, possible):
+        pick = rng.randrange(upper + 1)
+        if pick in chosen:
+            pick = upper
+        chosen.add(pick)
+        indices.append(pick)
+    return indices
+
+
 def distinct_inputs(features: int, *, low: int, high: int, count: int,
                     seed: int) -> list[list[int]]:
     """Draw ``count`` distinct input rows, or fail before drawing.
 
     The previous rejection loop could spin forever when the requested
-    partition exceeded the size of the input domain. ``random.sample``
+    partition exceeded the size of the input domain. Floyd's algorithm
     over the domain's integer indices terminates by construction, and the
     explicit feasibility check turns an impossible request into an
     immediate error.
@@ -122,7 +143,7 @@ def distinct_inputs(features: int, *, low: int, high: int, count: int,
             f"{features} fields over [{low},{high}] admit only {possible}")
     rng = random.Random(seed)
     rows = []
-    for index in rng.sample(range(possible), count):
+    for index in _sample_indices(rng, possible, count):
         values = []
         for _ in range(features):
             index, digit = divmod(index, domain)

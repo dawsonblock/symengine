@@ -50,7 +50,8 @@ def synthetic_report(n, *, a_pass, e_pass, b_pass=None, c_pass=None,
         def arm(ok):
             return {"outcome": "pass" if ok else "fail",
                     "budget_exceeded": False, "error": None,
-                    "wall_seconds": 1, "tokens_used": 10, "tools_used": 2}
+                    "wall_seconds": 1, "tokens_used": 10, "tools_used": 2,
+                    "budget_accounting": "verified"}
         per_task.append({
             "task_id": f"t{index}",
             "arms": {"A": arm(a_pass), "B": arm(b_pass),
@@ -136,15 +137,71 @@ class StatisticsTests(unittest.TestCase):
         self.assertLess(abs(high), 0.05)
 
 
+def eligible_provenance(**overrides):
+    provenance = {
+        "agent": "codex-cli",
+        "cli_version": "1.2.3",
+        "expected_cli_version": "1.2.3",
+        "cli_version_matches": True,
+        "custody": "split",
+        "guidance_source": "learned",
+        "preregistration_anchored": True,
+    }
+    provenance.update(overrides)
+    return provenance
+
+
 class AnalysisTests(unittest.TestCase):
     def test_confirmatory_requires_real_agent_hidden_and_conforming(self):
         report = synthetic_report(103, a_pass=False, e_pass=True)
         analysis = analyze_report(
             report, protocol={"sample_size": 103, "alpha": 0.05},
-            real_agent=True, hidden_holdout=True)
+            real_agent=True, hidden_holdout=True,
+            provenance=eligible_provenance())
         self.assertEqual(analysis["evidence_class"], CONFIRMATORY)
         self.assertEqual(analysis["efficacy_claim"], "supported")
         self.assertEqual(analysis["release_gate"], "EFFICACY_SUPPORTED")
+        self.assertTrue(analysis["confirmatory_eligible"])
+
+    def test_provenance_gaps_prevent_confirmatory(self):
+        cases = {
+            "shared custody": {"custody": "shared"},
+            "fixed guidance": {"guidance_source": "fixed_control"},
+            "version mismatch": {"cli_version_matches": False},
+            "unanchored manifest": {"preregistration_anchored": False},
+        }
+        for label, override in cases.items():
+            with self.subTest(label=label):
+                report = synthetic_report(103, a_pass=False, e_pass=True)
+                analysis = analyze_report(
+                    report, protocol={"sample_size": 103, "alpha": 0.05},
+                    real_agent=True, hidden_holdout=True,
+                    provenance=eligible_provenance(**override))
+                self.assertEqual(analysis["evidence_class"], EXPLORATORY)
+                self.assertFalse(analysis["confirmatory_eligible"])
+                self.assertTrue(analysis["limitations"])
+
+    def test_injected_agent_is_invalid_not_confirmatory(self):
+        report = synthetic_report(103, a_pass=False, e_pass=True)
+        analysis = analyze_report(
+            report, protocol={"sample_size": 103, "alpha": 0.05},
+            real_agent=True, hidden_holdout=True,
+            provenance=eligible_provenance(agent="injected"))
+        self.assertEqual(analysis["evidence_class"], "invalid")
+        self.assertFalse(analysis["confirmatory_eligible"])
+
+    def test_unverified_token_accounting_prevents_confirmatory(self):
+        report = synthetic_report(103, a_pass=False, e_pass=True)
+        for task in report["per_task"]:
+            for row in task["arms"].values():
+                row["budget_accounting"] = "unverified"
+        analysis = analyze_report(
+            report, protocol={"sample_size": 103, "alpha": 0.05},
+            real_agent=True, hidden_holdout=True,
+            provenance=eligible_provenance())
+        self.assertEqual(analysis["evidence_class"], EXPLORATORY)
+        self.assertEqual(
+            analysis["provenance"]["token_accounting"], "unverified")
 
     def test_scripted_run_is_demonstration_not_efficacy(self):
         report = synthetic_report(29, a_pass=False, e_pass=True)
@@ -173,7 +230,8 @@ class AnalysisTests(unittest.TestCase):
         report = synthetic_report(103, a_pass=True, e_pass=False)
         analysis = analyze_report(
             report, protocol={"sample_size": 103, "alpha": 0.05},
-            real_agent=True, hidden_holdout=True)
+            real_agent=True, hidden_holdout=True,
+            provenance=eligible_provenance())
         self.assertEqual(analysis["efficacy_claim"], "regressed")
         self.assertEqual(analysis["release_gate"], "NO_EFFICACY_CLAIM")
         self.assertLess(analysis["decisive_contrast"]["delta"], 0)

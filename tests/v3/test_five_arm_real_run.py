@@ -48,7 +48,7 @@ def _status(available=True, authenticated=True):
 
 def _manifest(root: Path) -> dict:
     repositories = []
-    for index in range(9):
+    for index in range(5):
         path = root / f"induction-{index}"
         path.mkdir()
         (path / "seed.py").write_text("SEED = 1\n")
@@ -59,51 +59,58 @@ def _manifest(root: Path) -> dict:
             "repo_snapshot_digest": tree_digest(path),
             "partition": "induction",
         })
-    holdout = root / "holdout"
-    holdout.mkdir()
-    (holdout / "solution.py").write_text("NO = 1\n")
-    hidden = root / "private" / "hidden.py"
-    hidden.parent.mkdir()
-    hidden.write_text("def test_placeholder():\n    assert True\n")
-    repositories.append({
-        "repository_id": "repo-holdout",
-        "path": str(holdout),
-        "base_commit": "f" * 40,
-        "repo_snapshot_digest": tree_digest(holdout),
-        "partition": "holdout",
-        "hidden_tests": {
-            "path": str(hidden),
-            "digest": hashlib.sha256(hidden.read_bytes()).hexdigest()},
-    })
+    holdout_repos = []
+    for index in range(5):
+        holdout = root / f"holdout-{index}"
+        holdout.mkdir()
+        (holdout / "solution.py").write_text("NO = 1\n")
+        hidden = root / "private" / f"hidden-{index}.py"
+        hidden.parent.mkdir(exist_ok=True)
+        hidden.write_text("def test_placeholder():\n    assert True\n")
+        item = {
+            "repository_id": f"repo-holdout-{index}",
+            "path": str(holdout),
+            "base_commit": "f" * 40,
+            "repo_snapshot_digest": tree_digest(holdout),
+            "partition": "holdout",
+            "hidden_tests": {
+                "path": str(hidden),
+                "digest": hashlib.sha256(hidden.read_bytes()).hexdigest()},
+        }
+        repositories.append(item)
+        holdout_repos.append(item)
     protocol = preregister(
         primary_metric="paired solved_delta E vs A", method="mcnemar_exact",
         alpha=0.05, min_effect=1.0, sample_size=2, powered=False,
         budget={"wall_seconds": 30, "token_budget": 1000, "tool_budget": 10},
         arms=GOVERNED_ARMS)
     protocol["powered"] = False
-    tasks = [{
-        "task_id": f"task-{index}",
-        "repository_id": "repo-holdout",
-        "base_commit": "f" * 40,
-        "prompt": f"make task {index} pass",
-        "failure_class": "bug_fix",
-        "partition": "holdout",
-        "budgets": {"time_budget_seconds": 30, "token_budget": 1000,
-                    "tool_budget": 10},
-        "acceptance": {
-            "argv": [sys.executable, "-m", "pytest", "-q",
-                     "acceptance.py"],
-            "files": {"acceptance.py": ACCEPTANCE}},
-    } for index in range(2)]
+    tasks = []
+    for index in range(2):
+        repo = holdout_repos[index % len(holdout_repos)]
+        tasks.append({
+            "task_id": f"task-{index}",
+            "repository_id": repo["repository_id"],
+            "base_commit": repo["base_commit"],
+            "prompt": f"make task {index} pass",
+            "failure_class": "bug_fix",
+            "partition": "holdout",
+            "budgets": {"time_budget_seconds": 30, "token_budget": 1000,
+                        "tool_budget": 10},
+            "acceptance": {
+                "argv": [sys.executable, "-m", "pytest", "-q",
+                         "acceptance.py"],
+                "files": {"acceptance.py": ACCEPTANCE}},
+        })
     return {
         "schema_version": 1, "kind": "five_arm_efficacy_manifest",
         "protocol": protocol,
         "agent": {"kind": "codex-cli", "model": "test-model",
-                  "cli_version": "test"},
+                  "cli_version": "1.2.3"},
         "partitions": {
             "induction": [item["repository_id"] for item in repositories
                           if item["partition"] == "induction"],
-            "holdout": ["repo-holdout"]},
+            "holdout": [item["repository_id"] for item in holdout_repos]},
         "repositories": repositories,
         "preregistration": {
             "registered_at": "2026-11-14T00:00:00Z",
@@ -147,29 +154,81 @@ class RealAgentGateTests(unittest.TestCase):
                 output, manifest, allow_shared_custody=True,
                 agent_factory=_scripted_agent)
             report = json.loads(output.read_text(encoding="utf-8"))
-        self.assertEqual(code, 0)
+            bundle_dir = Path(report["evidence_bundle"]["path"])
+            bundle = json.loads(
+                (bundle_dir / "bundle.json").read_text(encoding="utf-8"))
+            receipt_files = sorted((bundle_dir / "receipts").iterdir())
+            receipt_hashes = {
+                path.stem: hashlib.sha256(path.read_bytes()).hexdigest()
+                for path in receipt_files}
+            has_public_key = (bundle_dir / "public_key.json").is_file()
+            has_manifest = (bundle_dir / "manifest.json").is_file()
+        self.assertEqual(code, 1)
         analysis = report["learning_qualification"]
         self.assertEqual(analysis["tasks"], 2)
         self.assertTrue(analysis["real_agent"])
-        self.assertEqual(analysis["evidence_class"], "exploratory")
-        self.assertEqual(analysis["release_gate"],
-                         "IMPLEMENTED_NOT_EFFICACY_QUALIFIED")
-        self.assertEqual(report["evidence_class"], "exploratory")
-        self.assertEqual(report["release_gate"],
-                         "IMPLEMENTED_NOT_EFFICACY_QUALIFIED")
+        # An injected agent is not a real codex-cli run.
+        self.assertEqual(analysis["evidence_class"], "invalid")
+        self.assertEqual(report["evidence_class"], "invalid")
+        self.assertFalse(analysis["confirmatory_eligible"])
+        self.assertEqual(analysis["provenance"]["agent"], "injected")
         self.assertEqual(report["receipts_issued"], 4)
         rows = [arm for task in report["per_task"]
                 for arm in task["arms"].values()]
         self.assertEqual(len(rows), 10)
         self.assertTrue(all(row["receipt_digest"] for row in rows))
-        self.assertIn("bug_fix", report["guidance_bundles"])
-        self.assertEqual(len(report["guidance_bundle_digest"]), 64)
+        for task in report["per_task"]:
+            self.assertEqual(sorted(task["arm_order"]),
+                             ["A", "B", "C", "D", "E"])
+        self.assertEqual(report["guidance"]["source"], "fixed_control")
+        self.assertIn("bug_fix", report["guidance"]["bundles"])
+        self.assertEqual(len(report["guidance"]["digest"]), 64)
         self.assertTrue(report["manifest"]["valid"])
         self.assertEqual(analysis["decisive_contrast"]["wins"], 2)
         self.assertEqual(analysis["decisive_contrast"]["losses"], 0)
         self.assertEqual(
             analysis["decisive_contrast"]["difference_interval_method"],
             "newcombe_paired")
+        # Durable evidence: signed receipt bytes and the public key survive
+        # the verifier's temporary directory.
+        self.assertEqual(len(receipt_files), 4)
+        self.assertEqual(set(bundle["receipts"]),
+                         {path.stem for path in receipt_files})
+        for digest, content_hash in receipt_hashes.items():
+            self.assertEqual(bundle["receipts"][digest], content_hash)
+        self.assertTrue(has_public_key)
+        self.assertTrue(has_manifest)
+        self.assertEqual(len(bundle["bundle_digest"]), 64)
+        self.assertEqual(
+            bundle["manifest"]["digest"], report["manifest"]["digest"])
+
+    @unittest.skipUnless(
+        POSIX_CUSTODY,
+        "evaluator key custody is POSIX-only in this release")
+    def test_learned_guidance_bundle_is_recorded(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            manifest = _write(root, _manifest(root))
+            guidance = root / "guidance.json"
+            guidance.write_text(json.dumps({
+                "schema_version": 1,
+                "source": "learned",
+                "bundles": {
+                    "B": ["learned memory step"],
+                    "C": ["learned skill step"],
+                    "D": ["learned procedure step"],
+                }}))
+            output = root / "report.json"
+            campaign_tool.run_real(
+                output, manifest, allow_shared_custody=True,
+                guidance_path=guidance, agent_factory=_scripted_agent)
+            report = json.loads(output.read_text(encoding="utf-8"))
+        self.assertEqual(report["guidance"]["source"], "learned")
+        self.assertEqual(
+            report["guidance"]["bundles"]["B"], ["learned memory step"])
+        self.assertEqual(
+            report["learning_qualification"]["provenance"]["guidance_source"],
+            "learned")
 
     def test_missing_manifest_is_blocked(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -210,7 +269,7 @@ class RealAgentGateTests(unittest.TestCase):
             root = Path(temp)
             document = _manifest(root)
             manifest = _write(root, document)
-            (root / "holdout" / "solution.py").write_text("DRIFT = 1\n")
+            (root / "holdout-0" / "solution.py").write_text("DRIFT = 1\n")
             output = root / "report.json"
             code = campaign_tool.run_real(
                 output, manifest, allow_shared_custody=True,

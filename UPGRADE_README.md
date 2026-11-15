@@ -111,6 +111,31 @@ regenerate them with `tools/package_release.py` before making a release
 claim. Running a manifest is not evidence: the evidence class comes from
 the paired analysis.
 
+### Post-seal repair: Revision 14 efficacy-path integrity
+
+The Revision 13 audit found a release-blocking crash and four integrity
+gaps in the new efficacy path.
+
+- `tools/benchmark_induction.py` now samples with Floyd's algorithm.
+  `random.sample(range(possible), count)` overflowed for 32- and 64-field
+  domains; the default benchmark crashed before induction.
+- `CodexCliAgent` meters tokens and tool calls from the CLI event
+  stream. `budget_accounting` is `verified` only when both counters were
+  metered; one counter is `partial`.
+- A confirmatory label now requires provenance the classifier can check:
+  a real `codex-cli` agent, a matching installed version, split custody,
+  learned guidance from `--guidance-bundle`, a committed manifest and
+  verified usage. The built-in prompts are a `fixed_control` condition
+  and are labelled as such; an injected agent is `invalid`.
+- Each run writes `<report>.evidence/` with the signed receipts, the
+  evaluator public key, the exact manifest and a bundle digest.
+- Arm order is randomized per task and recorded.
+- Manifests need at least five holdout repositories.
+
+None of this is an efficacy result. The sealed archive still describes
+the pre-repair tree; regenerate it with `tools/package_release.py`
+before making a release claim.
+
 ### Qualification status
 
 The v3.3.9 archive is engineering-verified and qualification-only. A

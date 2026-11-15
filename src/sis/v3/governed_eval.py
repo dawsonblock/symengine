@@ -348,6 +348,7 @@ def run_governed_evaluation(
     misleading_tasks: frozenset | set = frozenset(),
     served_map: dict | None = None,
     arms: tuple[str, ...] = GOVERNED_ARMS,
+    arm_order_seed: int | str | None = None,
 ) -> dict:
     """Run the paired governed evaluation and attach analysis metadata.
 
@@ -355,13 +356,17 @@ def run_governed_evaluation(
     arm; whatever it returns is the only per-arm difference. ``served_map``
     optionally records (task_id, arm) -> bool where guidance was actually
     served (non-abstain) so abstention and negative transfer are measured
-    rather than inferred.
+    rather than inferred. ``arm_order_seed`` randomizes arm order per task
+    and records the executed order.
     """
     assert_repository_disjoint(
         learned_repo_digests, [t for t, _ in tasks])
     served: dict = served_map if served_map is not None else {}
+    run_kwargs = ({} if arm_order_seed is None
+                  else {"arm_order_seed": arm_order_seed})
     report = harness.run(tasks, agent, budget=budget,
-                         context_provider=context_provider, arms=arms)
+                         context_provider=context_provider, arms=arms,
+                         **run_kwargs)
     metrics = compute_metrics(
         report, served=served, misleading_tasks=misleading_tasks)
     report["governed"] = {

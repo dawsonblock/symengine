@@ -82,7 +82,8 @@ The validator enforces:
 - a preregistered, powered protocol whose digest matches;
 - `sample_size` at or above the recomputed power floor;
 - repository-disjoint induction/holdout partitions;
-- at least ten repositories and at least `sample_size` tasks;
+- at least ten repositories, of which at least five are holdout
+  repositories, and at least `sample_size` tasks;
 - hidden tests outside the public repository;
 - safe relative acceptance-file paths;
 - pinned agent kind/model/CLI version;
@@ -111,10 +112,32 @@ material, runs the agent against each repository snapshot and writes the
 paired report with a receipt digest per `(task, arm)`. The gate still
 fails closed with `BLOCKED_REAL_AGENT` when Codex is unavailable or
 unauthenticated, `BLOCKED_MANIFEST` when the manifest is invalid or a
-repository snapshot has drifted, and `BLOCKED_SPLIT_CUSTODY` when the
-backend cannot keep acceptance tests out of the submission's process.
-Executing a manifest is not evidence: the evidence class still comes
-from the paired analysis.
+repository snapshot has drifted, `BLOCKED_SPLIT_CUSTODY` when the
+backend cannot keep acceptance tests out of the submission's process,
+`BLOCKED_AGENT_VERSION` when the installed CLI does not match the
+pinned `agent.cli_version`, and `BLOCKED_GUIDANCE` when a supplied
+guidance bundle is unusable.
+
+Executing a manifest is not evidence. A confirmatory label additionally
+requires all of the following, recorded in the report's `provenance`
+block and enforced by the classifier:
+
+- the agent is the real `codex-cli` (an injected test agent is
+  `invalid`, never `exploratory`);
+- the installed CLI version matched the manifest;
+- private acceptance tests ran under split custody;
+- guidance came from `--guidance-bundle`, a frozen file of learned
+  components; the built-in `Recall…`/`Workflow…`/`Procedure…` prompts
+  are a fixed control condition and can never qualify;
+- the manifest was committed before the run (Git anchor);
+- token and tool usage were fully metered by the agent runtime
+  (`budget_accounting: verified`).
+
+The run writes `<report>.evidence/` next to the report: the signed
+receipt bytes under `receipts/`, the evaluator public key, the exact
+manifest and a `bundle.json` that binds the manifest digest, the report
+digest and every receipt. The verifier's temporary key store is not the
+evidence; the bundle is.
 
 ## Metrics
 
@@ -125,6 +148,9 @@ from the paired analysis.
 - Token, tool-call and wall-clock cost per verified solution.
 - Latency.
 - Per-repository generalization on unseen repositories.
+- Repository-clustered uncertainty: tasks within one repository are not
+  independent draws, so per-repository outcomes and a cluster-robust
+  check accompany the paired task-level analysis.
 - Failure categories, including evaluator/bootstrap errors.
 
 ## Evidence classes
@@ -152,8 +178,10 @@ the seal claiming the old source.
 ## Current status
 
 - The scaffold, template and validator are present.
-- No confirmatory run has been executed.
-- The Codex CLI is available and authenticated on the development host,
-  but no preregistered task manifest exists.
+- The runner executes a validated manifest, randomizes arm order, meters
+  usage, records provenance and exports a signed-receipt evidence bundle.
+- No confirmatory run has been executed: the built-in guidance is a
+  fixed control condition, not learned components, and no preregistered
+  task manifest exists on the development host.
 - The accurate claim remains: the learning workflow functions; its
   general coding effectiveness is unproven.

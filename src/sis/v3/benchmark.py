@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import math
+import random
 import secrets
 import shutil
 import tempfile
@@ -62,24 +63,29 @@ class UsageMeter:
     or executor. Counters produced this way are ``verified``: they were
     metered by the runtime path, not self-reported by the agent. An arm
     that returns a bare usage mapping is ``reported``; an arm with no
-    usage data at all is ``unverified``.
+    usage data at all is ``unverified``; an arm whose runtime metered
+    only one counter is ``partial``.
     """
 
     tokens: int = 0
     tools: int = 0
     verified: bool = False
+    tokens_verified: bool = False
+    tools_verified: bool = False
 
     def record_tokens(self, count: int) -> None:
         if type(count) is not int or not 0 <= count <= 2**63 - 1:
             raise ContractError("token count must be a bounded nonnegative int")
         self.tokens += count
         self.verified = True
+        self.tokens_verified = True
 
     def record_tool_call(self, count: int = 1) -> None:
         if type(count) is not int or not 0 < count <= 2**31 - 1:
             raise ContractError("tool count must be a bounded positive int")
         self.tools += count
         self.verified = True
+        self.tools_verified = True
 
 
 @dataclass(frozen=True)
@@ -114,6 +120,7 @@ class ArmResult:
 class TaskResult:
     task_id: str
     arms: dict[str, ArmResult] = field(default_factory=dict)
+    arm_order: tuple[str, ...] = ()
 
 
 AgentFn = Callable[[ArmContext], None]
@@ -149,15 +156,27 @@ class BenchmarkHarness:
         budget: BudgetCaps,
         context_provider: ContextFn | None = None,
         arms: tuple[str, ...] = ARMS,
+        arm_order_seed: int | str | None = None,
     ) -> dict:
-        """Execute every arm per task; return an auditable paired report."""
+        """Execute every arm per task; return an auditable paired report.
+
+        ``arm_order_seed`` randomizes the arm order per task, as the
+        preregistered protocol requires. The order is recorded in the
+        report; a fixed order makes a slow or rate-limited remote agent
+        confound the arm with run position.
+        """
         unknown = [a for a in arms if a not in ALL_ARMS]
         if unknown:
             raise ContractError(f"unknown arms: {unknown}")
         results: list[TaskResult] = []
         for task, base_dir in tasks:
             task_result = TaskResult(task_id=task.task_id)
-            for arm in arms:
+            order = list(arms)
+            if arm_order_seed is not None:
+                random.Random(
+                    f"{arm_order_seed}:{task.task_id}").shuffle(order)
+            task_result.arm_order = tuple(order)
+            for arm in order:
                 task_result.arms[arm] = self._run_arm(
                     task, Path(base_dir), agent, arm, budget, context_provider
                 )
@@ -223,8 +242,10 @@ class BenchmarkHarness:
             tokens = tools = None
             accounting = "unverified"
             if meter.verified:
-                tokens, tools = meter.tokens, meter.tools
-                accounting = "verified"
+                tokens = meter.tokens if meter.tokens_verified else None
+                tools = meter.tools if meter.tools_verified else None
+                accounting = ("verified" if tokens is not None
+                              and tools is not None else "partial")
             elif isinstance(usage, Mapping):
                 tokens, tools = usage.get("tokens_used"), usage.get("tools_used")
                 if (tokens is not None and (type(tokens) is not int or tokens < 0)) or \
@@ -267,6 +288,8 @@ class BenchmarkHarness:
         per_task = []
         for task_result in results:
             entry = {"task_id": task_result.task_id, "arms": {}}
+            if task_result.arm_order:
+                entry["arm_order"] = list(task_result.arm_order)
             for arm, res in task_result.arms.items():
                 entry["arms"][arm] = {
                     "outcome": res.outcome,

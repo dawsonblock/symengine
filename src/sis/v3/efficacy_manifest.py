@@ -26,6 +26,10 @@ _HEX64 = re.compile(r"^[0-9a-f]{64}$")
 _SAFE_REL = re.compile(
     r"^(?!/)(?![A-Za-z]:)(?!.*(?:^|/)\.\.(?:/|$))[A-Za-z0-9_.@/-]{1,512}$")
 MIN_REPOSITORIES = 10
+# Tasks drawn from one or two holdout repositories are correlated draws,
+# not independent evidence. A floor keeps a study from meeting its task
+# count while concentrating every outcome in a handful of codebases.
+MIN_HOLDOUT_REPOSITORIES = 5
 
 
 def _placeholder(value) -> bool:
@@ -190,6 +194,12 @@ def _validate_repositories(document, problems: list[str],
         if unknown:
             _problem(problems, "partitions name unknown repositories: "
                                + ", ".join(sorted(unknown)))
+        if (not allow_placeholders
+                and len(holdout) < MIN_HOLDOUT_REPOSITORIES):
+            _problem(problems,
+                     f"at least {MIN_HOLDOUT_REPOSITORIES} holdout "
+                     "repositories are required; a task count met from "
+                     "fewer repositories overstates independent evidence")
         for repository_id, repository in by_id.items():
             declared = repository.get("partition")
             if declared == "induction" and repository_id not in induction:
@@ -385,4 +395,5 @@ def _walk(value):
         yield value
 
 
-__all__ = ["MIN_REPOSITORIES", "validate_manifest"]
+__all__ = ["MIN_HOLDOUT_REPOSITORIES", "MIN_REPOSITORIES",
+           "validate_manifest"]

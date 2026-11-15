@@ -1,5 +1,53 @@
 # Changelog
 
+## 2026-11-14 — Revision 14 repairs: sampler, provenance and evidence
+
+The Revision 13 audit found a release-blocking sampler crash and four
+integrity gaps in the new efficacy path. None of these repairs is an
+efficacy result.
+
+- **Arbitrary-size sampling.** `distinct_inputs()` used
+  `random.sample(range(possible), count)`, which asks for a
+  machine-sized length; a 32-field decimal domain (`10**32`) raised
+  `OverflowError` and the default benchmark crashed. Floyd's algorithm
+  now draws the indices in O(count) without materialising the domain.
+  Regressions cover 32 and 64 fields and the CLI.
+- **Metered usage.** `CodexCliAgent` reads `token_usage` from the CLI
+  event stream and records tokens and tool calls through the harness
+  meter. `UsageMeter` distinguishes fully `verified` accounting from a
+  `partial` one where only one counter was metered; the audit's
+  unenforced token budget now surfaces as missing accounting rather than
+  a silent pass.
+- **Provenance-gated classification.** `analyze_report()` accepts a
+  `provenance` block. A confirmatory label now also requires the real
+  `codex-cli` agent (an injected agent is `invalid`), a matching
+  installed CLI version, split custody, learned guidance from
+  `--guidance-bundle`, a committed manifest and fully verified usage.
+  The built-in `Recall…`/`Workflow…`/`Procedure…` prompts are recorded
+  as `fixed_control` and can never qualify.
+- **Durable evidence.** A run writes `<report>.evidence/` containing
+  every signed receipt, the evaluator public key, the exact manifest and
+  a `bundle.json` binding the manifest, report and receipt digests. The
+  verifier's temporary key store no longer takes the evidence with it.
+- **Randomized arm order.** `BenchmarkHarness.run()` accepts an
+  `arm_order_seed`, shuffles the arms per task and records the executed
+  order, as the protocol requires.
+- **CLI version pin.** The gate compares the installed `codex --version`
+  with the manifest and fails closed on a mismatch or an unreadable
+  version.
+- **Holdout repository floor.** The manifest validator now requires at
+  least five holdout repositories, so a task count cannot be met from
+  one or two correlated codebases. Repository-clustered analysis is
+  documented as a required companion metric.
+
+Regressions live in `tests/v3/test_five_arm_real_run.py`,
+`tests/v3/test_learning_qualification.py`,
+`tests/v3/test_v336_benchmark_semantics.py`,
+`tests/v3/test_execution_qualification.py` and
+`tests/v3/test_efficacy_manifest.py`. The sealed archive and its
+evidence predate these repairs; regenerate them with
+`tools/package_release.py` before making a release claim.
+
 ## 2026-11-14 — Authority-closure repairs: paired inference, executable gate, bounded sampling
 
 Three defects that stood between the Phase 6 scaffold and the Phase 6
