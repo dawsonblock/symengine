@@ -100,7 +100,11 @@ def main(argv=None) -> int:
                         default="qualification-only",
                         help="production requires --seed-file from an"
                              " independently held key")
+    parser.add_argument("--valid-minutes", type=int, default=5,
+                        help="attestation lifetime in minutes (1-1440)")
     args = parser.parse_args(argv)
+    if not 1 <= args.valid_minutes <= 1440:
+        parser.error("--valid-minutes must be in [1,1440]")
 
     image_digest = _image_hex(args.image)
     output = args.output
@@ -136,7 +140,7 @@ def main(argv=None) -> int:
         (output / "receipt.json").write_bytes(receipt.canonical_bytes() + b"\n")
         issued_at = _utcnow()
         expires_at = (datetime.fromisoformat(issued_at.replace("Z", "+00:00"))
-                      + timedelta(minutes=5)).isoformat(
+                      + timedelta(minutes=args.valid_minutes)).isoformat(
                           timespec="seconds").replace("+00:00", "Z")
         digest = policy_digest(image_digest)
         attestation = issue_attestation_for_receipt(
