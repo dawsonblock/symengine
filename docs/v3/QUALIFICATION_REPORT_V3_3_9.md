@@ -45,7 +45,7 @@ feature.
 
 | Environment | Command | Result |
 | --- | --- | --- |
-| macOS 3.12, Docker enabled | `pytest tests/ -q` | 1575 passed, 14 skipped |
+| macOS 3.12, Docker enabled | `pytest tests/ -q` | 1578 passed, 14 skipped |
 | macOS 3.10, Docker disabled | `DOCKER_HOST=unix:///nonexistent/docker.sock pytest tests/ -q` | 1552 passed, 37 skipped |
 | macOS 3.13, Docker disabled | same | 1552 passed, 37 skipped |
 | Linux 3.12 (`python:3.12-slim`), Docker disabled | same | 1536 passed, 53 skipped |
@@ -54,7 +54,7 @@ feature.
 | SQLite persistence/replay/recovery | `pytest tests/v3/test_authority_db.py tests/v3/test_authority_recovery.py tests/v3/test_authority_checkpoints.py tests/v3/test_episode_replay.py tests/v3/test_control_plane_sqlite.py -q` | 65 passed |
 | Z3-enabled profile | `pytest tests/v3/test_v336_benchmark_semantics.py tests/test_system.py -q` | 39 passed |
 | Windows 11 | not run | explicitly experimental |
-| Clean extracted ZIP | `verify_release.py --compile`, `--source`, smoke test | see the seal run below |
+| Clean extracted ZIP | `verify_release.py --compile`, `--source`, smoke test | recorded in `release/verification.json` |
 
 The Linux-with-Docker run used a Linux Python 3.12 container with the
 host Docker socket and a shared `TMPDIR`, so bind-mount source paths were
