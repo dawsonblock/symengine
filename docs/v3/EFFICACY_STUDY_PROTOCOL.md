@@ -58,8 +58,9 @@ version, prompt, budget and evaluator. Arm order is randomized per task.
 ## Manifest
 
 The template is [efficacy_manifest_template.json](efficacy_manifest_template.json).
-Replace every `<placeholder>`, provide at least ten repositories and at
-least 103 paired holdout tasks, and commit the manifest before any
+Replace every `<placeholder>`, provide at least ten repositories (at
+least five of them holdout repositories) and at least 103 paired
+holdout tasks, and commit the manifest before any
 holdout run.
 
 Validate the template while editing:
@@ -99,7 +100,9 @@ Exit status `0` means ready; `2` means structurally valid but not ready
 3. Preflight the agent: binary, authentication, model and CLI version.
 4. Run the five arms with randomized order and per-`(task, arm)`
    checkpointing so a quota interruption is recorded as
-   `INVALID_INFRASTRUCTURE` rather than silently dropping pairs.
+   `INVALID_INFRASTRUCTURE` rather than silently dropping pairs. The
+   current runner randomizes order but does not checkpoint: an
+   interrupted run is aborted and must be repeated in full.
 5. Verify every outcome with the evaluator-owned acceptance tests.
 6. Preserve the raw report and receipts. Do not edit a failed or
    underpowered result after the fact.
@@ -180,6 +183,8 @@ the seal claiming the old source.
 - The scaffold, template and validator are present.
 - The runner executes a validated manifest, randomizes arm order, meters
   usage, records provenance and exports a signed-receipt evidence bundle.
+- It does not yet checkpoint per `(task, arm)` and still constructs the
+  local executor; a secure Linux run needs the Docker backend wired in.
 - No confirmatory run has been executed: the built-in guidance is a
   fixed control condition, not learned components, and no preregistered
   task manifest exists on the development host.

@@ -132,6 +132,27 @@ def newcombe_paired_difference_interval(
     return (max(-1.0, lower), min(1.0, upper))
 
 
+def _token_total(usage: Mapping) -> int | None:
+    """Budget-relevant token total for one usage record.
+
+    ``input_tokens + output_tokens`` is the billed total; summing every
+    integer would double-count ``total_tokens`` and the detail counters
+    the adapter drops. Fall back to ``total_tokens`` and then to a plain
+    sum only when the input/output pair is absent.
+    """
+    input_tokens = usage.get("input_tokens")
+    output_tokens = usage.get("output_tokens")
+    if (type(input_tokens) is int and input_tokens >= 0
+            and type(output_tokens) is int and output_tokens >= 0):
+        return input_tokens + output_tokens
+    total = usage.get("total_tokens")
+    if type(total) is int and total >= 0:
+        return total
+    counts = [value for value in usage.values()
+              if type(value) is int and value >= 0]
+    return sum(counts) if counts else None
+
+
 def _valid_solve(result: Mapping) -> bool:
     return (result.get("outcome") == "pass"
             and not result.get("budget_exceeded")
@@ -561,12 +582,15 @@ class CodexCliAgent:
         for event in turn:
             payload = getattr(event, "payload", None)
             if isinstance(payload, Mapping):
-                usage = payload.get("token_usage")
+                summary = payload.get("summary")
+                usage = (summary.get("token_usage")
+                         if isinstance(summary, Mapping)
+                         else payload.get("token_usage"))
                 if isinstance(usage, Mapping):
-                    for value in usage.values():
-                        if type(value) is int and value >= 0:
-                            tokens += value
-                            tokens_seen = True
+                    total = _token_total(usage)
+                    if total is not None:
+                        tokens += total
+                        tokens_seen = True
             if event.event_type in {"tool_request", "tool_result"}:
                 tools += 1
                 if ctx.usage_meter is not None:

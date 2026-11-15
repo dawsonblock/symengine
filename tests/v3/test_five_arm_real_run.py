@@ -16,6 +16,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 from sis.v3.governed_eval import GOVERNED_ARMS, preregister
 from sis.v3.runner import tree_digest
@@ -132,6 +133,48 @@ def _scripted_agent(prompts, budget, model):
             (ctx.workspace / "solution.py").write_text("OK = 1\n")
         return {"tokens_used": 5, "tools_used": 1}
     return agent
+
+
+class CodexMeteringTests(unittest.TestCase):
+    """The adapter nests usage under payload["summary"]; read that path."""
+
+    def test_token_usage_is_metered_from_the_nested_summary(self):
+        from sis.v3.benchmark import UsageMeter
+        from sis.v3.learning_qualification import CodexCliAgent
+
+        class Adapter:
+            def start_task(self, prompt, workspace, **kwargs):
+                (Path(workspace) / "out.txt").write_text("ok")
+                yield SimpleNamespace(
+                    event_type="tool_request",
+                    payload={"summary": {"token_usage": {
+                        "input_tokens": 10, "output_tokens": 5}}})
+                yield SimpleNamespace(
+                    event_type="tool_result", payload={"summary": {}})
+
+        with tempfile.TemporaryDirectory() as temp:
+            agent = object.__new__(CodexCliAgent)
+            agent._adapter = Adapter()
+            agent._model = None
+            agent._prompts = {"t1": "prompt"}
+            meter = UsageMeter()
+            ctx = SimpleNamespace(
+                task=SimpleNamespace(task_id="t1"), workspace=Path(temp),
+                guidance=None, usage_meter=meter)
+            usage = agent(ctx)
+        self.assertEqual(usage["tokens_used"], 15)
+        self.assertEqual(meter.tokens, 15)
+        self.assertEqual(meter.tools, 2)
+        self.assertTrue(meter.tokens_verified)
+        self.assertTrue(meter.tools_verified)
+
+    def test_token_total_prefers_the_billed_pair(self):
+        from sis.v3.learning_qualification import _token_total
+        self.assertEqual(
+            _token_total({"input_tokens": 10, "output_tokens": 5,
+                          "total_tokens": 999}), 15)
+        self.assertEqual(_token_total({"total_tokens": 42}), 42)
+        self.assertIsNone(_token_total({}))
 
 
 class RealAgentGateTests(unittest.TestCase):

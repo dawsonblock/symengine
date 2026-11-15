@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "kind": "five_arm_efficacy_manifest",
-  "notes": "Template only. Replace every <placeholder>, provide at least 10 repositories and at least 103 paired holdout tasks, commit the manifest before any holdout run, and keep hidden tests outside the public repository. Validate with tools/check_efficacy_manifest.py --allow-placeholders while editing, then without that flag before the run.",
+  "notes": "Template only. Replace every <placeholder>, provide at least 10 repositories of which at least 5 are holdout repositories, and at least 103 paired holdout tasks, commit the manifest before any holdout run, and keep hidden tests outside the public repository. Validate with tools/check_efficacy_manifest.py --allow-placeholders while editing, then without that flag before the run.",
   "protocol": {
     "schema_version": 1,
     "primary_metric": "paired solved_delta E vs A",
@@ -33,7 +33,13 @@
   },
   "partitions": {
     "induction": ["repo-induction"],
-    "holdout": ["repo-holdout"]
+    "holdout": [
+      "repo-holdout-1",
+      "repo-holdout-2",
+      "repo-holdout-3",
+      "repo-holdout-4",
+      "repo-holdout-5"
+    ]
   },
   "repositories": [
     {
@@ -44,8 +50,52 @@
       "partition": "induction"
     },
     {
-      "repository_id": "repo-holdout",
-      "path": "<absolute path to the holdout repository>",
+      "repository_id": "repo-holdout-1",
+      "path": "<absolute path to holdout repository 1>",
+      "base_commit": "<40-hex-commit>",
+      "repo_snapshot_digest": "<64-hex-tree-digest>",
+      "partition": "holdout",
+      "hidden_tests": {
+        "path": "<absolute path outside the public repository>",
+        "digest": "<64-hex-hidden-test-bundle-digest>"
+      }
+    },
+    {
+      "repository_id": "repo-holdout-2",
+      "path": "<absolute path to holdout repository 2>",
+      "base_commit": "<40-hex-commit>",
+      "repo_snapshot_digest": "<64-hex-tree-digest>",
+      "partition": "holdout",
+      "hidden_tests": {
+        "path": "<absolute path outside the public repository>",
+        "digest": "<64-hex-hidden-test-bundle-digest>"
+      }
+    },
+    {
+      "repository_id": "repo-holdout-3",
+      "path": "<absolute path to holdout repository 3>",
+      "base_commit": "<40-hex-commit>",
+      "repo_snapshot_digest": "<64-hex-tree-digest>",
+      "partition": "holdout",
+      "hidden_tests": {
+        "path": "<absolute path outside the public repository>",
+        "digest": "<64-hex-hidden-test-bundle-digest>"
+      }
+    },
+    {
+      "repository_id": "repo-holdout-4",
+      "path": "<absolute path to holdout repository 4>",
+      "base_commit": "<40-hex-commit>",
+      "repo_snapshot_digest": "<64-hex-tree-digest>",
+      "partition": "holdout",
+      "hidden_tests": {
+        "path": "<absolute path outside the public repository>",
+        "digest": "<64-hex-hidden-test-bundle-digest>"
+      }
+    },
+    {
+      "repository_id": "repo-holdout-5",
+      "path": "<absolute path to holdout repository 5>",
       "base_commit": "<40-hex-commit>",
       "repo_snapshot_digest": "<64-hex-tree-digest>",
       "partition": "holdout",
@@ -58,7 +108,7 @@
   "tasks": [
     {
       "task_id": "task-001",
-      "repository_id": "repo-holdout",
+      "repository_id": "repo-holdout-1",
       "base_commit": "<40-hex-commit>",
       "prompt": "<task prompt given to every arm>",
       "failure_class": "<failure class used by procedure preconditions>",
@@ -77,7 +127,7 @@
     },
     {
       "task_id": "task-002",
-      "repository_id": "repo-holdout",
+      "repository_id": "repo-holdout-2",
       "base_commit": "<40-hex-commit>",
       "prompt": "<second task prompt given to every arm>",
       "failure_class": "<second failure class>",

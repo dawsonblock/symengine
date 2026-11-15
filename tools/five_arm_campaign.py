@@ -451,12 +451,18 @@ def run_real(output: Path, manifest_path: Path | None, *,
         "problems": validation["problems"],
         "tasks": validation["tasks"],
         "sample_size": validation["sample_size"],
+        "placeholders": validation["placeholders"],
     }
     report["manifest"] = manifest_block
     if not validation["valid"]:
         return blocked(
             "BLOCKED_MANIFEST",
             "manifest_invalid: " + "; ".join(validation["problems"]))
+    if validation["placeholders"]:
+        return blocked(
+            "BLOCKED_MANIFEST",
+            f"manifest still contains {validation['placeholders']} "
+            "placeholder value(s)")
 
     injected = agent_factory is not None
     expected_version = _normalized_version(
@@ -618,6 +624,7 @@ def run_real(output: Path, manifest_path: Path | None, *,
         except Exception as exc:
             report["evidence_bundle"] = {
                 "error": f"{type(exc).__name__}: {exc}"}
+            report["evidence_class"] = "invalid"
             report["release_gate"] = "INVALID_EVIDENCE_BUNDLE"
             write_report(report, output)
             print(json.dumps(report["evidence_bundle"], indent=2))
