@@ -202,11 +202,13 @@ def _fixed_guidance(failure_class: str, arm: str) -> GuidanceV1 | None:
         reason_code=None, approximate_tokens=60 * len(steps))
 
 
-def _load_manifest(path: Path) -> dict:
-    document = json.loads(path.read_text(encoding="utf-8"))
+def _load_manifest(path: Path) -> tuple[dict, bytes]:
+    """Parse the manifest and keep the exact bytes that were validated."""
+    raw = path.read_bytes()
+    document = json.loads(raw.decode("utf-8"))
     if not isinstance(document, dict):
         raise ValueError("manifest must be a JSON object")
-    return document
+    return document, raw
 
 
 _VERSION = re.compile(r"\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.\-]+)?")
@@ -364,7 +366,8 @@ def _codex_agent(prompts: Mapping[str, str], budget: BudgetCaps,
 
 
 def _export_evidence(output: Path, report_sha256: str, verifier,
-                     manifest_path: Path, manifest_digest: str) -> dict:
+                     manifest_path: Path, manifest_digest: str,
+                     manifest_bytes: bytes) -> dict:
     """Persist the signed receipts and verification material.
 
     The verifier's key and receipt store live in a temporary directory, so
@@ -386,7 +389,7 @@ def _export_evidence(output: Path, report_sha256: str, verifier,
     public = verifier.public_key_record()
     (directory / "public_key.json").write_text(
         json.dumps(public, indent=2, sort_keys=True) + "\n")
-    (directory / "manifest.json").write_bytes(manifest_path.read_bytes())
+    (directory / "manifest.json").write_bytes(manifest_bytes)
     bundle = {
         "schema_version": 1,
         "kind": "five_arm_evidence_bundle",
@@ -443,7 +446,7 @@ def run_real(output: Path, manifest_path: Path | None, *,
             "evaluator-owned acceptance tests, base commits and a "
             "preregistered protocol.")
     try:
-        document = _load_manifest(manifest_path)
+        document, manifest_bytes = _load_manifest(manifest_path)
     except (OSError, ValueError) as exc:
         return blocked("BLOCKED_MANIFEST", f"manifest_unreadable:{exc}")
     validation = validate_manifest(document, check_paths=True)
@@ -624,7 +627,7 @@ def run_real(output: Path, manifest_path: Path | None, *,
         try:
             bundle = _export_evidence(
                 output, report_sha256, verifier, manifest_path,
-                validation["manifest_digest"])
+                validation["manifest_digest"], manifest_bytes)
         except Exception as exc:
             report["evidence_bundle"] = {
                 "error": f"{type(exc).__name__}: {exc}"}

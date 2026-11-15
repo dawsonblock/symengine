@@ -206,6 +206,8 @@ class RealAgentGateTests(unittest.TestCase):
                 for path in receipt_files}
             has_public_key = (bundle_dir / "public_key.json").is_file()
             has_manifest = (bundle_dir / "manifest.json").is_file()
+            exported_manifest = (bundle_dir / "manifest.json").read_bytes()
+            input_manifest = manifest.read_bytes()
         self.assertEqual(code, 1)
         analysis = report["learning_qualification"]
         self.assertEqual(analysis["tasks"], 2)
@@ -241,6 +243,7 @@ class RealAgentGateTests(unittest.TestCase):
             self.assertEqual(bundle["receipts"][digest], content_hash)
         self.assertTrue(has_public_key)
         self.assertTrue(has_manifest)
+        self.assertEqual(exported_manifest, input_manifest)
         self.assertEqual(len(bundle["bundle_digest"]), 64)
         self.assertEqual(
             bundle["manifest"]["digest"], report["manifest"]["digest"])
