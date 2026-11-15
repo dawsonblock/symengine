@@ -4,7 +4,7 @@
 # no shell history, no package manager cache, and runs as an unprivileged
 # user. Build with:
 #
-#   docker build --platform linux/arm64 -t sis-evaluator:3.3.8 docker/sandbox
+#   docker build --platform linux/arm64 -t sis-evaluator:3.3.9 docker/sandbox
 #
 # The base image is pinned by its multi-architecture index digest, resolved
 # with `docker buildx imagetools inspect python:3.12-slim` on 2026-11-12.

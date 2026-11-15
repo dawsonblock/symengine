@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -16,7 +17,7 @@ from sis.v3.contracts import ContractError
 from sis.v3.docker_sandbox import DockerSandboxExecutor
 from sis.v3.runner import CommandSpec, ResourceLimits
 
-IMAGE = "sis-evaluator:3.3.8"
+IMAGE = "sis-evaluator:3.3.9"
 
 
 def _docker_ready(image=IMAGE):
@@ -42,11 +43,11 @@ def _docker_ready(image=IMAGE):
 class ConstructionTests(unittest.TestCase):
     def test_tagged_image_rejected_when_digest_required(self):
         with self.assertRaises(ContractError):
-            DockerSandboxExecutor(image="sis-evaluator:3.3.8")
+            DockerSandboxExecutor(image="sis-evaluator:3.3.9")
 
     def test_tagged_image_rejected_in_production(self):
         with self.assertRaises(ContractError):
-            DockerSandboxExecutor(image="sis-evaluator:3.3.8",
+            DockerSandboxExecutor(image="sis-evaluator:3.3.9",
                                   production=True)
 
     def test_empty_image_rejected(self):
@@ -58,13 +59,13 @@ class ConstructionTests(unittest.TestCase):
             with self.subTest(user=user):
                 with self.assertRaises(ContractError):
                     DockerSandboxExecutor(
-                        image="sis-evaluator:3.3.8",
+                        image="sis-evaluator:3.3.9",
                         require_image_digest=False, user=user)
 
     def test_non_numeric_user_is_rejected(self):
         with self.assertRaises(ContractError):
             DockerSandboxExecutor(
-                image="sis-evaluator:3.3.8",
+                image="sis-evaluator:3.3.9",
                 require_image_digest=False, user="nobody")
 
     def test_nofile_limit_is_bounded(self):
@@ -72,7 +73,7 @@ class ConstructionTests(unittest.TestCase):
             with self.subTest(value=value):
                 with self.assertRaises(ContractError):
                     DockerSandboxExecutor(
-                        image="sis-evaluator:3.3.8",
+                        image="sis-evaluator:3.3.9",
                         require_image_digest=False, nofile_limit=value)
 
     def test_host_interpreter_translation(self):
@@ -161,10 +162,13 @@ class ContainerIntegrationTests(unittest.TestCase):
             (workspace.path / "probe.txt").read_text(), "ok")
 
     def test_wall_clock_kills_the_container(self):
+        started = time.monotonic()
         receipt, _, _ = self.run_argv(
             ("python3", "-c", "import time; time.sleep(30)"),
             run_limits=limits(wall_seconds=2))
+        elapsed = time.monotonic() - started
         self.assertTrue(receipt.timeout)
+        self.assertLess(elapsed, 15.0)
         self.assertIn("process:wall_clock_killed", receipt.security_errors)
         self.assertIn("fs:workspace_state_unavailable",
                       receipt.security_errors)

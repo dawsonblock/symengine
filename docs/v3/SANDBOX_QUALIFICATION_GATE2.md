@@ -12,13 +12,13 @@ isolator trusted independently of this machine.
 | Check | Result |
 | --- | --- |
 | Base image | `python:3.12-slim@sha256:5e2bdb1b…` (index digest pinned in the Dockerfile) |
-| Evaluator image | `sis-evaluator:3.3.8@sha256:27415edf…` |
+| Evaluator image | `sis-evaluator:3.3.9@sha256:5af4f6ce…` |
 | Docker server | 29.9.3, linux/aarch64 |
 | Containment probe, `production=True` | 13/13 checks pass |
 | Execution receipt | `isolation:docker_sandbox`; no `docker:image_tag_only` |
 | `IsolationAttestationV1` | verified (`reason: ok`) |
 | Negative control (wrong image digest) | rejected (`image_mismatch`) |
-| Full suite with Docker available | 1500 passed, 13 skipped, 0 failed |
+| Full suite with Docker available | see `docs/v3/QUALIFICATION_REPORT_V3_3_9.md` |
 | Real-container split custody | submission denied read of the private tests; worker reload keeps `custody="split"` |
 
 The probe checks network denial, read-only root, workspace write, non-root
@@ -110,3 +110,20 @@ present; they skip when it is not.
 See the 2026-11-13 and 2026-11-14 CHANGELOG entries,
 `tests/v3/test_gate2_containment_repairs.py` and
 `tests/v3/test_split_custody.py`.
+
+## v3.3.9 refresh (2026-11-14)
+
+The probe, receipt and attestation were regenerated against
+`sis-evaluator:3.3.9@sha256:5af4f6ceed7041f1665fdb077708c9b8fdd71cedf451e0adbfb0490e5e914466`
+after the release-authenticity and hard-limit repairs:
+
+- containment probe: 13/13;
+- policy digest: `2cce5dcb68cedcc27f7f5b95b2d85d227d13455281a5a1dfb1312fc94168a050`;
+- receipt digest: `f89dd405ad83ae571a4fab74d42e510a1c0103df58022ee0180186de542567a7`;
+- attestation verification: `ok`, trust root `qualification-only`;
+- real-container split custody: worker denied the private tests and a
+  reloaded task kept `custody="split"`.
+
+The production custody requirement is unchanged: the attestation must be
+signed by a key held independently of the evaluated machine, and the
+release gate must re-verify it with that key.

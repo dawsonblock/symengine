@@ -252,6 +252,22 @@ class ReceiptOutcomeTests(unittest.TestCase):
         self.assertEqual(receipt_obj.outcome, "error")
         self.assertEqual(self.verifier.last_outcome_class, TIMEOUT)
 
+    def test_cpu_limit_is_resource_limit_not_fail(self):
+        task_id = "t-cpu"
+        self.verifier.register_task(
+            actor_role="evaluator", task_id=task_id,
+            criterion_version="v1",
+            argv=(PY, "-c", "while True: pass"),
+            files={}, base_commit="abc1234")
+        self.verifier.limits = ResourceLimits(
+            wall_seconds=10, cpu_seconds=1, memory_bytes=2 * 1024 ** 3,
+            process_count=None)
+        receipt_obj = self.verifier.evaluate(
+            actor_role="evaluator", task=self._task(task_id),
+            submission_dir=self.submission, evaluation_nonce="n-cpu")
+        self.assertEqual(receipt_obj.outcome, "error")
+        self.assertEqual(self.verifier.last_outcome_class, RESOURCE_LIMIT)
+
 
 class SandboxTests(unittest.TestCase):
     def setUp(self):

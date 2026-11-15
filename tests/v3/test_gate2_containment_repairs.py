@@ -92,7 +92,7 @@ class FakeDockerFixture(unittest.TestCase):
 
     def make_executor(self, **kwargs):
         options = {
-            "image": "sis-evaluator:3.3.8",
+            "image": "sis-evaluator:3.3.9",
             "require_image_digest": False,
             "docker_binary": str(self.fake),
             "image_id": "0" * 64,

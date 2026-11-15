@@ -43,8 +43,10 @@ def _package_version(root: Path) -> str:
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 import provenance
+import test_evidence as test_evidence_module
+import verify_external_attestation
 from build_canonical_zip import build, source_binding
-from sis.v3.contracts import ExecutionReceiptV1
+from sis.v3.contracts import ContractError, ExecutionReceiptV1
 from verify_release import verify_tree
 
 SMOKE_TEST = "tests/v3/test_candidates.py"
@@ -94,37 +96,22 @@ def _git(root: Path, *args: str) -> str:
 def load_test_evidence(path: Path) -> dict:
     """Read a test evidence document produced by ``tools/run_tests.py``."""
     try:
-        evidence = json.loads(Path(path).read_text(encoding="utf-8"))
-    except (OSError, ValueError) as exc:
-        raise SystemExit(f"test evidence is unreadable: {exc}") from exc
-    if not isinstance(evidence, dict) or evidence.get("kind") != "test_evidence":
-        raise SystemExit("test evidence is not a test_evidence document")
-    if evidence.get("schema_version") != 1:
-        raise SystemExit("test evidence schema_version must be 1")
-    return evidence
+        return test_evidence_module.load(Path(path))
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
 
 
-def validate_test_evidence(evidence: dict, commit: str) -> None:
-    """Refuse evidence that does not describe a green run of this tree."""
-    problems = []
-    if evidence.get("source_commit") != commit:
-        problems.append("source_commit does not match the packaged tree")
-    if evidence.get("dirty"):
-        problems.append("evidence was produced from a dirty tree")
-    counts = evidence.get("counts") or {}
-    if counts.get("failed"):
-        problems.append("evidence reports failed tests")
-    if counts.get("errors"):
-        problems.append("evidence reports errored tests")
-    if evidence.get("exit_status") != 0:
-        problems.append("evidence exit_status is not 0")
-    if evidence.get("pytest_version") != evidence.get("pytest_pin"):
-        problems.append("evidence pytest version is not the pinned runner")
-    command = evidence.get("command") or []
-    if not any("pytest" in str(part) for part in command):
-        problems.append("evidence command does not run pytest")
-    if problems:
-        raise SystemExit("test evidence rejected: " + "; ".join(problems))
+def validate_test_evidence(evidence: dict, commit: str, *,
+                           public_key: str | None = None,
+                           key_id: str | None = None,
+                           require_signature: bool = False) -> None:
+    """Refuse evidence that does not describe an authentic green run."""
+    try:
+        test_evidence_module.validate_evidence(
+            evidence, commit, public_key=public_key, key_id=key_id,
+            require_signature=require_signature)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
 
 
 def _parse_ts(value: str) -> datetime:
@@ -212,6 +199,43 @@ def validate_external_attestation(
     if problems:
         raise SystemExit(
             "external attestation rejected: " + "; ".join(problems))
+
+
+def verify_external_isolation(
+    *,
+    receipt_path: Path,
+    attestation_path: Path,
+    public_key: str,
+    key_id: str,
+    image_digest: str,
+    policy_digest: str,
+    properties: list[str],
+    max_age_seconds: int = 3600,
+    at_time: str | None = None,
+) -> dict:
+    """Re-verify the raw receipt and signed attestation, not a claim about them."""
+    try:
+        receipt = ExecutionReceiptV1.from_json(
+            Path(receipt_path).read_bytes())
+        attestation = json.loads(Path(attestation_path).read_text())
+        result = verify_external_attestation.verify(
+            receipt, attestation,
+            public_key=public_key, key_id=key_id,
+            image_digest=image_digest, policy_digest=policy_digest,
+            properties=list(properties),
+            max_age_seconds=max_age_seconds, at_time=at_time)
+    except (OSError, ValueError, TypeError, KeyError,
+            ContractError, json.JSONDecodeError) as exc:
+        raise SystemExit(
+            f"external isolation evidence is unreadable: {exc}") from exc
+    if not result.ok:
+        raise SystemExit(
+            "external isolation attestation rejected: " + result.reason)
+    return {
+        "result": result,
+        "receipt": receipt,
+        "attestation": attestation,
+    }
 
 
 def _docs(root: Path) -> list[str]:
@@ -334,7 +358,18 @@ def package(root: Path, release: str, *, status: str,
             provenance_key_id: str = "release-key-1",
             provenance_trust_root: str = "qualification-only",
             test_evidence: dict | None = None,
+            test_evidence_public_key: str | None = None,
+            test_evidence_key_id: str | None = None,
+            require_signed_test_evidence: bool = False,
             external_attestation: dict | None = None,
+            isolation_receipt: Path | None = None,
+            isolation_attestation: Path | None = None,
+            isolator_public_key: str | None = None,
+            isolation_key_id: str | None = None,
+            isolation_image_digest: str | None = None,
+            isolation_policy_digest: str | None = None,
+            isolation_properties: list[str] | None = None,
+            isolation_max_age_seconds: int = 3600,
             require_external_attestation: bool = False) -> dict:
     root = Path(root).resolve()
     out = root / "release"
@@ -342,8 +377,19 @@ def package(root: Path, release: str, *, status: str,
     archive = out / f"{release}.zip"
 
     binding = source_binding(root)
+    evidence_path = out / "test_evidence.json"
+    evidence_digest = None
     if test_evidence is not None:
-        validate_test_evidence(test_evidence, binding["commit"])
+        if require_signed_test_evidence and not test_evidence_public_key:
+            raise SystemExit(
+                "signed test evidence requires --test-evidence-public-key")
+        validate_test_evidence(
+            test_evidence, binding["commit"],
+            public_key=test_evidence_public_key,
+            key_id=test_evidence_key_id,
+            require_signature=require_signed_test_evidence)
+        evidence_digest = test_evidence_module.write(
+            evidence_path, test_evidence)
         counts = test_evidence.get("counts") or {}
         passed = counts.get("passed", 0)
         skipped = counts.get("skipped", 0)
@@ -351,18 +397,128 @@ def package(root: Path, release: str, *, status: str,
     elif passed is None:
         raise SystemExit(
             "package() requires passed counts or test evidence")
-    if external_attestation is not None:
+
+    raw_isolation = any(value is not None for value in (
+        isolation_receipt, isolation_attestation, isolator_public_key,
+        isolation_image_digest, isolation_policy_digest, isolation_properties))
+    isolation_info = {"external_attestation": None}
+    isolation_names: list[str] = []
+    if raw_isolation:
+        missing = [
+            name for name, value in (
+                ("--isolation-receipt", isolation_receipt),
+                ("--isolation-attestation", isolation_attestation),
+                ("--isolator-public-key", isolator_public_key),
+                ("--isolation-image-digest", isolation_image_digest),
+                ("--isolation-policy-digest", isolation_policy_digest),
+                ("--isolation-property", isolation_properties),
+            ) if value is None or value == []
+        ]
+        if missing:
+            raise SystemExit(
+                "external isolation evidence is incomplete: missing "
+                + ", ".join(missing))
+        key = test_evidence_module.public_key(isolator_public_key)
+        try:
+            attestation_doc = json.loads(
+                Path(isolation_attestation).read_text())
+        except (OSError, ValueError) as exc:
+            raise SystemExit(
+                f"external isolation attestation is unreadable: {exc}") from exc
+        key_id = isolation_key_id or attestation_doc.get("signer_key_id")
+        if not key_id:
+            raise SystemExit(
+                "external isolation attestation names no signer key id")
+        verification = verify_external_isolation(
+            receipt_path=Path(isolation_receipt),
+            attestation_path=Path(isolation_attestation),
+            public_key=key, key_id=key_id,
+            image_digest=isolation_image_digest,
+            policy_digest=isolation_policy_digest,
+            properties=list(isolation_properties),
+            max_age_seconds=isolation_max_age_seconds)
+        result = verification["result"]
+        receipt_bytes = Path(isolation_receipt).read_bytes()
+        attestation_bytes = Path(isolation_attestation).read_bytes()
+        (out / "isolation_receipt.json").write_bytes(receipt_bytes)
+        (out / "isolation_attestation.json").write_bytes(attestation_bytes)
+        record = {
+            "schema_version": 1,
+            "kind": "external_isolation_verification",
+            "generated_at": _utcnow(),
+            "receipt_digest": result.receipt_digest,
+            "attestation_digest": result.attestation_digest,
+            "policy_digest": result.policy_digest,
+            "backend": result.backend,
+            "worker_identity": result.worker_identity,
+            "signer_key_id": result.signer_key_id,
+            "public_key": key,
+            "image_digest": isolation_image_digest,
+            "required_properties": sorted(isolation_properties),
+            "verified": result.ok,
+            "reason": result.reason,
+        }
+        record_bytes = (
+            provenance.canonical_json(record) + "\n").encode("utf-8")
+        (out / "isolation_verification.json").write_bytes(record_bytes)
+        isolation_names = [
+            "isolation_verification.json",
+            "isolation_receipt.json",
+            "isolation_attestation.json",
+        ]
+        isolation_info = {"external_attestation": {
+            "verified": True,
+            "verification": {
+                "path": "release/isolation_verification.json",
+                "sha256": hashlib.sha256(record_bytes).hexdigest(),
+            },
+            "receipt": {
+                "path": "release/isolation_receipt.json",
+                "sha256": hashlib.sha256(receipt_bytes).hexdigest(),
+            },
+            "attestation": {
+                "path": "release/isolation_attestation.json",
+                "sha256": hashlib.sha256(attestation_bytes).hexdigest(),
+            },
+            "signer_key_id": result.signer_key_id,
+            "public_key": key,
+            "image_digest": isolation_image_digest,
+            "policy_digest": result.policy_digest,
+            "receipt_digest": result.receipt_digest,
+            "attestation_digest": result.attestation_digest,
+            "backend": result.backend,
+            "worker_identity": result.worker_identity,
+            "required_properties": sorted(isolation_properties),
+            "generated_at": record["generated_at"],
+            "verification_mode": "raw_receipt_and_attestation",
+        }}
+    elif external_attestation is not None:
+        if require_external_attestation:
+            raise SystemExit(
+                "external attestation requires the raw receipt and signed"
+                " attestation (--isolation-receipt and"
+                " --isolation-attestation)")
         expected_image = _probe_image_digest(root)
         expected_receipt = _receipt_digest(root)
-        if require_external_attestation and (
-                expected_image is None or expected_receipt is None):
-            raise SystemExit(
-                "external attestation requires the probe and receipt"
-                " evidence in evidence/sandbox")
         validate_external_attestation(
             external_attestation,
             expected_image_digest=expected_image,
             expected_receipt_digest=expected_receipt)
+        isolation_info = {"external_attestation": {
+            "verified": True,
+            "signer_key_id": external_attestation.get("signer_key_id"),
+            "public_key": external_attestation.get("public_key"),
+            "image_digest": external_attestation.get("image_digest"),
+            "policy_digest": external_attestation.get("policy_digest"),
+            "receipt_digest": external_attestation.get("receipt_digest"),
+            "generated_at": external_attestation.get("generated_at"),
+            "required_properties": external_attestation.get(
+                "required_properties"),
+            "sha256": hashlib.sha256(
+                provenance.canonical_json(
+                    external_attestation)).hexdigest(),
+            "verification_mode": "record_only",
+        }}
     elif require_external_attestation:
         raise SystemExit("external attestation is required")
     build_record = {
@@ -484,11 +640,15 @@ def package(root: Path, release: str, *, status: str,
             "errors": (test_evidence.get("counts") or {}).get("errors", 0),
             "source": "evidence",
             "evidence": {
-                "sha256": hashlib.sha256(
-                    provenance.canonical_json(test_evidence)).hexdigest(),
+                "path": "release/test_evidence.json",
+                "sha256": evidence_digest,
                 "source_commit": test_evidence.get("source_commit"),
                 "pytest_version": test_evidence.get("pytest_version"),
                 "counts": test_evidence.get("counts"),
+                "signed": "signature" in test_evidence,
+                "signer_key_id": test_evidence.get("signer_key_id"),
+                "output_sha256": test_evidence.get("output_sha256"),
+                "exit_status": test_evidence.get("exit_status"),
             },
         }
     else:
@@ -502,24 +662,6 @@ def package(root: Path, release: str, *, status: str,
             "source": "operator",
         }
 
-    if external_attestation is not None:
-        isolation = {
-            "external_attestation": {
-                "verified": True,
-                "signer_key_id": external_attestation.get("signer_key_id"),
-                "public_key": external_attestation.get("public_key"),
-                "image_digest": external_attestation.get("image_digest"),
-                "policy_digest": external_attestation.get("policy_digest"),
-                "receipt_digest": external_attestation.get("receipt_digest"),
-                "generated_at": external_attestation.get("generated_at"),
-                "sha256": hashlib.sha256(
-                    provenance.canonical_json(
-                        external_attestation)).hexdigest(),
-            }
-        }
-    else:
-        isolation = {"external_attestation": None}
-
     release_manifest = {
         "schema_version": 1,
         "release": release,
@@ -532,7 +674,7 @@ def package(root: Path, release: str, *, status: str,
         ),
         "status": status,
         "test_result": test_result,
-        "isolation": isolation,
+        "isolation": isolation_info,
         "archive": {
             "path": f"release/{archive.name}",
             "sha256": report["zip_sha256"],
@@ -562,6 +704,9 @@ def package(root: Path, release: str, *, status: str,
              provenance_path.name]
     if provenance_info.get("public_key_path"):
         names.append(Path(provenance_info["public_key_path"]).name)
+    if evidence_digest is not None:
+        names.append("test_evidence.json")
+    names.extend(isolation_names)
     for name in names:
         sums.append(f"{_sha256(out / name)}  {name}")
     (out / "SHA256SUMS").write_text("\n".join(sums) + "\n")
@@ -582,15 +727,38 @@ def main() -> int:
     parser.add_argument("--failed", type=int, default=0)
     parser.add_argument("--test-evidence", type=Path, default=None,
                         help="JSON from tools/run_tests.py --json")
+    parser.add_argument("--test-evidence-public-key", default=None,
+                        help="CI Ed25519 public key (hex or file)")
+    parser.add_argument("--test-evidence-key-id", default=None,
+                        help="expected CI signer key identifier")
     parser.add_argument("--require-test-evidence", action="store_true",
                         help="refuse to seal without machine-readable"
                              " test evidence")
+    parser.add_argument("--require-signed-test-evidence", action="store_true",
+                        help="refuse to seal unless the test evidence is"
+                             " signed by the supplied CI key")
     parser.add_argument("--external-attestation", type=Path, default=None,
                         help="verification record from"
                              " tools/verify_external_attestation.py")
+    parser.add_argument("--isolation-receipt", type=Path, default=None,
+                        help="execution receipt the isolator signed")
+    parser.add_argument("--isolation-attestation", type=Path, default=None,
+                        help="signed IsolationAttestationV1 document")
+    parser.add_argument("--isolator-public-key", default=None,
+                        help="external isolator Ed25519 public key (hex or file)")
+    parser.add_argument("--isolation-key-id", default=None,
+                        help="expected isolator signer key identifier")
+    parser.add_argument("--isolation-image-digest", default=None,
+                        help="pinned evaluator image digest")
+    parser.add_argument("--isolation-policy-digest", default=None,
+                        help="pinned sandbox policy digest")
+    parser.add_argument("--isolation-property", action="append", default=None,
+                        help="required containment property (repeatable)")
+    parser.add_argument("--isolation-max-age-seconds", type=int, default=3600,
+                        help="maximum attestation age in seconds")
     parser.add_argument("--require-external-attestation", action="store_true",
-                        help="refuse to seal without a verified external"
-                             " isolation attestation")
+                        help="refuse to seal without verified raw isolation"
+                             " evidence")
     parser.add_argument("--allow-dirty", action="store_true")
     parser.add_argument("--provenance-key", type=Path,
                         help="file containing a 32-byte hex signing seed")
@@ -599,22 +767,35 @@ def main() -> int:
                         default="qualification-only",
                         help="qualification-only or production")
     args = parser.parse_args()
+    if args.provenance_trust_root not in {"qualification-only", "production"}:
+        raise SystemExit(
+            "--provenance-trust-root must be qualification-only or production")
     if args.require_test_evidence and args.test_evidence is None:
         raise SystemExit("--require-test-evidence needs --test-evidence")
+    if args.require_signed_test_evidence and not args.test_evidence_public_key:
+        raise SystemExit(
+            "--require-signed-test-evidence needs --test-evidence-public-key")
     evidence = None
     if args.test_evidence is not None:
         evidence = load_test_evidence(args.test_evidence)
     elif args.passed is None:
         raise SystemExit("pass --test-evidence or --passed")
+    raw_isolation = any(value is not None for value in (
+        args.isolation_receipt, args.isolation_attestation,
+        args.isolator_public_key, args.isolation_image_digest,
+        args.isolation_policy_digest, args.isolation_property))
+    if args.require_external_attestation and not raw_isolation:
+        raise SystemExit(
+            "--require-external-attestation needs the raw receipt and signed"
+            " attestation (--isolation-receipt, --isolation-attestation,"
+            " --isolator-public-key, --isolation-image-digest,"
+            " --isolation-policy-digest, --isolation-property)")
     attestation_path = args.external_attestation
-    if attestation_path is None and args.require_external_attestation:
+    if attestation_path is None and not raw_isolation:
         candidate = (args.root / "evidence" / "sandbox" / "gate2_isolation" /
                      "external_verification.json")
         if candidate.is_file():
             attestation_path = candidate
-    if args.require_external_attestation and attestation_path is None:
-        raise SystemExit(
-            "--require-external-attestation needs --external-attestation")
     external = None
     if attestation_path is not None:
         external = load_external_attestation(attestation_path)
@@ -636,7 +817,18 @@ def main() -> int:
         provenance_key_id=args.provenance_key_id,
         provenance_trust_root=args.provenance_trust_root,
         test_evidence=evidence,
+        test_evidence_public_key=args.test_evidence_public_key,
+        test_evidence_key_id=args.test_evidence_key_id,
+        require_signed_test_evidence=args.require_signed_test_evidence,
         external_attestation=external,
+        isolation_receipt=args.isolation_receipt,
+        isolation_attestation=args.isolation_attestation,
+        isolator_public_key=args.isolator_public_key,
+        isolation_key_id=args.isolation_key_id,
+        isolation_image_digest=args.isolation_image_digest,
+        isolation_policy_digest=args.isolation_policy_digest,
+        isolation_properties=args.isolation_property,
+        isolation_max_age_seconds=args.isolation_max_age_seconds,
         require_external_attestation=args.require_external_attestation,
     )
     print(json.dumps({

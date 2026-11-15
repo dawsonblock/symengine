@@ -1,4 +1,5 @@
 """Release qualification consumes executed test evidence, not typed totals."""
+import hashlib
 import json
 import subprocess
 import sys
@@ -11,22 +12,32 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools"))
 import package_release  # noqa: E402
 import run_tests  # noqa: E402
+import test_evidence  # noqa: E402
+from sis.v3 import signatures  # noqa: E402
 
 COMMIT = "a" * 40
+OUTPUT = "1514 passed, 13 skipped in 228.66s\n"
 
 
 def evidence(**overrides):
+    command = [sys.executable, "-m", "pytest", "tests/", "-q"]
     document = {
         "schema_version": 1,
         "kind": "test_evidence",
         "source_commit": COMMIT,
         "dirty": False,
-        "command": [sys.executable, "-m", "pytest", "tests/", "-q"],
+        "command": command,
+        "suite": "tests/",
+        "python_executable": sys.executable,
         "pytest_version": "8.4.2",
         "pytest_pin": "8.4.2",
         "counts": {"passed": 1514, "failed": 0, "skipped": 13,
                    "errors": 0},
         "exit_status": 0,
+        "output": OUTPUT,
+        "output_truncated": False,
+        "output_sha256": hashlib.sha256(
+            OUTPUT.encode("utf-8")).hexdigest(),
     }
     document.update(overrides)
     return document
@@ -68,7 +79,69 @@ class TestEvidenceValidationTests(unittest.TestCase):
     def test_a_command_without_pytest_is_rejected(self):
         with self.assertRaisesRegex(SystemExit, "does not run pytest"):
             package_release.validate_test_evidence(
-                evidence(command=["python3", "-m", "unittest"]), COMMIT)
+                evidence(
+                    command=[sys.executable, "-m", "unittest", "tests/",
+                             "-q"],
+                    python_executable=sys.executable), COMMIT)
+
+    def test_a_fabricated_count_is_rejected(self):
+        with self.assertRaisesRegex(SystemExit, "counts do not match"):
+            package_release.validate_test_evidence(
+                evidence(counts={"passed": 999999, "failed": 0,
+                                 "skipped": 0, "errors": 0}), COMMIT)
+
+    def test_a_modified_output_is_rejected(self):
+        with self.assertRaisesRegex(SystemExit, "output digest"):
+            package_release.validate_test_evidence(
+                evidence(output="1514 passed, 13 skipped in 1.00s\n"),
+                COMMIT)
+
+    def test_a_truncated_output_is_rejected(self):
+        with self.assertRaisesRegex(SystemExit, "truncated"):
+            package_release.validate_test_evidence(
+                evidence(output_truncated=True), COMMIT)
+
+    def test_extra_pytest_arguments_are_rejected(self):
+        command = [sys.executable, "-m", "pytest", "tests/", "-q",
+                   "--ignore=tests"]
+        with self.assertRaisesRegex(SystemExit, "extra pytest arguments"):
+            package_release.validate_test_evidence(
+                evidence(command=command,
+                         python_executable=sys.executable), COMMIT)
+
+    def test_a_signed_report_verifies_with_the_trusted_key(self):
+        seed, public = signatures.generate_keypair()
+        signed = test_evidence.sign_evidence(
+            evidence(), seed, "ci-runner")
+        package_release.validate_test_evidence(
+            signed, COMMIT, public_key=public.hex(),
+            require_signature=True)
+
+    def test_a_wrong_key_is_rejected(self):
+        seed, _public = signatures.generate_keypair()
+        _other_seed, other = signatures.generate_keypair()
+        signed = test_evidence.sign_evidence(
+            evidence(), seed, "ci-runner")
+        with self.assertRaisesRegex(SystemExit, "signature is invalid"):
+            package_release.validate_test_evidence(
+                signed, COMMIT, public_key=other.hex(),
+                require_signature=True)
+
+    def test_a_tampered_signed_report_is_rejected(self):
+        seed, public = signatures.generate_keypair()
+        signed = test_evidence.sign_evidence(
+            evidence(), seed, "ci-runner")
+        signed["counts"] = {"passed": 999999, "failed": 0,
+                            "skipped": 0, "errors": 0}
+        with self.assertRaisesRegex(SystemExit, "signature is invalid"):
+            package_release.validate_test_evidence(
+                signed, COMMIT, public_key=public.hex(),
+                require_signature=True)
+
+    def test_a_signature_is_required_when_requested(self):
+        with self.assertRaisesRegex(SystemExit, "public key is required"):
+            package_release.validate_test_evidence(
+                evidence(), COMMIT, require_signature=True)
 
     def test_the_cli_refuses_a_missing_required_evidence_file(self):
         result = subprocess.run(
@@ -163,7 +236,7 @@ class ExternalAttestationValidationTests(unittest.TestCase):
             capture_output=True, text=True)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn(
-            "--require-external-attestation needs --external-attestation",
+            "--require-external-attestation needs the raw receipt",
             result.stderr)
 
 

@@ -39,14 +39,23 @@ jobs:
         # integration tests skip when the image is absent, so building it
         # here is what makes them run in CI.
         if: runner.os == 'Linux'
-        run: docker build -t sis-evaluator:3.3.8 docker/sandbox
+        run: docker build -t sis-evaluator:3.3.9 docker/sandbox
       - run: python -m pytest tests/ -q
         env:
           PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
           PYTHONNOUSERSITE: "1"
       - name: Verify release inventory (tags and published releases)
         # Release identity, never manifest success, selects the strict gate.
+        # Every trust anchor comes from repository configuration, never from
+        # the artifact under test. Missing secrets fail closed.
         if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'release'
+        env:
+          SIS_RELEASE_PUBLIC_KEY: ${{ secrets.SIS_RELEASE_PUBLIC_KEY }}
+          SIS_TEST_EVIDENCE_PUBLIC_KEY: ${{ secrets.SIS_TEST_EVIDENCE_PUBLIC_KEY }}
+          SIS_ISOLATOR_PUBLIC_KEY: ${{ secrets.SIS_ISOLATOR_PUBLIC_KEY }}
+          SIS_ISOLATION_IMAGE_DIGEST: ${{ vars.SIS_ISOLATION_IMAGE_DIGEST }}
+          SIS_ISOLATION_POLICY_DIGEST: ${{ vars.SIS_ISOLATION_POLICY_DIGEST }}
+          SIS_ISOLATION_PROPERTIES: ${{ vars.SIS_ISOLATION_PROPERTIES }}
         run: python tools/check_release_ci.py --mode release
       - name: Verify development inventory when current
         if: ${{ !startsWith(github.ref, 'refs/tags/') && github.event_name != 'release' }}
@@ -70,15 +79,29 @@ jobs:
       - run: python -m pip install -r requirements-lock.txt
       - run: python -m pip install -e . --no-deps
       - name: Build evaluator sandbox image
-        run: docker build -t sis-evaluator:3.3.8 docker/sandbox
-      - run: python tools/run_tests.py --json evidence/ci/test_report.json
+        run: docker build -t sis-evaluator:3.3.9 docker/sandbox
+      - name: Run the suite and sign the evidence when a CI key is configured
         env:
           PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
           PYTHONNOUSERSITE: "1"
+          SIS_TEST_EVIDENCE_SIGNING_KEY: ${{ secrets.SIS_TEST_EVIDENCE_SIGNING_KEY }}
+          SIS_TEST_EVIDENCE_KEY_ID: ${{ vars.SIS_TEST_EVIDENCE_KEY_ID }}
+        run: |
+          if [ -n "$SIS_TEST_EVIDENCE_SIGNING_KEY" ]; then
+            umask 077
+            printf '%s\n' "$SIS_TEST_EVIDENCE_SIGNING_KEY" > "$RUNNER_TEMP/test-evidence.key"
+            python tools/run_tests.py \
+              --json "$RUNNER_TEMP/sis-test-report.json" \
+              --signing-key "$RUNNER_TEMP/test-evidence.key" \
+              --key-id "${SIS_TEST_EVIDENCE_KEY_ID:-ci-test-runner}"
+          else
+            python tools/run_tests.py \
+              --json "$RUNNER_TEMP/sis-test-report.json"
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: test-evidence-linux-3.12
-          path: evidence/ci/test_report.json
+          path: ${{ runner.temp }}/sis-test-report.json
 
   docker-absent:
     # The suite must skip cleanly, not fail, where no daemon exists.
@@ -147,7 +170,7 @@ jobs:
         # integration tests skip when the image is absent, so building it
         # here is what makes them run in CI.
         if: runner.os == 'Linux'
-        run: docker build -t sis-evaluator:3.3.8 docker/sandbox
+        run: docker build -t sis-evaluator:3.3.9 docker/sandbox
       - run: python -m pytest tests/ -q
         env:
           SIS_POSTGRES_DSN: postgresql://sis_test:sis_test@127.0.0.1:5432/sis_control

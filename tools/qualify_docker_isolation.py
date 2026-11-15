@@ -15,7 +15,7 @@ release.
 
 Usage:
     python3 tools/qualify_docker_isolation.py \
-      --image sis-evaluator:3.3.8@sha256:<64 hex> \
+      --image sis-evaluator:3.3.9@sha256:<64 hex> \
       --output evidence/sandbox/gate2_isolation
 """
 from __future__ import annotations

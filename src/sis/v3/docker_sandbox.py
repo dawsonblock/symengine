@@ -34,7 +34,7 @@ import threading
 import time
 from collections.abc import Mapping
 from dataclasses import replace
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from .contracts import ContractError, ExecutionReceiptV1, canonical_digest
 from .runner import (MAX_WORKSPACE_FILES, CommandSpec, ResourceLimits,
@@ -411,27 +411,49 @@ class DockerSandboxExecutor:
                     raise RunnerError("workspace_is_closing")
             proc = self._exec_command(container, argv, spec, workdir)
 
+            stop = threading.Event()
+            over = False
+
+            def consume(pipe, sink: bytearray, name: str) -> bool:
+                chunk = (os.read(pipe.fileno(), _READ_CHUNK)
+                         if os.name == "posix" else pipe.read(_READ_CHUNK))
+                if not chunk:
+                    return False
+                nonlocal over
+                with capture_lock:
+                    remaining = output_cap - captured["total"]
+                    if remaining <= 0:
+                        truncated[name] = True
+                        over = True
+                    else:
+                        take = chunk[:remaining]
+                        sink.extend(take)
+                        captured["total"] += len(take)
+                        over = len(take) < len(chunk)
+                        if over:
+                            truncated[name] = True
+                return True
+
             def pump(pipe, sink: bytearray, name: str) -> None:
                 try:
-                    while True:
-                        chunk = pipe.read(_READ_CHUNK)
-                        if not chunk:
+                    if os.name == "posix":
+                        import select
+                        fd = pipe.fileno()
+                        while not stop.is_set():
+                            ready, _, _ = select.select([fd], [], [], 0.1)
+                            if not ready:
+                                continue
+                            if not consume(pipe, sink, name):
+                                return
+                            if over:
+                                self._kill(container)
+                                return
+                        return
+                    while not stop.is_set():
+                        if not consume(pipe, sink, name):
                             return
-                        with capture_lock:
-                            remaining = output_cap - captured["total"]
-                            if remaining <= 0:
-                                truncated[name] = True
-                                over = True
-                            else:
-                                take = chunk[:remaining]
-                                sink.extend(take)
-                                captured["total"] += len(take)
-                                over = len(take) < len(chunk)
-                                if over:
-                                    truncated[name] = True
                         if over:
                             self._kill(container)
-                            pipe.read()  # drain so the client cannot linger
                             return
                 except (OSError, ValueError):
                     return
@@ -439,17 +461,27 @@ class DockerSandboxExecutor:
             def feed() -> None:
                 try:
                     if spec.stdin:
-                        proc.stdin.write(spec.stdin)
+                        for offset in range(0, len(spec.stdin), _READ_CHUNK):
+                            if stop.is_set():
+                                break
+                            proc.stdin.write(
+                                spec.stdin[offset:offset + _READ_CHUNK])
+                            proc.stdin.flush()
                     proc.stdin.close()
                 except (OSError, ValueError):
                     pass
 
-            threads = [
-                threading.Thread(target=pump, args=(proc.stdout, stdout_chunks, "stdout"),
-                                 daemon=True),
-                threading.Thread(target=pump, args=(proc.stderr, stderr_chunks, "stderr"),
-                                 daemon=True),
-                threading.Thread(target=feed, daemon=True),
+            stdout_thread = threading.Thread(
+                target=pump, args=(proc.stdout, stdout_chunks, "stdout"),
+                daemon=True)
+            stderr_thread = threading.Thread(
+                target=pump, args=(proc.stderr, stderr_chunks, "stderr"),
+                daemon=True)
+            feed_thread = threading.Thread(target=feed, daemon=True)
+            threads = [stdout_thread, stderr_thread, feed_thread]
+            pumps = [
+                (stdout_thread, proc.stdout),
+                (stderr_thread, proc.stderr),
             ]
             for thread in threads:
                 thread.start()
@@ -459,21 +491,34 @@ class DockerSandboxExecutor:
             except subprocess.TimeoutExpired:
                 timed_out = True
                 self._kill(container)
+                stop.set()
                 try:
-                    proc.wait(timeout=10)
+                    proc.wait(timeout=2)
                 except subprocess.TimeoutExpired:
                     proc.kill()
                     try:
-                        proc.wait(timeout=10)
+                        proc.wait(timeout=2)
                     except subprocess.TimeoutExpired:
                         pass
             finally:
+                if timed_out:
+                    stop.set()
                 for thread in threads:
-                    thread.join(timeout=10)
-                for pipe in (proc.stdout, proc.stderr, proc.stdin):
+                    thread.join(timeout=0.5 if timed_out else 10)
+                    if thread.is_alive():
+                        stop.set()
+                        thread.join(timeout=0.5)
+                for thread, pipe in pumps:
+                    if not thread.is_alive():
+                        try:
+                            if pipe is not None and not pipe.closed:
+                                pipe.close()
+                        except OSError:
+                            pass
+                if not feed_thread.is_alive():
                     try:
-                        if pipe is not None and not pipe.closed:
-                            pipe.close()
+                        if proc.stdin is not None and not proc.stdin.closed:
+                            proc.stdin.close()
                     except OSError:
                         pass
             if self._registry.is_closing(record.workspace_id):
@@ -916,6 +961,44 @@ class DockerSandboxExecutor:
                     pass
 
     @staticmethod
+    def _safe_member(member) -> bool:
+        """Normalize and validate one archive member.
+
+        Python 3.12's ``filter="data"`` provides these checks, but the
+        package supports 3.10 and 3.11. Validate the same properties
+        explicitly before every extraction so the fallback path is not
+        weaker than the modern one. Returns False for the archive's
+        leading ``.`` directory entry, which needs no extraction.
+        """
+        name = member.name
+        if not isinstance(name, str) or not name:
+            raise RunnerError(
+                "workspace_copy_out_failed:unsafe_member_path")
+        while name.startswith("./"):
+            name = name[2:]
+        if name in ("", "."):
+            if member.isdir():
+                return False
+            raise RunnerError(
+                "workspace_copy_out_failed:unsafe_member_path")
+        if (PurePosixPath(name).is_absolute()
+                or "\\" in name
+                or any(part in ("", ".", "..")
+                       for part in name.split("/"))):
+            raise RunnerError(
+                "workspace_copy_out_failed:unsafe_member_path")
+        if (member.issym() or member.islnk() or member.ischr()
+                or member.isblk() or member.isfifo()
+                or not (member.isreg() or member.isdir())):
+            raise RunnerError(
+                "workspace_copy_out_failed:unsupported_member_type")
+        member.name = name
+        member.mode = 0o755 if member.isdir() else 0o644
+        member.uid = member.gid = 0
+        member.uname = member.gname = ""
+        return True
+
+    @staticmethod
     def _extract_bounded(reader, staging: Path, disk_bytes: int) -> None:
         """Extract one filtered archive under an exact byte/member budget."""
         extracted = 0
@@ -938,12 +1021,14 @@ class DockerSandboxExecutor:
                         member.size < 0
                         or extracted + member.size > disk_bytes):
                     raise CopyOutBudgetError("disk_budget_exceeded")
+                if not DockerSandboxExecutor._safe_member(member):
+                    continue
                 try:
                     archive.extract(member, path=staging, filter="data")
-                except TypeError as exc:
-                    raise RunnerError(
-                        "workspace_copy_out_failed:"
-                        "safe_extraction_unavailable") from exc
+                except TypeError:
+                    # Python 3.10/3.11 predate extraction filters; the
+                    # explicit member validation above is the boundary.
+                    archive.extract(member, path=staging)
                 if member.isreg():
                     extracted += member.size
 

@@ -1,5 +1,61 @@
 # Changelog
 
+## 2026-11-14 — SIS v3.3.9 controlled repair release
+
+v3.3.9 is a security, correctness and verification repair, not a feature
+release. The learning workflow is unchanged; its general effectiveness
+remains unproven. Production qualification still requires keys held
+independently of the evaluated machine.
+
+- `tools/check_release_ci.py --mode release` now requires
+  `release/release_manifest.json`, the claimed archive, a byte-exact
+  source-tree binding, a signed `production` provenance envelope,
+  authenticated test evidence and a cryptographically re-verified raw
+  isolation attestation. A development-mode inventory success never
+  satisfies the release gate, and a valid signature over an unrelated or
+  malformed ZIP is rejected.
+- `tools/verify_release.py --source <tree>` binds a ZIP to the exact
+  source tree; release mode also streams the archive, rejects duplicate,
+  missing, unexpected or modified members, and compares every member with
+  the current source digest.
+- Test evidence is now authenticated. `tools/run_tests.py` records the
+  full output and its digest, the exact command, exit status, commit and
+  parsed counts, and can sign the report with an Ed25519 CI key. The
+  packager and gate reject an unsigned report, a fabricated count, a
+  truncated output, a narrowed pytest command or a report from another
+  commit. Evidence is written to `release/test_evidence.json`.
+- The release manifest records `release/isolation_receipt.json`,
+  `release/isolation_attestation.json` and a fresh
+  `release/isolation_verification.json`. The gate re-verifies the
+  signature with the relying party's isolator key, pins the image and
+  policy digests, checks freshness and rejects a receipt from another
+  execution.
+- Hard resource enforcement: `induce(..., hard_limits=...)` routes a
+  search through `sis.enforced_induction.run_induction_enforced`. The
+  receipt records the parent monotonic deadline, observed wall time,
+  `RLIMIT_AS`, `RLIMIT_CPU` and `RLIMIT_NPROC`, distinguishes cooperative
+  budget exhaustion from a hard-limit termination, and can be signed with
+  `sign_receipt()`. A `resource_exhausted` result is never a successful
+  evaluation.
+- `LocalSubprocessExecutor` and `DockerSandboxExecutor` now stop their
+  pump threads instead of closing a blocked pipe, so a grandchild holding
+  a pipe cannot extend an 8-second deadline into a ~20-second
+  termination. An execution that exits just after the parent deadline is
+  recorded as a timeout, and a CPU-limit signal is marked
+  `rlimit:cpu_exceeded` so it classifies as a resource limit, not a task
+  failure.
+- Docker evidence was regenerated against
+  `sis-evaluator:3.3.9@sha256:5af4f6ce…`: the containment probe passes
+  13/13 and the local `IsolationAttestationV1` verifies with reason `ok`.
+  The stored trust root remains `qualification-only`.
+- Qualification matrix: Python 3.10, 3.12 and 3.13; Linux without Docker;
+  PostgreSQL 16; SQLite; Z3-enabled bounded equivalence; and a clean
+  extracted archive. Windows remains explicitly experimental.
+
+The checked-in v3.3.9 bundle is qualification-only. A production seal
+still requires an independently held release key, CI evidence key and
+isolator key.
+
 ## 2026-11-14 — Release authenticity gates
 
 Closes the code side of the build-10 release-authenticity finding. The

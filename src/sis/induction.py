@@ -642,7 +642,9 @@ def _search_once(train, dev, observed, probes, state, proposals, use_z3):
 
 def induce(train, validation=None, *, namespace="default", max_candidates=12000,
            proposals=None, use_z3=False, budget=None, dev=None, holdout=None,
-           counterexample_oracle=None, max_refinement_rounds=2):
+           counterexample_oracle=None, max_refinement_rounds=2,
+           hard_limits=None, hard_limit_receipt_seed=None,
+           hard_limit_receipt_key_id="resource-receipt"):
     """Induce a bounded rule; never confuse fit with proof.
 
     ``dev`` is the development partition used for early stopping,
@@ -658,6 +660,17 @@ def induce(train, validation=None, *, namespace="default", max_candidates=12000,
     inputs when an authoritative function exists (for example a
     mathematical specification). Generated probes alone are never
     treated as ground truth.
+
+    ``hard_limits`` routes the search through
+    :func:`sis.enforced_induction.run_induction_enforced`. It is a mapping
+    with required ``memory_limit_bytes`` and ``wall_seconds`` and optional
+    ``cpu_seconds`` and ``process_limit``. The child runs under OS limits
+    and a parent monotonic deadline; a resource-exhausted run reports
+    ``status: resource_exhausted`` and can never be mistaken for a
+    successful search. ``hard_limit_receipt_seed`` signs the returned
+    resource receipt so a later evaluation decision can authenticate it.
+    Omitting ``hard_limits`` keeps the in-process cooperative budget,
+    which is diagnostic only.
     """
     namespace_name(namespace)
     if type(use_z3) is not bool:
@@ -678,6 +691,48 @@ def induce(train, validation=None, *, namespace="default", max_candidates=12000,
         raise InvalidInput("max_refinement_rounds must be an integer in [0,8]")
     if counterexample_oracle is not None and not callable(counterexample_oracle):
         raise InvalidInput("counterexample_oracle must be callable")
+
+    if hard_limits is not None:
+        if not isinstance(hard_limits, dict):
+            raise InvalidInput("hard_limits must be a mapping")
+        unknown = set(hard_limits) - {
+            "memory_limit_bytes", "wall_seconds",
+            "cpu_seconds", "process_limit"}
+        if unknown:
+            raise InvalidInput(
+                "hard_limits has unknown keys: " + ", ".join(sorted(unknown)))
+        if ("memory_limit_bytes" not in hard_limits
+                or "wall_seconds" not in hard_limits):
+            raise InvalidInput(
+                "hard_limits requires memory_limit_bytes and wall_seconds")
+        from .enforced_induction import run_induction_enforced
+        enforced = run_induction_enforced(
+            train, validation, dev=dev, holdout=holdout, budget=budget,
+            namespace=namespace, proposals=proposals, use_z3=use_z3,
+            max_refinement_rounds=max_refinement_rounds,
+            memory_limit_bytes=hard_limits["memory_limit_bytes"],
+            timeout_seconds=hard_limits["wall_seconds"],
+            cpu_seconds=hard_limits.get("cpu_seconds"),
+            process_limit=hard_limits.get("process_limit"),
+            receipt_seed=hard_limit_receipt_seed,
+            receipt_key_id=hard_limit_receipt_key_id)
+        result = enforced.result
+        if result is None:
+            return {
+                "namespace": namespace,
+                "status": "resource_exhausted",
+                "search_outcome": "resource_exhausted",
+                "limits_hit": enforced.receipt.resource_limits_hit,
+                "budget_enforcement": "hard_subprocess",
+                "enforcement_receipt": enforced.receipt.to_dict(),
+            }
+        result = dict(result)
+        result["budget_enforcement"] = "hard_subprocess"
+        result["enforcement_receipt"] = enforced.receipt.to_dict()
+        if not enforced.hard_limits_verified:
+            result["status"] = "resource_exhausted"
+            result["search_outcome"] = "resource_exhausted"
+        return result
 
     original_train = check_examples(train, minimum=3)
     legacy = check_examples(validation or [])

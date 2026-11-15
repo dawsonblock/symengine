@@ -195,6 +195,49 @@ class CanonicalArchiveBindingTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "out-of-band"):
             verify_release.verify(self.target)
 
+    def test_duplicate_archive_member_is_rejected(self):
+        import hashlib
+        import verify_release
+        digest = hashlib.sha256(b"print(1)\n").hexdigest()
+        manifest = {"schema": 1, "files": {"src/pkg/a.py": digest}}
+        self.target.parent.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(self.target, "w") as z:
+            z.writestr("proj/RELEASE_SHA256.json", json.dumps(manifest))
+            z.writestr("proj/src/pkg/a.py", b"print(1)\n")
+            z.writestr("proj/src/pkg/a.py", b"print(1)\n")
+        with self.assertRaisesRegex(ValueError, "duplicate"):
+            verify_release.verify(self.target)
+
+    def test_unexpected_archive_member_is_rejected(self):
+        import hashlib
+        import verify_release
+        digest = hashlib.sha256(b"print(1)\n").hexdigest()
+        manifest = {"schema": 1, "files": {"src/pkg/a.py": digest}}
+        self.target.parent.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(self.target, "w") as z:
+            z.writestr("proj/RELEASE_SHA256.json", json.dumps(manifest))
+            z.writestr("proj/src/pkg/a.py", b"print(1)\n")
+            z.writestr("proj/src/pkg/evil.py", b"import os\n")
+        with self.assertRaisesRegex(ValueError, "mismatch"):
+            verify_release.verify(self.target)
+
+    def test_modified_archive_member_is_rejected(self):
+        import verify_release
+        self._build()
+        original = self.target.read_bytes()
+        manifest = json.loads(
+            (self.root / "RELEASE_SHA256.json").read_text())
+        with zipfile.ZipFile(self.target, "w") as z:
+            z.writestr("proj/RELEASE_SHA256.json",
+                       json.dumps(manifest))
+            for relative in manifest["files"]:
+                body = (b"print('pwned')\n" if relative == "src/pkg/a.py"
+                        else (self.root / relative).read_bytes())
+                z.writestr("proj/" + relative, body)
+        self.assertNotEqual(self.target.read_bytes(), original)
+        with self.assertRaisesRegex(ValueError, "mismatch"):
+            verify_release.verify(self.target)
+
     def test_build_refuses_dirty_source(self):
         import subprocess
         import build_canonical_zip

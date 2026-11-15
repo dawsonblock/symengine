@@ -24,11 +24,11 @@ not introduce a new policy.
 Each sealed release gets one annotated tag on its **seal commit**:
 
 ```bash
-git tag -a SIS-v3.3.8 <seal-commit> -m "SIS v3.3.8 release seal"
-git push origin SIS-v3.3.8
+git tag -a SIS-v3.3.9 <seal-commit> -m "SIS v3.3.9 release seal"
+git push origin SIS-v3.3.9
 ```
 
-The tag name matches the release artifact name (`release/SIS-v3.3.8.zip`,
+The tag name matches the release artifact name (`release/SIS-v3.3.9.zip`,
 `release/release_manifest.json` → `release`). Re-seals of the same
 version move the tag to the newest seal commit; tags are never rewritten
 to point at a different version.
@@ -39,71 +39,93 @@ to point at a different version.
 itself is out-of-band (`release/*.zip` is git-ignored).
 
 1. Land every source change and make sure the tree is clean.
-2. Run the supported suite and write machine-readable evidence:
+2. Run the supported suite and write signed machine-readable evidence:
 
    ```bash
    PYTHONPATH=src python3 tools/run_tests.py \
-     --json /tmp/sis-test-report.json
+     --json /tmp/sis-test-report.json \
+     --signing-key /secure/ci-test-seed.hex \
+     --key-id ci-test-runner
    ```
 
    Keep the evidence outside the tree: an in-tree file would make the
-   working tree dirty before `package_release.py` runs.
-
-   The runner refuses a pytest version other than the pin in
+   working tree dirty before `package_release.py` runs. The runner
+   refuses a pytest version other than the pin in
    `requirements-lock.txt`, and the evidence names the commit, command,
-   environment and parsed counts.
-3. Build the archive and provenance from that commit:
+   exit status, output digest and parsed counts.
+3. Produce the raw isolation evidence. The evaluator image must be
+   digest-pinned; the receipt and signed attestation must describe the
+   exact image and policy:
+
+   ```bash
+   PYTHONPATH=src python3 tools/probe_docker_sandbox.py \
+     --image sis-evaluator:3.3.9@sha256:<digest>
+   PYTHONPATH=src python3 tools/qualify_docker_isolation.py \
+     --image sis-evaluator:3.3.9@sha256:<digest> \
+     --output evidence/sandbox/gate2_isolation
+   ```
+
+   The stored `gate2-local-isolator` key is qualification-only. For a
+   production seal, hand `receipt.json` to an independent isolator and
+   use the attestation it returns.
+4. Build the archive and provenance from that commit:
 
    ```bash
    PYTHONPATH=src:. python3 tools/package_release.py \
      --status ENGINEERING_VERIFIED \
      --test-evidence /tmp/sis-test-report.json \
      --require-test-evidence \
+     --require-signed-test-evidence \
+     --test-evidence-public-key /secure/ci-test-public.hex \
+     --test-evidence-key-id ci-test-runner \
      --provenance-key /secure/release-seed.hex \
      --provenance-trust-root production \
-     --external-attestation \
-       evidence/sandbox/gate2_isolation/external_verification.json \
+     --isolation-receipt evidence/sandbox/gate2_isolation/receipt.json \
+     --isolation-attestation evidence/sandbox/gate2_isolation/attestation.json \
+     --isolator-public-key /secure/isolator-public.hex \
+     --isolation-image-digest <digest> \
+     --isolation-policy-digest <digest> \
+     --isolation-property net:denied \
+     --isolation-property fs:root_read_only \
      --require-external-attestation
    ```
 
    The tool refuses a dirty tree, re-hashes every member against the tree
    it came from, and records the exact Git commit as `source_commit`. It
-   also regenerates `release/README.md` from `release_manifest.json`, so
-   the archive hash, source commit, file count and test result always
-   describe the current seal. Test evidence from another commit, a dirty
-   tree, a non-pinned pytest, or a run with failures or errors is
-   refused; `--passed` remains only as an explicit operator override.
-
-   A production seal also needs the external isolation verification
-   record produced by `tools/verify_external_attestation.py` after the
-   isolator signs the receipt. The record must be fresh, verified, name
-   its required properties, and bind the probe image digest and stored
-   receipt digest; otherwise the build refuses.
-4. Commit only the generated provenance:
+   writes `release/test_evidence.json`, `release/isolation_receipt.json`,
+   `release/isolation_attestation.json`,
+   `release/isolation_verification.json` and regenerates
+   `release/README.md` from `release_manifest.json`.
+5. Commit only the generated provenance:
 
    ```bash
-   git commit -am "Seal SIS-v3.3.8"
+   git commit -am "Seal SIS-v3.3.9"
    ```
 
-5. Verify:
+6. Verify:
 
    ```bash
    PYTHONPATH=src python3 tools/verify_release.py --compile .
-   PYTHONPATH=src python3 tools/verify_release.py release/SIS-v3.3.8.zip
+   PYTHONPATH=src python3 tools/verify_release.py --source . \
+     release/SIS-v3.3.9.zip
    PYTHONPATH=src:. python3 tools/check_release_ci.py --mode development
    PYTHONPATH=src:. python3 tools/check_release_ci.py --mode release \
      --release-public-key /secure/release-public.hex \
-     --isolator-public-key /secure/isolator-public.hex
+     --test-evidence-public-key /secure/ci-test-public.hex \
+     --isolator-public-key /secure/isolator-public.hex \
+     --isolation-image-digest <digest> \
+     --isolation-policy-digest <digest> \
+     --isolation-property net:denied \
+     --isolation-property fs:root_read_only
    ```
 
-   Release mode additionally refuses a `release_manifest.json` whose
-   `test_result.source` is not `evidence`, that reports failed or
-   errored tests, whose provenance is unsigned or not `production`, or
-   that lacks a verified external isolation attestation. The public keys
-   come from the relying party (`--release-public-key` /
-   `SIS_RELEASE_PUBLIC_KEY` and `--isolator-public-key` /
-   `SIS_ISOLATOR_PUBLIC_KEY`); a key shipped beside the artifact is not
-   its own trust anchor.
+   Release mode refuses a missing release manifest or ZIP, a stale
+   source binding, a duplicate/unexpected/modified archive member, an
+   unsigned or non-production provenance envelope, an unsigned or
+   inconsistent test report, a missing or expired isolation attestation,
+   a receipt from another execution, or an image/policy mismatch. The
+   public keys come from the relying party; a key shipped beside the
+   artifact is not its own trust anchor.
 
 ## Why a doc change forces a re-seal
 

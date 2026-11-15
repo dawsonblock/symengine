@@ -29,6 +29,9 @@ LOCK = ROOT / "requirements-lock.txt"
 DEFAULT_PIN = "8.4.2"
 SUITE = "tests/"
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import test_evidence  # noqa: E402
+
 
 def _utcnow() -> str:
     return datetime.now(timezone.utc).isoformat(
@@ -64,19 +67,7 @@ def _git(*args: str) -> str:
 
 
 def _counts(output: str) -> dict:
-    counts = {"passed": 0, "failed": 0, "skipped": 0, "errors": 0}
-    patterns = {
-        "passed": r"(\d+) passed",
-        "failed": r"(\d+) failed",
-        "skipped": r"(\d+) skipped",
-        "errors": r"(\d+) error(?:s)?",
-    }
-    for name, pattern in patterns.items():
-        matches = re.findall(pattern, output)
-        if matches:
-            # The summary is last; an earlier line may quote a count.
-            counts[name] = int(matches[-1])
-    return counts
+    return test_evidence.counts_from_output(output)
 
 
 def _duration(output: str) -> float | None:
@@ -94,6 +85,10 @@ def main(argv=None) -> int:
     parser.add_argument("--allow-version-mismatch", action="store_true",
                         help="development only: run despite a different"
                              " pytest version")
+    parser.add_argument("--signing-key", type=Path, default=None,
+                        help="file containing a 32-byte hex CI signing seed")
+    parser.add_argument("--key-id", default="ci-test-runner",
+                        help="signer key identifier recorded in the evidence")
     parser.add_argument("extra", nargs=argparse.REMAINDER,
                         help="arguments after -- are passed to pytest")
     args = parser.parse_args(argv)
@@ -118,6 +113,10 @@ def main(argv=None) -> int:
         command, cwd=ROOT, capture_output=True, text=True)
     elapsed = time.monotonic() - started
     output = result.stdout + result.stderr
+    output_bytes = output.encode("utf-8")
+    truncated = len(output_bytes) > test_evidence.MAX_OUTPUT_BYTES
+    recorded_output = output_bytes[:test_evidence.MAX_OUTPUT_BYTES].decode(
+        "utf-8", errors="replace") if truncated else output
     counts = _counts(output)
     evidence = {
         "schema_version": 1,
@@ -127,6 +126,7 @@ def main(argv=None) -> int:
         "dirty": bool(_git("status", "--porcelain")),
         "command": command,
         "suite": args.suite,
+        "python_executable": args.python,
         "pytest_version": actual,
         "pytest_pin": pinned,
         "python_version": platform.python_version(),
@@ -137,24 +137,35 @@ def main(argv=None) -> int:
         "reported_duration_seconds": _duration(output),
         "counts": counts,
         "exit_status": result.returncode,
-        "output_sha256": hashlib.sha256(
-            output.encode("utf-8")).hexdigest(),
+        "output": recorded_output,
+        "output_truncated": truncated,
+        "output_sha256": hashlib.sha256(output_bytes).hexdigest(),
         "environment": {
             name: os.environ.get(name, "")
             for name in ("PYTEST_DISABLE_PLUGIN_AUTOLOAD",
                          "PYTHONNOUSERSITE", "DOCKER_HOST")
         },
     }
+    if args.signing_key is not None:
+        try:
+            seed = bytes.fromhex(args.signing_key.read_text().strip())
+        except (OSError, ValueError) as exc:
+            print(f"test evidence signing key is unreadable: {exc}",
+                  file=sys.stderr)
+            return 2
+        if len(seed) != 32:
+            print("test evidence signing key must be 32 bytes",
+                  file=sys.stderr)
+            return 2
+        evidence = test_evidence.sign_evidence(evidence, seed, args.key_id)
     if args.json is not None:
-        args.json.parent.mkdir(parents=True, exist_ok=True)
-        args.json.write_text(
-            json.dumps(evidence, indent=2, sort_keys=True) + "\n",
-            encoding="utf-8")
+        test_evidence.write(args.json, evidence)
     print(output.strip()[-2000:])
     print(json.dumps({
         "counts": counts,
         "exit_status": result.returncode,
         "evidence": str(args.json) if args.json is not None else None,
+        "signed": "signature" in evidence,
     }, indent=2))
     return result.returncode
 

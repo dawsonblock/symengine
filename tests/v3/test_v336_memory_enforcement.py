@@ -12,7 +12,9 @@ from __future__ import annotations
 
 import os
 import sys
+import time
 import unittest
+from dataclasses import replace
 from unittest import mock
 
 from sis import enforced_induction as enforcement
@@ -21,9 +23,12 @@ from sis.enforced_induction import (
     EnforcementUnavailable,
     MemoryEnforcementReceipt,
     run_induction_enforced,
+    sign_receipt,
+    verify_receipt_signature,
 )
 from sis.errors import InvalidInput
-from sis.induction import SearchBudget
+from sis.induction import SearchBudget, induce
+from sis.v3 import signatures
 
 CAP = 1 << 30
 # macOS refuses RLIMIT_AS below the interpreter's current address space,
@@ -58,12 +63,20 @@ def _receipt(**overrides) -> MemoryEnforcementReceipt:
         requested_limit_bytes=CAP,
         observed_soft_limit_bytes=CAP,
         observed_hard_limit_bytes=CAP,
+        requested_wall_seconds=120.0,
+        observed_wall_seconds=1.0,
+        requested_cpu_seconds=None,
+        observed_cpu_seconds=None,
+        requested_process_limit=None,
+        observed_process_limit=None,
         child_pid=1234,
         child_exit_status=0,
         child_signal=None,
         completed=True,
         timed_out=False,
         memory_limit_hit=False,
+        cpu_limit_hit=False,
+        cooperative_limits_hit=(),
         stdout_digest="a" * 64,
         stderr_digest="b" * 64,
         result_digest="c" * 64,
@@ -74,14 +87,18 @@ def _receipt(**overrides) -> MemoryEnforcementReceipt:
     return MemoryEnforcementReceipt(**fields)
 
 
-def _report(result=None, *, soft=CAP, hard=CAP, mode="posix_rlimit_as"):
-    report = {
-        "enforcement": {
-            "mode": mode,
-            "observed_soft_limit_bytes": soft,
-            "observed_hard_limit_bytes": hard,
-        },
+def _report(result=None, *, soft=CAP, hard=CAP, mode="posix_rlimit_as",
+            cpu=None, nproc=None):
+    enforcement = {
+        "mode": mode,
+        "observed_soft_limit_bytes": soft,
+        "observed_hard_limit_bytes": hard,
     }
+    if cpu is not None:
+        enforcement["observed_cpu_seconds"] = cpu
+    if nproc is not None:
+        enforcement["observed_process_limit"] = nproc
+    report = {"enforcement": enforcement}
     if result is not None:
         report["result"] = result
     return report
@@ -112,12 +129,49 @@ class ReceiptValidationTests(unittest.TestCase):
         self.assertEqual(
             first.to_dict()["receipt_digest"], first.receipt_digest)
 
+    def test_cooperative_exhaustion_is_not_a_hard_termination(self):
+        receipt = _receipt(cooperative_limits_hit=("max_wall_seconds",))
+        self.assertTrue(receipt.valid)
+        self.assertTrue(receipt.cooperative_exhausted)
+        self.assertTrue(receipt.resource_exhausted)
+        self.assertFalse(receipt.hard_limits_verified)
+        self.assertIn("max_wall_seconds", receipt.resource_limits_hit)
+
+    def test_cpu_and_process_limit_mismatches_are_invalid(self):
+        self.assertFalse(_receipt(
+            requested_cpu_seconds=10, observed_cpu_seconds=20).valid)
+        self.assertFalse(_receipt(
+            requested_process_limit=64, observed_process_limit=32).valid)
+        self.assertTrue(_receipt(
+            requested_cpu_seconds=10, observed_cpu_seconds=10).valid)
+        self.assertTrue(_receipt(
+            requested_process_limit=64, observed_process_limit=64).valid)
+
+
+class SignedReceiptTests(unittest.TestCase):
+    def test_a_signed_receipt_verifies(self):
+        seed, public = signatures.generate_keypair()
+        signed = sign_receipt(_receipt(), seed, "resource-key")
+        self.assertEqual(signed.signer_key_id, "resource-key")
+        self.assertTrue(verify_receipt_signature(signed, public.hex()))
+
+    def test_a_tampered_receipt_fails(self):
+        seed, public = signatures.generate_keypair()
+        signed = sign_receipt(_receipt(), seed, "resource-key")
+        tampered = replace(signed, observed_wall_seconds=999.0)
+        self.assertFalse(verify_receipt_signature(tampered, public.hex()))
+
+    def test_an_unsigned_receipt_fails(self):
+        self.assertFalse(verify_receipt_signature(_receipt(), "a" * 64))
+
 
 class ChildReportTests(unittest.TestCase):
     def receipt(self, report, *, exit_status=0, child_signal=None):
         return MemoryEnforcementReceipt.from_child_report(
             report,
             requested_limit_bytes=CAP,
+            requested_wall_seconds=120.0,
+            observed_wall_seconds=1.0,
             child_pid=42,
             child_exit_status=exit_status,
             child_signal=child_signal,
@@ -216,6 +270,55 @@ class EnforcedRunTests(unittest.TestCase):
         self.assertTrue(enforced.receipt.timed_out)
         self.assertFalse(enforced.receipt.memory_limit_hit)
         self.assertFalse(enforced.hard_memory_verified)
+
+    @unittest.skipUnless(POSIX, "RLIMIT_AS requires POSIX")
+    def test_wall_deadline_is_bounded(self):
+        started = time.monotonic()
+        enforced = run_induction_enforced(
+            self.train, dev=self.dev,
+            budget=SearchBudget(max_candidates=50000),
+            memory_limit_bytes=HARD_CAP, timeout_seconds=0.001)
+        elapsed = time.monotonic() - started
+        self.assertTrue(enforced.receipt.timed_out)
+        self.assertFalse(enforced.receipt.valid)
+        self.assertFalse(enforced.hard_limits_verified)
+        self.assertLess(elapsed, 10.0)
+        self.assertGreaterEqual(enforced.receipt.observed_wall_seconds, 0)
+
+    @unittest.skipUnless(POSIX, "RLIMIT_AS requires POSIX")
+    def test_cpu_and_process_limits_are_observed(self):
+        enforced = run_induction_enforced(
+            self.train, dev=self.dev,
+            budget=SearchBudget(max_candidates=50000),
+            memory_limit_bytes=HARD_CAP, timeout_seconds=120,
+            cpu_seconds=30, process_limit=64)
+        self.assertIsNotNone(enforced.result)
+        self.assertTrue(enforced.receipt.valid)
+        self.assertEqual(enforced.receipt.observed_cpu_seconds, 30)
+        self.assertEqual(enforced.receipt.observed_process_limit, 64)
+
+    @unittest.skipUnless(POSIX, "RLIMIT_AS requires POSIX")
+    def test_a_signed_run_receipt_verifies(self):
+        seed, public = signatures.generate_keypair()
+        enforced = run_induction_enforced(
+            self.train, dev=self.dev,
+            budget=SearchBudget(max_candidates=50000),
+            memory_limit_bytes=HARD_CAP, timeout_seconds=120,
+            receipt_seed=seed, receipt_key_id="resource-key")
+        self.assertTrue(
+            verify_receipt_signature(enforced.receipt, public.hex()))
+        self.assertFalse(
+            verify_receipt_signature(enforced.receipt, "a" * 64))
+
+    def test_hard_limits_route_through_the_enforced_child(self):
+        result = induce(
+            self.train, dev=self.dev,
+            hard_limits={"memory_limit_bytes": HARD_CAP,
+                         "wall_seconds": 120})
+        self.assertEqual(result["budget_enforcement"], "hard_subprocess")
+        self.assertIn("enforcement_receipt", result)
+        self.assertTrue(
+            result["enforcement_receipt"]["hard_limits_verified"])
 
     def test_limit_range_is_validated(self):
         with self.assertRaises(InvalidInput):

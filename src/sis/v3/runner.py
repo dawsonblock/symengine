@@ -928,17 +928,37 @@ class LocalSubprocessExecutor:
                     pass
             raise RunnerError("workspace_is_closing")
 
+        stop = threading.Event()
+
         def pump(pipe, sink: bytearray, name: str) -> None:
             try:
-                while True:
+                if os.name == "posix":
+                    import select
+                    fd = pipe.fileno()
+                    while not stop.is_set():
+                        ready, _, _ = select.select([fd], [], [], 0.1)
+                        if not ready:
+                            continue
+                        chunk = os.read(fd, _READ_CHUNK)
+                        if not chunk:
+                            return
+                        if len(sink) + len(chunk) > limits.output_bytes:
+                            sink.extend(chunk[
+                                : max(0, limits.output_bytes - len(sink))])
+                            truncated[name] = True
+                            self._kill_group(proc)
+                            return
+                        sink.extend(chunk)
+                    return
+                while not stop.is_set():
                     chunk = pipe.read(_READ_CHUNK)
                     if not chunk:
                         return
                     if len(sink) + len(chunk) > limits.output_bytes:
-                        sink.extend(chunk[: max(0, limits.output_bytes - len(sink))])
+                        sink.extend(chunk[
+                            : max(0, limits.output_bytes - len(sink))])
                         truncated[name] = True
                         self._kill_group(proc)
-                        pipe.read()  # drain so the child cannot linger on a full pipe
                         return
                     sink.extend(chunk)
             except (OSError, ValueError):
@@ -947,16 +967,25 @@ class LocalSubprocessExecutor:
         def feed() -> None:
             try:
                 if spec.stdin:
-                    proc.stdin.write(spec.stdin)
+                    for offset in range(0, len(spec.stdin), _READ_CHUNK):
+                        if stop.is_set():
+                            break
+                        proc.stdin.write(
+                            spec.stdin[offset:offset + _READ_CHUNK])
+                        proc.stdin.flush()
                 proc.stdin.close()
             except (OSError, ValueError):
                 pass
 
-        threads = [
-            threading.Thread(target=pump, args=(proc.stdout, stdout_chunks, "stdout"), daemon=True),
-            threading.Thread(target=pump, args=(proc.stderr, stderr_chunks, "stderr"), daemon=True),
-            threading.Thread(target=feed, daemon=True),
-        ]
+        stdout_thread = threading.Thread(
+            target=pump, args=(proc.stdout, stdout_chunks, "stdout"),
+            daemon=True)
+        stderr_thread = threading.Thread(
+            target=pump, args=(proc.stderr, stderr_chunks, "stderr"),
+            daemon=True)
+        feed_thread = threading.Thread(target=feed, daemon=True)
+        threads = [stdout_thread, stderr_thread, feed_thread]
+        pumps = [(stdout_thread, proc.stdout), (stderr_thread, proc.stderr)]
         for thread in threads:
             thread.start()
         timed_out = False
@@ -970,19 +999,51 @@ class LocalSubprocessExecutor:
             except subprocess.TimeoutExpired:
                 proc.kill()
                 proc.wait(timeout=10)
+        # The parent's monotonic deadline is authoritative even when the
+        # child exits on its own just after the limit. Without this check a
+        # search that overruns the cooperative deadline by a few
+        # milliseconds could still produce a passing receipt.
+        process_wall = time.monotonic() - start
+        if process_wall > limits.wall_seconds:
+            timed_out = True
+        capture_incomplete = False
+
+        def close_pipe(pipe) -> None:
+            try:
+                if pipe is not None and not pipe.closed:
+                    pipe.close()
+            except OSError:
+                pass
+
+        try:
+            if timed_out:
+                # A killed group may leave a grandchild holding a pipe.
+                # Signal the pumps to stop instead of closing a pipe from
+                # this thread while a reader is blocked on it.
+                stop.set()
+                for thread in threads:
+                    thread.join(timeout=0.5)
+                    capture_incomplete = (
+                        capture_incomplete or thread.is_alive())
+            else:
+                for thread in threads:
+                    thread.join(timeout=10)
+                    if thread.is_alive():
+                        stop.set()
+                        thread.join(timeout=0.5)
+                        capture_incomplete = (
+                            capture_incomplete or thread.is_alive())
+            for thread, pipe in pumps:
+                if not thread.is_alive():
+                    close_pipe(pipe)
+            if not feed_thread.is_alive():
+                close_pipe(proc.stdin)
         finally:
-            for thread in threads:
-                thread.join(timeout=10)
-            for pipe in (proc.stdout, proc.stderr, proc.stdin):
-                try:
-                    if pipe is not None and not pipe.closed:
-                        pipe.close()
-                except OSError:
-                    pass
             with self._lock:
                 self._live.pop(execution_id, None)
                 self._live_ws.pop(execution_id, None)
-        wall = time.monotonic() - start
+        if capture_incomplete:
+            security_errors.append("output:capture_incomplete")
 
         after = scan_tree(record.path)
         if truncated["stdout"]:
@@ -997,7 +1058,7 @@ class LocalSubprocessExecutor:
             security_errors.append("fs:disk_budget_exceeded")
 
         usage: dict[str, int] = {
-            "wall_seconds": max(0, int(round(wall))),
+            "wall_seconds": max(0, int(round(process_wall))),
             "output_bytes": len(stdout_chunks) + len(stderr_chunks),
             "disk_bytes": after.total_bytes,
         }
@@ -1010,6 +1071,18 @@ class LocalSubprocessExecutor:
             # ru_maxrss is the cumulative child high-water mark, not a delta.
             peak = max(0, int(usage_after.ru_maxrss))
             usage["memory_bytes"] = peak if sys.platform == "darwin" else peak * 1024
+        cpu_killed = (
+            not timed_out
+            and proc.returncode is not None and proc.returncode < 0
+            and usage.get("cpu_seconds", 0) >= limits.cpu_seconds)
+        if (proc.returncode is not None and proc.returncode < 0
+                and -proc.returncode == getattr(signal, "SIGXCPU", None)):
+            security_errors.append("rlimit:cpu_exceeded")
+        elif cpu_killed or usage.get("cpu_seconds", 0) > limits.cpu_seconds:
+            # Linux sends SIGKILL at the hard RLIMIT_CPU limit when the
+            # process ignores SIGXCPU. A kill at the CPU ceiling is a
+            # resource limit, never a task failure.
+            security_errors.append("rlimit:cpu_exceeded")
 
         with self._lock:
             self._outputs[execution_id] = (bytes(stdout_chunks), bytes(stderr_chunks))

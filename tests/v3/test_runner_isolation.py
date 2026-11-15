@@ -1,6 +1,7 @@
 import os
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -119,6 +120,25 @@ class RunnerIsolationTests(RunnerFixture):
         self.assertNotEqual(receipt.exit_status, 0)
         self.assertIn("process:wall_clock_killed", receipt.security_errors)
         self.assertEqual(self.executor._live, {})
+        self.executor.destroy(workspace)
+
+    def test_pipe_holder_cannot_extend_the_wall_deadline(self):
+        workspace = self.executor.prepare(self.base)
+        code = (
+            "import subprocess, sys, time\n"
+            "subprocess.Popen(\n"
+            "    [sys.executable, '-c', 'import time; time.sleep(5)'],\n"
+            "    start_new_session=True, stdout=sys.stdout)\n"
+            "time.sleep(5)\n")
+        started = time.monotonic()
+        receipt = self.executor.run(
+            workspace,
+            self.spec(code, limits=fast_limits(
+                wall_seconds=1, process_count=4096)))
+        elapsed = time.monotonic() - started
+        self.assertTrue(receipt.timeout)
+        self.assertLess(elapsed, 4.0)
+        self.assertIn("process:wall_clock_killed", receipt.security_errors)
         self.executor.destroy(workspace)
 
     def test_giant_stdout_is_capped_and_flagged(self):

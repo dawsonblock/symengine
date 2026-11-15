@@ -1,9 +1,90 @@
 # Upgrade guide
 
-> **Mixed document.** The v3.3.7 → v3.3.8 notes are current; the sections
-> below them describe earlier lines. The current package version is 3.3.8.
+> **Mixed document.** The v3.3.8 → v3.3.9 notes are current; the sections
+> below them describe earlier lines. The current package version is 3.3.9.
 > See `docs/v3/MIGRATION.md`, `docs/V332_OPERATIONS.md`, and
-> `docs/v3/QUALIFICATION_REPORT_V3_3_8.md` for the current upgrade path.
+> `docs/v3/QUALIFICATION_REPORT_V3_3_9.md` for the current upgrade path.
+
+## Upgrading from v3.3.8 to v3.3.9
+
+v3.3.9 is a controlled security, correctness and verification repair, not
+a feature release. The learning engine and its APIs are unchanged; its
+general effectiveness remains unproven until the real-agent study in
+section 6 of the repair plan is completed.
+
+### The release gate now fails closed
+
+`tools/check_release_ci.py --mode release` requires all of the following:
+
+- `release/release_manifest.json` and the archive it names;
+- a streaming archive check plus an exact source-tree binding;
+- a signed `production` provenance envelope over that exact archive;
+- authenticated test evidence from the same commit; and
+- a raw execution receipt plus a signed isolation attestation,
+  re-verified with the relying party's isolator key.
+
+A missing release manifest, a missing ZIP, a valid signature over a
+different ZIP, a modified archive member or a development-mode inventory
+success no longer passes. Supply every trust anchor out of band:
+
+```bash
+python3 tools/check_release_ci.py --mode release \
+  --release-public-key /secure/release-public.hex \
+  --test-evidence-public-key /secure/ci-test-public.hex \
+  --isolator-public-key /secure/isolator-public.hex \
+  --isolation-image-digest <64 hex> \
+  --isolation-policy-digest <64 hex> \
+  --isolation-property net:denied \
+  --isolation-property fs:root_read_only
+```
+
+The same keys can be supplied with `SIS_RELEASE_PUBLIC_KEY`,
+`SIS_TEST_EVIDENCE_PUBLIC_KEY`, `SIS_ISOLATOR_PUBLIC_KEY`,
+`SIS_ISOLATION_IMAGE_DIGEST`, `SIS_ISOLATION_POLICY_DIGEST` and
+`SIS_ISOLATION_PROPERTIES` (comma-separated).
+
+### Test evidence must be executed and signed
+
+`tools/run_tests.py` now records the full output, its digest, the exact
+command, exit status, source commit and parsed counts. It can sign the
+report with a CI key:
+
+```bash
+PYTHONPATH=src python3 tools/run_tests.py \
+  --json /tmp/sis-test-report.json \
+  --signing-key /secure/ci-test-seed.hex \
+  --key-id ci-test-runner
+```
+
+`tools/package_release.py` refuses a report with a fabricated count, a
+truncated output, a command that narrows the suite, a dirty tree or a
+different commit. A production seal also requires
+`--require-signed-test-evidence` and `--test-evidence-public-key`.
+
+### Isolation evidence is re-verified, not trusted as a boolean
+
+The release manifest records the raw receipt, the signed attestation and
+a fresh verification record under `release/`. The gate re-runs
+`verify_production_isolation()` against the exact receipt, the pinned
+image and policy digests, the required properties and a freshness window.
+A JSON document that merely says `"verified": true` is not evidence.
+
+### Hard resource limits
+
+`induce(..., hard_limits={...})` routes a search through the enforced
+subprocess runner. The parent applies a monotonic wall deadline and kills
+the whole process group; the child reports `RLIMIT_AS`, `RLIMIT_CPU` and
+`RLIMIT_NPROC`. The receipt distinguishes cooperative `SearchBudget`
+exhaustion from a hard-limit termination, and can be signed with
+`sign_receipt()`. A resource-exhausted run reports
+`status: resource_exhausted` and is never a successful evaluation.
+
+### Qualification status
+
+The v3.3.9 archive is engineering-verified and qualification-only. A
+production seal still requires an independently held release key, CI
+evidence key and isolator key. Windows remains experimental. The learning
+workflow functions, but its general effectiveness is unproven.
 
 ## Upgrading from v3.3.7 to v3.3.8
 

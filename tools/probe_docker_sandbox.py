@@ -8,7 +8,7 @@ issues the receipt-bound ``IsolationAttestationV1``.
 
 Usage:
     PYTHONPATH=src python3 tools/probe_docker_sandbox.py \
-      --image sis-evaluator:3.3.8@sha256:<64 hex>
+      --image sis-evaluator:3.3.9@sha256:<64 hex>
 """
 from __future__ import annotations
 

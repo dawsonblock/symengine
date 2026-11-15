@@ -63,7 +63,7 @@ from sis.v3.verifier import (
 
 PY = sys.executable
 
-DOCKER_IMAGE = "sis-evaluator:3.3.8"
+DOCKER_IMAGE = "sis-evaluator:3.3.9"
 
 
 def _docker_ready(image=DOCKER_IMAGE):
@@ -390,7 +390,7 @@ class DockerSplitCustodyTests(unittest.TestCase):
             encoding="utf-8")
         self.fake.chmod(0o755)
         options = {
-            "image": "sis-evaluator:3.3.8",
+            "image": "sis-evaluator:3.3.9",
             "require_image_digest": False,
             "docker_binary": str(self.fake),
             "image_id": "0" * 64,
@@ -476,7 +476,7 @@ class DockerSplitCustodyTests(unittest.TestCase):
                 DockerSandboxExecutor, "_require_docker",
                 return_value="test-server"):
             plain = DockerSandboxExecutor(
-                image="sis-evaluator:3.3.8", require_image_digest=False,
+                image="sis-evaluator:3.3.9", require_image_digest=False,
                 docker_binary=str(self.fake), image_id="0" * 64,
                 root=tempfile.mkdtemp(dir=self.temp.name, prefix="plain-"))
         self.addCleanup(plain.terminate_all)
@@ -497,7 +497,7 @@ class DockerSplitCustodyTests(unittest.TestCase):
                     DockerSandboxExecutor, "_require_docker",
                     return_value="test-server"):
                 DockerSandboxExecutor(
-                    image="sis-evaluator:3.3.8", require_image_digest=False,
+                    image="sis-evaluator:3.3.9", require_image_digest=False,
                     docker_binary=str(self.fake), image_id="0" * 64,
                     user="1000:1000", split_user="1000:1000",
                     root=tempfile.mkdtemp(dir=self.temp.name))
@@ -830,7 +830,7 @@ class WorkerSplitConfigurationTests(unittest.TestCase):
                 DockerSandboxExecutor, "_require_docker",
                 return_value="test-server"):
             executor = build_worker_executor(
-                executor="docker", sandbox_image="sis-evaluator:3.3.8",
+                executor="docker", sandbox_image="sis-evaluator:3.3.9",
                 require_image_digest=False, split_user=self.split_user,
                 executor_root=self.root / "exec")
         self.addCleanup(executor.terminate_all)
@@ -841,7 +841,7 @@ class WorkerSplitConfigurationTests(unittest.TestCase):
                 DockerSandboxExecutor, "_require_docker",
                 return_value="test-server"):
             executor = build_worker_executor(
-                executor="docker", sandbox_image="sis-evaluator:3.3.8",
+                executor="docker", sandbox_image="sis-evaluator:3.3.9",
                 require_image_digest=False, executor_root=self.root / "exec")
         self.addCleanup(executor.terminate_all)
         self.assertFalse(executor.supports_split_custody)
@@ -849,7 +849,7 @@ class WorkerSplitConfigurationTests(unittest.TestCase):
     def test_a_root_split_user_is_refused(self):
         with self.assertRaisesRegex(ContractError, "must not be root"):
             build_worker_executor(
-                executor="docker", sandbox_image="sis-evaluator:3.3.8",
+                executor="docker", sandbox_image="sis-evaluator:3.3.9",
                 require_image_digest=False, split_user="0:0")
 
     def test_subprocess_helper_refuses_a_split_user_for_local(self):
@@ -944,7 +944,7 @@ class WorkerSplitConfigurationTests(unittest.TestCase):
             "--receipt-out", str(self.root / "receipt.json"),
             "--task-json", str(task_path),
             "--executor", "docker",
-            "--sandbox-image", "sis-evaluator:3.3.8",
+            "--sandbox-image", "sis-evaluator:3.3.9",
             "--allow-tagged-image",
             "--split-user", self.split_user,
         ]

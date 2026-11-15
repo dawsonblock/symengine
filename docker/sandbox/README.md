@@ -8,7 +8,7 @@ must also pin the resulting image by digest and record it in the isolation
 policy):
 
 ```bash
-docker build --platform linux/arm64 -t sis-evaluator:3.3.8 docker/sandbox
+docker build --platform linux/arm64 -t sis-evaluator:3.3.9 docker/sandbox
 ```
 
 Run the containment probe:
@@ -21,7 +21,7 @@ from sis.v3.docker_sandbox import DockerSandboxExecutor
 
 root = Path(tempfile.mkdtemp(prefix="sis-docker-probe-"))
 executor = DockerSandboxExecutor(
-    root / "exec", image="sis-evaluator:3.3.8",
+    root / "exec", image="sis-evaluator:3.3.9",
     require_image_digest=False)
 print(json.dumps(executor.probe(), indent=2))
 PY

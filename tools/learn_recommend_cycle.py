@@ -250,7 +250,7 @@ def main() -> int:
                          "(local is development-only)")
     ap.add_argument("--allow-local-executor", action="store_true",
                     help="explicitly authorize development-only local execution")
-    ap.add_argument("--sandbox-image", default="sis-evaluator:3.3.8")
+    ap.add_argument("--sandbox-image", default="sis-evaluator:3.3.9")
     ap.add_argument("--require-sandbox-digest", action="store_true",
                     help="refuse a sandbox image that is not digest-pinned")
     ap.add_argument("--split-user", default=None,

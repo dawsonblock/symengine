@@ -225,12 +225,21 @@ def main(argv=None) -> int:
                         help="release ZIP or extracted tree root")
     parser.add_argument("--compile", action="store_true",
                         help="tree mode: also byte-compile the source")
+    parser.add_argument("--source", type=Path, default=None,
+                        help="ZIP mode: bind the archive to this source tree")
     args = parser.parse_args(argv)
     path = Path(args.path).resolve()
     try:
         if path.is_file():
-            print(json.dumps(verify(path), indent=2))
+            report = verify(path)
+            if args.source is not None:
+                report["source_binding"] = verify_against_tree(
+                    path, args.source.resolve())
+            print(json.dumps(report, indent=2))
         else:
+            if args.source is not None:
+                raise ValueError(
+                    "--source is only valid for a release ZIP")
             report = verify_tree(path)
             print(f"release verified: {report['files']} files, all SHA-256 matched")
             if args.compile:

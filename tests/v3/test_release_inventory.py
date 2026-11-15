@@ -49,7 +49,7 @@ class ArchivePreservationTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.release = Path(self.temp.name) / "release"
         self.release.mkdir()
-        self.archive = self.release / "SIS-v3.3.8.zip"
+        self.archive = self.release / "SIS-v3.3.9.zip"
 
     def test_an_existing_archive_is_moved_to_history(self):
         self.archive.write_bytes(b"previous archive")
@@ -58,7 +58,7 @@ class ArchivePreservationTests(unittest.TestCase):
         self.assertFalse(self.archive.exists())
         self.assertEqual(moved.read_bytes(), b"previous archive")
         self.assertEqual(moved.parent.name, "history")
-        self.assertTrue(moved.name.startswith("SIS-v3.3.8."))
+        self.assertTrue(moved.name.startswith("SIS-v3.3.9."))
 
     def test_a_second_preserve_does_not_clobber_the_first(self):
         self.archive.write_bytes(b"previous archive")
