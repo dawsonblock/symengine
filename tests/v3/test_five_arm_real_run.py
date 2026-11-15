@@ -26,6 +26,14 @@ _SPEC = importlib.util.spec_from_file_location(
 campaign_tool = importlib.util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(campaign_tool)
 
+PY = sys.executable
+# The evaluator keystore refuses a private directory whose Windows ACL
+# permits access outside the current user, SYSTEM and Administrators.
+# GitHub's Windows runner inherits such an ACL from its temp directory, so
+# verifier construction fails there; Windows is experimental for this
+# release and the vault tests are skipped on the same condition.
+POSIX_CUSTODY = sys.platform != "win32"
+
 ACCEPTANCE = ("from pathlib import Path\n\n"
               "def test_solution():\n"
               "    assert 'OK' in Path('solution.py').read_text()\n")
@@ -127,6 +135,9 @@ class RealAgentGateTests(unittest.TestCase):
     def tearDown(self):
         campaign_tool.codex_agent_status = self._status
 
+    @unittest.skipUnless(
+        POSIX_CUSTODY,
+        "evaluator key custody is POSIX-only in this release")
     def test_supplied_manifest_executes_the_five_arms(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
@@ -191,6 +202,9 @@ class RealAgentGateTests(unittest.TestCase):
         self.assertEqual(report["release_gate"], "BLOCKED_MANIFEST")
         self.assertFalse(report["manifest"]["valid"])
 
+    @unittest.skipUnless(
+        POSIX_CUSTODY,
+        "evaluator key custody is POSIX-only in this release")
     def test_repository_drift_is_blocked(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
