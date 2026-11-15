@@ -136,6 +136,25 @@ block and enforced by the classifier:
 - token and tool usage were fully metered by the agent runtime
   (`budget_accounting: verified`).
 
+A learned bundle is a frozen JSON file supplied with
+`--guidance-bundle`:
+
+```json
+{
+  "schema_version": 1,
+  "source": "learned",
+  "bundles": {
+    "B": ["<qualified memory step>"],
+    "C": ["<qualified skill step>"],
+    "D": ["<qualified symbolic step>"]
+  }
+}
+```
+
+Arm E receives the B, C and D steps in that order. The file is hashed
+and recorded in the report's `guidance` block; the built-in prompts are
+never mixed into a learned bundle.
+
 The run writes `<report>.evidence/` next to the report: the signed
 receipt bytes under `receipts/`, the evaluator public key, the exact
 manifest and a `bundle.json` that binds the manifest digest, the report

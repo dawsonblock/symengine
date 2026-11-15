@@ -320,11 +320,15 @@ def _real_tasks(document: Mapping, verifier: OutcomeVerifier, *,
                 custody: str | None):
     repositories = {item["repository_id"]: item
                     for item in document["repositories"]}
+    snapshots: dict[str, str] = {}
     tasks, prompts, classes = [], {}, {}
     for task in document["tasks"]:
         repository = repositories[task["repository_id"]]
         repo_path = Path(repository["path"]).resolve()
-        snapshot = tree_digest(repo_path)
+        snapshot = snapshots.get(repository["repository_id"])
+        if snapshot is None:
+            snapshot = tree_digest(repo_path)
+            snapshots[repository["repository_id"]] = snapshot
         if snapshot != repository["repo_snapshot_digest"]:
             raise ValueError("repository_snapshot_mismatch:"
                              + repository["repository_id"])
