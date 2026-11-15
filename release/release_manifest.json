@@ -1,13 +1,14 @@
 {
   "archive": {
-    "inner_project_dir": "SIS-v3.3.8",
-    "path": "release/SIS-v3.3.8.zip",
-    "sha256": "b3225dd8e9be66c30ad6b53c59dcb92300335a936937fd8552fb582a07a67d2b",
-    "source_files": 453
+    "inner_project_dir": "SIS-v3.3.9",
+    "path": "release/SIS-v3.3.9.zip",
+    "sha256": "0dadc913549322fac49ccd71368cb8614f55cc4b02d0953423da7df1a5fa2ce2",
+    "source_files": 461
   },
   "branch": "repair/v335-resource-security",
   "docs": [
     "docs/v3/ARCHITECTURE_V3_3.md",
+    "docs/v3/BUILD11_PLAN.md",
     "docs/v3/CODEX_ADAPTER.md",
     "docs/v3/EVALUATION_PROTOCOL_V3_3.md",
     "docs/v3/EVIDENCE_PROTOCOL.md",
@@ -27,6 +28,7 @@
     "docs/v3/QUALIFICATION_REPORT_V3_3_6.md",
     "docs/v3/QUALIFICATION_REPORT_V3_3_7.md",
     "docs/v3/QUALIFICATION_REPORT_V3_3_8.md",
+    "docs/v3/QUALIFICATION_REPORT_V3_3_9.md",
     "docs/v3/RELEASE_NOTES_V3_3.md",
     "docs/v3/RELEASE_PROCESS.md",
     "docs/v3/SANDBOX_QUALIFICATION_GATE2.md",
@@ -61,23 +63,83 @@
     "evidence/v335/",
     "evidence/v336/"
   ],
+  "isolation": {
+    "external_attestation": {
+      "attestation": {
+        "path": "release/isolation_attestation.json",
+        "sha256": "dd41cd58b44730d1a020393d6a286c639062f3ea52a569b1c4aa006ae12c58c4"
+      },
+      "attestation_digest": "d6d90406491726961142e2de43f69feb8650cff4859a36bed7b7a07eb2a2fe0e",
+      "backend": "docker_sandbox",
+      "generated_at": "2026-11-15T00:31:08Z",
+      "image_digest": "5af4f6ceed7041f1665fdb077708c9b8fdd71cedf451e0adbfb0490e5e914466",
+      "policy_digest": "2cce5dcb68cedcc27f7f5b95b2d85d227d13455281a5a1dfb1312fc94168a050",
+      "public_key": "de08443deae3fd901ddb1b3cee4af65af3b053549d88925560f7e81832774dab",
+      "receipt": {
+        "path": "release/isolation_receipt.json",
+        "sha256": "33e4342f253568c23666915fb7383dfd55c803d4443244e468e2249770ed1b5e"
+      },
+      "receipt_digest": "f76ea5adf4999e39bd4a6d1ca9e321ac71fc4169be004326f705ae4a83812175",
+      "required_properties": [
+        "caps:dropped",
+        "fs:root_read_only",
+        "fs:workspace_confined",
+        "limits:cpu_time",
+        "limits:disk",
+        "limits:memory",
+        "limits:pids",
+        "net:denied",
+        "output:capped",
+        "proc:no_new_privileges",
+        "user:non_root"
+      ],
+      "signer_key_id": "gate2-local-isolator",
+      "verification": {
+        "path": "release/isolation_verification.json",
+        "sha256": "248528406a01c9c45204a1b21b030fb250b6ba4cb43c02d2200c65fe7d127aad"
+      },
+      "verification_mode": "raw_receipt_and_attestation",
+      "verified": true,
+      "worker_identity": "docker-sandbox-v1"
+    }
+  },
   "notes": "release/ artifacts are out-of-band provenance and are intentionally absent from the archive manifest",
   "provenance": {
-    "path": "release/provenance.intoto.json",
-    "signed": false,
-    "statement_sha256": "51f3f0046d84bdbd5d338e39cd26c26b12473d2c4c856e6b941c475913ec687d",
-    "subject_sha256": "b3225dd8e9be66c30ad6b53c59dcb92300335a936937fd8552fb582a07a67d2b",
+    "key_id": "local-release-key",
+    "path": "release/provenance.dsse.json",
+    "public_key_path": "release/provenance_public_key.hex",
+    "signed": true,
+    "statement_sha256": "ae40ffa71d2af87aa20f1cb9be283518595885fe25dec37bb7f83d0a4ee67206",
+    "subject_sha256": "0dadc913549322fac49ccd71368cb8614f55cc4b02d0953423da7df1a5fa2ce2",
     "trust_root": "qualification-only"
   },
-  "release": "SIS-v3.3.8",
+  "release": "SIS-v3.3.9",
   "schema_version": 1,
-  "source_commit": "59df0b5e999d69f587054c2ed27956e71411dd97",
+  "source_commit": "fdda0d12baaf31f2808fae111f2da8a9c9e4d9b0",
   "source_commit_note": "archive members are byte-identical to this commit for every manifest-covered file; the release commit itself touches only out-of-band release/ provenance",
   "status": "ENGINEERING_VERIFIED",
   "test_result": {
-    "command": "PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONNOUSERSITE=1 PYTHONPATH=src python3 -m pytest -q",
+    "command": "/Users/dawsonblock/.pyenv/versions/3.12.0/bin/python3 -m pytest tests/ -q",
+    "errors": 0,
+    "evidence": {
+      "counts": {
+        "errors": 0,
+        "failed": 0,
+        "passed": 1577,
+        "skipped": 14
+      },
+      "exit_status": 0,
+      "output_sha256": "5264449c941b50d2041be6533bf4d075a204457d3eb899b629ceae40ff0185ed",
+      "path": "release/test_evidence.json",
+      "pytest_version": "8.4.2",
+      "sha256": "4bbd0b0e25f08ff40b5784838c81b6287de41b61acf88a76b51a0a8e0c5a11e9",
+      "signed": true,
+      "signer_key_id": "ci-test-runner",
+      "source_commit": "fdda0d12baaf31f2808fae111f2da8a9c9e4d9b0"
+    },
     "failed": 0,
-    "passed": 1500,
-    "skipped": 13
+    "passed": 1577,
+    "skipped": 14,
+    "source": "evidence"
   }
 }

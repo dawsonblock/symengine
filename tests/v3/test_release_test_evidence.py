@@ -5,7 +5,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -13,7 +13,10 @@ sys.path.insert(0, str(ROOT / "tools"))
 import package_release  # noqa: E402
 import run_tests  # noqa: E402
 import test_evidence  # noqa: E402
+from build_release import write_manifest  # noqa: E402
 from sis.v3 import signatures  # noqa: E402
+from sis.v3.contracts import ExecutionReceiptV1  # noqa: E402
+from sis.v3.isolation import issue_attestation_for_receipt  # noqa: E402
 
 COMMIT = "a" * 40
 OUTPUT = "1514 passed, 13 skipped in 228.66s\n"
@@ -249,6 +252,101 @@ class ExternalAttestationValidationTests(unittest.TestCase):
         self.assertIn(
             "--require-external-attestation needs the raw receipt",
             result.stderr)
+
+
+class PackageIsolationRecordTests(unittest.TestCase):
+    def test_raw_isolation_evidence_is_recorded(self):
+        with tempfile.TemporaryDirectory() as temp:
+            base = Path(temp)
+            root = base / "repo"
+            root.mkdir()
+            (root / "source.py").write_text("VALUE = 1\n")
+            (root / "tests" / "v3").mkdir(parents=True)
+            (root / "tests" / "v3" / "test_candidates.py").write_text(
+                "def test_ok():\n    assert True\n")
+            (root / "evidence").mkdir()
+            write_manifest(root)
+            subprocess.run(["git", "-C", str(root), "init", "-q"],
+                           check=True)
+            subprocess.run(["git", "-C", str(root), "add", "-A"],
+                           check=True)
+            subprocess.run(
+                ["git", "-C", str(root), "-c", "user.name=t",
+                 "-c", "user.email=t@e", "commit", "-qm", "init"],
+                check=True)
+            commit = subprocess.check_output(
+                ["git", "-C", str(root), "rev-parse", "HEAD"]
+            ).decode().strip()
+            output = "1 passed in 0.01s\n"
+            evidence = {
+                "schema_version": 1,
+                "kind": "test_evidence",
+                "source_commit": commit,
+                "dirty": False,
+                "command": [sys.executable, "-m", "pytest", "tests/",
+                            "-q"],
+                "suite": "tests/",
+                "python_executable": sys.executable,
+                "pytest_version": "8.4.2",
+                "pytest_pin": "8.4.2",
+                "counts": {"passed": 1, "failed": 0, "skipped": 0,
+                           "errors": 0},
+                "exit_status": 0,
+                "output": output,
+                "output_truncated": False,
+                "output_sha256": hashlib.sha256(
+                    output.encode("utf-8")).hexdigest(),
+            }
+            receipt = ExecutionReceiptV1(
+                schema_version=1, execution_id="exec-pkg",
+                worker_identity="docker-sandbox-v1",
+                environment_digest="1" * 64,
+                before_tree_digest="2" * 64,
+                after_tree_digest="2" * 64,
+                command_spec_digest="3" * 64,
+                exit_status=0, stdout_digest="4" * 64,
+                stderr_digest=None,
+                resource_usage={"wall_seconds": 1}, timeout=False,
+                security_errors=("isolation:docker_sandbox",))
+            iso_seed, iso_public = signatures.generate_keypair()
+            issued = datetime.now(timezone.utc)
+            attestation = issue_attestation_for_receipt(
+                receipt, iso_seed, "iso-key",
+                backend="docker_sandbox", policy_digest="5" * 64,
+                image_digest="6" * 64, properties=("net:denied",),
+                issued_at=issued.isoformat(
+                    timespec="seconds").replace("+00:00", "Z"),
+                expires_at=(issued + timedelta(hours=1)).isoformat(
+                    timespec="seconds").replace("+00:00", "Z"))
+            receipt_path = base / "receipt.json"
+            attestation_path = base / "attestation.json"
+            receipt_path.write_bytes(receipt.canonical_bytes() + b"\n")
+            attestation_path.write_bytes(
+                attestation.canonical_bytes() + b"\n")
+            release_seed, _release_public = signatures.generate_keypair()
+            result = package_release.package(
+                root, "SIS-test", status="TEST",
+                test_evidence=evidence,
+                provenance_seed=release_seed,
+                provenance_trust_root="qualification-only",
+                isolation_receipt=receipt_path,
+                isolation_attestation=attestation_path,
+                isolator_public_key=iso_public.hex(),
+                isolation_image_digest="6" * 64,
+                isolation_policy_digest="5" * 64,
+                isolation_properties=["net:denied"],
+                require_external_attestation=True)
+            record = result["release_manifest"]["isolation"][
+                "external_attestation"]
+            self.assertTrue(record["verified"])
+            self.assertEqual(record["verification_mode"],
+                             "raw_receipt_and_attestation")
+            self.assertTrue(
+                (root / "release" / "isolation_verification.json").is_file())
+            self.assertTrue(
+                (root / "release" / "isolation_receipt.json").is_file())
+            self.assertTrue(
+                (root / "release" / "isolation_attestation.json").is_file())
 
 
 class RunTestsParsingTests(unittest.TestCase):

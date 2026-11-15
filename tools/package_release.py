@@ -463,8 +463,7 @@ def package(root: Path, release: str, *, status: str,
             "verified": result.ok,
             "reason": result.reason,
         }
-        record_bytes = (
-            provenance.canonical_json(record) + "\n").encode("utf-8")
+        record_bytes = provenance.canonical_json(record) + b"\n"
         (out / "isolation_verification.json").write_bytes(record_bytes)
         isolation_names = [
             "isolation_verification.json",

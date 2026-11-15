@@ -1,33 +1,35 @@
 {
-  "archive": "SIS-v3.3.8.zip",
+  "archive": "SIS-v3.3.9.zip",
   "fresh_extraction": {
     "compileall_src": true,
     "extracted_test_smoke": {
       "command": "pytest -q tests/v3/test_candidates.py",
       "returncode": 0,
-      "tail": "39 passed in 1.50s"
+      "tail": "39 passed in 0.55s"
     },
     "verify_tree": {
-      "files": 453
+      "files": 461
     }
   },
   "kind": "release_verification",
   "schema_version": 1,
   "source": {
-    "commit": "59df0b5e999d69f587054c2ed27956e71411dd97",
-    "dirty": false,
-    "dirty_paths": []
+    "commit": "fdda0d12baaf31f2808fae111f2da8a9c9e4d9b0",
+    "dirty": true,
+    "dirty_paths": [
+      "tools/package_release.py"
+    ]
   },
   "source_binding": {
-    "files": 453,
-    "project": "SIS-v3.3.8",
+    "files": 461,
+    "project": "SIS-v3.3.9",
     "source_bound": true
   },
   "zip_verify": {
     "manifest": "RELEASE_SHA256.json",
-    "project": "SIS-v3.3.8",
-    "source_files": 453,
+    "project": "SIS-v3.3.9",
+    "source_files": 461,
     "valid": true,
-    "zip_sha256": "b3225dd8e9be66c30ad6b53c59dcb92300335a936937fd8552fb582a07a67d2b"
+    "zip_sha256": "0dadc913549322fac49ccd71368cb8614f55cc4b02d0953423da7df1a5fa2ce2"
   }
 }
