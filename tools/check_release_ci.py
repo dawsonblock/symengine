@@ -160,6 +160,8 @@ def _check_test_evidence(root: Path, release_doc: dict, *,
         raise ValueError(
             "release test evidence digest does not match the release"
             " manifest")
+    if public_key is not None:
+        public_key = _public_key(public_key)
     try:
         evidence = test_evidence_module.load(path)
         test_evidence_module.validate_evidence(

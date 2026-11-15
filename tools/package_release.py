@@ -106,6 +106,11 @@ def validate_test_evidence(evidence: dict, commit: str, *,
                            key_id: str | None = None,
                            require_signature: bool = False) -> None:
     """Refuse evidence that does not describe an authentic green run."""
+    if public_key is not None:
+        try:
+            public_key = test_evidence_module.public_key(public_key)
+        except ValueError as exc:
+            raise SystemExit(str(exc)) from exc
     try:
         test_evidence_module.validate_evidence(
             evidence, commit, public_key=public_key, key_id=key_id,

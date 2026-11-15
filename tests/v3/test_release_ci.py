@@ -252,6 +252,25 @@ class ReleaseCITests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("release qualification verified", result.stdout)
 
+    def test_public_key_files_are_accepted(self):
+        self.write_valid_release()
+        paths = {}
+        for name, key in (
+                ("release", self.release_public),
+                ("ci", self.ci_public),
+                ("isolator", self.isolator_public)):
+            path = self.release_dir / f"{name}.pub"
+            path.write_text(key.hex() + "\n")
+            paths[name] = str(path)
+        args = list(self.valid_args())
+        for flag, name in (
+                ("--release-public-key", "release"),
+                ("--test-evidence-public-key", "ci"),
+                ("--isolator-public-key", "isolator")):
+            args[args.index(flag) + 1] = paths[name]
+        result = self.run_check("release", *args)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_missing_archive_fails_release(self):
         self.write_valid_release()
         (self.release_dir / "SIS-test.zip").unlink()

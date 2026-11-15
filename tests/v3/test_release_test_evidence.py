@@ -117,6 +117,17 @@ class TestEvidenceValidationTests(unittest.TestCase):
             signed, COMMIT, public_key=public.hex(),
             require_signature=True)
 
+    def test_a_public_key_file_is_accepted(self):
+        seed, public = signatures.generate_keypair()
+        signed = test_evidence.sign_evidence(
+            evidence(), seed, "ci-runner")
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "ci.pub"
+            path.write_text(public.hex() + "\n")
+            package_release.validate_test_evidence(
+                signed, COMMIT, public_key=str(path),
+                require_signature=True)
+
     def test_a_wrong_key_is_rejected(self):
         seed, _public = signatures.generate_keypair()
         _other_seed, other = signatures.generate_keypair()
