@@ -5,8 +5,8 @@
       "sha256": "93fa55f89899ab359ec1859952f316410b3beee00a51270d36fe0a0ca7f5fac0"
     },
     ".github/workflows/ci.yml": {
-      "bytes": 7019,
-      "sha256": "becbc80ec334d7bc003461c1275fc9d38df23fa03d2f8cbf62c77fdb88072ba9"
+      "bytes": 7636,
+      "sha256": "bdcf5cc63bde8b9eb43c72d4ef49749fc87e14101457c4b79b39508bdfad4b11"
     },
     ".gitignore": {
       "bytes": 263,
@@ -1847,5 +1847,5 @@
   },
   "release": "SIS-v3.3.9",
   "schema_version": 1,
-  "source_commit": "b5b045b1b686bffe937527c9d9dcd80684552660"
+  "source_commit": "83ff7ed5f313e052952bf6f3058938cdd02d60e0"
 }
