@@ -45,7 +45,7 @@ feature.
 
 | Environment | Command | Result |
 | --- | --- | --- |
-| macOS 3.12, Docker enabled | `pytest tests/ -q` | 1578 passed, 14 skipped |
+| macOS 3.12, Docker enabled | `pytest tests/ -q` | 1587 passed, 14 skipped |
 | macOS 3.10, Docker disabled | `DOCKER_HOST=unix:///nonexistent/docker.sock pytest tests/ -q` | 1552 passed, 37 skipped |
 | macOS 3.13, Docker disabled | same | 1552 passed, 37 skipped |
 | Linux 3.12 (`python:3.12-slim`), Docker disabled | same | 1536 passed, 53 skipped |
@@ -109,6 +109,9 @@ The following scenarios are covered by executable tests:
   It is not a production security certification.
 - The learning workflow functions, but the efficacy study described in
   the repair plan has not been completed. Do not claim a general coding
-  improvement until it is.
+  improvement until it is. Phase 6 is scaffolded in
+  [EFFICACY_STUDY_PROTOCOL.md](EFFICACY_STUDY_PROTOCOL.md) with a
+  manifest template and validator; the real-agent gate still reports
+  `BLOCKED_MANIFEST`.
 - The Linux-with-Docker run used the host Docker daemon through a mounted
   socket; the CI workflow remains the canonical native-Linux run.

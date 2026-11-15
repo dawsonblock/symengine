@@ -1,5 +1,30 @@
 # Changelog
 
+## 2026-11-14 — Phase 6 efficacy-study scaffold
+
+Adds the preregistration and manifest validation needed before a real
+five-arm efficacy study can run. This is not an efficacy result.
+
+- `docs/v3/EFFICACY_STUDY_PROTOCOL.md` defines the A–E arms, the
+  repository-disjoint hidden holdout, the 103-pair design target
+  (0.60 → 0.40; 515 arm runs), equal budgets, metrics, evidence classes
+  and the persistence requirement.
+- `docs/v3/efficacy_manifest_template.json` is the manifest shape. It
+  carries the preregistered protocol digest and placeholders for at
+  least ten repositories and 103 paired tasks.
+- `src/sis/v3/efficacy_manifest.py` and
+  `tools/check_efficacy_manifest.py` validate the five arms, the
+  recomputed power floor, repository disjointness, hidden tests outside
+  the public repository, safe acceptance paths, pinned agent identity and
+  equal task budgets. A valid manifest is a prerequisite, not evidence.
+- `tests/v3/test_efficacy_manifest.py` covers the template, a complete
+  ready manifest, partition overlap, hidden-test placement, digest
+  mismatch, an explicitly underpowered plan and unsafe acceptance paths.
+
+The real-agent gate remains `BLOCKED_MANIFEST`; no confirmatory run was
+executed and the learning workflow's general effectiveness remains
+unproven.
+
 ## 2026-11-14 — SIS v3.3.9 controlled repair release
 
 v3.3.9 is a security, correctness and verification repair, not a feature

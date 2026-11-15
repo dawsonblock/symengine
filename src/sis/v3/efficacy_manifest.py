@@ -1,0 +1,388 @@
+"""Validation for the five-arm real-agent efficacy manifest (Phase 6).
+
+This module does not run a study and does not read hidden tests. It checks
+that a manifest is structurally ready for the existing ``FiveArmCampaign``:
+the protocol is preregistered and powered, the five arms are fixed, the
+holdout is repository-disjoint from induction material, hidden tests live
+outside the public repository, and every task carries an evaluator-owned
+acceptance command and equal budget fields.
+
+A valid manifest is a prerequisite, not evidence. The efficacy claim still
+requires a completed real-agent run with independently verified outcomes.
+"""
+from __future__ import annotations
+
+import json
+import re
+from collections.abc import Mapping
+from pathlib import Path
+
+from .contracts import ContractError, canonical_digest
+from .governed_eval import GOVERNED_ARMS, preregister, required_sample_size
+
+PLACEHOLDER = re.compile(r"^<[^<>]+>$")
+_HEX40 = re.compile(r"^[0-9a-f]{40}$")
+_HEX64 = re.compile(r"^[0-9a-f]{64}$")
+_SAFE_REL = re.compile(
+    r"^(?!/)(?![A-Za-z]:)(?!.*(?:^|/)\.\.(?:/|$))[A-Za-z0-9_.@/-]{1,512}$")
+MIN_REPOSITORIES = 10
+
+
+def _placeholder(value) -> bool:
+    return isinstance(value, str) and bool(PLACEHOLDER.match(value))
+
+
+def _canonical(value) -> str:
+    normalized = json.loads(
+        json.dumps(value, sort_keys=True),
+        parse_float=lambda item: f"float:{item}")
+    return canonical_digest("efficacy_manifest", 1, normalized)
+
+
+def _problem(problems: list[str], message: str) -> None:
+    problems.append(message)
+
+
+def _validate_protocol(protocol, problems: list[str],
+                       allow_placeholders: bool) -> dict:
+    if not isinstance(protocol, Mapping):
+        _problem(problems, "protocol must be an object")
+        return {}
+    required = (
+        "primary_metric", "method", "alpha", "min_effect", "sample_size",
+        "budget", "arms", "powered",
+    )
+    missing = [name for name in required if name not in protocol]
+    if missing:
+        _problem(problems, "protocol is missing: " + ", ".join(missing))
+        return {}
+    if list(protocol.get("arms") or []) != list(GOVERNED_ARMS):
+        _problem(problems, "protocol arms must be exactly A,B,C,D,E")
+    budget = protocol.get("budget")
+    if not isinstance(budget, Mapping) or any(
+            type(budget.get(name)) is not int or budget[name] < 1
+            for name in ("wall_seconds", "token_budget", "tool_budget")):
+        _problem(problems, "protocol budget must name positive integer"
+                           " wall_seconds, token_budget and tool_budget")
+    powered = protocol.get("powered")
+    if type(powered) is not bool:
+        _problem(problems, "protocol powered must be a bool")
+        powered = True
+    analysis = protocol.get("power_analysis")
+    if not isinstance(analysis, Mapping):
+        analysis = {}
+    try:
+        registered = preregister(
+            primary_metric=str(protocol.get("primary_metric", "")),
+            method=str(protocol.get("method", "")),
+            alpha=float(protocol.get("alpha", 0.05)),
+            min_effect=float(protocol.get("min_effect", 0.2)),
+            sample_size=int(protocol.get("sample_size", 0)),
+            budget=dict(budget or {}),
+            arms=tuple(protocol.get("arms") or ()),
+            notes=str(protocol.get("notes", "")),
+            expected_baseline=float(
+                protocol.get("expected_baseline",
+                             analysis.get("expected_baseline", 0.6))),
+            expected_treatment=float(
+                protocol.get("expected_treatment",
+                             analysis.get("expected_treatment", 0.4))),
+            power=float(protocol.get("power", analysis.get("power", 0.8))),
+            powered=powered,
+            allow_underpowered=bool(protocol.get("allow_underpowered", False)),
+        )
+    except (ContractError, TypeError, ValueError) as exc:
+        _problem(problems, f"protocol is not preregistrable: {exc}")
+        return {}
+    if registered.get("power_analysis", {}).get("underpowered_declared"):
+        _problem(problems, "protocol is explicitly underpowered and cannot"
+                           " be confirmatory")
+    declared = protocol.get("protocol_digest")
+    if declared is None or _placeholder(declared):
+        if not allow_placeholders:
+            _problem(problems, "protocol_digest is missing")
+    elif declared != registered["protocol_digest"]:
+        _problem(problems, "protocol_digest does not match the protocol")
+    analysis = protocol.get("power_analysis")
+    if isinstance(analysis, Mapping):
+        required_n = registered.get("power_analysis", {}).get("required_n")
+        if analysis.get("required_n") != required_n:
+            _problem(problems, "power_analysis.required_n is inconsistent")
+    elif powered and not allow_placeholders:
+        _problem(problems, "power_analysis is missing")
+    return registered
+
+
+def _validate_repositories(document, problems: list[str],
+                           allow_placeholders: bool) -> dict:
+    repositories = document.get("repositories")
+    if not isinstance(repositories, list) or not repositories:
+        _problem(problems, "repositories must be a nonempty list")
+        return {}
+    if not allow_placeholders and len(repositories) < MIN_REPOSITORIES:
+        _problem(problems, f"at least {MIN_REPOSITORIES} repositories are"
+                           " required for a repository-disjoint study")
+    by_id: dict[str, dict] = {}
+    for index, repository in enumerate(repositories):
+        label = f"repositories[{index}]"
+        if not isinstance(repository, Mapping):
+            _problem(problems, label + " must be an object")
+            continue
+        repository_id = repository.get("repository_id")
+        if not isinstance(repository_id, str) or not repository_id:
+            _problem(problems, label + " has no repository_id")
+            continue
+        if repository_id in by_id:
+            _problem(problems, "duplicate repository_id: " + repository_id)
+        by_id[repository_id] = repository
+        partition = repository.get("partition")
+        if partition not in {"induction", "holdout"}:
+            _problem(problems, label + " partition must be induction or"
+                                    " holdout")
+        for name, pattern in (("base_commit", _HEX40),
+                              ("repo_snapshot_digest", _HEX64)):
+            value = repository.get(name)
+            if _placeholder(value) and allow_placeholders:
+                continue
+            if not isinstance(value, str) or not pattern.match(value):
+                _problem(problems, f"{label}.{name} is not a valid digest")
+        path = repository.get("path")
+        if not isinstance(path, str) or not path:
+            _problem(problems, label + " has no path")
+        hidden = repository.get("hidden_tests")
+        if partition == "holdout":
+            if not isinstance(hidden, Mapping):
+                _problem(problems, label + " has no hidden_tests record")
+            else:
+                hidden_path = hidden.get("path")
+                hidden_digest = hidden.get("digest")
+                if not isinstance(hidden_path, str) or not hidden_path:
+                    _problem(problems, label + ".hidden_tests.path is missing")
+                if (_placeholder(hidden_digest) and allow_placeholders):
+                    pass
+                elif (not isinstance(hidden_digest, str)
+                      or not _HEX64.match(hidden_digest)):
+                    _problem(problems,
+                             label + ".hidden_tests.digest is invalid")
+                if (isinstance(hidden_path, str) and isinstance(path, str)
+                        and not _placeholder(hidden_path)
+                        and not _placeholder(path)):
+                    public = Path(path).resolve()
+                    private = Path(hidden_path).resolve()
+                    if private == public or public in private.parents:
+                        _problem(problems,
+                                 label + " hidden tests are inside the"
+                                         " public repository")
+    partitions = document.get("partitions")
+    if not isinstance(partitions, Mapping):
+        _problem(problems, "partitions must be an object")
+    else:
+        induction = set(partitions.get("induction") or [])
+        holdout = set(partitions.get("holdout") or [])
+        if not induction or not holdout:
+            _problem(problems, "partitions need nonempty induction and"
+                               " holdout lists")
+        overlap = induction & holdout
+        if overlap:
+            _problem(problems, "repository partitions overlap: "
+                               + ", ".join(sorted(overlap)))
+        unknown = (induction | holdout) - set(by_id)
+        if unknown:
+            _problem(problems, "partitions name unknown repositories: "
+                               + ", ".join(sorted(unknown)))
+        for repository_id, repository in by_id.items():
+            declared = repository.get("partition")
+            if declared == "induction" and repository_id not in induction:
+                _problem(problems, repository_id + " is not in induction")
+            if declared == "holdout" and repository_id not in holdout:
+                _problem(problems, repository_id + " is not in holdout")
+    return by_id
+
+
+def _validate_tasks(document, by_id: dict[str, dict], problems: list[str],
+                    allow_placeholders: bool, sample_size: int) -> list:
+    tasks = document.get("tasks")
+    if not isinstance(tasks, list) or not tasks:
+        _problem(problems, "tasks must be a nonempty list")
+        return []
+    if not allow_placeholders and len(tasks) < sample_size:
+        _problem(problems, f"tasks={len(tasks)} is below the preregistered"
+                           f" sample_size={sample_size}")
+    seen: set[str] = set()
+    for index, task in enumerate(tasks):
+        label = f"tasks[{index}]"
+        if not isinstance(task, Mapping):
+            _problem(problems, label + " must be an object")
+            continue
+        task_id = task.get("task_id")
+        if not isinstance(task_id, str) or not task_id:
+            _problem(problems, label + " has no task_id")
+        elif task_id in seen:
+            _problem(problems, "duplicate task_id: " + task_id)
+        else:
+            seen.add(task_id)
+        repository_id = task.get("repository_id")
+        repository = by_id.get(repository_id)
+        if repository is None:
+            _problem(problems, label + " names an unknown repository")
+        elif repository.get("partition") != "holdout":
+            _problem(problems, label + " must target a holdout repository")
+        base_commit = task.get("base_commit")
+        if (not _placeholder(base_commit) or not allow_placeholders):
+            if (not isinstance(base_commit, str)
+                    or not (_HEX40.match(base_commit)
+                            or _HEX64.match(base_commit))):
+                _problem(problems, label + ".base_commit is invalid")
+            elif (repository is not None
+                  and base_commit != repository.get("base_commit")):
+                _problem(problems,
+                         label + ".base_commit does not match the repository")
+        for name in ("prompt", "failure_class"):
+            value = task.get(name)
+            if not isinstance(value, str) or not value:
+                _problem(problems, f"{label}.{name} is missing")
+        budgets = task.get("budgets")
+        if not isinstance(budgets, Mapping) or any(
+                type(budgets.get(name)) is not int or budgets[name] < 1
+                for name in ("time_budget_seconds", "token_budget",
+                             "tool_budget")):
+            _problem(problems, label + ".budgets must name positive integer"
+                                     " time_budget_seconds, token_budget and"
+                                     " tool_budget")
+        acceptance = task.get("acceptance")
+        if not isinstance(acceptance, Mapping):
+            _problem(problems, label + " has no acceptance record")
+            continue
+        argv = acceptance.get("argv")
+        if (not isinstance(argv, list) or not argv
+                or any(not isinstance(item, str) or not item for item in argv)):
+            _problem(problems, label + ".acceptance.argv is invalid")
+        files = acceptance.get("files")
+        hidden_path = acceptance.get("hidden_tests_path")
+        if files is None and hidden_path is None:
+            _problem(problems, label + " needs acceptance.files or"
+                                     " acceptance.hidden_tests_path")
+        if files is not None:
+            if not isinstance(files, Mapping) or not files:
+                _problem(problems, label + ".acceptance.files is invalid")
+            else:
+                for relative in files:
+                    if (not isinstance(relative, str)
+                            or not _SAFE_REL.match(relative)):
+                        _problem(problems,
+                                 label + " has an unsafe acceptance path")
+        if hidden_path is not None:
+            if not isinstance(hidden_path, str) or not hidden_path:
+                _problem(problems,
+                         label + ".acceptance.hidden_tests_path is invalid")
+            digest = acceptance.get("hidden_tests_digest")
+            if (_placeholder(digest) and allow_placeholders):
+                pass
+            elif (not isinstance(digest, str)
+                  or not _HEX64.match(digest)):
+                _problem(problems,
+                         label + ".acceptance.hidden_tests_digest is invalid")
+    return tasks
+
+
+def validate_manifest(document, *, allow_placeholders: bool = False,
+                      check_paths: bool = False) -> dict:
+    """Validate one manifest without executing or reading hidden tests."""
+    problems: list[str] = []
+    if not isinstance(document, Mapping):
+        return {"valid": False, "ready": False,
+                "problems": ["manifest must be an object"]}
+    if document.get("schema_version") != 1:
+        _problem(problems, "schema_version must be 1")
+    if document.get("kind") != "five_arm_efficacy_manifest":
+        _problem(problems, "kind must be five_arm_efficacy_manifest")
+    protocol = _validate_protocol(
+        document.get("protocol"), problems, allow_placeholders)
+    by_id = _validate_repositories(document, problems, allow_placeholders)
+    sample_size = int(protocol.get("sample_size", 0) or 0)
+    tasks = _validate_tasks(
+        document, by_id, problems, allow_placeholders, sample_size)
+    agent = document.get("agent")
+    if not isinstance(agent, Mapping):
+        _problem(problems, "agent must be an object")
+    else:
+        for name in ("kind", "model", "cli_version"):
+            value = agent.get(name)
+            if not isinstance(value, str) or not value:
+                _problem(problems, f"agent.{name} is missing")
+        if agent.get("kind") not in (None, "codex-cli") and not (
+                _placeholder(agent.get("kind")) and allow_placeholders):
+            _problem(problems, "agent.kind must be codex-cli for the"
+                               " current harness")
+    preregistration = document.get("preregistration")
+    if not isinstance(preregistration, Mapping):
+        _problem(problems, "preregistration must be an object")
+    else:
+        for name in ("registered_at", "registered_by"):
+            value = preregistration.get(name)
+            if (not isinstance(value, str) or not value) and not (
+                    allow_placeholders and _placeholder(value)):
+                _problem(problems, f"preregistration.{name} is missing")
+        if (preregistration.get("protocol_digest")
+                != protocol.get("protocol_digest")
+                and not (allow_placeholders
+                         and _placeholder(
+                             preregistration.get("protocol_digest")))):
+            _problem(problems,
+                     "preregistration.protocol_digest does not match the"
+                     " protocol")
+    if check_paths and not allow_placeholders:
+        for repository_id, repository in by_id.items():
+            path = repository.get("path")
+            if isinstance(path, str) and not Path(path).exists():
+                _problem(problems,
+                         f"repository path does not exist: {repository_id}")
+            hidden = repository.get("hidden_tests")
+            if isinstance(hidden, Mapping):
+                hidden_path = hidden.get("path")
+                if (isinstance(hidden_path, str)
+                        and not Path(hidden_path).exists()):
+                    _problem(problems,
+                             f"hidden tests path does not exist:"
+                             f" {repository_id}")
+    placeholder_count = sum(
+        1 for value in _walk(document) if _placeholder(value))
+    confirmatory = bool(
+        protocol.get("powered", True)
+        and protocol.get("analysis_kind") != "diagnostic")
+    ready = (not problems and not placeholder_count and confirmatory
+             and len(tasks) >= sample_size)
+    return {
+        "schema_version": 1,
+        "kind": "efficacy_manifest_validation",
+        "valid": not problems,
+        "ready": ready,
+        "problems": problems,
+        "protocol_digest": protocol.get("protocol_digest"),
+        "required_sample_size": (
+            protocol.get("power_analysis", {}).get("required_n")
+            if isinstance(protocol.get("power_analysis"), Mapping)
+            else required_sample_size(0.6, 0.4)),
+        "sample_size": sample_size,
+        "tasks": len(tasks),
+        "repositories": len(by_id),
+        "holdout_repositories": len(
+            (document.get("partitions") or {}).get("holdout") or []),
+        "placeholders": placeholder_count,
+        "confirmatory": confirmatory,
+        "manifest_digest": _canonical(document),
+    }
+
+
+def _walk(value):
+    if isinstance(value, Mapping):
+        for item in value.values():
+            yield from _walk(item)
+    elif isinstance(value, (list, tuple)):
+        for item in value:
+            yield from _walk(item)
+    else:
+        yield value
+
+
+__all__ = ["MIN_REPOSITORIES", "validate_manifest"]
