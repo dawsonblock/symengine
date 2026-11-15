@@ -629,6 +629,12 @@ class AttestationIssuanceTests(IsolationFixture):
 
     def _cli(self, **overrides):
         from tools.issue_worker_attestation import main
+        # NOW is captured at import time, and the CLI's lifetime is 300
+        # seconds. On a slow suite this test can run after that window and
+        # the freshly issued attestation is already expired at verify
+        # time, so the issuance timestamp must be taken here.
+        issued_at = datetime.now(timezone.utc).isoformat(
+            timespec="seconds").replace("+00:00", "Z")
         receipt_path = self.root / "receipt.json"
         receipt_path.write_bytes(self.receipt.canonical_bytes())
         args = {
@@ -645,7 +651,7 @@ class AttestationIssuanceTests(IsolationFixture):
             "--policy-digest", "aa" * 32, "--image-digest", "bb" * 32,
             "--property", "fs:workspace_confined",
             "--property", "net:denied", "--property", "proc:namespaced",
-            "--issued-at", NOW, "--expires-in", "300",
+            "--issued-at", issued_at, "--expires-in", "300",
             "--output", args["output"],
         ]
         return main(argv)
