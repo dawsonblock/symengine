@@ -1,5 +1,6 @@
 """SIS3-101/102: fresh-extraction release verification + SQLite lifecycle."""
 import json
+import shutil
 import sys
 import tempfile
 import unittest
@@ -238,6 +239,8 @@ class CanonicalArchiveBindingTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "mismatch"):
             verify_release.verify(self.target)
 
+    @unittest.skipUnless(shutil.which("git"),
+                         "git is required for the dirty-source gate")
     def test_build_refuses_dirty_source(self):
         import subprocess
         import build_canonical_zip

@@ -1,6 +1,7 @@
 """Release qualification consumes executed test evidence, not typed totals."""
 import hashlib
 import json
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -255,6 +256,8 @@ class ExternalAttestationValidationTests(unittest.TestCase):
 
 
 class PackageIsolationRecordTests(unittest.TestCase):
+    @unittest.skipUnless(shutil.which("git"),
+                         "git is required for the commit binding")
     def test_raw_isolation_evidence_is_recorded(self):
         with tempfile.TemporaryDirectory() as temp:
             base = Path(temp)
