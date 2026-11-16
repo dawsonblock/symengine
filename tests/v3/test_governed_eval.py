@@ -83,8 +83,33 @@ class ProtocolTests(unittest.TestCase):
         n = required_sample_size(0.7, 0.3)
         self.assertIsInstance(n, int)
         self.assertGreaterEqual(n, 4)
-        with self.assertRaises(ContractError):
-            required_sample_size(0.3, 0.7)
+        # The alternative is two-sided: an expected improvement needs the
+        # same number of pairs as an expected regression of the same size.
+        self.assertEqual(required_sample_size(0.3, 0.7), n)
+        with self.assertRaisesRegex(ContractError, "must differ"):
+            required_sample_size(0.5, 0.5)
+        for bad in ((0.0, 0.7), (0.3, 1.0), (float("nan"), 0.4),
+                    ("0.3", 0.7), (True, 0.4)):
+            with self.assertRaises(ContractError):
+                required_sample_size(*bad)
+
+    def test_powered_plan_accepts_an_expected_increase(self):
+        # The study hypothesis is that learned guidance raises the solve
+        # rate; a planner that only accepts a lower treatment rate cannot
+        # register the study it is meant to power.
+        plan = preregister(
+            primary_metric="paired solved_delta E vs A", method="mcnemar_exact",
+            alpha=0.05, min_effect=0.2, sample_size=103,
+            expected_baseline=0.4, expected_treatment=0.6,
+            budget={"wall_seconds": 60})
+        self.assertEqual(plan["power_analysis"]["required_n"], 103)
+        self.assertEqual(protocol_required_sample_size(plan), 103)
+        # The default expectations declare the same improvement.
+        default = preregister(
+            primary_metric="x", method="m", alpha=0.05, min_effect=1.0,
+            sample_size=103, budget={"wall_seconds": 60})
+        self.assertEqual(default["power_analysis"]["expected_baseline"], 0.4)
+        self.assertEqual(default["power_analysis"]["expected_treatment"], 0.6)
 
     def test_sample_size_respects_alpha_and_power(self):
         # No silent z substitution: stricter alpha and higher power both
@@ -200,8 +225,8 @@ class ProtocolTests(unittest.TestCase):
                 {**good, "expected_baseline": True},
                 {k: v for k, v in good.items()
                  if k != "expected_treatment"},
-                {**good, "expected_baseline": 0.3,
-                 "expected_treatment": 0.7}):
+                {**good, "expected_baseline": 0.5,
+                 "expected_treatment": 0.5}):
             protocol = self._powered() | {"power_analysis": corrupted}
             with self.assertRaisesRegex(ContractError,
                                         "power_analysis_invalid"):

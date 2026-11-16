@@ -51,13 +51,21 @@ def _release_path(root: Path, value, description: str) -> Path:
         raise ValueError(f"{description} path is missing")
     if Path(value).is_absolute():
         raise ValueError(f"{description} path must be relative")
+    # Inspect the declared path before resolving it. ``resolve()``
+    # replaces a link with its target, so ``is_symlink()`` on the
+    # resolved path is always False and would let an internal link
+    # through.
+    current = root
+    for part in Path(value).parts:
+        current = current.parent if part == ".." else current / part
+        if current.is_symlink():
+            raise ValueError(
+                f"{description} must not be a symlink: {value}")
     candidate = (root / value).resolve()
     try:
         candidate.relative_to(root.resolve())
     except ValueError as exc:
         raise ValueError(f"{description} path escapes the release tree") from exc
-    if candidate.is_symlink():
-        raise ValueError(f"{description} must not be a symlink: {value}")
     if not candidate.is_file():
         raise ValueError(f"{description} is missing: {value}")
     return candidate

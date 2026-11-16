@@ -105,10 +105,10 @@ def _validate_protocol(protocol, problems: list[str],
             notes=str(protocol.get("notes", "")),
             expected_baseline=float(
                 protocol.get("expected_baseline",
-                             analysis.get("expected_baseline", 0.6))),
+                             analysis.get("expected_baseline", 0.4))),
             expected_treatment=float(
                 protocol.get("expected_treatment",
-                             analysis.get("expected_treatment", 0.4))),
+                             analysis.get("expected_treatment", 0.6))),
             power=float(protocol.get("power", analysis.get("power", 0.8))),
             powered=powered,
             allow_underpowered=bool(protocol.get("allow_underpowered", False)),

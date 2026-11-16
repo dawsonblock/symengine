@@ -18,12 +18,12 @@
     "powered": true,
     "notes": "Phase 6 preregistered five-arm study; repository-disjoint hidden holdout.",
     "power_analysis": {
-      "expected_baseline": 0.6,
-      "expected_treatment": 0.4,
+      "expected_baseline": 0.4,
+      "expected_treatment": 0.6,
       "power": 0.8,
       "required_n": 103
     },
-    "protocol_digest": "3e77a22dc9c5d678cfca75cddaf3cfa008abb06fc3dd4b52d0e84b13af431816"
+    "protocol_digest": "c2f4fd36a07134a09333f1e35c5054c4dff17d328e7b1d5f27b7025a1e70e50d"
   },
   "agent": {
     "kind": "codex-cli",
@@ -166,6 +166,6 @@
   "preregistration": {
     "registered_at": "<ISO-8601 timestamp before the first holdout run>",
     "registered_by": "<operator identity>",
-    "protocol_digest": "3e77a22dc9c5d678cfca75cddaf3cfa008abb06fc3dd4b52d0e84b13af431816"
+    "protocol_digest": "c2f4fd36a07134a09333f1e35c5054c4dff17d328e7b1d5f27b7025a1e70e50d"
   }
 }

@@ -222,8 +222,8 @@ def main() -> int:
         primary_metric="paired solved_delta E vs A",
         method="mcnemar_exact",
         alpha=0.05, min_effect=1.0,
-        sample_size=required_sample_size(0.7, 0.3),
-        expected_baseline=0.7, expected_treatment=0.3,
+        sample_size=required_sample_size(0.3, 0.7),
+        expected_baseline=0.3, expected_treatment=0.7,
         budget={"wall_seconds": 120, "token_budget": 100_000,
                 "tool_budget": 1000})
 

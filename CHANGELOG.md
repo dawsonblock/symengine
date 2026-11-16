@@ -1,5 +1,40 @@
 # Changelog
 
+## 2026-11-16 — Powered-plan direction and release-path validation (SIS-FIX-05)
+
+The powered planner could not register the study it exists to power. A
+protocol is registered from `expected_baseline` and `expected_treatment`;
+`required_sample_size()` required its second rate to be lower than its
+first, and `preregister()` mapped the treatment onto that second rate.
+Any plan that expected learned guidance to *raise* the solve rate was
+refused, while a plan expecting it to lower the rate was accepted and
+recorded as the study hypothesis.
+
+- `required_sample_size()` now treats the two rates as an unordered pair
+  and uses `q = |p1 - p2|`. The two-sided alternative needs the same
+  number of pairs for an improvement and a regression of the same size;
+  only equal rates (no effect to detect) and out-of-range or non-finite
+  rates are refused. Existing protocols recompute to the same
+  `required_n` because `d` and `|q|` are symmetric under the swap.
+- `preregister()` defaults are now `expected_baseline=0.4`,
+  `expected_treatment=0.6`, so the default plan declares the
+  improvement hypothesis. The manifest fallbacks, the study-spec
+  builder, the campaign harnesses, the manifest template and the study
+  protocol all declare the same direction. The template's protocol
+  digest changed to
+  `c2f4fd36a07134a09333f1e35c5054c4dff17d328e7b1d5f27b7025a1e70e50d`.
+- `_release_path()` in `tools/check_release_ci.py` checked
+  `candidate.is_symlink()` *after* `Path.resolve()`, where the final
+  component is never a link, so the rule never fired for an internal
+  symlink. It now walks the declared path components before resolving
+  and refuses a link anywhere in the path; a path that escapes the
+  release tree is still refused after resolution.
+- Regression coverage lives in `tests/v3/test_governed_eval.py` (both
+  directions register, equal rates refused) and
+  `tests/v3/test_release_ci.py` (symlinked file, symlinked directory
+  component and escaping path).
+- The seal is stale until `tools/package_release.py` runs again.
+
 ## 2026-11-16 — Verified origins and complete histories (SIS-FIX-04)
 
 Lineage was derived from a checkout's Git root commits, but a shallow

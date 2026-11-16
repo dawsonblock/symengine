@@ -98,13 +98,20 @@ def preregister(
     budget: Mapping[str, int],
     arms: Sequence[str] = GOVERNED_ARMS,
     notes: str = "",
-    expected_baseline: float = 0.6,
-    expected_treatment: float = 0.4,
+    expected_baseline: float = 0.4,
+    expected_treatment: float = 0.6,
     power: float = 0.8,
     powered: bool = True,
     allow_underpowered: bool = False,
 ) -> dict:
     """Freeze the analysis plan; the digest proves it preceded the run.
+
+    ``expected_baseline`` and ``expected_treatment`` are the expected
+    solve rates of the baseline and treatment arms. An efficacy study
+    normally expects the treatment to be *higher*; the two-sided power
+    calculation is symmetric in the two rates, so a declared regression
+    of the same size needs the same number of pairs and is accepted too.
+    The recomputation never assumes the treatment is the lower rate.
 
     ``powered=True`` (the default) freezes a powered-experiment plan: the
     declared expectations are recomputed into ``power_analysis.required_n``
@@ -174,7 +181,13 @@ def required_sample_size(p1: float = 0.6, p2: float = 0.4, *,
                          power: float = 0.8, alpha: float = 0.05) -> int:
     """Approximate paired-binary sample size (McNemar-normal approx).
 
-    For discordant-pair share q = p1 - p2 > 0 with discordant rate d:
+    ``p1`` and ``p2`` are the two expected solve rates in either order:
+    the alternative is two-sided, so an expected improvement and an
+    expected regression of the same size need the same number of pairs.
+    Only equality (no effect to detect) and out-of-range rates are
+    refused.
+
+    For discordant-pair share q = |p1 - p2| with discordant rate d:
     n ≈ d * ((z_1-α/2 + z_power) / q)². Z-scores are computed exactly for
     the requested alpha/power — no silent lookup substitution.
 
@@ -189,8 +202,13 @@ def required_sample_size(p1: float = 0.6, p2: float = 0.4, *,
     also optimistic at small n — the ``max(4, ...)`` floor keeps the
     returned value from becoming absurd, not from being exact.
     """
-    if not (0 < p2 < p1 < 1):
-        raise ContractError("expected 0 < p2 < p1 < 1")
+    for name, value in (("p1", p1), ("p2", p2)):
+        if type(value) not in (int, float) or not math.isfinite(value):
+            raise ContractError(f"{name} must be a finite number")
+        if not 0 < value < 1:
+            raise ContractError("expected rates must be in (0, 1)")
+    if p1 == p2:
+        raise ContractError("expected rates must differ")
     if not (0 < alpha < 0.5):
         raise ContractError("alpha must be in (0, 0.5)")
     if not (0 < power < 1):
@@ -199,7 +217,7 @@ def required_sample_size(p1: float = 0.6, p2: float = 0.4, *,
     z_a = normal.inv_cdf(1 - alpha / 2)
     z_p = normal.inv_cdf(power)
     d = p1 * (1 - p2) + p2 * (1 - p1)
-    q = p1 - p2
+    q = abs(p1 - p2)
     return max(4, math.ceil(d * ((z_a + z_p) / q) ** 2))
 
 

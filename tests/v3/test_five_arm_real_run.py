@@ -117,7 +117,7 @@ def _manifest(root: Path) -> dict:
     protocol = preregister(
         primary_metric="paired solved_delta E vs A", method="mcnemar_exact",
         alpha=0.05, min_effect=1.0, sample_size=9, powered=True,
-        expected_baseline=0.99, expected_treatment=0.01, power=0.8,
+        expected_baseline=0.01, expected_treatment=0.99, power=0.8,
         budget={"wall_seconds": 30, "token_budget": 1000, "tool_budget": 10},
         arms=GOVERNED_ARMS)
     protocol["powered"] = True

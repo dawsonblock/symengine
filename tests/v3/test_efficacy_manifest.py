@@ -20,7 +20,7 @@ def protocol(**overrides):
         primary_metric="paired solved_delta E vs A",
         method="mcnemar_exact", alpha=0.05, min_effect=0.2,
         sample_size=103, budget=BUDGET, arms=GOVERNED_ARMS,
-        powered=True, expected_baseline=0.6, expected_treatment=0.4,
+        powered=True, expected_baseline=0.4, expected_treatment=0.6,
         power=0.8, allow_underpowered=False)
     values.update(overrides)
     document = preregister(**values)
@@ -114,7 +114,7 @@ class EfficacyManifestTests(unittest.TestCase):
         self.assertGreater(report["placeholders"], 0)
         self.assertEqual(
             report["protocol_digest"],
-            "3e77a22dc9c5d678cfca75cddaf3cfa008abb06fc3dd4b52d0e84b13af431816")
+            "c2f4fd36a07134a09333f1e35c5054c4dff17d328e7b1d5f27b7025a1e70e50d")
         self.assertEqual(report["required_sample_size"], 103)
 
     def test_the_template_is_not_ready_in_strict_mode(self):

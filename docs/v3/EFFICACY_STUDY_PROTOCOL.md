@@ -47,9 +47,12 @@ version, prompt, budget and evaluator. Arm order is randomized per task.
 
   | Baseline → treatment | Required paired tasks | Five-arm runs |
   | --- | --- | --- |
-  | 0.60 → 0.40 | 103 | 515 |
-  | 0.60 → 0.45 | 178 | 890 |
+  | 0.40 → 0.60 | 103 | 515 |
+  | 0.45 → 0.60 | 178 | 890 |
 
+  The two-sided calculation is symmetric: the same effect size needs the
+  same number of pairs whichever arm is expected to do better, so the
+  planner accepts an expected improvement as readily as a regression.
   The 103-task figure is a design target for one assumed effect size, not
   a universal minimum. A study powered only for A vs E may run B–D on a
   subset and label them exploratory.
@@ -151,8 +154,8 @@ repositories, prompts, hidden tests or guidance.
                 "tool_budget": 100},
     "arms": ["A", "B", "C", "D", "E"],
     "powered": true,
-    "expected_baseline": 0.6,
-    "expected_treatment": 0.4,
+    "expected_baseline": 0.4,
+    "expected_treatment": 0.6,
     "power": 0.8
   },
   "agent": {"kind": "codex-cli", "model": "<pinned-model>",

@@ -500,5 +500,44 @@ class ReleaseCITests(unittest.TestCase):
             self.assertIn("--signing-key", chunk[:200])
 
 
+class ReleasePathTests(unittest.TestCase):
+    """Declared release paths must be checked before they are resolved."""
+
+    def _root(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        return Path(temp.name)
+
+    def test_internal_symlinked_file_is_rejected(self):
+        from check_release_ci import _release_path
+        root = self._root()
+        (root / "real.json").write_text("{}")
+        (root / "link.json").symlink_to("real.json")
+        # resolve() would return the target, so a post-resolve is_symlink()
+        # check can never fire; the rule has to see the declared path.
+        with self.assertRaisesRegex(ValueError, "must not be a symlink"):
+            _release_path(root, "link.json", "artifact")
+        self.assertEqual(_release_path(root, "real.json", "artifact"),
+                         (root / "real.json").resolve())
+
+    def test_internal_symlinked_directory_is_rejected(self):
+        from check_release_ci import _release_path
+        root = self._root()
+        (root / "sub").mkdir()
+        (root / "sub" / "real.json").write_text("{}")
+        (root / "alias").symlink_to("sub", target_is_directory=True)
+        with self.assertRaisesRegex(ValueError, "must not be a symlink"):
+            _release_path(root, "alias/real.json", "artifact")
+
+    def test_escaping_path_is_rejected(self):
+        from check_release_ci import _release_path
+        root = self._root()
+        outside = root.parent / f"{root.name}-outside.json"
+        outside.write_text("{}")
+        self.addCleanup(outside.unlink)
+        with self.assertRaisesRegex(ValueError, "escapes the release tree"):
+            _release_path(root, f"../{outside.name}", "artifact")
+
+
 if __name__ == "__main__":
     unittest.main()

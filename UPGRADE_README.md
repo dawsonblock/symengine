@@ -250,6 +250,33 @@ the source commit and archive digest. The release and isolator keys
 remain local, so strict release mode still rejects the bundle until the
 key ceremony is completed.
 
+### Post-seal repair: powered-plan direction and release-path validation
+
+The Revision 16 review found that the powered planner refused the study
+it exists to power, and that the release-path symlink rule was dead
+code.
+
+- `required_sample_size()` now accepts the two expected rates in either
+  order and uses their absolute difference. A two-sided test needs the
+  same number of pairs for an expected improvement and an expected
+  regression of the same size. Equal rates, rates outside `(0, 1)` and
+  non-finite values are refused.
+- `preregister()` now defaults to `expected_baseline=0.4` and
+  `expected_treatment=0.6`. The manifest template, study protocol,
+  study-spec builder and campaign harnesses declare the same direction.
+  Existing protocols recompute to the same `required_n`; the template's
+  protocol digest changed to
+  `c2f4fd36a07134a09333f1e35c5054c4dff17d328e7b1d5f27b7025a1e70e50d`.
+- `tools/check_release_ci.py` now inspects the declared release path
+  before `Path.resolve()`, so an internal symlink (for example
+  `release/provenance.json` pointing at another release artifact) is
+  refused instead of silently followed. Regression coverage is in
+  `tests/v3/test_release_ci.py`.
+
+The sealed archive and its evidence still describe the pre-repair tree;
+regenerate them with `tools/package_release.py` before making a release
+claim.
+
 ### Qualification status
 
 The v3.3.9 archive is engineering-verified and qualification-only. A

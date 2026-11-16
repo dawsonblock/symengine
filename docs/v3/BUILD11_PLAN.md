@@ -237,12 +237,12 @@ comparison is exploratory.
 
 | Baseline → treatment | `required_sample_size` | Paired runs (5 arms) |
 | --- | --- | --- |
-| 0.60 → 0.40 | 103 | 515 |
-| 0.60 → 0.45 | 178 | 890 |
+| 0.40 → 0.60 | 103 | 515 |
+| 0.45 → 0.60 | 178 | 890 |
 
 Choose one:
 
-- **A. Powered five-arm** at n=103 (0.60 → 0.40). Strongest claim;
+- **A. Powered five-arm** at n=103 (0.40 → 0.60). Strongest claim;
   highest cost.
 - **B. Powered primary contrast** A vs E at n=103, with B–D on a subset
   labeled exploratory. Cheaper, still confirmatory for the integrated

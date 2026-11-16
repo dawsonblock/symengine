@@ -500,9 +500,9 @@ def analyze_report(
         "power_analysis": {
             "powered": powered,
             "expected_baseline": declared_power.get(
-                "expected_baseline", 0.6),
+                "expected_baseline", 0.4),
             "expected_treatment": declared_power.get(
-                "expected_treatment", 0.4),
+                "expected_treatment", 0.6),
             "power": declared_power.get("power", 0.8),
             "alpha": alpha,
             "required_n": required_n,
