@@ -508,6 +508,7 @@ class ReleasePathTests(unittest.TestCase):
         self.addCleanup(temp.cleanup)
         return Path(temp.name)
 
+    @unittest.skipUnless(sys.platform != "win32", "symlink semantics are POSIX")
     def test_internal_symlinked_file_is_rejected(self):
         from check_release_ci import _release_path
         root = self._root()
@@ -520,6 +521,7 @@ class ReleasePathTests(unittest.TestCase):
         self.assertEqual(_release_path(root, "real.json", "artifact"),
                          (root / "real.json").resolve())
 
+    @unittest.skipUnless(sys.platform != "win32", "symlink semantics are POSIX")
     def test_internal_symlinked_directory_is_rejected(self):
         from check_release_ci import _release_path
         root = self._root()
