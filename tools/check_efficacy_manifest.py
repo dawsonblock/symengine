@@ -5,7 +5,10 @@ Strict mode requires a powered preregistered protocol, at least ten
 repositories (at least five of them holdout repositories), at least
 ``sample_size`` paired tasks, repository-disjoint partitions, hidden
 tests outside the public repository, and no placeholder values.
-``--allow-placeholders`` validates the shipped template instead.
+``--check-paths`` also re-fingerprints every repository and rejects two
+holdout entries — or an induction and a holdout entry — that resolve to
+the same codebase. ``--allow-placeholders`` validates the shipped
+template instead.
 
 Usage:
     python3 tools/check_efficacy_manifest.py \

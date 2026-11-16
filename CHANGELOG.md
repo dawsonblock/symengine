@@ -1,5 +1,49 @@
 # Changelog
 
+## 2026-11-15 — Canonical repository fingerprint (SIS-FIX-01)
+
+The v3 tree digest hashed entries in `os.walk` order, which is
+filesystem-dependent. Two trees with identical contents could receive
+different identities, and staging an unchanged repository could fail
+with `repository_changed_during_staging`. The digest is now versioned.
+
+- `scan_tree(..., version=2)` is the default and canonical format. It
+  sorts directory names and entries by encoded name bytes at every
+  level, so the digest depends only on contents, never on directory
+  iteration order. Names use `os.fsencode`, so a name that is not valid
+  UTF-8 round-trips instead of raising. Empty directories, special
+  files and permissions are not part of the fingerprint.
+- `version=1` reproduces the legacy traversal-order-dependent digest
+  byte for byte. It exists only to re-verify historical records and
+  must not mint a digest for a new record.
+- `verify_tree_digest(root, expected)` returns the version that
+  matched (2, then 1 unless `allow_legacy=False`). `TreeScan` records
+  its `version`. New execution receipts, task envelopes, registry
+  identities and manifests therefore carry canonical digests.
+- `BenchmarkHarness` still replays a task whose envelope carries a
+  legacy digest; a digest that matches neither version is refused.
+- Manifest validation with `check_paths=True` now recomputes each
+  repository's canonical digest, verifies the declared digest (legacy
+  v1 accepted read-only), and rejects two holdout entries — or an
+  induction and a holdout entry — that resolve to the same codebase.
+  Identical induction repositories remain permitted. The report adds
+  `repository_trees`, `repository_tree_versions` and
+  `distinct_repository_trees`.
+- Repository lineage is checked separately from content. Every
+  repository declares a stable `lineage_id`; a confirmatory manifest
+  must supply one. With `check_paths=True`, a Git checkout's lineage is
+  derived from its sorted root commits, so two revisions or clones of
+  one repository are one lineage even when their files differ. Entries
+  connected by a derived or declared lineage key may not both be
+  holdout (or span induction and holdout). The report adds
+  `repository_lineage` and `distinct_holdout_lineages`. Shallow clones
+  report their shallow boundary as a root, so lineage is exact only for
+  full clones.
+
+Regression coverage lives in `tests/v3/test_canonical_tree_digest.py`,
+`tests/v3/test_benchmark.py`, `tests/v3/test_efficacy_manifest.py` and
+`tests/v3/test_five_arm_real_run.py`.
+
 ## 2026-11-15 — Revision 15 repairs: custody, power, coverage, execution and lineage
 
 The Revision 14 verification found five defects in the efficacy path.

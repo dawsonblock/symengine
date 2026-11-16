@@ -44,6 +44,7 @@
   "repositories": [
     {
       "repository_id": "repo-induction",
+      "lineage_id": "<stable lineage id, shared by every revision of this repository>",
       "path": "<absolute path to the induction repository>",
       "base_commit": "<40-hex-commit>",
       "repo_snapshot_digest": "<64-hex-tree-digest>",
@@ -51,6 +52,7 @@
     },
     {
       "repository_id": "repo-holdout-1",
+      "lineage_id": "<stable lineage id, distinct from every other holdout>",
       "path": "<absolute path to holdout repository 1>",
       "base_commit": "<40-hex-commit>",
       "repo_snapshot_digest": "<64-hex-tree-digest>",
@@ -62,6 +64,7 @@
     },
     {
       "repository_id": "repo-holdout-2",
+      "lineage_id": "<stable lineage id, distinct from every other holdout>",
       "path": "<absolute path to holdout repository 2>",
       "base_commit": "<40-hex-commit>",
       "repo_snapshot_digest": "<64-hex-tree-digest>",
@@ -73,6 +76,7 @@
     },
     {
       "repository_id": "repo-holdout-3",
+      "lineage_id": "<stable lineage id, distinct from every other holdout>",
       "path": "<absolute path to holdout repository 3>",
       "base_commit": "<40-hex-commit>",
       "repo_snapshot_digest": "<64-hex-tree-digest>",
@@ -84,6 +88,7 @@
     },
     {
       "repository_id": "repo-holdout-4",
+      "lineage_id": "<stable lineage id, distinct from every other holdout>",
       "path": "<absolute path to holdout repository 4>",
       "base_commit": "<40-hex-commit>",
       "repo_snapshot_digest": "<64-hex-tree-digest>",
@@ -95,6 +100,7 @@
     },
     {
       "repository_id": "repo-holdout-5",
+      "lineage_id": "<stable lineage id, distinct from every other holdout>",
       "path": "<absolute path to holdout repository 5>",
       "base_commit": "<40-hex-commit>",
       "repo_snapshot_digest": "<64-hex-tree-digest>",

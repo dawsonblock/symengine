@@ -12,12 +12,15 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
+import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
+from sis.v3.efficacy_manifest import validate_manifest
 from sis.v3.governed_eval import GOVERNED_ARMS, preregister
 from sis.v3.runner import tree_digest
 
@@ -55,6 +58,7 @@ def _manifest(root: Path) -> dict:
         (path / "seed.py").write_text("SEED = 1\n")
         repositories.append({
             "repository_id": f"repo-induction-{index}",
+            "lineage_id": f"lineage-induction-{index}",
             "path": str(path),
             "base_commit": f"{index:040x}",
             "repo_snapshot_digest": tree_digest(path),
@@ -70,6 +74,7 @@ def _manifest(root: Path) -> dict:
         hidden.write_text("def test_placeholder():\n    assert True\n")
         item = {
             "repository_id": f"repo-holdout-{index}",
+            "lineage_id": f"lineage-holdout-{index}",
             "path": str(holdout),
             "base_commit": "f" * 40,
             "repo_snapshot_digest": tree_digest(holdout),
@@ -808,6 +813,146 @@ class RealAgentGateTests(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertEqual(report["release_gate"], "BLOCKED_MANIFEST")
         self.assertIn("plain_directory", report["note"])
+
+
+class RepositoryTreeValidationTests(unittest.TestCase):
+    """A declared snapshot digest is verified against the tree it names.
+
+    Two entries that resolve to the same contents are the same codebase
+    however they are named or declared. Revisions with different contents
+    still require lineage metadata; these tests pin the content check.
+    """
+
+    def test_identical_induction_repositories_are_allowed(self):
+        with tempfile.TemporaryDirectory() as temp:
+            document = _manifest(Path(temp))
+            report = validate_manifest(document, check_paths=True)
+        self.assertTrue(report["valid"], report["problems"])
+        self.assertEqual(report["distinct_repository_trees"], 6)
+        self.assertEqual(len(report["repository_trees"]), 10)
+
+    def test_duplicate_holdout_copies_are_the_same_codebase(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            document = _manifest(root)
+            holdout = [item for item in document["repositories"]
+                       if item["partition"] == "holdout"]
+            source, copy = holdout[0], holdout[1]
+            (Path(copy["path"]) / "solution.py").write_text(
+                (Path(source["path"]) / "solution.py").read_text())
+            copy["repo_snapshot_digest"] = tree_digest(Path(copy["path"]))
+            report = validate_manifest(document, check_paths=True)
+        self.assertFalse(report["valid"])
+        self.assertTrue(any("same codebase" in problem
+                            for problem in report["problems"]),
+                        report["problems"])
+
+    def test_an_induction_copy_of_a_holdout_is_a_partition_leak(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            document = _manifest(root)
+            induction = next(item for item in document["repositories"]
+                             if item["partition"] == "induction")
+            holdout = next(item for item in document["repositories"]
+                           if item["partition"] == "holdout")
+            (Path(induction["path"]) / "seed.py").unlink()
+            (Path(induction["path"]) / "solution.py").write_text(
+                (Path(holdout["path"]) / "solution.py").read_text())
+            induction["repo_snapshot_digest"] = tree_digest(
+                Path(induction["path"]))
+            report = validate_manifest(document, check_paths=True)
+        self.assertFalse(report["valid"])
+        self.assertEqual(report["holdout_snapshots_used"], 5)
+        self.assertTrue(any("same codebase" in problem
+                            for problem in report["problems"]),
+                        report["problems"])
+
+    def test_declared_digest_must_match_the_tree(self):
+        with tempfile.TemporaryDirectory() as temp:
+            document = _manifest(Path(temp))
+            document["repositories"][0]["repo_snapshot_digest"] = "0" * 64
+            report = validate_manifest(document, check_paths=True)
+        self.assertFalse(report["valid"])
+        self.assertTrue(any("repository_snapshot_mismatch" in problem
+                            for problem in report["problems"]),
+                        report["problems"])
+
+    def test_a_legacy_v1_digest_is_still_verifiable(self):
+        with tempfile.TemporaryDirectory() as temp:
+            document = _manifest(Path(temp))
+            induction = next(item for item in document["repositories"]
+                             if item["partition"] == "induction")
+            induction["repo_snapshot_digest"] = tree_digest(
+                Path(induction["path"]), version=1)
+            report = validate_manifest(document, check_paths=True)
+        self.assertTrue(report["valid"], report["problems"])
+        self.assertEqual(
+            report["repository_tree_versions"][induction["repository_id"]], 1)
+        self.assertEqual(
+            report["repository_tree_versions"]["repo-holdout-0"], 2)
+
+
+    def _git(self, repo: Path, *args: str):
+        return subprocess.run(
+            ["git", "-C", str(repo), *args], check=True,
+            capture_output=True, text=True)
+
+    def _commit(self, repo: Path, message: str):
+        self._git(repo, "-c", "user.name=SIS", "-c",
+                  "user.email=sis@example.invalid", "commit", "-qm", message)
+
+    @unittest.skipUnless(shutil.which("git"),
+                         "git is required for lineage derivation")
+    def test_two_revisions_of_one_repository_share_a_lineage(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            document = _manifest(root)
+            holdout = [item for item in document["repositories"]
+                       if item["partition"] == "holdout"]
+            first = Path(holdout[0]["path"])
+            self._git(first, "init", "-q")
+            self._git(first, "add", ".")
+            self._commit(first, "base")
+            holdout[0]["repo_snapshot_digest"] = tree_digest(first)
+
+            revision = root / "holdout-0-revision"
+            subprocess.run(
+                ["git", "clone", "-q", str(first), str(revision)],
+                check=True, capture_output=True)
+            (revision / "solution.py").write_text("REVISION = 2\n")
+            self._git(revision, "add", ".")
+            self._commit(revision, "revision")
+            second = holdout[1]
+            shutil.rmtree(second["path"])
+            shutil.move(str(revision), second["path"])
+            second["repo_snapshot_digest"] = tree_digest(
+                Path(second["path"]))
+            second["lineage_id"] = "claimed-independent"
+            report = validate_manifest(document, check_paths=True)
+        self.assertFalse(report["valid"])
+        self.assertTrue(any("share a lineage" in problem
+                            for problem in report["problems"]),
+                        report["problems"])
+
+    def test_a_declared_lineage_must_be_an_identifier(self):
+        with tempfile.TemporaryDirectory() as temp:
+            document = _manifest(Path(temp))
+            document["repositories"][0]["lineage_id"] = "../escape"
+            report = validate_manifest(document, check_paths=True)
+        self.assertFalse(report["valid"])
+        self.assertTrue(any("lineage_id is not a valid identifier" in problem
+                            for problem in report["problems"]),
+                        report["problems"])
+
+    def test_a_confirmatory_manifest_requires_a_lineage(self):
+        with tempfile.TemporaryDirectory() as temp:
+            document = _manifest(Path(temp))
+            del document["repositories"][0]["lineage_id"]
+            report = validate_manifest(document, check_paths=True)
+        self.assertFalse(report["valid"])
+        self.assertTrue(any("no lineage_id" in problem
+                            for problem in report["problems"]),
+                        report["problems"])
 
 
 if __name__ == "__main__":

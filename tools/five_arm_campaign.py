@@ -67,7 +67,7 @@ from sis.v3.learning_qualification import (  # noqa: E402
     CodexCliAgent, FiveArmCampaign, build_context_provider,
     codex_agent_status, write_report)
 from sis.v3.runner import (LocalSubprocessExecutor, ResourceLimits,  # noqa: E402
-                           tree_digest)
+                           RunnerError, tree_digest, verify_tree_digest)
 from sis.v3.verifier import OutcomeVerifier  # noqa: E402
 
 PY = sys.executable
@@ -498,11 +498,23 @@ def _real_tasks(document: Mapping, verifier: OutcomeVerifier, *,
                              + repository["repository_id"])
         snapshot = snapshots.get(repository["repository_id"])
         if snapshot is None:
-            snapshot = tree_digest(repo_path)
+            canonical = tree_digest(repo_path)
+            declared = repository["repo_snapshot_digest"]
+            if canonical == declared:
+                snapshot = canonical
+            else:
+                # A pre-canonical manifest may carry a legacy v1 digest;
+                # the repository is accepted only if its exact tree
+                # matches that record.
+                try:
+                    verify_tree_digest(
+                        repo_path, declared, canonical=canonical)
+                except RunnerError as exc:
+                    raise ValueError(
+                        "repository_snapshot_mismatch:"
+                        + repository["repository_id"]) from exc
+                snapshot = declared
             snapshots[repository["repository_id"]] = snapshot
-        if snapshot != repository["repo_snapshot_digest"]:
-            raise ValueError("repository_snapshot_mismatch:"
-                             + repository["repository_id"])
         material = _acceptance_material(task, repository)
         statement = hashlib.sha256(task["prompt"].encode("utf-8")).hexdigest()
         verifier.register_task(

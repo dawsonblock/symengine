@@ -5,7 +5,10 @@ that a manifest is structurally ready for the existing ``FiveArmCampaign``:
 the protocol is preregistered and powered, the five arms are fixed, the
 holdout is repository-disjoint from induction material, hidden tests live
 outside the public repository, and every task carries an evaluator-owned
-acceptance command and equal budget fields.
+acceptance command and equal budget fields. With ``check_paths`` it also
+re-fingerprints every repository path, verifies the declared snapshot
+digest, and rejects two holdout entries (or an induction and a holdout
+entry) that resolve to the same codebase.
 
 A valid manifest is a prerequisite, not evidence. The efficacy claim still
 requires a completed real-agent run with independently verified outcomes.
@@ -14,15 +17,18 @@ from __future__ import annotations
 
 import json
 import re
+import subprocess
 from collections.abc import Mapping
 from pathlib import Path
 
 from .contracts import ContractError, canonical_digest
 from .governed_eval import GOVERNED_ARMS, preregister, required_sample_size
+from .runner import RunnerError, tree_digest, verify_tree_digest
 
 PLACEHOLDER = re.compile(r"^<[^<>]+>$")
 _HEX40 = re.compile(r"^[0-9a-f]{40}$")
 _HEX64 = re.compile(r"^[0-9a-f]{64}$")
+_IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:@-]{0,127}$")
 _SAFE_REL = re.compile(
     r"^(?!/)(?![A-Za-z]:)(?!.*(?:^|/)\.\.(?:/|$))[A-Za-z0-9_.@/-]{1,512}$")
 MIN_REPOSITORIES = 10
@@ -165,6 +171,14 @@ def _validate_repositories(document, problems: list[str],
         path = repository.get("path")
         if not isinstance(path, str) or not path:
             _problem(problems, label + " has no path")
+        lineage = repository.get("lineage_id")
+        if lineage is not None:
+            if _placeholder(lineage) and allow_placeholders:
+                pass
+            elif (not isinstance(lineage, str)
+                  or not _IDENTIFIER.fullmatch(lineage)):
+                _problem(problems,
+                         label + ".lineage_id is not a valid identifier")
         hidden = repository.get("hidden_tests")
         if partition == "holdout":
             if not isinstance(hidden, Mapping):
@@ -219,6 +233,147 @@ def _validate_repositories(document, problems: list[str],
             if declared == "holdout" and repository_id not in holdout:
                 _problem(problems, repository_id + " is not in holdout")
     return by_id
+
+
+def _verify_repository_trees(by_id: dict[str, dict],
+                             problems: list[str]
+                             ) -> tuple[dict[str, str], dict[str, int]]:
+    """Re-fingerprint every repository path and reject duplicate codebases.
+
+    A declared snapshot digest is a claim. When paths are available the
+    validator recomputes the canonical v2 tree digest, verifies the
+    declared digest (legacy v1 records are accepted read-only), and
+    groups repositories by the *computed* digest. Two holdout entries —
+    or an induction and a holdout entry — that resolve to the same tree
+    are the same codebase, however they are named and whatever digests
+    they declare. Identical induction repositories are permitted: they
+    only duplicate training material.
+    """
+    digests: dict[str, str] = {}
+    versions: dict[str, int] = {}
+    for repository_id, repository in by_id.items():
+        path = repository.get("path")
+        if not isinstance(path, str) or not path:
+            continue
+        root = Path(path)
+        if root.is_symlink() or not root.is_dir():
+            _problem(problems,
+                     "repository_path_is_not_a_plain_directory: "
+                     + repository_id)
+            continue
+        declared = repository.get("repo_snapshot_digest")
+        try:
+            canonical = tree_digest(root)
+            versions[repository_id] = verify_tree_digest(
+                root, declared, canonical=canonical)
+        except (OSError, RunnerError):
+            _problem(problems,
+                     "repository_snapshot_mismatch: " + repository_id)
+            continue
+        digests[repository_id] = canonical
+    groups: dict[str, list[str]] = {}
+    for repository_id, digest in digests.items():
+        groups.setdefault(digest, []).append(repository_id)
+    for ids in groups.values():
+        if len(ids) < 2:
+            continue
+        partitions = {by_id[repository_id].get("partition")
+                      for repository_id in ids}
+        if "holdout" in partitions:
+            _problem(problems,
+                     "repositories resolve to the same codebase: "
+                     + ", ".join(sorted(ids)))
+    return digests, versions
+
+
+def _git_lineage(root: Path) -> str | None:
+    """Fingerprint a Git checkout's history, or return ``None``.
+
+    Two revisions or clones of one repository share their root commit
+    (or commits, after a merged history); unrelated repositories do not.
+    The fingerprint is therefore the sorted root-commit set. A shallow
+    clone reports its shallow boundary as a root, so lineage is only
+    exact for full clones; a repository that cannot be read as Git falls
+    back to the declared ``lineage_id``.
+    """
+    try:
+        completed = subprocess.run(
+            ["git", "-C", str(root), "rev-list", "--max-parents=0", "HEAD"],
+            capture_output=True, text=True, timeout=10, check=False)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if completed.returncode != 0:
+        return None
+    roots = sorted(set(completed.stdout.split()))
+    if not roots or any(not (_HEX40.fullmatch(item)
+                             or _HEX64.fullmatch(item)) for item in roots):
+        return None
+    return "git:" + canonical_digest(
+        "repository_lineage", 1, {"roots": roots})
+
+
+def _verify_repository_lineage(by_id: dict[str, dict], problems: list[str],
+                               *, derive_git: bool,
+                               required: bool
+                               ) -> tuple[dict[str, list[str]], dict[str, str]]:
+    """Reject holdout entries that share a repository lineage.
+
+    Every repository contributes the lineage keys it can prove: a
+    Git-derived history fingerprint when the path is a checkout, and the
+    declared ``lineage_id`` when present. Entries connected by any key
+    are one lineage. Two holdout entries — or an induction and a holdout
+    entry — in one lineage are not independent codebases, even when
+    their contents differ (two revisions of one repository). A
+    confirmatory manifest must supply a lineage for every repository:
+    either a readable Git history or a declared ``lineage_id``.
+    """
+    keys: dict[str, set[str]] = {}
+    for repository_id, repository in by_id.items():
+        own: set[str] = set()
+        path = repository.get("path")
+        if (derive_git and isinstance(path, str) and path
+                and not Path(path).is_symlink() and Path(path).is_dir()):
+            derived = _git_lineage(Path(path))
+            if derived is not None:
+                own.add(derived)
+        declared = repository.get("lineage_id")
+        if isinstance(declared, str) and _IDENTIFIER.fullmatch(declared):
+            own.add(declared)
+        keys[repository_id] = own
+        if required and not own:
+            _problem(problems,
+                     "repository has no lineage_id: " + repository_id)
+    parent = {repository_id: repository_id for repository_id in by_id}
+
+    def find(item: str) -> str:
+        while parent[item] != item:
+            parent[item] = parent[parent[item]]
+            item = parent[item]
+        return item
+
+    owners: dict[str, list[str]] = {}
+    for repository_id, own in keys.items():
+        for key in own:
+            owners.setdefault(key, []).append(repository_id)
+    for ids in owners.values():
+        root = find(ids[0])
+        for other in ids[1:]:
+            parent[find(other)] = root
+    components: dict[str, list[str]] = {}
+    for repository_id in by_id:
+        components.setdefault(find(repository_id), []).append(repository_id)
+    for ids in components.values():
+        if len(ids) < 2:
+            continue
+        partitions = {by_id[repository_id].get("partition")
+                      for repository_id in ids}
+        if "holdout" in partitions:
+            _problem(problems,
+                     "repositories share a lineage: "
+                     + ", ".join(sorted(ids)))
+    return ({repository_id: sorted(own)
+             for repository_id, own in keys.items()},
+            {repository_id: find(repository_id) for repository_id in by_id})
 
 
 def _validate_tasks(document, by_id: dict[str, dict], problems: list[str],
@@ -338,6 +493,9 @@ def validate_manifest(document, *, allow_placeholders: bool = False,
     protocol = _validate_protocol(
         document.get("protocol"), problems, allow_placeholders)
     by_id = _validate_repositories(document, problems, allow_placeholders)
+    repository_trees, repository_tree_versions = (
+        ({}, {}) if allow_placeholders or not check_paths
+        else _verify_repository_trees(by_id, problems))
     sample_size = int(protocol.get("sample_size", 0) or 0)
     tasks = _validate_tasks(
         document, by_id, problems, allow_placeholders, sample_size,
@@ -347,6 +505,10 @@ def validate_manifest(document, *, allow_placeholders: bool = False,
                      if isinstance(document_protocol, Mapping) else None)
     confirmatory = bool(protocol.get("powered") is True
                         and declared_kind != "diagnostic")
+    repository_lineage, lineage_components = _verify_repository_lineage(
+        by_id, problems,
+        derive_git=check_paths and not allow_placeholders,
+        required=confirmatory and not allow_placeholders)
     holdout_ids = {
         repository_id for repository_id, repository in by_id.items()
         if repository.get("partition") == "holdout"}
@@ -459,6 +621,14 @@ def validate_manifest(document, *, allow_placeholders: bool = False,
         "holdout_repositories_used": len(used),
         "holdout_snapshots_used": len(used_snapshots),
         "tasks_per_holdout_repository": dict(sorted(used.items())),
+        "repository_trees": dict(sorted(repository_trees.items())),
+        "repository_tree_versions": dict(
+            sorted(repository_tree_versions.items())),
+        "distinct_repository_trees": len(set(repository_trees.values())),
+        "repository_lineage": dict(sorted(repository_lineage.items())),
+        "distinct_holdout_lineages": len(
+            {lineage_components[repository_id] for repository_id in used
+             if repository_id in holdout_ids}),
         "placeholders": placeholder_count,
         "confirmatory": confirmatory,
         "manifest_digest": _canonical(document),

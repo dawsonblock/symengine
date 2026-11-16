@@ -33,6 +33,7 @@ def repository(index: int, partition: str) -> dict:
     digest = hashlib.sha256(f"repo-{index}".encode()).hexdigest()
     item = {
         "repository_id": f"repo-{index:02d}",
+        "lineage_id": f"lineage-{index:02d}",
         "path": f"/secure/repos/repo-{index:02d}",
         "base_commit": "a" * 40,
         "repo_snapshot_digest": digest,
@@ -298,6 +299,48 @@ class EfficacyManifestTests(unittest.TestCase):
         self.assertEqual(report["holdout_snapshots_used"], 1)
         self.assertTrue(any("distinct holdout" in problem
                             for problem in report["problems"]))
+
+    def test_confirmatory_manifest_requires_a_lineage(self):
+        document = manifest()
+        del document["repositories"][0]["lineage_id"]
+        report = validate_manifest(document)
+        self.assertFalse(report["valid"])
+        self.assertTrue(any("no lineage_id" in problem
+                            for problem in report["problems"]),
+                        report["problems"])
+
+    def test_holdout_repositories_must_have_distinct_lineages(self):
+        document = manifest()
+        holdout = [item for item in document["repositories"]
+                   if item["partition"] == "holdout"]
+        holdout[1]["lineage_id"] = holdout[0]["lineage_id"]
+        report = validate_manifest(document)
+        self.assertFalse(report["valid"])
+        self.assertEqual(report["distinct_holdout_lineages"], 8)
+        self.assertTrue(any("share a lineage" in problem
+                            for problem in report["problems"]),
+                        report["problems"])
+
+    def test_an_induction_and_holdout_must_not_share_a_lineage(self):
+        document = manifest()
+        holdout = next(item for item in document["repositories"]
+                       if item["partition"] == "holdout")
+        document["repositories"][0]["lineage_id"] = holdout["lineage_id"]
+        report = validate_manifest(document)
+        self.assertFalse(report["valid"])
+        self.assertTrue(any("share a lineage" in problem
+                            for problem in report["problems"]),
+                        report["problems"])
+
+    def test_identical_induction_lineages_are_allowed(self):
+        document = manifest()
+        extra = repository(10, "induction")
+        extra["lineage_id"] = document["repositories"][0]["lineage_id"]
+        document["repositories"].append(extra)
+        document["partitions"]["induction"].append(extra["repository_id"])
+        report = validate_manifest(document)
+        self.assertTrue(report["valid"], report["problems"])
+        self.assertEqual(report["distinct_holdout_lineages"], 9)
 
     def test_a_task_must_declare_the_holdout_partition(self):
         for declared in ("induction", None):

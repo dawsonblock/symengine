@@ -343,7 +343,12 @@ class BenchmarkHarness:
         try:
             staged_digest = stage_repository(base_dir, workspace)
             if (task.repo_snapshot_digest
-                    and staged_digest != task.repo_snapshot_digest):
+                    and staged_digest != task.repo_snapshot_digest
+                    and tree_digest(workspace, version=1)
+                    != task.repo_snapshot_digest):
+                # The staged tree is the authority; the legacy v1 digest
+                # is only consulted so a pre-canonical task envelope can
+                # still be replayed.
                 raise BenchmarkError("repository_snapshot_mismatch")
             guidance = context_provider(task, arm) if context_provider else None
             context_digest = None

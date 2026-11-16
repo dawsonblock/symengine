@@ -418,18 +418,49 @@ def mark_private_material_modified(
     )
 
 
+TREE_DIGEST_VERSIONS = (1, 2)
+# New records always carry the canonical version. Version 1 is legacy:
+# it is retained only to re-verify digests recorded before the canonical
+# format existed.
+CANONICAL_TREE_DIGEST_VERSION = 2
+_TREE_DIGEST_DOMAINS = {
+    1: b"sis-v3:tree:1\0",
+    2: b"sis-v3:tree:2\0",
+}
+_HEX_256 = re.compile(r"^[0-9a-f]{64}$")
+
+
 @dataclass(frozen=True)
 class TreeScan:
     digest: str
     file_count: int
     total_bytes: int
     external_symlinks: tuple[str, ...]
+    version: int = CANONICAL_TREE_DIGEST_VERSION
 
 
-def scan_tree(root: Path) -> TreeScan:
-    """Digest every file byte and symlink target under ``root``, deterministically."""
+def _check_tree_digest_version(version: int) -> None:
+    if type(version) is not int or version not in _TREE_DIGEST_DOMAINS:
+        raise RunnerError(f"unsupported_tree_digest_version:{version!r}")
+
+
+def _external_symlink(root: Path, full: Path) -> bool:
+    try:
+        resolved = full.resolve(strict=True)
+    except OSError:
+        return True
+    return not resolved.is_relative_to(root.resolve())
+
+
+def _scan_tree_legacy(root: Path) -> TreeScan:
+    """Reproduce the pre-canonical digest byte for byte.
+
+    This traversal hashes entries in ``os.walk`` order, which depends on
+    the filesystem. It exists only to re-verify historical records; it
+    must never mint a digest for a new record.
+    """
     root = Path(root)
-    hasher = hashlib.sha256(b"sis-v3:tree:1\0")
+    hasher = hashlib.sha256(_TREE_DIGEST_DOMAINS[1])
     file_count = 0
     total_bytes = 0
     external: list[str] = []
@@ -448,11 +479,7 @@ def scan_tree(root: Path) -> TreeScan:
             if full.is_symlink():
                 target = os.readlink(full)
                 hasher.update(b"L" + relative.encode("utf-8") + b"\0" + target.encode("utf-8") + b"\0")
-                try:
-                    resolved = full.resolve(strict=True)
-                except OSError:
-                    resolved = None
-                if resolved is None or not resolved.is_relative_to(root.resolve()):
+                if _external_symlink(root, full):
                     external.append(relative)
                 continue
             if not full.is_file():
@@ -471,11 +498,118 @@ def scan_tree(root: Path) -> TreeScan:
                 b"F" + relative.encode("utf-8") + b"\0" + digest.hexdigest().encode("ascii")
                 + b"\0" + str(size).encode("ascii") + b"\0"
             )
-    return TreeScan(hasher.hexdigest(), file_count, total_bytes, tuple(sorted(external)))
+    return TreeScan(hasher.hexdigest(), file_count, total_bytes,
+                    tuple(sorted(external)), 1)
 
 
-def tree_digest(root: Path) -> str:
-    return scan_tree(root).digest
+def _scan_tree_canonical(root: Path) -> TreeScan:
+    """Canonical v2 tree fingerprint: traversal order is part of the format.
+
+    Directory names and entry names are sorted by their encoded bytes at
+    every level, so the digest depends only on the tree's contents, never
+    on the order the filesystem returns directory entries. Names are
+    encoded with ``os.fsencode`` so a name that is not valid UTF-8
+    round-trips instead of raising. A directory's entries are hashed
+    before its children are visited; within a directory, regular files
+    and symlinks are interleaved in name order. Empty directories,
+    special files, and file permissions are not part of the fingerprint —
+    this is a content identity, not a filesystem metadata identity.
+    """
+    root = Path(root)
+    hasher = hashlib.sha256(_TREE_DIGEST_DOMAINS[2])
+    file_count = 0
+    total_bytes = 0
+    external: list[str] = []
+    for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
+        kept = []
+        linked_dirs = []
+        for name in dirnames:
+            full = Path(dirpath) / name
+            if full.is_symlink():
+                linked_dirs.append(name)
+            else:
+                kept.append(name)
+        dirnames[:] = sorted(kept, key=os.fsencode)
+        for name in sorted(filenames + linked_dirs, key=os.fsencode):
+            full = Path(dirpath) / name
+            relative = full.relative_to(root).as_posix()
+            path_bytes = os.fsencode(relative)
+            if full.is_symlink():
+                target = os.readlink(full)
+                hasher.update(b"L" + path_bytes + b"\0" + os.fsencode(target) + b"\0")
+                if _external_symlink(root, full):
+                    external.append(relative)
+                continue
+            if not full.is_file():
+                continue
+            file_count += 1
+            if file_count > MAX_WORKSPACE_FILES:
+                raise RunnerError("workspace exceeds the file-count bound")
+            digest = hashlib.sha256()
+            size = 0
+            with open(full, "rb") as handle:
+                for chunk in iter(lambda: handle.read(_READ_CHUNK), b""):
+                    digest.update(chunk)
+                    size += len(chunk)
+            total_bytes += size
+            hasher.update(
+                b"F" + path_bytes + b"\0" + digest.hexdigest().encode("ascii")
+                + b"\0" + str(size).encode("ascii") + b"\0"
+            )
+    return TreeScan(hasher.hexdigest(), file_count, total_bytes,
+                    tuple(sorted(external)), 2)
+
+
+def scan_tree(root: Path, *, version: int = CANONICAL_TREE_DIGEST_VERSION) -> TreeScan:
+    """Digest every file byte and symlink target under ``root``.
+
+    ``version=2`` (default) is the canonical, order-independent format
+    used for every new record. ``version=1`` reproduces the legacy
+    traversal-order-dependent digest and is supported only to re-verify
+    records created before the canonical format existed.
+    """
+    _check_tree_digest_version(version)
+    if version == 1:
+        return _scan_tree_legacy(Path(root))
+    return _scan_tree_canonical(Path(root))
+
+
+def tree_digest(root: Path, *, version: int = CANONICAL_TREE_DIGEST_VERSION) -> str:
+    return scan_tree(root, version=version).digest
+
+
+def verify_tree_digest(
+    root: Path,
+    expected: str,
+    *,
+    canonical: str | None = None,
+    allow_legacy: bool = True,
+) -> int:
+    """Match a recorded tree digest and return the version that matched.
+
+    The canonical v2 digest is checked first. With ``allow_legacy`` the
+    legacy v1 digest is also recomputed, so evidence recorded before the
+    canonical format remains verifiable. A caller that must not accept
+    legacy evidence passes ``allow_legacy=False``. ``canonical`` must be
+    the v2 digest of ``root``; a caller that already computed it avoids a
+    second scan.
+    """
+    if not isinstance(expected, str) or not _HEX_256.fullmatch(expected):
+        raise RunnerError("tree_digest_malformed")
+    if canonical is None:
+        canonical = tree_digest(root)
+    if canonical == expected:
+        return CANONICAL_TREE_DIGEST_VERSION
+    if allow_legacy:
+        try:
+            legacy = tree_digest(root, version=1)
+        except UnicodeEncodeError:
+            # A legacy scan cannot encode this tree's names, so no legacy
+            # record can name it.
+            legacy = None
+        if legacy == expected:
+            return 1
+    raise RunnerError("tree_digest_mismatch")
 
 
 @dataclass(frozen=True)

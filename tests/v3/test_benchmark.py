@@ -128,6 +128,22 @@ class BenchmarkTests(unittest.TestCase):
             self.harness.run([(stale, self.repo)], lambda ctx: None,
                              budget=self.budget, arms=("A",))
 
+    def test_legacy_snapshot_digest_still_replays(self):
+        from dataclasses import replace
+        legacy = replace(
+            self.task,
+            repo_snapshot_digest=tree_digest(self.repo, version=1))
+
+        def agent(ctx):
+            (ctx.workspace / "calc.py").write_text(
+                "def scale(a, b):\n    return a * b\n")
+
+        report = self.harness.run([(legacy, self.repo)], agent,
+                                  budget=self.budget, arms=("A",))
+        row = report["per_task"][0]["arms"]["A"]
+        self.assertNotIn("error", row)
+        self.assertEqual(row["outcome"], "pass")
+
 
 class StagingTests(unittest.TestCase):
     """A repository symlink must never copy outside material into a workspace."""

@@ -33,7 +33,13 @@ version, prompt, budget and evaluator. Arm order is randomized per task.
   the task, not the arm run.
 - **Repository-disjoint holdout.** Induction repositories and holdout
   repositories are disjoint. No holdout repository digest may appear in
-  learned material, and hidden tests never enter the public archive.
+  learned material, and hidden tests never enter the public archive. No
+  two holdout entries may resolve to the same codebase or the same
+  repository lineage: a lineage is the history a checkout descends from
+  (its Git root commits), not just its current file contents, so two
+  revisions of one repository cannot count as independent evidence.
+  Every repository declares a stable `lineage_id`; when the path is a
+  Git checkout the validator derives the lineage from history.
 - **Preregistration.** The protocol, sample size, minimum effect, alpha,
   budgets, arms and expectations are committed before the first holdout
   run. The manifest records the protocol digest.
@@ -59,9 +65,11 @@ version, prompt, budget and evaluator. Arm order is randomized per task.
 
 The template is [efficacy_manifest_template.json](efficacy_manifest_template.json).
 Replace every `<placeholder>`, provide at least ten repositories (at
-least five of them holdout repositories with distinct snapshots that
-each contribute tasks) and at least 103 paired holdout tasks, and
-commit the manifest before any holdout run.
+least five of them holdout repositories with distinct snapshots and
+distinct lineages that each contribute tasks) and at least 103 paired
+holdout tasks, and commit the manifest before any holdout run. Each
+repository declares a `lineage_id` shared by every revision of that
+repository and distinct from every other holdout lineage.
 
 Validate the template while editing:
 
@@ -82,9 +90,14 @@ The validator enforces:
 - the five arms exactly;
 - a preregistered, powered protocol whose digest matches;
 - `sample_size` at or above the recomputed power floor;
-- repository-disjoint induction/holdout partitions;
+- repository-disjoint induction/holdout partitions, with distinct
+  holdout codebases and lineages;
 - at least ten repositories, of which at least five are holdout
   repositories, and at least `sample_size` tasks;
+- `--check-paths` re-fingerprints every repository, verifies the
+  declared canonical snapshot digest (legacy v1 digests are accepted
+  read-only), derives Git lineage, and rejects duplicate codebases or
+  shared lineages across holdout entries;
 - hidden tests outside the public repository;
 - safe relative acceptance-file paths;
 - pinned agent kind/model/CLI version;
