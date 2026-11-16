@@ -202,10 +202,11 @@ def required_sample_size(p1: float = 0.6, p2: float = 0.4, *,
     also optimistic at small n — the ``max(4, ...)`` floor keeps the
     returned value from becoming absurd, not from being exact.
     """
-    for name, value in (("p1", p1), ("p2", p2)):
-        if type(value) not in (int, float) or not math.isfinite(value):
-            raise ContractError(f"{name} must be a finite number")
-        if not 0 < value < 1:
+    for value in (p1, p2):
+        # The range check also refuses NaN, infinities and integers too
+        # large to convert to a float; do not call math.isfinite() first,
+        # which raises OverflowError for such an integer.
+        if type(value) not in (int, float) or not 0 < value < 1:
             raise ContractError("expected rates must be in (0, 1)")
     if p1 == p2:
         raise ContractError("expected rates must differ")

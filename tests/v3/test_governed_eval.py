@@ -89,7 +89,7 @@ class ProtocolTests(unittest.TestCase):
         with self.assertRaisesRegex(ContractError, "must differ"):
             required_sample_size(0.5, 0.5)
         for bad in ((0.0, 0.7), (0.3, 1.0), (float("nan"), 0.4),
-                    ("0.3", 0.7), (True, 0.4)):
+                    ("0.3", 0.7), (True, 0.4), (10 ** 400, 0.4)):
             with self.assertRaises(ContractError):
                 required_sample_size(*bad)
 
