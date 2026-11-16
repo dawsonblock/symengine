@@ -44,11 +44,11 @@ Regression coverage lives in `tests/v3/test_canonical_tree_digest.py`,
 `tests/v3/test_benchmark.py`, `tests/v3/test_efficacy_manifest.py` and
 `tests/v3/test_five_arm_real_run.py`.
 
-The archive was re-sealed over this repair at source commit `c584328`:
-1703 passed, 7 skipped, 0 failed; the ZIP hashes to `732ee816…`. The
-release and isolator keys remain local, so strict release mode still
-refuses the bundle. Linux environments without git now skip the two
-release tests that require it instead of failing.
+The archive was re-sealed over this repair: 1703 passed, 7 skipped,
+0 failed. `release/release_manifest.json` records the source commit and
+archive digest. The release and isolator keys remain local, so strict
+release mode still refuses the bundle. Linux environments without git
+now skip the two release tests that require it instead of failing.
 
 ## 2026-11-15 — Revision 15 repairs: custody, power, coverage, execution and lineage
 

@@ -20,11 +20,8 @@ general effectiveness remains unproven.
 ## Re-seal: canonical fingerprint repair (2026-11-16)
 
 The archive was re-sealed over the canonical repository fingerprint and
-lineage repair. The source commit is
-`c5843280b8410daaf6cef0b186ccd41844507462`; the seal commit is
-`7748f32`. The archive is
-`732ee816166ef92bd8b8422f3bf45c6faedffbfc310680c4234a8eb93b15fe8d`
-(468 files).
+lineage repair. `release/release_manifest.json` records the source
+commit and archive digest.
 
 Test evidence is the executed suite at that commit: 1703 passed,
 7 skipped, 0 failed, with Docker and PostgreSQL available. The Docker
