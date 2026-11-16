@@ -2,7 +2,7 @@
   "archive": {
     "inner_project_dir": "SIS-v3.3.9",
     "path": "release/SIS-v3.3.9.zip",
-    "sha256": "83689947323c896e41306aeda70facfa6c31b613caf582370e8cc8b857140163",
+    "sha256": "b205c989fcd745b12af2421d5fd43bcecb076013b50e9da16a1a04a084ea6e00",
     "source_files": 470
   },
   "branch": "repair/v335-resource-security",
@@ -65,58 +65,19 @@
     "evidence/v336/"
   ],
   "isolation": {
-    "external_attestation": {
-      "attestation": {
-        "path": "release/isolation_attestation.json",
-        "sha256": "6d1cc7dabadf92a4bbe7bde08564958a303f14237f3f50e48fd98f9707120a72"
-      },
-      "attestation_digest": "70828824d445100b3a80a84e0e0e0ab86c85c1be048770c46be4654084fc85ee",
-      "backend": "docker_sandbox",
-      "generated_at": "2026-11-16T07:46:27Z",
-      "image_digest": "2c10724de03d141f69f3cf8ad41e5cecb3cd4ed443c141a73b2278dfb142f30c",
-      "policy_digest": "f244ee64210fd9fe911c3fb8480443cf86d23641f785248d4c886194f24d0b25",
-      "public_key": "858508bdbfa83e70340ee7c7d3057b25e854012a5e4c7ea35606d9a133ed1f14",
-      "receipt": {
-        "path": "release/isolation_receipt.json",
-        "sha256": "09b39fe02e527d04ee3716120283f5ab534a86b9caec481ad4f9d5c890f0d9aa"
-      },
-      "receipt_digest": "db04044efb31ec9964f2fbf69ed641175f5fcac4fa98a5d99f0a29b28c31a3be",
-      "required_properties": [
-        "caps:dropped",
-        "fs:root_read_only",
-        "fs:workspace_confined",
-        "limits:cpu_time",
-        "limits:disk",
-        "limits:memory",
-        "limits:pids",
-        "net:denied",
-        "output:capped",
-        "proc:no_new_privileges",
-        "user:non_root"
-      ],
-      "signer_key_id": "gate2-local-isolator",
-      "verification": {
-        "path": "release/isolation_verification.json",
-        "sha256": "369410f7555d41b7bdc54be70d2186211c8443443a16ed8a955a9548b8981b87"
-      },
-      "verification_mode": "raw_receipt_and_attestation",
-      "verified": true,
-      "worker_identity": "docker-sandbox-v1"
-    }
+    "external_attestation": null
   },
   "notes": "release/ artifacts are out-of-band provenance and are intentionally absent from the archive manifest",
   "provenance": {
-    "key_id": "local-release-key",
-    "path": "release/provenance.dsse.json",
-    "public_key_path": "release/provenance_public_key.hex",
-    "signed": true,
-    "statement_sha256": "2548111e4a1f798ec93324195f5f0c4fa7f8ffa26c21fd137d971f16d2130c5b",
-    "subject_sha256": "83689947323c896e41306aeda70facfa6c31b613caf582370e8cc8b857140163",
+    "path": "release/provenance.intoto.json",
+    "signed": false,
+    "statement_sha256": "1747f3cde4f5e7e388ece72ea9589d19585a188015a6fa71f033b45fb1331019",
+    "subject_sha256": "b205c989fcd745b12af2421d5fd43bcecb076013b50e9da16a1a04a084ea6e00",
     "trust_root": "qualification-only"
   },
   "release": "SIS-v3.3.9",
   "schema_version": 1,
-  "source_commit": "9daf61f5eb4d8cab416bf825a1c83c4e6a134f2c",
+  "source_commit": "b559b143307b6fa055776a2b0afcd48698c7dc05",
   "source_commit_note": "archive members are byte-identical to this commit for every manifest-covered file; the release commit itself touches only out-of-band release/ provenance",
   "status": "ENGINEERING_VERIFIED",
   "test_result": {
@@ -126,21 +87,21 @@
       "counts": {
         "errors": 0,
         "failed": 0,
-        "passed": 1732,
-        "skipped": 7
+        "passed": 1724,
+        "skipped": 34
       },
       "exit_status": 0,
-      "output_sha256": "221e9c4bea7f581565be862845c741873bc03b140b247658144ea7d401dbe8dc",
+      "output_sha256": "b3eb32b1bef4186afdf5fca4effffdff062f568956c33d68f5c66d2982c67408",
       "path": "release/test_evidence.json",
       "pytest_version": "8.4.2",
-      "sha256": "f8ae2b29985f08dc5af5eefddcd65de0a48a8b87185891ccd27e5e7b7d345b6b",
+      "sha256": "9aa1c858bbc71260c43e65f095b1f409ac8c145f42474c5364ee7f21d6135ef1",
       "signed": false,
       "signer_key_id": null,
-      "source_commit": "9daf61f5eb4d8cab416bf825a1c83c4e6a134f2c"
+      "source_commit": "b559b143307b6fa055776a2b0afcd48698c7dc05"
     },
     "failed": 0,
-    "passed": 1732,
-    "skipped": 7,
+    "passed": 1724,
+    "skipped": 34,
     "source": "evidence"
   }
 }
