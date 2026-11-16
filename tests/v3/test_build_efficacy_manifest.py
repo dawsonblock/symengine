@@ -11,14 +11,20 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from sis.v3.contracts import canonical_digest
 from sis.v3.efficacy_manifest import validate_manifest
 from sis.v3.governed_eval import GOVERNED_ARMS
+from sis.v3.runner import tree_digest
 
 ROOT = Path(__file__).resolve().parents[2]
 _SPEC = importlib.util.spec_from_file_location(
     "build_efficacy_manifest", ROOT / "tools" / "build_efficacy_manifest.py")
 builder = importlib.util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(builder)
+_CAMPAIGN = importlib.util.spec_from_file_location(
+    "five_arm_campaign", ROOT / "tools" / "five_arm_campaign.py")
+campaign = importlib.util.module_from_spec(_CAMPAIGN)
+_CAMPAIGN.loader.exec_module(campaign)
 
 GIT = shutil.which("git")
 BUDGET = {"wall_seconds": 30, "token_budget": 1000, "tool_budget": 10}
@@ -112,6 +118,34 @@ def study(root: Path) -> dict:
     }
 
 
+def _bundle(spec: dict) -> dict:
+    induction = sorted(
+        tree_digest(Path(repository["path"]))
+        for repository in spec["repositories"]
+        if repository["partition"] == "induction")
+    components = {}
+    for arm in ("B", "C", "D"):
+        components[arm] = [{
+            "candidate_id": f"candidate-{arm.lower()}",
+            "candidate_digest": hashlib.sha256(arm.encode()).hexdigest(),
+            "content_digest": hashlib.sha256(
+                ("content-" + arm).encode()).hexdigest(),
+            "evidence_digest": hashlib.sha256(
+                ("evidence-" + arm).encode()).hexdigest(),
+            "text": f"{arm} learned step",
+        }]
+    document = {
+        "schema_version": 2,
+        "kind": "learned_guidance_bundle",
+        "source": "learned",
+        "training": {"repository_digests": induction},
+        "components": components,
+    }
+    document["bundle_digest"] = canonical_digest(
+        "learned_guidance_bundle", 1, document)
+    return document
+
+
 @unittest.skipUnless(GIT, "git is required for base commits and lineage")
 class StudyKitTests(unittest.TestCase):
     def setUp(self):
@@ -157,6 +191,18 @@ class StudyKitTests(unittest.TestCase):
                                     "inside the public repository"):
             builder.build_manifest(self.spec, check_agent=False)
 
+    def test_hidden_tests_inside_another_repository_are_refused(self):
+        holdout = next(repository for repository in self.spec["repositories"]
+                       if repository["partition"] == "holdout")
+        induction = next(repository for repository in self.spec["repositories"]
+                         if repository["partition"] == "induction")
+        inside = Path(induction["path"]) / "hidden.py"
+        inside.write_text("def test_ok():\n    assert True\n")
+        holdout["hidden_tests"] = {"path": str(inside)}
+        with self.assertRaisesRegex(builder.StudySpecError,
+                                    "inside repository"):
+            builder.build_manifest(self.spec, check_agent=False)
+
     def test_duplicate_holdout_lineages_are_refused(self):
         holdout = [repository for repository in self.spec["repositories"]
                    if repository["partition"] == "holdout"]
@@ -175,6 +221,25 @@ class StudyKitTests(unittest.TestCase):
         self.spec["tasks"] = self.spec["tasks"][:8]
         with self.assertRaisesRegex(builder.StudySpecError,
                                     "below the preregistered sample_size"):
+            builder.build_manifest(self.spec, check_agent=False)
+
+    def test_a_dirty_repository_is_refused(self):
+        induction = next(repository for repository in self.spec["repositories"]
+                         if repository["partition"] == "induction")
+        (Path(induction["path"]) / "solution.py").write_text("DIRTY = 1\n")
+        with self.assertRaisesRegex(builder.StudySpecError,
+                                    "uncommitted changes"):
+            builder.build_manifest(self.spec, check_agent=False)
+
+    def test_a_subdirectory_is_not_a_repository_root(self):
+        induction = next(repository for repository in self.spec["repositories"]
+                         if repository["partition"] == "induction")
+        subdirectory = Path(induction["path"]) / "sub"
+        subdirectory.mkdir()
+        (subdirectory / "nested.py").write_text("NESTED = 1\n")
+        induction["path"] = str(subdirectory)
+        with self.assertRaisesRegex(builder.StudySpecError,
+                                    "not the repository root"):
             builder.build_manifest(self.spec, check_agent=False)
 
     def test_a_base_commit_must_match_the_checkout(self):
@@ -218,6 +283,29 @@ class StudyKitTests(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertFalse(output.exists())
 
+    def test_a_spec_inside_a_repository_is_refused(self):
+        holdout = next(repository for repository in self.spec["repositories"]
+                       if repository["partition"] == "holdout")
+        spec_path = Path(holdout["path"]) / "spec.json"
+        spec_path.write_text(json.dumps(self.spec))
+        output = self.root / "manifest.json"
+        code = builder.main([
+            "--spec", str(spec_path), "--output", str(output),
+            "--skip-agent-check"])
+        self.assertEqual(code, 1)
+        self.assertFalse(output.exists())
+
+    def test_a_bundle_inside_a_repository_is_refused(self):
+        bundle = _bundle(self.spec)
+        induction = next(repository for repository in self.spec["repositories"]
+                         if repository["partition"] == "induction")
+        path = Path(induction["path"]) / "bundle.json"
+        path.write_text(json.dumps(bundle))
+        self.spec["guidance_bundle"] = str(path)
+        with self.assertRaisesRegex(builder.StudySpecError,
+                                    "must not be inside repository"):
+            builder.build_manifest(self.spec, check_agent=False)
+
     def test_no_output_is_written_when_the_spec_is_rejected(self):
         self.spec["tasks"] = self.spec["tasks"][:1]
         spec_path = self.root / "spec.json"
@@ -236,14 +324,56 @@ class StudyKitTests(unittest.TestCase):
             builder.build_manifest(self.spec, check_agent=False)
 
     def test_the_guidance_bundle_digest_is_bound(self):
-        bundle = self.root / "bundle.json"
-        bundle.write_text('{"kind": "learned_guidance_bundle"}\n')
-        self.spec["guidance_bundle"] = str(bundle)
+        bundle = _bundle(self.spec)
+        path = self.root / "bundle.json"
+        path.write_text(json.dumps(bundle))
+        self.spec["guidance_bundle"] = str(path)
         document, summary = builder.build_manifest(
             self.spec, check_agent=False)
-        expected = hashlib.sha256(bundle.read_bytes()).hexdigest()
-        self.assertEqual(document["guidance_bundle_digest"], expected)
-        self.assertEqual(summary["guidance_bundle_digest"], expected)
+        self.assertEqual(document["guidance_bundle_digest"],
+                         bundle["bundle_digest"])
+        self.assertEqual(summary["guidance_bundle_digest"],
+                         bundle["bundle_digest"])
+        induction = tuple(sorted(
+            repository["repo_snapshot_digest"]
+            for repository in document["repositories"]
+            if repository["partition"] == "induction"))
+        holdout = tuple(sorted(
+            repository["repo_snapshot_digest"]
+            for repository in document["repositories"]
+            if repository["partition"] == "holdout"))
+        loaded = campaign._load_guidance_bundle(
+            path, induction_digests=induction, holdout_digests=holdout,
+            precommitted_digest=document["guidance_bundle_digest"])
+        self.assertEqual(loaded["bundle_digest"], bundle["bundle_digest"])
+        self.assertEqual(loaded["source"], "learned_unverified")
+
+    def test_a_bundle_trained_on_holdout_is_refused(self):
+        bundle = _bundle(self.spec)
+        holdout = next(repository for repository in self.spec["repositories"]
+                       if repository["partition"] == "holdout")
+        bundle["training"]["repository_digests"] = [
+            tree_digest(Path(holdout["path"]))]
+        bundle["bundle_digest"] = canonical_digest(
+            "learned_guidance_bundle", 1,
+            {key: value for key, value in bundle.items()
+             if key != "bundle_digest"})
+        path = self.root / "bundle.json"
+        path.write_text(json.dumps(bundle))
+        self.spec["guidance_bundle"] = str(path)
+        with self.assertRaisesRegex(builder.StudySpecError,
+                                    "not induction partitions"):
+            builder.build_manifest(self.spec, check_agent=False)
+
+    def test_a_bundle_with_a_wrong_internal_digest_is_refused(self):
+        bundle = _bundle(self.spec)
+        bundle["bundle_digest"] = "0" * 64
+        path = self.root / "bundle.json"
+        path.write_text(json.dumps(bundle))
+        self.spec["guidance_bundle"] = str(path)
+        with self.assertRaisesRegex(builder.StudySpecError,
+                                    "does not match its contents"):
+            builder.build_manifest(self.spec, check_agent=False)
 
     def test_duplicate_spec_keys_are_refused(self):
         path = self.root / "duplicate.json"

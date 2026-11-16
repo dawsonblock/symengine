@@ -35,7 +35,7 @@ from typing import Mapping
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from sis.v3.contracts import ContractError  # noqa: E402
+from sis.v3.contracts import ContractError, canonical_digest  # noqa: E402
 from sis.v3.efficacy_manifest import validate_manifest  # noqa: E402
 from sis.v3.governed_eval import GOVERNED_ARMS, preregister  # noqa: E402
 from sis.v3.learning_qualification import codex_agent_status  # noqa: E402
@@ -195,6 +195,12 @@ def _protocol(spec: Mapping) -> dict:
     except (ContractError, TypeError, ValueError) as exc:
         raise StudySpecError(f"protocol is not preregistrable: {exc}") from exc
     registered["powered"] = True
+    declared = protocol.get("protocol_digest")
+    if declared is not None:
+        _require(declared == registered["protocol_digest"],
+                 "protocol.protocol_digest does not match the protocol")
+    _require(protocol.get("analysis_kind") is None,
+             "protocol.analysis_kind is not valid for a powered study")
     return registered
 
 
@@ -260,6 +266,10 @@ def _repositories(spec: Mapping) -> tuple[list[dict], dict]:
         _require(not raw.is_symlink(), f"{label} path must not be a symlink")
         root = raw.resolve()
         _require(root.is_dir(), f"{label} path is not a directory")
+        toplevel = _git(root, "rev-parse", "--show-toplevel")
+        if toplevel is not None:
+            _require(Path(toplevel).resolve() == root,
+                     f"{label} is not the repository root")
         try:
             digest = tree_digest(root)
         except (OSError, RunnerError) as exc:
@@ -284,6 +294,15 @@ def _repositories(spec: Mapping) -> tuple[list[dict], dict]:
                      f"{label} induction repository must not carry hidden tests")
         by_id[repository_id] = entry
         repositories.append(entry)
+    for item in repositories:
+        if "hidden_tests" not in item:
+            continue
+        hidden = Path(item["hidden_tests"]["path"])
+        for other in repositories:
+            root = Path(other["path"])
+            _require(hidden != root and root not in hidden.parents,
+                     f"{item['repository_id']} hidden tests are inside"
+                     f" repository {other['repository_id']}")
     return repositories, by_id
 
 
@@ -406,18 +425,64 @@ def _preregistration(spec: Mapping, protocol: Mapping) -> dict:
     }
 
 
-def _guidance(spec: Mapping) -> str | None:
+def _bundle_digest(document: Mapping) -> str:
+    """Match tools/five_arm_campaign.py's canonical bundle commitment."""
+    body = {key: value for key, value in document.items()
+            if key != "bundle_digest"}
+    normalized = json.loads(json.dumps(body, sort_keys=True))
+    return canonical_digest("learned_guidance_bundle", 1, normalized)
+
+
+def _guidance(spec: Mapping, *, induction: set[str],
+              holdout: set[str]) -> str | None:
     raw_value = spec.get("guidance_bundle")
     if raw_value is None:
         return None
-    raw = Path(_text(raw_value, "guidance_bundle"))
-    _require(not raw.is_symlink(), "guidance_bundle must not be a symlink")
-    path = raw.resolve()
+    raw_path = Path(_text(raw_value, "guidance_bundle"))
+    _require(not raw_path.is_symlink(),
+             "guidance_bundle must not be a symlink")
+    path = raw_path.resolve()
     _require(path.is_file(), "guidance_bundle is not a regular file")
     try:
-        return hashlib.sha256(path.read_bytes()).hexdigest()
+        raw = path.read_bytes()
     except OSError as exc:
         raise StudySpecError(f"guidance_bundle is unreadable: {exc}") from exc
+    _require(len(raw) <= MAX_SPEC_BYTES, "guidance_bundle exceeds the size bound")
+    try:
+        document = json.loads(raw.decode("utf-8"), object_pairs_hook=_pairs)
+    except StudySpecError:
+        raise
+    except (UnicodeDecodeError, ValueError) as exc:
+        raise StudySpecError(
+            f"guidance_bundle is not valid UTF-8 JSON: {exc}") from exc
+    _require(isinstance(document, Mapping),
+             "guidance_bundle must be a JSON object")
+    _require(document.get("schema_version") == 2,
+             "guidance_bundle schema_version must be 2")
+    _require(document.get("kind") == "learned_guidance_bundle",
+             "guidance_bundle kind must be learned_guidance_bundle")
+    _require(document.get("source") == "learned",
+             "guidance_bundle source must be learned")
+    training = document.get("training")
+    _require(isinstance(training, Mapping),
+             "guidance_bundle needs a training object")
+    digests = training.get("repository_digests")
+    _require(isinstance(digests, list) and bool(digests)
+             and all(isinstance(item, str) and HEX64.fullmatch(item)
+                     for item in digests),
+             "guidance_bundle training.repository_digests must be non-empty"
+             " sha256 digests")
+    _require(len(set(digests)) == len(digests),
+             "guidance_bundle training repositories contain duplicates")
+    _require(set(digests) <= induction,
+             "guidance_bundle training repositories are not induction"
+             " partitions of the manifest")
+    _require(not (set(digests) & holdout),
+             "guidance_bundle training repositories overlap the holdout")
+    digest = _bundle_digest(document)
+    _require(document.get("bundle_digest") == digest,
+             "guidance_bundle digest does not match its contents")
+    return digest
 
 
 def build_manifest(spec: Mapping, *, check_agent: bool = True
@@ -428,7 +493,24 @@ def build_manifest(spec: Mapping, *, check_agent: bool = True
     repositories, by_id = _repositories(spec)
     tasks = _tasks(spec, by_id, protocol)
     preregistration = _preregistration(spec, protocol)
-    guidance_digest = _guidance(spec)
+    bundle_path = spec.get("guidance_bundle")
+    if bundle_path is not None:
+        owner = _inside_any(Path(_text(bundle_path, "guidance_bundle")).resolve(),
+                            repositories)
+        _require(owner is None,
+                 f"guidance_bundle must not be inside repository {owner}")
+    for item in repositories:
+        root = Path(item["path"])
+        if _git(root, "rev-parse", "--show-toplevel") is not None:
+            _require(_git(root, "status", "--porcelain",
+                          "--untracked-files=all") == "",
+                     f"{item['repository_id']} has uncommitted changes")
+    guidance_digest = _guidance(
+        spec,
+        induction={item["repo_snapshot_digest"] for item in repositories
+                   if item["partition"] == "induction"},
+        holdout={item["repo_snapshot_digest"] for item in repositories
+                 if item["partition"] == "holdout"})
     document = {
         "schema_version": 1,
         "kind": "five_arm_efficacy_manifest",
@@ -470,7 +552,7 @@ def build_manifest(spec: Mapping, *, check_agent: bool = True
     return document, summary
 
 
-def _inside_repository(path: Path, repositories: list[dict]) -> str | None:
+def _inside_any(path: Path, repositories: list[dict]) -> str | None:
     for item in repositories:
         root = Path(item["path"])
         if path == root or root in path.parents:
@@ -491,8 +573,12 @@ def main(argv=None) -> int:
         spec = load_spec(args.spec)
         document, summary = build_manifest(
             spec, check_agent=not args.skip_agent_check)
+        spec_owner = _inside_any(args.spec.resolve(), document["repositories"])
+        if spec_owner is not None:
+            raise StudySpecError(
+                f"spec must not be inside repository {spec_owner}")
         output = args.output.resolve()
-        owner = _inside_repository(output, document["repositories"])
+        owner = _inside_any(output, document["repositories"])
         if owner is not None:
             raise StudySpecError(
                 f"output must not be written inside repository {owner}")
