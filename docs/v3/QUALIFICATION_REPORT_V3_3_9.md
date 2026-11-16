@@ -23,10 +23,11 @@ The archive was re-sealed over the canonical repository fingerprint and
 lineage repair. `release/release_manifest.json` records the source
 commit and archive digest.
 
-Test evidence is the executed suite at that commit: 1703 passed,
-7 skipped, 0 failed, with Docker and PostgreSQL available. The Docker
-containment probe passed 13/13 checks; the fresh isolation attestation
-verifies against image digest
+Test evidence is the executed suite at that commit, recorded in
+`release/test_evidence.json`; `release/release_manifest.json` records
+the counts, source commit and archive digest. The Docker containment
+probe passed 13/13 checks; the fresh isolation attestation verifies
+against image digest
 `5af4f6ceed7041f1665fdb077708c9b8fdd71cedf451e0adbfb0490e5e914466`,
 policy digest
 `2cce5dcb68cedcc27f7f5b95b2d85d227d13455281a5a1dfb1312fc94168a050`,
@@ -40,6 +41,10 @@ production`. A production seal still requires independently held
 release, CI-evidence and isolator keys.
 
 ### Re-seal test matrix
+
+Snapshot at the first re-seal (2026-11-16). Later test additions change
+these counts; `release/test_evidence.json` is authoritative for the
+shipped seal.
 
 | Environment | Command | Result |
 | --- | --- | --- |

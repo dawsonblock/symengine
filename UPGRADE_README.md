@@ -239,10 +239,11 @@ unchanged repository could fail. Tree digests are now versioned.
   so two revisions or clones of one repository cannot count as
   independent holdout evidence.
 
-The archive was re-sealed with 1703 passed, 7 skipped and 0 failed.
-`release/release_manifest.json` records the source commit and archive
-digest. The release and isolator keys remain local, so strict release
-mode still rejects the bundle until the key ceremony is completed.
+The archive was re-sealed with the executed suite recorded in
+`release/test_evidence.json`. `release/release_manifest.json` records
+the source commit and archive digest. The release and isolator keys
+remain local, so strict release mode still rejects the bundle until the
+key ceremony is completed.
 
 ### Qualification status
 
