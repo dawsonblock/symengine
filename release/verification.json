@@ -5,29 +5,29 @@
     "extracted_test_smoke": {
       "command": "pytest -q tests/v3/test_candidates.py",
       "returncode": 0,
-      "tail": "39 passed in 0.60s"
+      "tail": "39 passed in 0.64s"
     },
     "verify_tree": {
-      "files": 468
+      "files": 470
     }
   },
   "kind": "release_verification",
   "schema_version": 1,
   "source": {
-    "commit": "f240e58d5ce353ad330036115f7cfbf05155a56f",
+    "commit": "ef804e9e7a22af8962bef0dcce54f30a18d18204",
     "dirty": false,
     "dirty_paths": []
   },
   "source_binding": {
-    "files": 468,
+    "files": 470,
     "project": "SIS-v3.3.9",
     "source_bound": true
   },
   "zip_verify": {
     "manifest": "RELEASE_SHA256.json",
     "project": "SIS-v3.3.9",
-    "source_files": 468,
+    "source_files": 470,
     "valid": true,
-    "zip_sha256": "1f15fd7d9d7fff6dc6864b58fbd7b924b17a00b0f9061edce0f64e05a4336bc7"
+    "zip_sha256": "efd6a00ceff01caeb1aca038b2f23a7bb8bea9a5d2b3533e0b740d6e4baf0d65"
   }
 }
