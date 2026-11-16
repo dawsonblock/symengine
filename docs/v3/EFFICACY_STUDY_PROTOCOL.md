@@ -45,10 +45,10 @@ version, prompt, budget and evaluator. Arm order is randomized per task.
   run. The manifest records the protocol digest.
 - **Power target.** The planning heuristic gives:
 
-  | Baseline → treatment | Required paired tasks | Five-arm runs |
-  | --- | --- | --- |
-  | 0.40 → 0.60 | 103 | 515 |
-  | 0.45 → 0.60 | 178 | 890 |
+  | Baseline → treatment | Required paired tasks | Five-arm runs | Two-arm runs |
+  | --- | --- | --- | --- |
+  | 0.40 → 0.60 | 103 | 515 | 206 |
+  | 0.45 → 0.60 | 178 | 890 | 356 |
 
   The two-sided calculation is symmetric: the same effect size needs the
   same number of pairs whichever arm is expected to do better, so the
@@ -56,6 +56,14 @@ version, prompt, budget and evaluator. Arm order is randomized per task.
   The 103-task figure is a design target for one assumed effect size, not
   a universal minimum. A study powered only for A vs E may run B–D on a
   subset and label them exploratory.
+- **Primary contrast.** A vs E is the decisive comparison; B–D are
+  mechanism controls. A two-arm study runs only A and E at the same
+  preregistered floor, halving the agent runs without weakening the
+  confirmatory test. It uses
+  [efficacy_manifest_two_arm_template.json](efficacy_manifest_two_arm_template.json)
+  with `kind: primary_contrast_efficacy_manifest` and protocol arms
+  `["A","E"]`. The five-arm manifest remains valid; the manifest kind and
+  the protocol arms must agree.
 - **Equal budgets.** Every arm gets the same wall-clock, token and tool
   budget per task. Budget-exceeded runs are not passes.
 - **Hidden, independently verified outcomes.** Acceptance tests are
@@ -66,7 +74,10 @@ version, prompt, budget and evaluator. Arm order is randomized per task.
 
 ## Manifest
 
-The template is [efficacy_manifest_template.json](efficacy_manifest_template.json).
+The five-arm template is
+[efficacy_manifest_template.json](efficacy_manifest_template.json); the
+two-arm primary-contrast template is
+[efficacy_manifest_two_arm_template.json](efficacy_manifest_two_arm_template.json).
 Replace every `<placeholder>`, provide at least ten repositories (at
 least five of them holdout repositories with distinct snapshots and
 distinct lineages that each contribute tasks) and at least 103 paired
@@ -190,12 +201,17 @@ matching Codex CLI; the run host still enforces the pin. The output path
 may not be inside a repository, because writing there would change the
 tree digest the manifest just recorded.
 
+For the two-arm primary contrast, set `kind` to
+`primary_contrast_study_spec` and `protocol.arms` to `["A","E"]`; the
+builder writes a `primary_contrast_efficacy_manifest`. Everything else,
+including the power floor and the repository requirements, is unchanged.
+
 ## Execution
 
 1. Freeze the learning material from the induction partition only.
 2. Commit the manifest and its protocol digest.
 3. Preflight the agent: binary, authentication, model and CLI version.
-4. Run the five arms with randomized order and per-`(task, arm)`
+4. Run the declared arms with randomized order and per-`(task, arm)`
    checkpointing so a quota interruption is recorded as
    `INVALID_INFRASTRUCTURE` rather than silently dropping pairs. The
    current runner randomizes order but does not checkpoint: an
@@ -206,8 +222,8 @@ tree digest the manifest just recorded.
 
 The existing library interface is `sis.v3.learning_qualification.FiveArmCampaign`
 and `CodexCliAgent`; `tools/five_arm_campaign.py --real-agent --manifest`
-is the gate. A validated manifest is executed: the gate builds the five
-arms from the manifest, registers the evaluator-owned acceptance
+is the gate. A validated manifest is executed: the gate builds the
+declared arms from the manifest, registers the evaluator-owned acceptance
 material, runs the agent against each repository snapshot and writes the
 paired report with a receipt digest per `(task, arm)`. The gate still
 fails closed with `BLOCKED_REAL_AGENT` when Codex is unavailable or

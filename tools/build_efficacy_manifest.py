@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build and validate a five-arm efficacy manifest from a study spec.
+"""Build and validate an efficacy manifest from a study spec.
 
 The spec is a declarative description of the study: protocol parameters,
 the pinned agent, preregistration identity, repository paths, and tasks.
@@ -41,7 +41,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from sis.v3 import gitquery  # noqa: E402
 from sis.v3.contracts import ContractError, canonical_digest  # noqa: E402
 from sis.v3.efficacy_manifest import validate_manifest  # noqa: E402
-from sis.v3.governed_eval import GOVERNED_ARMS, preregister  # noqa: E402
+from sis.v3.governed_eval import (GOVERNED_ARMS, PRIMARY_CONTRAST_ARMS,  # noqa: E402
+                                  preregister)
 from sis.v3.learning_qualification import codex_agent_status  # noqa: E402
 from sis.v3.runner import (RunnerError, external_symlinks,
                            repository_execution_digest, tree_digest)  # noqa: E402
@@ -53,7 +54,11 @@ IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:@-]{0,127}$")
 SAFE_REL = re.compile(
     r"^(?!/)(?![A-Za-z]:)(?!.*(?:^|/)\.\.(?:/|$))[A-Za-z0-9_.@/-]{1,512}$")
 VERSION = re.compile(r"\b(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)\b")
-KIND = "five_arm_study_spec"
+KINDS = {
+    "five_arm_study_spec": ("five_arm_efficacy_manifest", GOVERNED_ARMS),
+    "primary_contrast_study_spec": (
+        "primary_contrast_efficacy_manifest", PRIMARY_CONTRAST_ARMS),
+}
 
 
 class StudySpecError(ValueError):
@@ -102,7 +107,9 @@ def load_spec(path: Path) -> dict:
     _require(isinstance(document, Mapping), "spec must be a JSON object")
     _require(document.get("schema_version") == 1,
              "spec schema_version must be 1")
-    _require(document.get("kind") == KIND, f"spec kind must be {KIND}")
+    _require(document.get("kind") in KINDS,
+             "spec kind must be five_arm_study_spec or"
+             " primary_contrast_study_spec")
     return document
 
 
@@ -160,6 +167,9 @@ def _agent(spec: Mapping, *, check_agent: bool) -> tuple[dict, dict]:
 
 
 def _protocol(spec: Mapping) -> dict:
+    _require(spec.get("kind") in KINDS,
+             "spec kind must be five_arm_study_spec or"
+             " primary_contrast_study_spec")
     protocol = spec.get("protocol")
     _require(isinstance(protocol, Mapping), "protocol must be an object")
     _require(protocol.get("powered") is True,
@@ -167,9 +177,11 @@ def _protocol(spec: Mapping) -> dict:
              " protocol must use the demo path")
     _require(protocol.get("allow_underpowered") is not True,
              "an explicitly underpowered protocol cannot be confirmatory")
-    arms = protocol.get("arms", list(GOVERNED_ARMS))
-    _require(list(arms) == list(GOVERNED_ARMS),
-             "protocol arms must be exactly A,B,C,D,E")
+    expected_arms = KINDS[spec["kind"]][1]
+    arms = protocol.get("arms", list(expected_arms))
+    _require(list(arms) == list(expected_arms),
+             "protocol arms must match the spec design: "
+             + ",".join(expected_arms))
     budget = protocol.get("budget")
     _require(isinstance(budget, Mapping), "protocol.budget must be an object")
     try:
@@ -534,7 +546,7 @@ def build_manifest(spec: Mapping, *, check_agent: bool = True
                  if item["partition"] == "holdout"})
     document = {
         "schema_version": 1,
-        "kind": "five_arm_efficacy_manifest",
+        "kind": KINDS[spec["kind"]][0],
         "protocol": protocol,
         "agent": agent,
         "partitions": {

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate a five-arm efficacy manifest without running the study.
+"""Validate an efficacy manifest without running the study.
 
 Strict mode requires a powered preregistered protocol, at least ten
 repositories (at least five of them holdout repositories), at least

@@ -1,5 +1,31 @@
 # Changelog
 
+## 2026-11-16 — Primary-contrast two-arm study path (SIS-FIX-08)
+
+The five-arm design spends five agent runs per task, but only A vs E is
+the confirmatory contrast; B–D are mechanism controls. At the 103-task
+floor that is 515 runs instead of 206.
+
+- `PRIMARY_CONTRAST_ARMS = ("A","E")`. A manifest with kind
+  `primary_contrast_efficacy_manifest` declares those arms and validates
+  through the same gate. The five-arm kind still requires A–E; a kind and
+  arm mismatch is invalid, and a non-string kind is reported rather than
+  raised.
+- `FiveArmCampaign` accepts either arm set and requires the protocol
+  arms to match the campaign.
+- `tools/five_arm_campaign.py --real-agent --manifest` builds the
+  declared arms, serves E from the same B/C/D guidance components, and
+  writes a `primary_contrast_learning_qualification_real_run` report.
+- `tools/build_efficacy_manifest.py` accepts a
+  `primary_contrast_study_spec` and writes the matching manifest kind.
+- Template: `docs/v3/efficacy_manifest_two_arm_template.json`. The
+  study-protocol and build-plan docs describe the design and its cost.
+- Regression coverage lives in `tests/v3/test_efficacy_manifest.py`,
+  `tests/v3/test_build_efficacy_manifest.py` and
+  `tests/v3/test_five_arm_real_run.py`.
+- This is machinery, not evidence. A powered run still requires the
+  repositories, the pinned Codex CLI and the agent budget.
+
 ## 2026-11-16 — Git queries cannot execute repository configuration (SIS-FIX-06)
 
 `validate_manifest(check_paths=True)` runs `git status` in every

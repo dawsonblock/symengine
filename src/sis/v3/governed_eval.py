@@ -42,6 +42,7 @@ from .contracts import ContractError, TaskEnvelopeV1, canonical_digest
 from .evaluation import assert_repository_disjoint
 
 GOVERNED_ARMS = ("A", "B", "C", "D", "E")
+PRIMARY_CONTRAST_ARMS = ("A", "E")
 PARTITIONS = ("induction", "development", "holdout", "monitoring")
 
 

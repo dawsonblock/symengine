@@ -21,7 +21,8 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from sis.v3.efficacy_manifest import validate_manifest
-from sis.v3.governed_eval import GOVERNED_ARMS, preregister
+from sis.v3.governed_eval import (GOVERNED_ARMS, PRIMARY_CONTRAST_ARMS,
+                                  preregister)
 from sis.v3.runner import repository_execution_digest, tree_digest
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -76,7 +77,8 @@ def _status(available=True, authenticated=True):
             else "codex_not_authenticated"}
 
 
-def _manifest(root: Path) -> dict:
+def _manifest(root: Path, *, arms=GOVERNED_ARMS,
+              kind="five_arm_efficacy_manifest") -> dict:
     repositories = []
     for index in range(5):
         path = root / f"induction-{index}"
@@ -119,7 +121,7 @@ def _manifest(root: Path) -> dict:
         alpha=0.05, min_effect=1.0, sample_size=9, powered=True,
         expected_baseline=0.01, expected_treatment=0.99, power=0.8,
         budget={"wall_seconds": 30, "token_budget": 1000, "tool_budget": 10},
-        arms=GOVERNED_ARMS)
+        arms=arms)
     protocol["powered"] = True
     tasks = []
     for index in range(9):
@@ -139,7 +141,7 @@ def _manifest(root: Path) -> dict:
                 "files": {"acceptance.py": ACCEPTANCE}},
         })
     return {
-        "schema_version": 1, "kind": "five_arm_efficacy_manifest",
+        "schema_version": 1, "kind": kind,
         "protocol": protocol,
         "agent": {"kind": "codex-cli", "model": "test-model",
                   "cli_version": "1.2.3"},
@@ -511,6 +513,38 @@ class RealAgentGateTests(unittest.TestCase):
         self.assertEqual(len(bundle["bundle_digest"]), 64)
         self.assertEqual(
             bundle["manifest"]["digest"], report["manifest"]["digest"])
+
+    @unittest.skipUnless(
+        POSIX_CUSTODY,
+        "evaluator key custody is POSIX-only in this release")
+    def test_supplied_two_arm_manifest_executes_the_primary_contrast(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            manifest = _write(root, _manifest(
+                root, arms=PRIMARY_CONTRAST_ARMS,
+                kind="primary_contrast_efficacy_manifest"))
+            output = root / "report.json"
+            code = campaign_tool.run_real(
+                output, manifest, allow_shared_custody=True,
+                agent_factory=_scripted_agent)
+            report = json.loads(output.read_text(encoding="utf-8"))
+        analysis = report["learning_qualification"]
+        self.assertEqual(code, 1)
+        self.assertEqual(
+            report["kind"],
+            "primary_contrast_learning_qualification_real_run")
+        self.assertEqual(analysis["tasks"], 9)
+        self.assertEqual(sorted(analysis["arms"]), ["A", "E"])
+        rows = [arm for task in report["per_task"]
+                for arm in task["arms"].values()]
+        self.assertEqual(len(rows), 18)
+        self.assertTrue(all(row["receipt_digest"] for row in rows))
+        for task in report["per_task"]:
+            self.assertEqual(sorted(task["arm_order"]), ["A", "E"])
+        self.assertEqual(analysis["decisive_contrast"]["wins"], 9)
+        self.assertEqual(analysis["decisive_contrast"]["losses"], 0)
+        self.assertTrue(report["manifest"]["valid"])
+        self.assertTrue(report["manifest"]["ready"])
 
     @unittest.skipUnless(
         POSIX_CUSTODY,

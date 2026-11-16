@@ -235,10 +235,10 @@ comparison is exploratory.
 
 **Design decision first.** A powered five-arm test is expensive:
 
-| Baseline → treatment | `required_sample_size` | Paired runs (5 arms) |
-| --- | --- | --- |
-| 0.40 → 0.60 | 103 | 515 |
-| 0.45 → 0.60 | 178 | 890 |
+| Baseline → treatment | `required_sample_size` | Paired runs (5 arms) | Paired runs (2 arms) |
+| --- | --- | --- | --- |
+| 0.40 → 0.60 | 103 | 515 | 206 |
+| 0.45 → 0.60 | 178 | 890 | 356 |
 
 Choose one:
 
@@ -251,6 +251,13 @@ Choose one:
   efficacy claim.
 
 Recommendation: **B**, unless the agent budget supports A.
+
+Option B is implemented: use
+`docs/v3/efficacy_manifest_two_arm_template.json`
+(`kind: primary_contrast_efficacy_manifest`, protocol arms `["A","E"]`).
+The same `tools/five_arm_campaign.py --real-agent --manifest` gate
+executes it and writes a
+`primary_contrast_learning_qualification_real_run` report.
 
 **Work items**
 

@@ -1,8 +1,9 @@
-"""Validation for the five-arm real-agent efficacy manifest (Phase 6).
+"""Validation for the real-agent efficacy manifest (Phase 6).
 
 This module does not run a study and does not read hidden tests. It checks
 that a manifest is structurally ready for the existing ``FiveArmCampaign``:
-the protocol is preregistered and powered, the five arms are fixed, the
+the protocol is preregistered and powered, the declared arms are fixed
+(the five-arm design or the A/E primary contrast), the
 holdout is repository-disjoint from induction material, hidden tests live
 outside the public repository, and every task carries an evaluator-owned
 acceptance command and equal budget fields. With ``check_paths`` it also
@@ -19,12 +20,13 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from . import gitquery
 from .contracts import ContractError, canonical_digest
-from .governed_eval import GOVERNED_ARMS, preregister, required_sample_size
+from .governed_eval import (GOVERNED_ARMS, PRIMARY_CONTRAST_ARMS,
+                            preregister, required_sample_size)
 from .runner import (RunnerError, repository_execution_digest, tree_digest,
                      verify_repository_digest)
 
@@ -39,6 +41,10 @@ MIN_REPOSITORIES = 10
 # not independent evidence. A floor keeps a study from meeting its task
 # count while concentrating every outcome in a handful of codebases.
 MIN_HOLDOUT_REPOSITORIES = 5
+MANIFEST_ARMS = {
+    "five_arm_efficacy_manifest": GOVERNED_ARMS,
+    "primary_contrast_efficacy_manifest": PRIMARY_CONTRAST_ARMS,
+}
 
 
 def _placeholder(value) -> bool:
@@ -64,7 +70,8 @@ def _problem(problems: list[str], message: str) -> None:
 
 
 def _validate_protocol(protocol, problems: list[str],
-                       allow_placeholders: bool) -> dict:
+                       allow_placeholders: bool, *,
+                       expected_arms: Sequence[str] = GOVERNED_ARMS) -> dict:
     if not isinstance(protocol, Mapping):
         _problem(problems, "protocol must be an object")
         return {}
@@ -76,8 +83,9 @@ def _validate_protocol(protocol, problems: list[str],
     if missing:
         _problem(problems, "protocol is missing: " + ", ".join(missing))
         return {}
-    if list(protocol.get("arms") or []) != list(GOVERNED_ARMS):
-        _problem(problems, "protocol arms must be exactly A,B,C,D,E")
+    if list(protocol.get("arms") or []) != list(expected_arms):
+        _problem(problems, "protocol arms must be exactly "
+                           + ",".join(expected_arms))
     budget = protocol.get("budget")
     if not isinstance(budget, Mapping) or any(
             type(budget.get(name)) is not int or budget[name] < 1
@@ -677,10 +685,16 @@ def validate_manifest(document, *, allow_placeholders: bool = False,
                 "problems": ["manifest must be an object"]}
     if document.get("schema_version") != 1:
         _problem(problems, "schema_version must be 1")
-    if document.get("kind") != "five_arm_efficacy_manifest":
-        _problem(problems, "kind must be five_arm_efficacy_manifest")
+    kind = document.get("kind")
+    if isinstance(kind, str) and kind in MANIFEST_ARMS:
+        expected_arms = MANIFEST_ARMS[kind]
+    else:
+        expected_arms = GOVERNED_ARMS
+        _problem(problems, "kind must be five_arm_efficacy_manifest or "
+                           "primary_contrast_efficacy_manifest")
     protocol = _validate_protocol(
-        document.get("protocol"), problems, allow_placeholders)
+        document.get("protocol"), problems, allow_placeholders,
+        expected_arms=expected_arms)
     by_id = _validate_repositories(document, problems, allow_placeholders)
     repository_trees, repository_tree_versions, repository_execution = (
         ({}, {}, {}) if allow_placeholders or not check_paths

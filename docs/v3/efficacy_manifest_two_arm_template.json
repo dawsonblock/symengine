@@ -1,0 +1,188 @@
+{
+  "schema_version": 1,
+  "kind": "primary_contrast_efficacy_manifest",
+  "notes": "Template only. Two-arm primary contrast (A vs E). Replace every <placeholder>, provide at least 10 repositories of which at least 5 are holdout repositories, and at least 103 paired holdout tasks, commit the manifest before any holdout run, and keep hidden tests outside the public repository. Validate with tools/check_efficacy_manifest.py --allow-placeholders while editing, then without that flag before the run.",
+  "protocol": {
+    "schema_version": 1,
+    "primary_metric": "paired solved_delta E vs A",
+    "method": "mcnemar_exact",
+    "alpha": 0.05,
+    "min_effect": 0.2,
+    "sample_size": 103,
+    "budget": {
+      "wall_seconds": 900,
+      "token_budget": 100000,
+      "tool_budget": 100
+    },
+    "arms": [
+      "A",
+      "E"
+    ],
+    "powered": true,
+    "notes": "Primary-contrast preregistered two-arm study (A vs E); repository-disjoint hidden holdout.",
+    "power_analysis": {
+      "expected_baseline": 0.4,
+      "expected_treatment": 0.6,
+      "power": 0.8,
+      "required_n": 103
+    },
+    "protocol_digest": "33cc0910daf33f67da02e2bd554e550e1cbbdab4514999e07b1aa1c446092506"
+  },
+  "agent": {
+    "kind": "codex-cli",
+    "model": "<pinned-model>",
+    "cli_version": "<pinned-cli-version>",
+    "authentication": "operator-managed; never commit credentials"
+  },
+  "partitions": {
+    "induction": [
+      "repo-induction"
+    ],
+    "holdout": [
+      "repo-holdout-1",
+      "repo-holdout-2",
+      "repo-holdout-3",
+      "repo-holdout-4",
+      "repo-holdout-5"
+    ]
+  },
+  "repositories": [
+    {
+      "repository_id": "repo-induction",
+      "lineage_id": "<stable lineage id, shared by every revision of this repository>",
+      "path": "<absolute path to the induction repository>",
+      "base_commit": "<40-hex-commit>",
+      "repo_snapshot_digest": "<64-hex-tree-digest>",
+      "repo_execution_digest": "<64-hex-execution-digest>",
+      "origin": "<origin URL shared by every checkout of this repository>",
+      "partition": "induction"
+    },
+    {
+      "repository_id": "repo-holdout-1",
+      "lineage_id": "<stable lineage id, distinct from every other holdout>",
+      "path": "<absolute path to holdout repository 1>",
+      "base_commit": "<40-hex-commit>",
+      "repo_snapshot_digest": "<64-hex-tree-digest>",
+      "repo_execution_digest": "<64-hex-execution-digest>",
+      "origin": "<origin URL shared by every checkout of this repository>",
+      "partition": "holdout",
+      "hidden_tests": {
+        "path": "<absolute path outside the public repository>",
+        "digest": "<64-hex-hidden-test-bundle-digest>"
+      }
+    },
+    {
+      "repository_id": "repo-holdout-2",
+      "lineage_id": "<stable lineage id, distinct from every other holdout>",
+      "path": "<absolute path to holdout repository 2>",
+      "base_commit": "<40-hex-commit>",
+      "repo_snapshot_digest": "<64-hex-tree-digest>",
+      "repo_execution_digest": "<64-hex-execution-digest>",
+      "origin": "<origin URL shared by every checkout of this repository>",
+      "partition": "holdout",
+      "hidden_tests": {
+        "path": "<absolute path outside the public repository>",
+        "digest": "<64-hex-hidden-test-bundle-digest>"
+      }
+    },
+    {
+      "repository_id": "repo-holdout-3",
+      "lineage_id": "<stable lineage id, distinct from every other holdout>",
+      "path": "<absolute path to holdout repository 3>",
+      "base_commit": "<40-hex-commit>",
+      "repo_snapshot_digest": "<64-hex-tree-digest>",
+      "repo_execution_digest": "<64-hex-execution-digest>",
+      "origin": "<origin URL shared by every checkout of this repository>",
+      "partition": "holdout",
+      "hidden_tests": {
+        "path": "<absolute path outside the public repository>",
+        "digest": "<64-hex-hidden-test-bundle-digest>"
+      }
+    },
+    {
+      "repository_id": "repo-holdout-4",
+      "lineage_id": "<stable lineage id, distinct from every other holdout>",
+      "path": "<absolute path to holdout repository 4>",
+      "base_commit": "<40-hex-commit>",
+      "repo_snapshot_digest": "<64-hex-tree-digest>",
+      "repo_execution_digest": "<64-hex-execution-digest>",
+      "origin": "<origin URL shared by every checkout of this repository>",
+      "partition": "holdout",
+      "hidden_tests": {
+        "path": "<absolute path outside the public repository>",
+        "digest": "<64-hex-hidden-test-bundle-digest>"
+      }
+    },
+    {
+      "repository_id": "repo-holdout-5",
+      "lineage_id": "<stable lineage id, distinct from every other holdout>",
+      "path": "<absolute path to holdout repository 5>",
+      "base_commit": "<40-hex-commit>",
+      "repo_snapshot_digest": "<64-hex-tree-digest>",
+      "repo_execution_digest": "<64-hex-execution-digest>",
+      "origin": "<origin URL shared by every checkout of this repository>",
+      "partition": "holdout",
+      "hidden_tests": {
+        "path": "<absolute path outside the public repository>",
+        "digest": "<64-hex-hidden-test-bundle-digest>"
+      }
+    }
+  ],
+  "tasks": [
+    {
+      "task_id": "task-001",
+      "repository_id": "repo-holdout-1",
+      "base_commit": "<40-hex-commit>",
+      "prompt": "<task prompt given to every arm>",
+      "failure_class": "<failure class used by procedure preconditions>",
+      "partition": "holdout",
+      "budgets": {
+        "time_budget_seconds": 900,
+        "token_budget": 100000,
+        "tool_budget": 100
+      },
+      "acceptance": {
+        "argv": [
+          "python3",
+          "-m",
+          "pytest",
+          "-q",
+          "acceptance.py"
+        ],
+        "files": {
+          "acceptance.py": "<hidden evaluator-owned acceptance test source>"
+        }
+      }
+    },
+    {
+      "task_id": "task-002",
+      "repository_id": "repo-holdout-2",
+      "base_commit": "<40-hex-commit>",
+      "prompt": "<second task prompt given to every arm>",
+      "failure_class": "<second failure class>",
+      "partition": "holdout",
+      "budgets": {
+        "time_budget_seconds": 900,
+        "token_budget": 100000,
+        "tool_budget": 100
+      },
+      "acceptance": {
+        "argv": [
+          "python3",
+          "-m",
+          "pytest",
+          "-q",
+          "acceptance.py"
+        ],
+        "files": {
+          "acceptance.py": "<second hidden evaluator-owned acceptance test source>"
+        }
+      }
+    }
+  ],
+  "preregistration": {
+    "registered_at": "<ISO-8601 timestamp before the first holdout run>",
+    "registered_by": "<operator identity>",
+    "protocol_digest": "33cc0910daf33f67da02e2bd554e550e1cbbdab4514999e07b1aa1c446092506"
+  }
+}

@@ -30,7 +30,8 @@ from typing import Callable, Mapping, Sequence
 from .benchmark import BenchmarkHarness, BudgetCaps
 from .contracts import ContractError, GuidanceV1, TaskEnvelopeV1, canonical_digest
 from .runner import tree_digest
-from .governed_eval import (GOVERNED_ARMS, assert_partition_disjoint,
+from .governed_eval import (GOVERNED_ARMS, PRIMARY_CONTRAST_ARMS,
+                            assert_partition_disjoint,
                             protocol_required_sample_size,
                             required_sample_size, run_governed_evaluation)
 
@@ -558,7 +559,13 @@ def analyze_report(
 
 @dataclass
 class FiveArmCampaign:
-    """Run the five matched arms and attach qualification analysis."""
+    """Run the matched arms and attach qualification analysis.
+
+    The design is either the five-arm set ``A,B,C,D,E`` or the primary
+    contrast ``A,E``. The primary contrast spends two runs per task
+    instead of five while keeping the same preregistered power floor;
+    arms B-D are mechanism controls, not part of the decisive test.
+    """
 
     harness: BenchmarkHarness
     tasks: Sequence[tuple[TaskEnvelopeV1, Path]]
@@ -578,10 +585,13 @@ class FiveArmCampaign:
     repository_ids: Mapping[str, str] | None = None
 
     def validate(self) -> None:
-        if tuple(self.arms) != tuple(GOVERNED_ARMS):
-            raise ValueError("five-arm campaign requires arms A,B,C,D,E")
-        if list(self.protocol.get("arms", [])) != list(GOVERNED_ARMS):
-            raise ValueError("protocol arms do not match the five-arm design")
+        if tuple(self.arms) not in (tuple(GOVERNED_ARMS),
+                                    tuple(PRIMARY_CONTRAST_ARMS)):
+            raise ValueError(
+                "campaign requires arms A,B,C,D,E or the primary contrast"
+                " A,E")
+        if list(self.protocol.get("arms", [])) != list(self.arms):
+            raise ValueError("protocol arms do not match the campaign arms")
         if not self.tasks:
             raise ValueError("campaign requires a nonempty holdout")
         assert_partition_disjoint(_partition_from_tasks(self.tasks))

@@ -7,10 +7,13 @@ import unittest
 from pathlib import Path
 
 from sis.v3.efficacy_manifest import validate_manifest
-from sis.v3.governed_eval import GOVERNED_ARMS, preregister
+from sis.v3.governed_eval import (GOVERNED_ARMS, PRIMARY_CONTRAST_ARMS,
+                                  preregister)
 
 ROOT = Path(__file__).resolve().parents[2]
 TEMPLATE = ROOT / "docs" / "v3" / "efficacy_manifest_template.json"
+TWO_ARM_TEMPLATE = (
+    ROOT / "docs" / "v3" / "efficacy_manifest_two_arm_template.json")
 BUDGET = {"wall_seconds": 900, "token_budget": 100000,
           "tool_budget": 100}
 
@@ -51,8 +54,9 @@ def repository(index: int, partition: str) -> dict:
     return item
 
 
-def manifest(*, sample_size=103) -> dict:
-    registered = protocol(sample_size=sample_size)
+def manifest(*, sample_size=103, arms=GOVERNED_ARMS,
+             kind="five_arm_efficacy_manifest") -> dict:
+    registered = protocol(sample_size=sample_size, arms=arms)
     repositories = [repository(0, "induction")]
     repositories += [repository(index, "holdout")
                      for index in range(1, 10)]
@@ -84,7 +88,7 @@ def manifest(*, sample_size=103) -> dict:
         })
     return {
         "schema_version": 1,
-        "kind": "five_arm_efficacy_manifest",
+        "kind": kind,
         "protocol": registered,
         "agent": {
             "kind": "codex-cli",
@@ -116,6 +120,36 @@ class EfficacyManifestTests(unittest.TestCase):
             report["protocol_digest"],
             "c2f4fd36a07134a09333f1e35c5054c4dff17d328e7b1d5f27b7025a1e70e50d")
         self.assertEqual(report["required_sample_size"], 103)
+
+    def test_the_two_arm_template_is_structurally_valid(self):
+        document = json.loads(TWO_ARM_TEMPLATE.read_text())
+        report = validate_manifest(document, allow_placeholders=True)
+        self.assertTrue(report["valid"], report["problems"])
+        self.assertFalse(report["ready"])
+        self.assertEqual(
+            report["protocol_digest"],
+            "33cc0910daf33f67da02e2bd554e550e1cbbdab4514999e07b1aa1c446092506")
+        self.assertEqual(report["required_sample_size"], 103)
+
+    def test_a_two_arm_manifest_is_ready(self):
+        report = validate_manifest(manifest(
+            arms=PRIMARY_CONTRAST_ARMS,
+            kind="primary_contrast_efficacy_manifest"))
+        self.assertTrue(report["valid"], report["problems"])
+        self.assertTrue(report["ready"])
+        self.assertEqual(report["tasks"], 103)
+
+    def test_a_non_string_kind_is_reported_not_raised(self):
+        report = validate_manifest({"schema_version": 1, "kind": []})
+        self.assertFalse(report["valid"])
+        self.assertTrue(any("kind must be" in problem
+                            for problem in report["problems"]))
+
+    def test_the_manifest_kind_and_arms_must_agree(self):
+        report = validate_manifest(manifest(arms=PRIMARY_CONTRAST_ARMS))
+        self.assertFalse(report["valid"])
+        self.assertTrue(any("protocol arms" in problem
+                            for problem in report["problems"]))
 
     def test_the_template_is_not_ready_in_strict_mode(self):
         document = json.loads(TEMPLATE.read_text())

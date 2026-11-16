@@ -1,6 +1,7 @@
 """Study-kit manifest builder: a spec becomes a ready manifest or is refused."""
 from __future__ import annotations
 
+import copy
 import hashlib
 import importlib.util
 import json
@@ -14,7 +15,7 @@ from pathlib import Path
 
 from sis.v3.contracts import canonical_digest
 from sis.v3.efficacy_manifest import validate_manifest
-from sis.v3.governed_eval import GOVERNED_ARMS
+from sis.v3.governed_eval import GOVERNED_ARMS, PRIMARY_CONTRAST_ARMS
 from sis.v3.runner import repository_execution_digest, tree_digest
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -186,6 +187,27 @@ class StudyKitTests(unittest.TestCase):
         self.assertTrue(report["ready"])
         self.assertEqual(report["manifest_digest"],
                          summary["manifest_digest"])
+
+    def test_a_two_arm_spec_becomes_a_primary_contrast_manifest(self):
+        spec = copy.deepcopy(self.spec)
+        spec["kind"] = "primary_contrast_study_spec"
+        spec["protocol"]["arms"] = list(PRIMARY_CONTRAST_ARMS)
+        document, summary = builder.build_manifest(spec, check_agent=False)
+        self.assertTrue(summary["ready"])
+        self.assertEqual(document["kind"],
+                         "primary_contrast_efficacy_manifest")
+        self.assertEqual(document["protocol"]["arms"],
+                         list(PRIMARY_CONTRAST_ARMS))
+        report = validate_manifest(document, check_paths=True)
+        self.assertTrue(report["valid"], report["problems"])
+        self.assertTrue(report["ready"])
+
+    def test_a_two_arm_spec_cannot_declare_five_arms(self):
+        spec = copy.deepcopy(self.spec)
+        spec["kind"] = "primary_contrast_study_spec"
+        with self.assertRaisesRegex(builder.StudySpecError,
+                                    "arms must match"):
+            builder.build_manifest(spec, check_agent=False)
 
     def test_the_cli_writes_a_manifest_that_validates(self):
         spec_path = self.root / "spec.json"

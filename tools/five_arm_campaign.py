@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Five-arm learning qualification: demo machinery or real-agent gate.
+"""Learning qualification: demo machinery or real-agent gate.
+
+The manifest selects the design: the five-arm set A,B,C,D,E or the A/E
+primary contrast.
 
 The demo path runs the real five-arm harness, real signed receipts and
 the real statistics on a tiny scripted task set. It is explicitly
@@ -10,7 +13,7 @@ If it is not, the tool writes a BLOCKED_REAL_AGENT report and exits 2;
 it never substitutes a scripted run for a confirmatory one. A real run
 requires a validated task manifest (repository paths, prompts,
 evaluator-owned acceptance tests, base commits and a preregistered
-protocol); the tool then executes the five arms with
+protocol); the tool then executes the declared arms with
 :class:`sis.v3.learning_qualification.FiveArmCampaign` and
 :class:`sis.v3.learning_qualification.CodexCliAgent` and writes the
 paired report with per-arm receipt digests.
@@ -65,7 +68,8 @@ from sis.v3.efficacy_manifest import (  # noqa: E402
     validate_manifest, verify_repository_binding,
     verify_repository_execution, verify_repository_provenance)
 from sis.v3.evaluation_runtime import EvaluationRuntimeProfile  # noqa: E402
-from sis.v3.governed_eval import GOVERNED_ARMS, preregister  # noqa: E402
+from sis.v3.governed_eval import (GOVERNED_ARMS, PRIMARY_CONTRAST_ARMS,  # noqa: E402
+                                  preregister)
 from sis.v3.learning_qualification import (  # noqa: E402
     CodexCliAgent, FiveArmCampaign, build_context_provider,
     codex_agent_status, write_report)
@@ -745,6 +749,7 @@ def run_real(output: Path, manifest_path: Path | None, *,
                        else "fixed_control")
 
     protocol = document["protocol"]
+    design_arms = tuple(protocol.get("arms") or ())
     budget = BudgetCaps(
         wall_seconds=protocol["budget"]["wall_seconds"],
         token_budget=protocol["budget"]["token_budget"],
@@ -809,7 +814,7 @@ def run_real(output: Path, manifest_path: Path | None, *,
                 failure_class: {
                     arm: list(_fixed_guidance(failure_class, arm)
                               .helpful_next_checks)
-                    for arm in ("B", "C", "D", "E")}
+                    for arm in design_arms if arm != "A"}
                 for failure_class in sorted(set(classes.values()))}
 
             def provider(task, arm):
@@ -834,7 +839,7 @@ def run_real(output: Path, manifest_path: Path | None, *,
                 tasks=tasks, agent=agent, budget=budget, protocol=protocol,
                 context_provider=provider, served_map=served,
                 learned_repo_digests=learned, real_agent=True,
-                hidden_holdout=True, provenance=provenance,
+                hidden_holdout=True, provenance=provenance, arms=design_arms,
                 arm_order_seed=int(validation["manifest_digest"][:16], 16),
                 repository_ids={
                     task["task_id"]: task["repository_id"]
@@ -862,7 +867,10 @@ def run_real(output: Path, manifest_path: Path | None, *,
             if callable(close):
                 close()
         analysis = report["learning_qualification"]
-        report["kind"] = "five_arm_learning_qualification_real_run"
+        report["kind"] = (
+            "primary_contrast_learning_qualification_real_run"
+            if design_arms == PRIMARY_CONTRAST_ARMS
+            else "five_arm_learning_qualification_real_run")
         report["manifest"] = manifest_block
         report["codex_gate"] = status
         report["evidence_class"] = analysis["evidence_class"]
