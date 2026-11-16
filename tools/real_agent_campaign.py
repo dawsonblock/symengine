@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Run the five-arm real-agent qualification campaign (exploratory).
+"""Run the real-agent qualification campaign (exploratory).
+
+``--arms five`` runs the five-arm design; ``--arms primary`` runs the
+A/E primary contrast. Both are exploratory on this synthetic corpus.
 
 This executes real Codex CLI coding turns against eight synthetic,
 repository-disjoint tasks and evaluates every arm with independently
@@ -26,7 +29,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 from sis.v3.benchmark import BenchmarkHarness, BudgetCaps  # noqa: E402
 from sis.v3.contracts import GuidanceV1, TaskEnvelopeV1  # noqa: E402
 from sis.v3.evaluation_runtime import EvaluationRuntimeProfile  # noqa: E402
-from sis.v3.governed_eval import GOVERNED_ARMS, preregister  # noqa: E402
+from sis.v3.governed_eval import (GOVERNED_ARMS, PRIMARY_CONTRAST_ARMS,  # noqa: E402
+                                  preregister)
 from sis.v3.learning_qualification import (  # noqa: E402
     CodexCliAgent, FiveArmCampaign, codex_agent_status, write_report)
 from sis.v3.runner import (LocalSubprocessExecutor, ResourceLimits,  # noqa: E402
@@ -240,6 +244,11 @@ def main() -> int:
     parser.add_argument("--output", "-o", type=Path,
                         default=Path("evidence/evaluation/real_agent_five_arm.json"))
     parser.add_argument("--max-tasks", type=int, default=None)
+    parser.add_argument("--arms", choices=("five", "primary"),
+                        default="five")
+    parser.add_argument("--diagnostic", action="store_true",
+                        help="register a diagnostic screen with no power"
+                             " claim; the report is exploratory at best")
     parser.add_argument("--allow-local-executor", action="store_true",
                         help="local execution is development-only")
     args = parser.parse_args()
@@ -251,6 +260,8 @@ def main() -> int:
         print(json.dumps({"error": "real_agent_unavailable", **status}))
         return 2
 
+    selected_arms = (PRIMARY_CONTRAST_ARMS if args.arms == "primary"
+                     else GOVERNED_ARMS)
     specs = _specs()
     if args.max_tasks is not None:
         specs = specs[:args.max_tasks]
@@ -305,13 +316,16 @@ def main() -> int:
             sample_size=len(specs),
             budget={"wall_seconds": 300, "token_budget": 100000,
                     "tool_budget": 1000},
-            arms=GOVERNED_ARMS,
+            arms=selected_arms,
             expected_baseline=0.2, expected_treatment=0.8,
-            allow_underpowered=True,
+            powered=not args.diagnostic,
+            allow_underpowered=not args.diagnostic,
             notes=("Real Codex CLI; eight synthetic repository-disjoint "
                    "tasks; fixed guidance bundles frozen before the run; "
-                   "exploratory because the preregistered power target is "
-                   "larger than the executed sample."))
+                   + ("diagnostic screen with no power claim."
+                      if args.diagnostic else
+                      "exploratory because the preregistered power target"
+                      " is larger than the executed sample.")))
         family = {spec.task_id: spec.family for spec in specs}
         served: dict = {}
 
@@ -339,11 +353,14 @@ def main() -> int:
                               tool_budget=1000),
             protocol=protocol, context_provider=provider,
             served_map=served, learned_repo_digests=(), real_agent=True,
-            hidden_holdout=True)
+            hidden_holdout=True, arms=selected_arms)
         report = campaign.run()
         base_agent.close()
         analysis = report["learning_qualification"]
-        report["kind"] = "real_agent_five_arm_evaluation"
+        report["kind"] = (
+            "real_agent_primary_contrast_evaluation"
+            if selected_arms == PRIMARY_CONTRAST_ARMS
+            else "real_agent_five_arm_evaluation")
         report["codex_gate"] = status
         report["evaluator_runtime"] = profile.as_dict()
         report["evaluator_runtime_digest"] = profile.digest
@@ -351,10 +368,11 @@ def main() -> int:
         report["guidance_bundles"] = {
             "memory": MEMORY, "skill": SKILL, "symbolic": SYMBOLIC}
         report["note"] = (
-            "Real Codex CLI execution. Fixed guidance bundles, eight "
-            "synthetic repository-disjoint tasks. Exploratory: the "
-            "preregistered power target is larger than the executed sample; "
-            "no confirmatory efficacy claim.")
+            f"Real Codex CLI execution. Fixed guidance bundles, {len(specs)}"
+            f" synthetic repository-disjoint tasks, arms "
+            f"{','.join(selected_arms)}. Exploratory: the preregistered"
+            " power target is larger than the executed sample; no"
+            " confirmatory efficacy claim.")
         write_report(report, args.output)
         print(json.dumps({
             "kind": report["kind"],
