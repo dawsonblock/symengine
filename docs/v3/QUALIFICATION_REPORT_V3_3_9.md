@@ -27,13 +27,9 @@ Test evidence is the executed suite at that commit, recorded in
 `release/test_evidence.json`; `release/release_manifest.json` records
 the counts, source commit and archive digest. The Docker containment
 probe passed 13/13 checks; the fresh isolation attestation verifies
-against image digest
-`5af4f6ceed7041f1665fdb077708c9b8fdd71cedf451e0adbfb0490e5e914466`,
-policy digest
-`2cce5dcb68cedcc27f7f5b95b2d85d227d13455281a5a1dfb1312fc94168a050`,
-and a locally generated qualification-only isolator key. Every
-out-of-band file matches `release/SHA256SUMS`; `verify_release.py`
-accepts the ZIP.
+against the image and policy digests recorded in the manifest and a
+locally generated qualification-only isolator key. Every out-of-band
+file matches `release/SHA256SUMS`; `verify_release.py` accepts the ZIP.
 
 The trust roots remain local. `check_release_ci.py --mode release`
 rejects the bundle with `release provenance trust root is not

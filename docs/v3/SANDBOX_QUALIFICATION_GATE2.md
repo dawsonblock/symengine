@@ -127,3 +127,12 @@ after the release-authenticity and hard-limit repairs:
 The production custody requirement is unchanged: the attestation must be
 signed by a key held independently of the evaluated machine, and the
 release gate must re-verify it with that key.
+
+## Rebuild at the canonical fingerprint seal (2026-11-16)
+
+The image was rebuilt from the pinned Dockerfile after the canonical
+fingerprint and study-kit repairs. The current image and policy digests
+are recorded in `release/release_manifest.json`; the digest in the
+sections above describes the 2026-11-14 qualification. The probe again
+passed 13/13 checks, the fresh attestation verified, and the real
+container denied the private tests.
