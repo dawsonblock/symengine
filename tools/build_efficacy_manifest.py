@@ -38,6 +38,7 @@ from typing import Mapping
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+from sis.v3 import gitquery  # noqa: E402
 from sis.v3.contracts import ContractError, canonical_digest  # noqa: E402
 from sis.v3.efficacy_manifest import validate_manifest  # noqa: E402
 from sis.v3.governed_eval import GOVERNED_ARMS, preregister  # noqa: E402
@@ -106,15 +107,7 @@ def load_spec(path: Path) -> dict:
 
 
 def _git(root: Path, *args: str) -> str | None:
-    try:
-        completed = subprocess.run(
-            ["git", "-C", str(root), *args], capture_output=True,
-            text=True, timeout=30, check=False)
-    except (OSError, subprocess.SubprocessError):
-        return None
-    if completed.returncode != 0:
-        return None
-    return completed.stdout.strip()
+    return gitquery.query(root, *args)
 
 
 def _normalized_version(value: str) -> str | None:

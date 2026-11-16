@@ -56,6 +56,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
+from sis.v3 import gitquery  # noqa: E402
 from sis.v3.benchmark import (  # noqa: E402
     BenchmarkError, BenchmarkHarness, BudgetCaps)
 from sis.v3.contracts import (  # noqa: E402
@@ -277,15 +278,11 @@ def _installed_codex_version(binary: str | None) -> str | None:
 def _git_anchor(path: Path) -> dict:
     """Record the commit that last touched the manifest and its cleanliness."""
     parent = path.resolve().parent
-    git = ["git", "-C", str(parent)]
-    try:
-        commit = subprocess.check_output(
-            git + ["log", "-1", "--format=%H", "--", path.name],
-            text=True, stderr=subprocess.DEVNULL).strip()
-        dirty = subprocess.check_output(
-            git + ["status", "--porcelain", "--", path.name],
-            text=True, stderr=subprocess.DEVNULL).strip()
-    except (OSError, subprocess.CalledProcessError):
+    commit = gitquery.query(
+        parent, "log", "-1", "--format=%H", "--", path.name)
+    dirty = gitquery.query(
+        parent, "status", "--porcelain", "--", path.name)
+    if commit is None or dirty is None:
         return {"commit": None, "clean": False, "anchored": False}
     return {"commit": commit or None, "clean": not dirty,
             "anchored": bool(commit) and not dirty}

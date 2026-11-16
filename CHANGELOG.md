@@ -1,5 +1,31 @@
 # Changelog
 
+## 2026-11-16 — Git queries cannot execute repository configuration (SIS-FIX-06)
+
+`validate_manifest(check_paths=True)` runs `git status` in every
+repository a manifest names — a checkout that has not been trusted yet.
+A checkout's own `.git/config` can name a program: `core.fsmonitor` is
+executed by `git status`. An inherited `GIT_DIR` could also redirect
+every query to another repository while `--show-toplevel` still named the
+path under test, so a clean checkout could "prove" a commit it never
+contained.
+
+- `sis.v3.gitquery` runs every read-only Git query with
+  `-c core.fsmonitor=false` and `-c core.hooksPath=<devnull>` (command
+  line beats repository, global and included config), scrubs every
+  inherited `GIT_*` variable, disables the system and global config
+  files, and sets `GIT_OPTIONAL_LOCKS=0` so `status` cannot rewrite the
+  index. The repository's own config is still read because the
+  provenance check needs `remote.origin.url`.
+- The manifest validator, the study-spec builder, the five-arm campaign
+  manifest anchor and the canonical ZIP source binding use it.
+  `gitquery.raw()` preserves porcelain output, whose first column can be
+  a significant space.
+- Regression coverage in `tests/v3/test_gitquery.py` proves a live
+  fsmonitor hook does not run and that `GIT_DIR`/`GIT_WORK_TREE` cannot
+  redirect the query; `tests/v3/test_release_artifact.py` covers the
+  porcelain path.
+
 ## 2026-11-16 — Powered-plan direction and release-path validation (SIS-FIX-05)
 
 The powered planner could not register the study it exists to power. A

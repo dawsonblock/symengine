@@ -19,10 +19,10 @@ from __future__ import annotations
 
 import json
 import re
-import subprocess
 from collections.abc import Mapping
 from pathlib import Path
 
+from . import gitquery
 from .contracts import ContractError, canonical_digest
 from .governed_eval import GOVERNED_ARMS, preregister, required_sample_size
 from .runner import (RunnerError, repository_execution_digest, tree_digest,
@@ -324,26 +324,12 @@ def _verify_repository_trees(by_id: dict[str, dict],
 
 def _git(root: Path, *args: str) -> str | None:
     """Run a read-only Git query, or return ``None`` when it cannot answer."""
-    try:
-        completed = subprocess.run(
-            ["git", "-C", str(root), *args], capture_output=True,
-            text=True, timeout=30, check=False)
-    except (OSError, subprocess.SubprocessError):
-        return None
-    if completed.returncode != 0:
-        return None
-    return completed.stdout.strip()
+    return gitquery.query(root, *args)
 
 
 def _git_ok(root: Path, *args: str) -> bool:
     """Return whether a Git predicate exits zero."""
-    try:
-        completed = subprocess.run(
-            ["git", "-C", str(root), *args], capture_output=True,
-            text=True, timeout=30, check=False)
-    except (OSError, subprocess.SubprocessError):
-        return False
-    return completed.returncode == 0
+    return gitquery.predicate(root, *args)
 
 
 def verify_repository_binding(repository: Mapping
@@ -503,15 +489,11 @@ def _git_lineage(root: Path) -> str | None:
     exact for full clones; a repository that cannot be read as Git falls
     back to the declared ``lineage_id``.
     """
-    try:
-        completed = subprocess.run(
-            ["git", "-C", str(root), "rev-list", "--max-parents=0", "HEAD"],
-            capture_output=True, text=True, timeout=10, check=False)
-    except (OSError, subprocess.SubprocessError):
+    output = gitquery.query(
+        root, "rev-list", "--max-parents=0", "HEAD", timeout=10)
+    if output is None:
         return None
-    if completed.returncode != 0:
-        return None
-    roots = sorted(set(completed.stdout.split()))
+    roots = sorted(set(output.split()))
     if not roots or any(not (_HEX40.fullmatch(item)
                              or _HEX64.fullmatch(item)) for item in roots):
         return None

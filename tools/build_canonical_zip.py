@@ -13,14 +13,15 @@ is recorded in the returned report.
 from __future__ import annotations
 import argparse
 import json
-import subprocess
 import sys
 import zipfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from verify_release import verify, verify_against_tree
 from build_release import write_manifest
+from sis.v3 import gitquery
 
 GENERATED_PATHS = {"RELEASE_SHA256.json",
                    "evidence/release/build_record.json",
@@ -29,16 +30,12 @@ GENERATED_PATHS = {"RELEASE_SHA256.json",
 
 def source_binding(root: Path) -> dict:
     """Record the Git commit and any uncommitted source changes."""
-    try:
-        commit = subprocess.check_output(
-            ["git", "-C", str(root), "rev-parse", "HEAD"], stderr=subprocess.DEVNULL
-        ).decode().strip()
-        status = subprocess.check_output(
-            ["git", "-C", str(root), "status", "--porcelain", "--untracked-files=all"],
-            stderr=subprocess.DEVNULL,
-        ).decode()
-    except (OSError, subprocess.CalledProcessError):
-        return {"commit": None, "dirty": None, "dirty_paths": [], "note": "not a git checkout"}
+    commit = gitquery.query(root, "rev-parse", "HEAD")
+    status = gitquery.raw(
+        root, "status", "--porcelain", "--untracked-files=all")
+    if commit is None or status is None:
+        return {"commit": None, "dirty": None, "dirty_paths": [],
+                "note": "not a git checkout"}
     dirty = []
     for line in status.splitlines():
         path = line[3:].strip()

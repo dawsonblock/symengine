@@ -253,6 +253,22 @@ class CanonicalArchiveBindingTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "uncommitted changes"):
             build_canonical_zip.build(repo, self.target)
 
+    @unittest.skipUnless(shutil.which("git"),
+                         "git is required for the source binding")
+    def test_source_binding_keeps_the_porcelain_leading_space(self):
+        import subprocess
+        import build_canonical_zip
+        repo = self.root
+        subprocess.run(["git", "-C", str(repo), "init", "-q"], check=True)
+        subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
+        subprocess.run(["git", "-C", str(repo), "-c", "user.name=t",
+                        "-c", "user.email=t@e", "commit", "-qm", "init"],
+                       check=True)
+        (repo / "src/pkg/a.py").write_bytes(b"print(2)\n")
+        binding = build_canonical_zip.source_binding(repo)
+        self.assertTrue(binding["dirty"])
+        self.assertEqual(binding["dirty_paths"], ["src/pkg/a.py"])
+
 
 class FreshExtractionGateTests(unittest.TestCase):
     """The release build must fail closed on a broken extracted archive."""
