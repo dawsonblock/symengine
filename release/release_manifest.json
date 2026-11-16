@@ -2,7 +2,7 @@
   "archive": {
     "inner_project_dir": "SIS-v3.3.9",
     "path": "release/SIS-v3.3.9.zip",
-    "sha256": "0787b463e522c3502ac4a4e7b775702eb4c71182e7d8e5ac4691e535b4c48fbd",
+    "sha256": "1f15fd7d9d7fff6dc6864b58fbd7b924b17a00b0f9061edce0f64e05a4336bc7",
     "source_files": 468
   },
   "branch": "repair/v335-resource-security",
@@ -68,19 +68,19 @@
     "external_attestation": {
       "attestation": {
         "path": "release/isolation_attestation.json",
-        "sha256": "416fc5671a0ae370e9df0b1678072d76abbf399b95579e97ae44f14b2669ef3c"
+        "sha256": "da0c0df16ffe6dd568f66bc398fe77b502c83e098388bbf62c2dc94afbea5a73"
       },
-      "attestation_digest": "b45a0bdb56e0ae86d7e9fc535e8f1a9cd095af736533e440bd01856f99eb0753",
+      "attestation_digest": "7157d5f35d4429f3d5a369b9ee10aae4f7658e2f29ca1721f234cbb1bec8ee21",
       "backend": "docker_sandbox",
-      "generated_at": "2026-11-16T06:06:56Z",
+      "generated_at": "2026-11-16T06:11:39Z",
       "image_digest": "5af4f6ceed7041f1665fdb077708c9b8fdd71cedf451e0adbfb0490e5e914466",
       "policy_digest": "2cce5dcb68cedcc27f7f5b95b2d85d227d13455281a5a1dfb1312fc94168a050",
-      "public_key": "94b2c789c467f7b61a521f3c729c5f565f7a98a5025d43fe86768d7bea1a1db2",
+      "public_key": "974a3b2322e369cb6fc47cb16cb07595dc121cf34383bf528bdbadf399a7f294",
       "receipt": {
         "path": "release/isolation_receipt.json",
-        "sha256": "0a4059123e33f87065905b2b605499ce4198f5542a4cd35b839350fc90dee242"
+        "sha256": "6694a0cc46e4e207783df34adfca67f4f11b8744eba957144ad3ac2ef6a592c8"
       },
-      "receipt_digest": "e24ee97f18659791ffd3252475acb5977755e7edf80cac18f705aa7a341d375a",
+      "receipt_digest": "79f4d6dac049784849f430c5bfb59e8810cc21673ad6a8bd34fef1337df2bae2",
       "required_properties": [
         "caps:dropped",
         "fs:root_read_only",
@@ -97,7 +97,7 @@
       "signer_key_id": "gate2-local-isolator",
       "verification": {
         "path": "release/isolation_verification.json",
-        "sha256": "d6b46a751e7f477d9ca129fb6122eb4e697bed4283057595b77a580044db7a31"
+        "sha256": "f6f52262206c067020f9c0df69bd0bfc26fe591a99e2ded0bbf2a9edea2985d3"
       },
       "verification_mode": "raw_receipt_and_attestation",
       "verified": true,
@@ -110,13 +110,13 @@
     "path": "release/provenance.dsse.json",
     "public_key_path": "release/provenance_public_key.hex",
     "signed": true,
-    "statement_sha256": "a5ce40f1f257b1da8229c36aeb2378a34bb225b8579e3205bf05306bf0d62f57",
-    "subject_sha256": "0787b463e522c3502ac4a4e7b775702eb4c71182e7d8e5ac4691e535b4c48fbd",
+    "statement_sha256": "3c2cc5feb4d2289dca5701f9cc8efc4afa54054d3b2b78e745ec5d0a78f9d4a4",
+    "subject_sha256": "1f15fd7d9d7fff6dc6864b58fbd7b924b17a00b0f9061edce0f64e05a4336bc7",
     "trust_root": "qualification-only"
   },
   "release": "SIS-v3.3.9",
   "schema_version": 1,
-  "source_commit": "9faafe00d0b184031a61b8cc168b953df8434314",
+  "source_commit": "f240e58d5ce353ad330036115f7cfbf05155a56f",
   "source_commit_note": "archive members are byte-identical to this commit for every manifest-covered file; the release commit itself touches only out-of-band release/ provenance",
   "status": "ENGINEERING_VERIFIED",
   "test_result": {
@@ -130,13 +130,13 @@
         "skipped": 7
       },
       "exit_status": 0,
-      "output_sha256": "06ef3df3ba61c53ebfdd6deca0286479b05975861a52d532e9d1294d523fdfa3",
+      "output_sha256": "00e5f3ed20761e179091dbbe7994bccd341f1408af50d6a1930a77cb08ed8a5b",
       "path": "release/test_evidence.json",
       "pytest_version": "8.4.2",
-      "sha256": "49660ec980cd6879e24d78f4fe6c52b9adfef309a8704bb059d8b439faef52c3",
+      "sha256": "050ffc6951abe5e40a82805f460992509b87c9a5ced3c9be665cb646cb103036",
       "signed": false,
       "signer_key_id": null,
-      "source_commit": "9faafe00d0b184031a61b8cc168b953df8434314"
+      "source_commit": "f240e58d5ce353ad330036115f7cfbf05155a56f"
     },
     "failed": 0,
     "passed": 1703,

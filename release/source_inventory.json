@@ -25,8 +25,8 @@
       "sha256": "f4e9590f3ebad5ffec1d03da3db058375438693dbcd93f2738ff3ea66da17b8d"
     },
     "CHANGELOG.md": {
-      "bytes": 96728,
-      "sha256": "2d608a25919776cef0d3ee605853ce5d4f0b4c3e850c04217c3c4cb2db28a976"
+      "bytes": 96746,
+      "sha256": "35a01f0b59891627b6837af7ac6d15d2d850f66492ececcfa063ab99581d468c"
     },
     "LICENSE": {
       "bytes": 1083,
@@ -37,8 +37,8 @@
       "sha256": "84b93e332345b58afc0820a727d83393a9cf31d8771d02f01deec2d88525b729"
     },
     "UPGRADE_README.md": {
-      "bytes": 43947,
-      "sha256": "67e213323d3e2f97bb5f421a2719757fe759c599e0f22d542e0d7ad665fa2ead"
+      "bytes": 43965,
+      "sha256": "552d317125b83a0ca3e08f767e839c268aaebb91f57bc197a14d1e62735ec88b"
     },
     "UPGRADE_RELEASE_NOTES_2026-10-24.md": {
       "bytes": 4370,
@@ -333,8 +333,8 @@
       "sha256": "efc971054595e185f3d05f654621ea19464dcfb9341dbaf7d74e7e08efc5dfdf"
     },
     "docs/v3/QUALIFICATION_REPORT_V3_3_9.md": {
-      "bytes": 8254,
-      "sha256": "ea8716397ca83b5167d2f36886f957a6808a3715707f87c3d5fcee679a030186"
+      "bytes": 8142,
+      "sha256": "268f158a584811e955bf9ec17dae825740d38d53d41725deeaff8da16ffccd93"
     },
     "docs/v3/RELEASE_NOTES_V3_3.md": {
       "bytes": 7466,
@@ -1875,5 +1875,5 @@
   },
   "release": "SIS-v3.3.9",
   "schema_version": 1,
-  "source_commit": "9faafe00d0b184031a61b8cc168b953df8434314"
+  "source_commit": "f240e58d5ce353ad330036115f7cfbf05155a56f"
 }
