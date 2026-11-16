@@ -1,0 +1,266 @@
+"""Study-kit manifest builder: a spec becomes a ready manifest or is refused."""
+from __future__ import annotations
+
+import hashlib
+import importlib.util
+import json
+import shutil
+import subprocess
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+from sis.v3.efficacy_manifest import validate_manifest
+from sis.v3.governed_eval import GOVERNED_ARMS
+
+ROOT = Path(__file__).resolve().parents[2]
+_SPEC = importlib.util.spec_from_file_location(
+    "build_efficacy_manifest", ROOT / "tools" / "build_efficacy_manifest.py")
+builder = importlib.util.module_from_spec(_SPEC)
+_SPEC.loader.exec_module(builder)
+
+GIT = shutil.which("git")
+BUDGET = {"wall_seconds": 30, "token_budget": 1000, "tool_budget": 10}
+
+
+def _git(repo: Path, *args: str):
+    return subprocess.run(
+        ["git", "-C", str(repo), *args], check=True,
+        capture_output=True, text=True)
+
+
+def _commit(repo: Path):
+    _git(repo, "-c", "user.name=SIS", "-c", "user.email=sis@example.invalid",
+         "commit", "-qm", "base")
+
+
+def _repository(root: Path, name: str, content: str) -> Path:
+    path = root / "repos" / name
+    path.mkdir(parents=True)
+    (path / "solution.py").write_text(content)
+    _git(path, "init", "-q")
+    _git(path, "add", ".")
+    _commit(path)
+    return path
+
+
+def study(root: Path) -> dict:
+    repositories, tasks = [], []
+    for index in range(5):
+        path = _repository(root, f"induction-{index}", f"SEED = {index}\n")
+        repositories.append({
+            "repository_id": f"repo-induction-{index}",
+            "lineage_id": f"lineage-induction-{index}",
+            "path": str(path),
+            "partition": "induction",
+        })
+    holdout = []
+    for index in range(5):
+        path = _repository(root, f"holdout-{index}", f"NO = {index}\n")
+        hidden = root / "private" / f"hidden-{index}.py"
+        hidden.parent.mkdir(exist_ok=True)
+        hidden.write_text("def test_ok():\n    assert True\n")
+        item = {
+            "repository_id": f"repo-holdout-{index}",
+            "lineage_id": f"lineage-holdout-{index}",
+            "path": str(path),
+            "partition": "holdout",
+            "hidden_tests": {"path": str(hidden)},
+        }
+        repositories.append(item)
+        holdout.append((item, hidden))
+    for index in range(9):
+        item, hidden = holdout[index % len(holdout)]
+        tasks.append({
+            "task_id": f"task-{index:03d}",
+            "repository_id": item["repository_id"],
+            "prompt": f"make task {index} pass",
+            "failure_class": "bug_fix",
+            "acceptance": {
+                "argv": [sys.executable, "-m", "pytest", "-q", hidden.name],
+                "hidden_tests_path": str(hidden),
+            },
+        })
+    return {
+        "schema_version": 1,
+        "kind": "five_arm_study_spec",
+        "protocol": {
+            "primary_metric": "paired solved_delta E vs A",
+            "method": "mcnemar_exact",
+            "alpha": 0.05,
+            "min_effect": 1.0,
+            "sample_size": 9,
+            "budget": dict(BUDGET),
+            "arms": list(GOVERNED_ARMS),
+            "powered": True,
+            "expected_baseline": 0.99,
+            "expected_treatment": 0.01,
+            "power": 0.8,
+        },
+        "agent": {
+            "kind": "codex-cli",
+            "model": "test-model",
+            "cli_version": "0.0.0",
+        },
+        "preregistration": {
+            "registered_at": "2026-11-16T00:00:00Z",
+            "registered_by": "test",
+        },
+        "repositories": repositories,
+        "tasks": tasks,
+    }
+
+
+@unittest.skipUnless(GIT, "git is required for base commits and lineage")
+class StudyKitTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.spec = study(self.root)
+
+    def test_a_complete_spec_becomes_a_ready_manifest(self):
+        document, summary = builder.build_manifest(
+            self.spec, check_agent=False)
+        self.assertTrue(summary["ready"])
+        self.assertEqual(summary["repositories"], 10)
+        self.assertEqual(summary["holdout_repositories_used"], 5)
+        self.assertEqual(summary["holdout_snapshots_used"], 5)
+        self.assertEqual(summary["distinct_holdout_lineages"], 5)
+        self.assertEqual(summary["tasks"], 9)
+        report = validate_manifest(document, check_paths=True)
+        self.assertTrue(report["valid"], report["problems"])
+        self.assertTrue(report["ready"])
+        self.assertEqual(report["manifest_digest"],
+                         summary["manifest_digest"])
+
+    def test_the_cli_writes_a_manifest_that_validates(self):
+        spec_path = self.root / "spec.json"
+        spec_path.write_text(json.dumps(self.spec))
+        output = self.root / "manifest.json"
+        code = builder.main([
+            "--spec", str(spec_path), "--output", str(output),
+            "--skip-agent-check"])
+        self.assertEqual(code, 0)
+        report = validate_manifest(
+            json.loads(output.read_text()), check_paths=True)
+        self.assertTrue(report["ready"], report["problems"])
+
+    def test_hidden_tests_inside_the_repository_are_refused(self):
+        item = next(repository for repository in self.spec["repositories"]
+                    if repository["partition"] == "holdout")
+        inside = Path(item["path"]) / "hidden.py"
+        inside.write_text("def test_ok():\n    assert True\n")
+        item["hidden_tests"] = {"path": str(inside)}
+        with self.assertRaisesRegex(builder.StudySpecError,
+                                    "inside the public repository"):
+            builder.build_manifest(self.spec, check_agent=False)
+
+    def test_duplicate_holdout_lineages_are_refused(self):
+        holdout = [repository for repository in self.spec["repositories"]
+                   if repository["partition"] == "holdout"]
+        holdout[1]["lineage_id"] = holdout[0]["lineage_id"]
+        with self.assertRaisesRegex(builder.StudySpecError,
+                                    "share a lineage"):
+            builder.build_manifest(self.spec, check_agent=False)
+
+    def test_a_task_must_target_a_holdout_repository(self):
+        self.spec["tasks"][0]["repository_id"] = "repo-induction-0"
+        with self.assertRaisesRegex(builder.StudySpecError,
+                                    "holdout repository"):
+            builder.build_manifest(self.spec, check_agent=False)
+
+    def test_too_few_tasks_are_refused(self):
+        self.spec["tasks"] = self.spec["tasks"][:8]
+        with self.assertRaisesRegex(builder.StudySpecError,
+                                    "below the preregistered sample_size"):
+            builder.build_manifest(self.spec, check_agent=False)
+
+    def test_a_base_commit_must_match_the_checkout(self):
+        self.spec["repositories"][0]["base_commit"] = "0" * 40
+        with self.assertRaisesRegex(builder.StudySpecError,
+                                    "does not match the checkout"):
+            builder.build_manifest(self.spec, check_agent=False)
+
+    def test_a_non_git_repository_needs_a_declared_base_commit(self):
+        plain = self.root / "plain"
+        plain.mkdir()
+        (plain / "solution.py").write_text("NO = 9\n")
+        self.spec["repositories"][0]["path"] = str(plain)
+        with self.assertRaisesRegex(builder.StudySpecError,
+                                    "not a Git checkout"):
+            builder.build_manifest(self.spec, check_agent=False)
+
+    def test_a_missing_hidden_tests_record_is_refused(self):
+        item = next(repository for repository in self.spec["repositories"]
+                    if repository["partition"] == "holdout")
+        del item["hidden_tests"]
+        with self.assertRaisesRegex(builder.StudySpecError,
+                                    "hidden_tests must be an object"):
+            builder.build_manifest(self.spec, check_agent=False)
+
+    def test_a_diagnostic_protocol_is_refused(self):
+        self.spec["protocol"]["powered"] = False
+        with self.assertRaisesRegex(builder.StudySpecError,
+                                    "powered confirmatory manifest"):
+            builder.build_manifest(self.spec, check_agent=False)
+
+    def test_an_output_inside_a_repository_is_refused(self):
+        spec_path = self.root / "spec.json"
+        spec_path.write_text(json.dumps(self.spec))
+        holdout = next(repository for repository in self.spec["repositories"]
+                       if repository["partition"] == "holdout")
+        output = Path(holdout["path"]) / "manifest.json"
+        code = builder.main([
+            "--spec", str(spec_path), "--output", str(output),
+            "--skip-agent-check"])
+        self.assertEqual(code, 1)
+        self.assertFalse(output.exists())
+
+    def test_no_output_is_written_when_the_spec_is_rejected(self):
+        self.spec["tasks"] = self.spec["tasks"][:1]
+        spec_path = self.root / "spec.json"
+        spec_path.write_text(json.dumps(self.spec))
+        output = self.root / "manifest.json"
+        code = builder.main([
+            "--spec", str(spec_path), "--output", str(output),
+            "--skip-agent-check"])
+        self.assertEqual(code, 1)
+        self.assertFalse(output.exists())
+
+    def test_a_future_preregistration_is_refused(self):
+        self.spec["preregistration"]["registered_at"] = "2099-01-01T00:00:00Z"
+        with self.assertRaisesRegex(builder.StudySpecError,
+                                    "must not be in the future"):
+            builder.build_manifest(self.spec, check_agent=False)
+
+    def test_the_guidance_bundle_digest_is_bound(self):
+        bundle = self.root / "bundle.json"
+        bundle.write_text('{"kind": "learned_guidance_bundle"}\n')
+        self.spec["guidance_bundle"] = str(bundle)
+        document, summary = builder.build_manifest(
+            self.spec, check_agent=False)
+        expected = hashlib.sha256(bundle.read_bytes()).hexdigest()
+        self.assertEqual(document["guidance_bundle_digest"], expected)
+        self.assertEqual(summary["guidance_bundle_digest"], expected)
+
+    def test_duplicate_spec_keys_are_refused(self):
+        path = self.root / "duplicate.json"
+        path.write_text('{"schema_version": 1, "schema_version": 1,'
+                        ' "kind": "five_arm_study_spec"}')
+        with self.assertRaisesRegex(builder.StudySpecError,
+                                    "duplicate JSON object key"):
+            builder.load_spec(path)
+
+    @unittest.skipUnless(shutil.which("codex"),
+                         "codex CLI is not installed")
+    def test_the_installed_agent_version_must_match(self):
+        self.spec["agent"]["cli_version"] = "0.0.0"
+        with self.assertRaisesRegex(builder.StudySpecError,
+                                    "does not match the spec"):
+            builder.build_manifest(self.spec, check_agent=True)
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -50,6 +50,13 @@ archive digest. The release and isolator keys remain local, so strict
 release mode still refuses the bundle. Linux environments without git
 now skip the two release tests that require it instead of failing.
 
+Added `tools/build_efficacy_manifest.py`, a study-kit builder that
+turns a declarative spec into a validated, ready-to-run manifest. It
+computes canonical repository digests, Git base commits, lineage
+metadata and hidden-test digests, and refuses to write unless the
+manifest validator reports `valid` and `ready`. It does not invent
+repositories, prompts, hidden tests or guidance bundles.
+
 ## 2026-11-15 — Revision 15 repairs: custody, power, coverage, execution and lineage
 
 The Revision 14 verification found five defects in the efficacy path.

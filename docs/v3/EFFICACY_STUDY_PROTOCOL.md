@@ -106,6 +106,64 @@ The validator enforces:
 Exit status `0` means ready; `2` means structurally valid but not ready
 (for example, underpowered or a diagnostic protocol); `1` means invalid.
 
+### Build from a study spec
+
+`tools/build_efficacy_manifest.py` turns a declarative spec into the
+manifest above. It computes canonical repository digests, Git base
+commits, lineage metadata and hidden-test digests, then refuses to write
+unless the validator reports both `valid` and `ready`. It never invents
+repositories, prompts, hidden tests or guidance.
+
+```json
+{
+  "schema_version": 1,
+  "kind": "five_arm_study_spec",
+  "protocol": {
+    "primary_metric": "paired solved_delta E vs A",
+    "method": "mcnemar_exact",
+    "alpha": 0.05,
+    "min_effect": 0.2,
+    "sample_size": 103,
+    "budget": {"wall_seconds": 900, "token_budget": 100000,
+                "tool_budget": 100},
+    "arms": ["A", "B", "C", "D", "E"],
+    "powered": true,
+    "expected_baseline": 0.6,
+    "expected_treatment": 0.4,
+    "power": 0.8
+  },
+  "agent": {"kind": "codex-cli", "model": "<pinned-model>",
+             "cli_version": "<pinned-cli-version>"},
+  "preregistration": {"registered_at": "<ISO-8601 timestamp>",
+                       "registered_by": "<operator>"},
+  "repositories": [
+    {"repository_id": "repo-induction", "path": "/secure/repos/induction",
+     "partition": "induction", "lineage_id": "lineage-induction"},
+    {"repository_id": "repo-holdout", "path": "/secure/repos/holdout",
+     "partition": "holdout", "lineage_id": "lineage-holdout",
+     "hidden_tests": {"path": "/secure/private/hidden.py"}}
+  ],
+  "tasks": [
+    {"task_id": "task-001", "repository_id": "repo-holdout",
+     "prompt": "<prompt given to every arm>", "failure_class": "bug_fix",
+     "acceptance": {"argv": ["python3", "-m", "pytest", "-q", "hidden.py"],
+                     "hidden_tests_path": "/secure/private/hidden.py"}}
+  ],
+  "guidance_bundle": "/secure/study/bundle.json"
+}
+```
+
+```bash
+PYTHONPATH=src python3 tools/build_efficacy_manifest.py \
+  --spec /secure/study/spec.json \
+  --output /secure/study/manifest.json
+```
+
+`--skip-agent-check` builds off-host without requiring an installed,
+matching Codex CLI; the run host still enforces the pin. The output path
+may not be inside a repository, because writing there would change the
+tree digest the manifest just recorded.
+
 ## Execution
 
 1. Freeze the learning material from the induction partition only.
