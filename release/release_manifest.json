@@ -2,8 +2,8 @@
   "archive": {
     "inner_project_dir": "SIS-v3.3.9",
     "path": "release/SIS-v3.3.9.zip",
-    "sha256": "6004ec37289d507e82933c4687af159432c74bb7d40c6c28064f04f4bd5d1e81",
-    "source_files": 466
+    "sha256": "732ee816166ef92bd8b8422f3bf45c6faedffbfc310680c4234a8eb93b15fe8d",
+    "source_files": 468
   },
   "branch": "repair/v335-resource-security",
   "docs": [
@@ -68,19 +68,19 @@
     "external_attestation": {
       "attestation": {
         "path": "release/isolation_attestation.json",
-        "sha256": "fec113544712255d95d9a4b2350e1c8c38e4902bde26917a3457af3ca655b05e"
+        "sha256": "000f296c5546d21f51590bbe5689f9a9225618e913f23914630485c1e30a91ce"
       },
-      "attestation_digest": "6ea64ea66ea3bf4ace5ae1546347a80d849da36a253a1208f0de44f382dbf1e6",
+      "attestation_digest": "72eaba7ac27bda098b1c9cadca85a54e1535c07d7c4f2fe0da4181d224b52bf4",
       "backend": "docker_sandbox",
-      "generated_at": "2026-11-15T01:02:55Z",
+      "generated_at": "2026-11-16T05:03:12Z",
       "image_digest": "5af4f6ceed7041f1665fdb077708c9b8fdd71cedf451e0adbfb0490e5e914466",
       "policy_digest": "2cce5dcb68cedcc27f7f5b95b2d85d227d13455281a5a1dfb1312fc94168a050",
-      "public_key": "89610539917e221c320d6878a6837f6951ee90751a6ca99798bee43dabef69a4",
+      "public_key": "f87dcb28a4e3a3b6c5573ea33451817c1f4c580f14cb993fac37a909ef5459b6",
       "receipt": {
         "path": "release/isolation_receipt.json",
-        "sha256": "75a0ceef1616d01ff3e5eb26dfab8f34c9c59095811aef5e961f87bf877281cb"
+        "sha256": "6737915863143cc99fb9f6e529c8f0a83ab8fa3b12a52ce3f28a110fd61c046f"
       },
-      "receipt_digest": "fedfe163df9b9353bc6faa8635943763033195f9144c885cf7aafac7eb8091f3",
+      "receipt_digest": "e8f059272caa1e32b5cb9e906586e97d32b5f165455373c2f37044bbb427fe10",
       "required_properties": [
         "caps:dropped",
         "fs:root_read_only",
@@ -97,7 +97,7 @@
       "signer_key_id": "gate2-local-isolator",
       "verification": {
         "path": "release/isolation_verification.json",
-        "sha256": "16a4c2bbaf3b4dbf77ceef8c9aec07a8984ea95b9880903081aa7e7cf5df885d"
+        "sha256": "97552a0b7d2c076e813dfc8d297e439feaf57f652c770e5303ac04e7626f72f6"
       },
       "verification_mode": "raw_receipt_and_attestation",
       "verified": true,
@@ -110,13 +110,13 @@
     "path": "release/provenance.dsse.json",
     "public_key_path": "release/provenance_public_key.hex",
     "signed": true,
-    "statement_sha256": "8a3971cafc7f2922b0e9b1d18abdd739ae00857ca2ffce0b87ec597bc679ef41",
-    "subject_sha256": "6004ec37289d507e82933c4687af159432c74bb7d40c6c28064f04f4bd5d1e81",
+    "statement_sha256": "751d6f95baa7e41d053df035781cb18c2f6ceac5592eb9b51b16de7365dcf58d",
+    "subject_sha256": "732ee816166ef92bd8b8422f3bf45c6faedffbfc310680c4234a8eb93b15fe8d",
     "trust_root": "qualification-only"
   },
   "release": "SIS-v3.3.9",
   "schema_version": 1,
-  "source_commit": "1f0d6d639a94d6ba853aa5bb2511edaebecfb27a",
+  "source_commit": "c5843280b8410daaf6cef0b186ccd41844507462",
   "source_commit_note": "archive members are byte-identical to this commit for every manifest-covered file; the release commit itself touches only out-of-band release/ provenance",
   "status": "ENGINEERING_VERIFIED",
   "test_result": {
@@ -126,21 +126,21 @@
       "counts": {
         "errors": 0,
         "failed": 0,
-        "passed": 1587,
-        "skipped": 14
+        "passed": 1703,
+        "skipped": 7
       },
       "exit_status": 0,
-      "output_sha256": "af69752c103c19c7ec50ae4e540f3a66a60e06f511a32294b1909c531bfec344",
+      "output_sha256": "39648cbb10c22b8a7710765a2ef3a83a8c294e11873dc3fc3cc3c8c35a192410",
       "path": "release/test_evidence.json",
       "pytest_version": "8.4.2",
-      "sha256": "45ebb992f625b9f5b35005aa992e8a1e16a0862c9b1a6054b31ef70f735374aa",
-      "signed": true,
-      "signer_key_id": "ci-test-runner",
-      "source_commit": "1f0d6d639a94d6ba853aa5bb2511edaebecfb27a"
+      "sha256": "8edb08c2d40585991bd22a6b9c4fa24c5bdbc3cb6e7d25fc3d18dea0e6a36e8b",
+      "signed": false,
+      "signer_key_id": null,
+      "source_commit": "c5843280b8410daaf6cef0b186ccd41844507462"
     },
     "failed": 0,
-    "passed": 1587,
-    "skipped": 14,
+    "passed": 1703,
+    "skipped": 7,
     "source": "evidence"
   }
 }
