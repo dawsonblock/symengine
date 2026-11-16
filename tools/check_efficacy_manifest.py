@@ -7,8 +7,13 @@ repositories (at least five of them holdout repositories), at least
 tests outside the public repository, and no placeholder values.
 ``--check-paths`` also re-fingerprints every repository and rejects two
 holdout entries — or an induction and a holdout entry — that resolve to
-the same codebase. ``--allow-placeholders`` validates the shipped
-template instead.
+the same codebase. It verifies the declared execution fingerprint
+(permission bits, entry types and symlink targets), binds every
+repository to its declared ``base_commit`` (the path must be the root of
+a clean Git checkout whose HEAD is that commit), and checks that the
+checkout's origin matches, the history is complete, and the commit is
+reachable from a remote-tracking ref. ``--allow-placeholders`` validates
+the shipped template instead.
 
 Usage:
     python3 tools/check_efficacy_manifest.py \

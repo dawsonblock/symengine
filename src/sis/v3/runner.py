@@ -25,6 +25,7 @@ import secrets
 import shutil
 import signal
 import socket
+import stat
 import subprocess
 import sys
 import tempfile
@@ -427,11 +428,13 @@ TREE_DIGEST_VERSIONS = (1, 2, 3)
 # used for workspace execution receipts and disk accounting.
 CANONICAL_TREE_DIGEST_VERSION = 2
 REPOSITORY_DIGEST_VERSION = 3
+REPOSITORY_EXECUTION_DIGEST_VERSION = 1
 _TREE_DIGEST_DOMAINS = {
     1: b"sis-v3:tree:1\0",
     2: b"sis-v3:tree:2\0",
     3: b"sis-v3:repository:1\0",
 }
+_REPOSITORY_EXECUTION_DOMAIN = b"sis-v3:repository_execution:1\0"
 _VCS_DIRECTORIES = frozenset({".git", ".hg", ".svn"})
 _HEX_256 = re.compile(r"^[0-9a-f]{64}$")
 
@@ -600,6 +603,88 @@ def _scan_tree_repository(root: Path) -> TreeScan:
         Path(root), exclude=_VCS_DIRECTORIES,
         domain=_TREE_DIGEST_DOMAINS[REPOSITORY_DIGEST_VERSION],
         version=REPOSITORY_DIGEST_VERSION)
+
+
+def _execution_mode(info: os.stat_result) -> bytes:
+    return f"{stat.S_IMODE(info.st_mode):04o}".encode("ascii")
+
+
+def repository_execution_digest(root: Path) -> str:
+    """Fingerprint the metadata that decides how a repository executes.
+
+    The repository-content digest binds bytes and symlink targets but
+    deliberately ignores permissions. Two checkouts can share that
+    identity and still execute differently: a script that is executable
+    in one and not the other, a directory that cannot be traversed, or a
+    setuid binary. This separate fingerprint hashes each entry's type,
+    permission bits (including setuid, setgid and sticky), and, for a
+    symlink, its target. It uses the same canonical ordering and VCS
+    exclusion as the content digest, so it is stable across filesystem
+    iteration order. It is an addition, not a replacement: the content
+    digest stays clone-shareable.
+
+    Ownership and hard-link identity are not included: a Git checkout
+    does not preserve them, and the staged workspace is owned by the
+    runner.
+    """
+    root = Path(root)
+    try:
+        root_info = root.stat()
+    except OSError as exc:
+        raise RunnerError(
+            f"repository_entry_unreadable:{root}") from exc
+    hasher = hashlib.sha256(_REPOSITORY_EXECUTION_DOMAIN)
+    hasher.update(b"R\0" + _execution_mode(root_info) + b"\0")
+
+    def unreadable(error: OSError) -> None:
+        raise RunnerError(
+            f"repository_entry_unreadable:{error.filename}") from error
+
+    file_count = 0
+    for dirpath, dirnames, filenames in os.walk(
+            root, followlinks=False, onerror=unreadable):
+        kept: list[str] = []
+        linked: list[str] = []
+        for name in dirnames:
+            if name in _VCS_DIRECTORIES:
+                continue
+            full = Path(dirpath) / name
+            if full.is_symlink():
+                linked.append(name)
+            else:
+                kept.append(name)
+        dirnames[:] = sorted(kept, key=os.fsencode)
+        entries = sorted(kept + linked + filenames, key=os.fsencode)
+        for name in entries:
+            if name in _VCS_DIRECTORIES:
+                continue
+            full = Path(dirpath) / name
+            relative = full.relative_to(root).as_posix()
+            path_bytes = os.fsencode(relative)
+            try:
+                info = full.stat(follow_symlinks=False)
+            except OSError as exc:
+                raise RunnerError(
+                    f"repository_entry_unreadable:{relative}") from exc
+            if stat.S_ISLNK(info.st_mode):
+                target = os.readlink(full)
+                hasher.update(
+                    b"L" + path_bytes + b"\0" + os.fsencode(target) + b"\0")
+                continue
+            mode = _execution_mode(info)
+            if stat.S_ISDIR(info.st_mode):
+                hasher.update(b"D" + path_bytes + b"\0" + mode + b"\0")
+                continue
+            if not stat.S_ISREG(info.st_mode):
+                hasher.update(b"O" + path_bytes + b"\0" + mode + b"\0")
+                continue
+            file_count += 1
+            if file_count > MAX_WORKSPACE_FILES:
+                raise RunnerError("workspace exceeds the file-count bound")
+            hasher.update(
+                b"F" + path_bytes + b"\0" + mode + b"\0"
+                + str(info.st_size).encode("ascii") + b"\0")
+    return hasher.hexdigest()
 
 
 def scan_tree(root: Path, *, version: int = CANONICAL_TREE_DIGEST_VERSION) -> TreeScan:

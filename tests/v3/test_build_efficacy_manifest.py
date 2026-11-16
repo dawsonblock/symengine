@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -14,7 +15,7 @@ from pathlib import Path
 from sis.v3.contracts import canonical_digest
 from sis.v3.efficacy_manifest import validate_manifest
 from sis.v3.governed_eval import GOVERNED_ARMS
-from sis.v3.runner import tree_digest
+from sis.v3.runner import repository_execution_digest, tree_digest
 
 ROOT = Path(__file__).resolve().parents[2]
 _SPEC = importlib.util.spec_from_file_location(
@@ -41,29 +42,35 @@ def _commit(repo: Path):
          "commit", "-qm", "base")
 
 
-def _repository(root: Path, name: str, content: str) -> Path:
+def _repository(root: Path, name: str, content: str) -> tuple[Path, str]:
     path = root / "repos" / name
     path.mkdir(parents=True)
     (path / "solution.py").write_text(content)
     _git(path, "init", "-q")
     _git(path, "add", ".")
     _commit(path)
-    return path
+    origin = f"https://example.invalid/{name}.git"
+    _git(path, "remote", "add", "origin", origin)
+    _git(path, "update-ref", "refs/remotes/origin/main", "HEAD")
+    return path, origin
 
 
 def study(root: Path) -> dict:
     repositories, tasks = [], []
     for index in range(5):
-        path = _repository(root, f"induction-{index}", f"SEED = {index}\n")
+        path, origin = _repository(
+            root, f"induction-{index}", f"SEED = {index}\n")
         repositories.append({
             "repository_id": f"repo-induction-{index}",
             "lineage_id": f"lineage-induction-{index}",
             "path": str(path),
+            "origin": origin,
             "partition": "induction",
         })
     holdout = []
     for index in range(5):
-        path = _repository(root, f"holdout-{index}", f"NO = {index}\n")
+        path, origin = _repository(
+            root, f"holdout-{index}", f"NO = {index}\n")
         hidden = root / "private" / f"hidden-{index}.py"
         hidden.parent.mkdir(exist_ok=True)
         hidden.write_text("def test_ok():\n    assert True\n")
@@ -71,6 +78,7 @@ def study(root: Path) -> dict:
             "repository_id": f"repo-holdout-{index}",
             "lineage_id": f"lineage-holdout-{index}",
             "path": str(path),
+            "origin": origin,
             "partition": "holdout",
             "hidden_tests": {"path": str(hidden)},
         }
@@ -116,6 +124,16 @@ def study(root: Path) -> dict:
         "repositories": repositories,
         "tasks": tasks,
     }
+
+
+class _RecordingVerifier:
+    """Record task registrations; commit binding must fail before them."""
+
+    def __init__(self):
+        self.registrations = []
+
+    def register_task(self, **kwargs):
+        self.registrations.append(kwargs)
 
 
 def _bundle(spec: dict) -> dict:
@@ -259,7 +277,7 @@ class StudyKitTests(unittest.TestCase):
                                     "does not match the checkout"):
             builder.build_manifest(self.spec, check_agent=False)
 
-    def test_a_non_git_repository_needs_a_declared_base_commit(self):
+    def test_a_non_git_repository_is_refused(self):
         plain = self.root / "plain"
         plain.mkdir()
         (plain / "solution.py").write_text("NO = 9\n")
@@ -267,6 +285,205 @@ class StudyKitTests(unittest.TestCase):
         with self.assertRaisesRegex(builder.StudySpecError,
                                     "not a Git checkout"):
             builder.build_manifest(self.spec, check_agent=False)
+        self.spec["repositories"][0]["base_commit"] = "a" * 40
+        with self.assertRaisesRegex(builder.StudySpecError,
+                                    "not a Git checkout"):
+            builder.build_manifest(self.spec, check_agent=False)
+
+    def test_the_manifest_records_the_checkout_commits(self):
+        document, _ = builder.build_manifest(self.spec, check_agent=False)
+        report = validate_manifest(document, check_paths=True)
+        self.assertTrue(report["ready"], report["problems"])
+        self.assertEqual(len(report["repository_commits"]), 10)
+        for repository in document["repositories"]:
+            self.assertEqual(
+                report["repository_commits"][repository["repository_id"]],
+                repository["base_commit"])
+
+    def test_the_manifest_records_the_execution_fingerprints(self):
+        document, _ = builder.build_manifest(self.spec, check_agent=False)
+        report = validate_manifest(document, check_paths=True)
+        self.assertTrue(report["ready"], report["problems"])
+        self.assertEqual(len(report["repository_execution"]), 10)
+        for repository in document["repositories"]:
+            self.assertEqual(
+                report["repository_execution"][repository["repository_id"]],
+                repository["repo_execution_digest"])
+
+    def test_the_content_digest_ignores_modes(self):
+        path = self.root / "modes"
+        path.mkdir()
+        script = path / "run.sh"
+        script.write_text("#!/bin/sh\nexit 0\n")
+        (path / "pkg").mkdir()
+        (path / "pkg" / "mod.py").write_text("X = 1\n")
+        content = tree_digest(path, version=3)
+        execution = repository_execution_digest(path)
+        os.chmod(script, 0o755)
+        self.assertEqual(tree_digest(path, version=3), content)
+        self.assertNotEqual(repository_execution_digest(path), execution)
+        execution = repository_execution_digest(path)
+        os.chmod(path / "pkg", 0o700)
+        self.assertEqual(tree_digest(path, version=3), content)
+        self.assertNotEqual(repository_execution_digest(path), execution)
+
+    def test_the_validator_rejects_a_mode_change(self):
+        document, _ = builder.build_manifest(self.spec, check_agent=False)
+        target = next(item for item in document["repositories"]
+                      if item["partition"] == "holdout")
+        os.chmod(Path(target["path"]) / "solution.py", 0o755)
+        report = validate_manifest(document, check_paths=True)
+        self.assertFalse(report["valid"])
+        self.assertTrue(any("repository_execution_mismatch" in problem
+                            for problem in report["problems"]),
+                        report["problems"])
+
+    def test_the_campaign_rebinds_execution_state_before_execution(self):
+        document, _ = builder.build_manifest(self.spec, check_agent=False)
+        target = next(item for item in document["repositories"]
+                      if item["partition"] == "holdout")
+        os.chmod(Path(target["path"]), 0o700)
+        verifier = _RecordingVerifier()
+        with self.assertRaisesRegex(ValueError,
+                                    "repository_execution_mismatch"):
+            campaign._real_tasks(document, verifier, custody="shared")
+        self.assertEqual(verifier.registrations, [])
+
+    def test_the_manifest_records_the_repository_origins(self):
+        document, _ = builder.build_manifest(self.spec, check_agent=False)
+        report = validate_manifest(document, check_paths=True)
+        self.assertTrue(report["ready"], report["problems"])
+        for repository in document["repositories"]:
+            self.assertEqual(
+                report["repository_origins"][repository["repository_id"]],
+                repository["origin"])
+
+    def test_a_repository_without_an_origin_is_refused(self):
+        induction = next(repository for repository in self.spec["repositories"]
+                         if repository["partition"] == "induction")
+        _git(Path(induction["path"]), "remote", "remove", "origin")
+        del induction["origin"]
+        with self.assertRaisesRegex(builder.StudySpecError,
+                                    "has no origin remote"):
+            builder.build_manifest(self.spec, check_agent=False)
+
+    def test_a_shallow_checkout_is_refused(self):
+        induction = next(repository for repository in self.spec["repositories"]
+                         if repository["partition"] == "induction")
+        shallow = self.root / "shallow"
+        subprocess.run(
+            ["git", "clone", "-q", "--depth", "1",
+             Path(induction["path"]).as_uri(), str(shallow)],
+            check=True, capture_output=True)
+        induction["path"] = str(shallow)
+        induction["origin"] = _git(
+            shallow, "remote", "get-url", "origin").stdout.strip()
+        with self.assertRaisesRegex(builder.StudySpecError,
+                                    "shallow history"):
+            builder.build_manifest(self.spec, check_agent=False)
+
+    def test_the_validator_rejects_an_origin_mismatch(self):
+        document, _ = builder.build_manifest(self.spec, check_agent=False)
+        target = next(item for item in document["repositories"]
+                      if item["partition"] == "holdout")
+        target["origin"] = "https://example.invalid/other.git"
+        report = validate_manifest(document, check_paths=True)
+        self.assertFalse(report["valid"])
+        self.assertTrue(any("repository_origin_mismatch" in problem
+                            for problem in report["problems"]),
+                        report["problems"])
+
+    def test_the_validator_rejects_a_commit_not_on_a_remote_ref(self):
+        document, _ = builder.build_manifest(self.spec, check_agent=False)
+        target = next(item for item in document["repositories"]
+                      if item["partition"] == "holdout")
+        _git(Path(target["path"]), "-c", "user.name=SIS", "-c",
+             "user.email=sis@example.invalid", "commit", "--allow-empty",
+             "-qm", "local only")
+        head = _git(Path(target["path"]), "rev-parse", "HEAD").stdout.strip()
+        target["base_commit"] = head
+        for task in document["tasks"]:
+            if task["repository_id"] == target["repository_id"]:
+                task["base_commit"] = head
+        report = validate_manifest(document, check_paths=True)
+        self.assertFalse(report["valid"])
+        self.assertTrue(any("repository_commit_not_on_remote" in problem
+                            for problem in report["problems"]),
+                        report["problems"])
+
+    def test_the_campaign_rebinds_provenance_before_execution(self):
+        document, _ = builder.build_manifest(self.spec, check_agent=False)
+        target = next(item for item in document["repositories"]
+                      if item["partition"] == "holdout")
+        _git(Path(target["path"]), "-c", "user.name=SIS", "-c",
+             "user.email=sis@example.invalid", "commit", "--allow-empty",
+             "-qm", "local only")
+        head = _git(Path(target["path"]), "rev-parse", "HEAD").stdout.strip()
+        target["base_commit"] = head
+        for task in document["tasks"]:
+            if task["repository_id"] == target["repository_id"]:
+                task["base_commit"] = head
+        verifier = _RecordingVerifier()
+        with self.assertRaisesRegex(ValueError,
+                                    "repository_commit_not_on_remote"):
+            campaign._real_tasks(document, verifier, custody="shared")
+        self.assertEqual(verifier.registrations, [])
+
+    def test_the_validator_rejects_a_fabricated_base_commit(self):
+        document, _ = builder.build_manifest(self.spec, check_agent=False)
+        target = next(item for item in document["repositories"]
+                      if item["partition"] == "holdout")
+        target["base_commit"] = "0" * 40
+        for task in document["tasks"]:
+            if task["repository_id"] == target["repository_id"]:
+                task["base_commit"] = "0" * 40
+        report = validate_manifest(document, check_paths=True)
+        self.assertFalse(report["valid"])
+        self.assertFalse(report["ready"])
+        self.assertTrue(any("repository_base_commit_mismatch" in problem
+                            for problem in report["problems"]),
+                        report["problems"])
+
+    def test_the_validator_rejects_a_dirty_checkout(self):
+        document, _ = builder.build_manifest(self.spec, check_agent=False)
+        target = next(item for item in document["repositories"]
+                      if item["partition"] == "holdout")
+        (Path(target["path"]) / "solution.py").write_text("DIRTY = 1\n")
+        target["repo_snapshot_digest"] = tree_digest(
+            Path(target["path"]), version=3)
+        report = validate_manifest(document, check_paths=True)
+        self.assertFalse(report["valid"])
+        self.assertTrue(any("repository_is_dirty" in problem
+                            for problem in report["problems"]),
+                        report["problems"])
+
+    def test_the_validator_rejects_a_checkout_without_git(self):
+        document, _ = builder.build_manifest(self.spec, check_agent=False)
+        target = next(item for item in document["repositories"]
+                      if item["partition"] == "holdout")
+        plain = self.root / "plain-holdout"
+        shutil.copytree(target["path"], plain,
+                        ignore=shutil.ignore_patterns(".git"))
+        target["path"] = str(plain)
+        target["repo_snapshot_digest"] = tree_digest(plain, version=3)
+        report = validate_manifest(document, check_paths=True)
+        self.assertFalse(report["valid"])
+        self.assertTrue(any("repository_head_unverifiable" in problem
+                            for problem in report["problems"]),
+                        report["problems"])
+
+    def test_the_campaign_rebinds_every_commit_before_execution(self):
+        document, _ = builder.build_manifest(self.spec, check_agent=False)
+        target = next(item for item in document["repositories"]
+                      if item["partition"] == "holdout")
+        _git(Path(target["path"]), "-c", "user.name=SIS", "-c",
+             "user.email=sis@example.invalid", "commit", "--allow-empty",
+             "-qm", "moved after validation")
+        verifier = _RecordingVerifier()
+        with self.assertRaisesRegex(ValueError,
+                                    "repository_base_commit_mismatch"):
+            campaign._real_tasks(document, verifier, custody="shared")
+        self.assertEqual(verifier.registrations, [])
 
     def test_a_missing_hidden_tests_record_is_refused(self):
         item = next(repository for repository in self.spec["repositories"]

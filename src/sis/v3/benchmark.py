@@ -29,7 +29,8 @@ from pathlib import Path
 
 from .contracts import ContractError, GuidanceV1, TaskEnvelopeV1, canonical_digest
 from .episode_store import EpisodeStore
-from .runner import (RunnerError, external_symlinks, scan_tree, tree_digest,
+from .runner import (RunnerError, external_symlinks,
+                     repository_execution_digest, scan_tree, tree_digest,
                      verify_repository_digest)
 from .verifier import OutcomeVerifier
 
@@ -99,7 +100,8 @@ def _reject_hard_links(root: Path) -> None:
                 "repository_contains_hard_links:" + relative)
 
 
-def stage_repository(base_dir: str | Path, workspace: str | Path) -> str:
+def stage_repository(base_dir: str | Path, workspace: str | Path, *,
+                     expected_execution: str | None = None) -> str:
     """Copy a repository into a disposable workspace without dereferencing links.
 
     ``shutil.copytree`` follows symlinks by default, so a link inside a
@@ -109,8 +111,11 @@ def stage_repository(base_dir: str | Path, workspace: str | Path) -> str:
     (``symlinks=True``), and re-scans the staged tree so a link swapped
     in during the copy is observed as a link rather than followed. The
     source and staged tree must hash identically; any drift during
-    staging aborts the arm. Returns the staged tree digest so the caller
-    can bind it to the task envelope.
+    staging aborts the arm. When ``expected_execution`` is supplied, the
+    staged tree's execution fingerprint (permission bits, entry types
+    and symlink targets) must also match it, so a mode change after
+    manifest validation cannot reach the agent. Returns the staged tree
+    digest so the caller can bind it to the task envelope.
     """
     source = Path(base_dir)
     target = Path(workspace)
@@ -119,6 +124,7 @@ def stage_repository(base_dir: str | Path, workspace: str | Path) -> str:
     _reject_hard_links(source)
     try:
         before = scan_tree(source, version=3)
+        before_execution = repository_execution_digest(source)
     except (OSError, RunnerError) as exc:
         raise BenchmarkError(f"repository_scan_failed:{exc}") from exc
     if before.external_symlinks:
@@ -135,6 +141,7 @@ def stage_repository(base_dir: str | Path, workspace: str | Path) -> str:
         raise BenchmarkError(f"repository_staging_failed:{exc}") from exc
     try:
         after = scan_tree(target, version=3)
+        after_execution = repository_execution_digest(target)
     except (OSError, RunnerError) as exc:
         raise BenchmarkError(f"repository_scan_failed:{exc}") from exc
     if after.external_symlinks:
@@ -147,6 +154,11 @@ def stage_repository(base_dir: str | Path, workspace: str | Path) -> str:
             "repository_contains_external_symlinks:" + ",".join(external))
     if after.digest != before.digest:
         raise BenchmarkError("repository_changed_during_staging")
+    if after_execution != before_execution:
+        raise BenchmarkError("repository_execution_changed_during_staging")
+    if (expected_execution is not None
+            and after_execution != expected_execution):
+        raise BenchmarkError("repository_execution_mismatch")
     # A hard link swapped in during the copy is copied as an independent
     # file; re-check the source so the secret bytes never reach an agent.
     _reject_hard_links(source)
@@ -300,6 +312,7 @@ class BenchmarkHarness:
         verifier: OutcomeVerifier,
         store: EpisodeStore | None = None,
         work_root: str | Path | None = None,
+        expected_execution: Mapping[str, str] | None = None,
     ) -> None:
         self.verifier = verifier
         self.store = store
@@ -308,6 +321,12 @@ class BenchmarkHarness:
             tempfile.mkdtemp(prefix="sis-v3-bench-")
         )
         self.work_root.mkdir(parents=True, exist_ok=True)
+        # Optional per-repository execution fingerprints, keyed by the
+        # resolved source path. A staged tree that does not match its
+        # fingerprint is refused before any arm runs.
+        self.expected_execution = {
+            str(Path(path).resolve()): digest
+            for path, digest in (expected_execution or {}).items()}
         # Identical submissions reuse the issued receipt: the signed outcome
         # binds the tree digest, so re-running the suite would be identical.
         self._receipt_cache: dict[tuple[str, str], tuple[str, str]] = {}
@@ -359,7 +378,10 @@ class BenchmarkHarness:
         workspace = Path(tempfile.mkdtemp(prefix=f"arm-{arm}-", dir=self.work_root))
         retain_workspace = False
         try:
-            staged_digest = stage_repository(base_dir, workspace)
+            staged_digest = stage_repository(
+                base_dir, workspace,
+                expected_execution=self.expected_execution.get(
+                    str(base_dir.resolve())))
             if task.repo_snapshot_digest and staged_digest != task.repo_snapshot_digest:
                 try:
                     verify_repository_digest(

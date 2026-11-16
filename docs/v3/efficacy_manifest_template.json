@@ -48,6 +48,8 @@
       "path": "<absolute path to the induction repository>",
       "base_commit": "<40-hex-commit>",
       "repo_snapshot_digest": "<64-hex-tree-digest>",
+      "repo_execution_digest": "<64-hex-execution-digest>",
+      "origin": "<origin URL shared by every checkout of this repository>",
       "partition": "induction"
     },
     {
@@ -56,6 +58,8 @@
       "path": "<absolute path to holdout repository 1>",
       "base_commit": "<40-hex-commit>",
       "repo_snapshot_digest": "<64-hex-tree-digest>",
+      "repo_execution_digest": "<64-hex-execution-digest>",
+      "origin": "<origin URL shared by every checkout of this repository>",
       "partition": "holdout",
       "hidden_tests": {
         "path": "<absolute path outside the public repository>",
@@ -68,6 +72,8 @@
       "path": "<absolute path to holdout repository 2>",
       "base_commit": "<40-hex-commit>",
       "repo_snapshot_digest": "<64-hex-tree-digest>",
+      "repo_execution_digest": "<64-hex-execution-digest>",
+      "origin": "<origin URL shared by every checkout of this repository>",
       "partition": "holdout",
       "hidden_tests": {
         "path": "<absolute path outside the public repository>",
@@ -80,6 +86,8 @@
       "path": "<absolute path to holdout repository 3>",
       "base_commit": "<40-hex-commit>",
       "repo_snapshot_digest": "<64-hex-tree-digest>",
+      "repo_execution_digest": "<64-hex-execution-digest>",
+      "origin": "<origin URL shared by every checkout of this repository>",
       "partition": "holdout",
       "hidden_tests": {
         "path": "<absolute path outside the public repository>",
@@ -92,6 +100,8 @@
       "path": "<absolute path to holdout repository 4>",
       "base_commit": "<40-hex-commit>",
       "repo_snapshot_digest": "<64-hex-tree-digest>",
+      "repo_execution_digest": "<64-hex-execution-digest>",
+      "origin": "<origin URL shared by every checkout of this repository>",
       "partition": "holdout",
       "hidden_tests": {
         "path": "<absolute path outside the public repository>",
@@ -104,6 +114,8 @@
       "path": "<absolute path to holdout repository 5>",
       "base_commit": "<40-hex-commit>",
       "repo_snapshot_digest": "<64-hex-tree-digest>",
+      "repo_execution_digest": "<64-hex-execution-digest>",
+      "origin": "<origin URL shared by every checkout of this repository>",
       "partition": "holdout",
       "hidden_tests": {
         "path": "<absolute path outside the public repository>",

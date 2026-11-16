@@ -60,15 +60,17 @@ from sis.v3.benchmark import (  # noqa: E402
     BenchmarkError, BenchmarkHarness, BudgetCaps)
 from sis.v3.contracts import (  # noqa: E402
     ContractError, GuidanceV1, TaskEnvelopeV1, canonical_digest)
-from sis.v3.efficacy_manifest import validate_manifest  # noqa: E402
+from sis.v3.efficacy_manifest import (  # noqa: E402
+    validate_manifest, verify_repository_binding,
+    verify_repository_execution, verify_repository_provenance)
 from sis.v3.evaluation_runtime import EvaluationRuntimeProfile  # noqa: E402
 from sis.v3.governed_eval import GOVERNED_ARMS, preregister  # noqa: E402
 from sis.v3.learning_qualification import (  # noqa: E402
     CodexCliAgent, FiveArmCampaign, build_context_provider,
     codex_agent_status, write_report)
 from sis.v3.runner import (LocalSubprocessExecutor, ResourceLimits,  # noqa: E402
-                           RunnerError, tree_digest,
-                           verify_repository_digest)
+                           RunnerError, repository_execution_digest,
+                           tree_digest, verify_repository_digest)
 from sis.v3.verifier import OutcomeVerifier  # noqa: E402
 
 PY = sys.executable
@@ -488,6 +490,19 @@ def _real_tasks(document: Mapping, verifier: OutcomeVerifier, *,
                 custody: str | None):
     repositories = {item["repository_id"]: item
                     for item in document["repositories"]}
+    # Validation and execution are separated by guidance loading and
+    # verifier setup. Re-bind every repository to its declared commit,
+    # origin, history and execution fingerprint here so a checkout that
+    # moved after validation cannot run.
+    binding: list[str] = []
+    for repository in repositories.values():
+        _, found = verify_repository_binding(repository)
+        binding.extend(found)
+        binding.extend(verify_repository_provenance(repository))
+        _, found = verify_repository_execution(repository)
+        binding.extend(found)
+    if binding:
+        raise ValueError("; ".join(binding))
     snapshots: dict[str, str] = {}
     tasks, prompts, classes = [], {}, {}
     for task in document["tasks"]:
@@ -516,6 +531,11 @@ def _real_tasks(document: Mapping, verifier: OutcomeVerifier, *,
                         + repository["repository_id"]) from exc
                 snapshot = declared
             snapshots[repository["repository_id"]] = snapshot
+            execution = repository_execution_digest(repo_path)
+            if execution != repository.get("repo_execution_digest"):
+                raise ValueError(
+                    "repository_execution_mismatch:"
+                    + repository["repository_id"])
         material = _acceptance_material(task, repository)
         statement = hashlib.sha256(task["prompt"].encode("utf-8")).hexdigest()
         verifier.register_task(
@@ -809,7 +829,11 @@ def run_real(output: Path, manifest_path: Path | None, *,
         try:
             campaign = FiveArmCampaign(
                 harness=BenchmarkHarness(
-                    verifier=verifier, work_root=root / "work"),
+                    verifier=verifier, work_root=root / "work",
+                    expected_execution={
+                        str(Path(repo["path"]).resolve()):
+                            repo["repo_execution_digest"]
+                        for repo in document["repositories"]}),
                 tasks=tasks, agent=agent, budget=budget, protocol=protocol,
                 context_provider=provider, served_map=served,
                 learned_repo_digests=learned, real_agent=True,

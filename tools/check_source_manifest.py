@@ -4,6 +4,10 @@ Default mode checks the current checkout exactly. ``--baseline-ref`` verifies
 the manifest and blobs stored at that immutable Git revision, then reports the
 development delta separately; it never implies that the baseline manifest
 covers unmanifested development changes.
+
+The authoritative manifest is ``RELEASE_SHA256.json``. The historical
+``SOURCE_SHA256.json`` is still accepted, so a checkout that predates the
+release inventory can be verified without rewriting it.
 """
 import argparse
 import hashlib
@@ -14,6 +18,7 @@ from pathlib import Path, PurePosixPath
 
 
 ROOT = Path(__file__).resolve().parents[1]
+MANIFEST_NAMES = ("RELEASE_SHA256.json", "SOURCE_SHA256.json")
 SKIP_DIRS = {"__pycache__", ".git", ".venv", "dist", "build",
              ".pytest_cache", ".mypy_cache", ".ruff_cache", ".tox", ".nox",
              "htmlcov"}
@@ -60,6 +65,17 @@ def _included(relative):
             and path.suffix not in SKIP_EXTS)
 
 
+def _manifest_path(root=None):
+    """Return the authoritative manifest name and path in ``root``."""
+    root = ROOT if root is None else root
+    for name in MANIFEST_NAMES:
+        path = root / name
+        if path.is_file():
+            return name, path
+    raise ValueError(
+        "no source manifest found; expected one of " + ", ".join(MANIFEST_NAMES))
+
+
 def _verify_worktree(manifest):
     actual = {}
     for path in ROOT.rglob("*"):
@@ -83,12 +99,25 @@ def _git(root, *args):
 
 
 def _read_baseline(ref):
+    document = None
+    for name in MANIFEST_NAMES:
+        try:
+            raw = _git(ROOT, "show", f"{ref}:{name}")
+        except subprocess.CalledProcessError:
+            continue
+        try:
+            document = json.loads(raw.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise ValueError(
+                f"cannot read manifest {name} at Git revision {ref!r}") from exc
+        break
+    if document is None:
+        raise ValueError(
+            f"cannot read manifest/tree at Git revision {ref!r}")
+    manifest = _valid_manifest(document)
     try:
-        raw = _git(ROOT, "show", f"{ref}:SOURCE_SHA256.json")
-        document = json.loads(raw.decode("utf-8"))
-        manifest = _valid_manifest(document)
         entries = _git(ROOT, "ls-tree", "-rz", "--full-tree", ref)
-    except (subprocess.CalledProcessError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+    except subprocess.CalledProcessError as exc:
         raise ValueError(f"cannot read manifest/tree at Git revision {ref!r}") from exc
 
     blobs = {}
@@ -136,15 +165,20 @@ def main(argv=None):
     args = parser.parse_args(argv)
     try:
         if not args.baseline_ref:
-            manifest = _valid_manifest(json.loads((ROOT / "SOURCE_SHA256.json").read_text(encoding="utf-8")))
+            name, path = _manifest_path()
+            manifest = _valid_manifest(
+                json.loads(path.read_text(encoding="utf-8")))
             count = _verify_worktree(manifest)
-            print(f"{count} source files SHA-256 verified in the current working tree")
+            print(f"{count} source files SHA-256 verified in the current"
+                  f" working tree ({name})")
             return 0
 
         baseline_document, baseline_manifest = _read_baseline(args.baseline_ref)
         print(f"{len(baseline_manifest)} source files SHA-256 verified at baseline {args.baseline_ref}")
         try:
-            current_document = json.loads((ROOT / "SOURCE_SHA256.json").read_text(encoding="utf-8"))
+            _, current_path = _manifest_path()
+            current_document = json.loads(
+                current_path.read_text(encoding="utf-8"))
             current_manifest = _valid_manifest(current_document)
         except (OSError, json.JSONDecodeError, ValueError) as exc:
             raise ValueError("current source manifest is malformed") from exc

@@ -35,8 +35,11 @@ def repository(index: int, partition: str) -> dict:
         "repository_id": f"repo-{index:02d}",
         "lineage_id": f"lineage-{index:02d}",
         "path": f"/secure/repos/repo-{index:02d}",
+        "origin": f"https://example.invalid/repo-{index:02d}.git",
         "base_commit": "a" * 40,
         "repo_snapshot_digest": digest,
+        "repo_execution_digest": hashlib.sha256(
+            f"execution-{index}".encode()).hexdigest(),
         "partition": partition,
     }
     if partition == "holdout":

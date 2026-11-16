@@ -12,7 +12,8 @@ from unittest import mock
 from sis.v3.benchmark import (BenchmarkError, BenchmarkHarness, BudgetCaps,
                               report_digest)
 from sis.v3.contracts import TaskEnvelopeV1
-from sis.v3.runner import LocalSubprocessExecutor, tree_digest
+from sis.v3.runner import (LocalSubprocessExecutor,
+                           repository_execution_digest, tree_digest)
 from sis.v3.verifier import OutcomeVerifier
 
 
@@ -308,6 +309,40 @@ class StagingTests(unittest.TestCase):
                     BenchmarkError, "repository_contains_external_symlinks"):
                 self.harness.run([(self.task, self.repo)], lambda ctx: None,
                                  budget=self.budget, arms=("A",))
+
+    @unittest.skipUnless(os.name == "posix", "POSIX mode bits are required")
+    def test_executable_modes_survive_staging(self):
+        from dataclasses import replace
+        (self.repo / "run.sh").write_text("#!/bin/sh\nexit 0\n")
+        os.chmod(self.repo / "run.sh", 0o755)
+        task = replace(self.task,
+                       repo_snapshot_digest=tree_digest(self.repo, version=3))
+        harness = BenchmarkHarness(
+            verifier=self.verifier, work_root=self.root / "work-modes",
+            expected_execution={
+                str(self.repo.resolve()):
+                    repository_execution_digest(self.repo)})
+        seen = {}
+
+        def agent(ctx):
+            seen["mode"] = (ctx.workspace / "run.sh").stat().st_mode & 0o111
+
+        harness.run([(task, self.repo)], agent,
+                    budget=self.budget, arms=("A",))
+        self.assertTrue(seen["mode"])
+
+    def test_a_staged_execution_mismatch_is_rejected(self):
+        harness = BenchmarkHarness(
+            verifier=self.verifier, work_root=self.root / "work-mismatch",
+            expected_execution={str(self.repo.resolve()): "0" * 64})
+
+        def agent(ctx):
+            raise AssertionError("the agent must never run")
+
+        with self.assertRaisesRegex(BenchmarkError,
+                                    "repository_execution_mismatch"):
+            harness.run([(self.task, self.repo)], agent,
+                        budget=self.budget, arms=("A",))
 
 
 class TerminationTests(unittest.TestCase):

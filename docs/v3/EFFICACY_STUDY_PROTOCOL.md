@@ -69,7 +69,11 @@ least five of them holdout repositories with distinct snapshots and
 distinct lineages that each contribute tasks) and at least 103 paired
 holdout tasks, and commit the manifest before any holdout run. Each
 repository declares a `lineage_id` shared by every revision of that
-repository and distinct from every other holdout lineage.
+repository and distinct from every other holdout lineage, plus a
+`repo_execution_digest` that pins the permission and entry-type state
+its content digest deliberately ignores, and the `origin` URL its
+checkout must have. A manifest that omits the execution fingerprint or
+the origin is invalid; rebuild an older manifest with the study kit.
 
 Validate the template while editing:
 
@@ -96,9 +100,24 @@ The validator enforces:
   repositories, and at least `sample_size` tasks;
 - `--check-paths` re-fingerprints every repository with the
   repository-content format (working tree, VCS metadata excluded),
-  verifies the declared digest (full-tree v2 and legacy v1 records are
-  accepted read-only), derives Git lineage, and rejects duplicate
-  codebases or shared lineages across holdout entries;
+  verifies the declared content digest (full-tree v2 and legacy v1
+  records are accepted read-only) and the declared execution
+  fingerprint (entry types, permission bits including setuid/setgid/
+  sticky, root directory mode and symlink targets), derives Git
+  lineage, and rejects duplicate codebases or shared lineages across
+  holdout entries;
+- `--check-paths` also binds every repository to its declared
+  `base_commit`: the path must be the root of a Git checkout whose HEAD
+  is that commit and whose working tree has no staged, unstaged or
+  untracked changes. A fabricated commit, a dirty checkout or a
+  directory that cannot prove its commit is rejected; the campaign
+  repeats the check immediately before execution so a checkout that
+  moves after validation cannot run;
+- `--check-paths` verifies provenance separately: the checkout's
+  `origin` remote must equal the declared origin, the history must not
+  be shallow, and the base commit must be reachable from a
+  remote-tracking ref. This is local consistency, not proof that the
+  upstream contains the commit;
 - hidden tests outside the public repository;
 - safe relative acceptance-file paths;
 - pinned agent kind/model/CLI version;
@@ -110,9 +129,12 @@ Exit status `0` means ready; `2` means structurally valid but not ready
 ### Build from a study spec
 
 `tools/build_efficacy_manifest.py` turns a declarative spec into the
-manifest above. It computes canonical repository digests, Git base
-commits, lineage metadata and hidden-test digests, then refuses to write
-unless the validator reports both `valid` and `ready`. It never invents
+manifest above. It computes canonical repository digests, execution
+fingerprints, Git base commits, lineage metadata and hidden-test
+digests, then refuses to write unless the validator reports both
+`valid` and `ready`. Every repository must be a clean Git checkout at
+its root with a configured origin and a complete history; a path that
+cannot prove its commit, origin or history is refused. It never invents
 repositories, prompts, hidden tests or guidance.
 
 ```json

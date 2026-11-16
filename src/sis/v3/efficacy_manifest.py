@@ -7,7 +7,9 @@ holdout is repository-disjoint from induction material, hidden tests live
 outside the public repository, and every task carries an evaluator-owned
 acceptance command and equal budget fields. With ``check_paths`` it also
 re-fingerprints every repository path, verifies the declared snapshot
-digest, and rejects two holdout entries (or an induction and a holdout
+digest and execution fingerprint, verifies that the path is the clean Git
+checkout of its declared base commit with a matching origin and complete
+history, and rejects two holdout entries (or an induction and a holdout
 entry) that resolve to the same codebase.
 
 A valid manifest is a prerequisite, not evidence. The efficacy claim still
@@ -23,7 +25,8 @@ from pathlib import Path
 
 from .contracts import ContractError, canonical_digest
 from .governed_eval import GOVERNED_ARMS, preregister, required_sample_size
-from .runner import (RunnerError, tree_digest, verify_repository_digest)
+from .runner import (RunnerError, repository_execution_digest, tree_digest,
+                     verify_repository_digest)
 
 PLACEHOLDER = re.compile(r"^<[^<>]+>$")
 _HEX40 = re.compile(r"^[0-9a-f]{40}$")
@@ -40,6 +43,13 @@ MIN_HOLDOUT_REPOSITORIES = 5
 
 def _placeholder(value) -> bool:
     return isinstance(value, str) and bool(PLACEHOLDER.match(value))
+
+
+def _valid_origin(value) -> bool:
+    return (isinstance(value, str) and bool(value.strip())
+            and len(value) <= 2048
+            and not any(ord(char) < 32 or ord(char) == 127
+                        for char in value))
 
 
 def _canonical(value) -> str:
@@ -162,7 +172,8 @@ def _validate_repositories(document, problems: list[str],
             _problem(problems, label + " partition must be induction or"
                                     " holdout")
         for name, pattern in (("base_commit", _HEX40),
-                              ("repo_snapshot_digest", _HEX64)):
+                              ("repo_snapshot_digest", _HEX64),
+                              ("repo_execution_digest", _HEX64)):
             value = repository.get(name)
             if _placeholder(value) and allow_placeholders:
                 continue
@@ -179,6 +190,12 @@ def _validate_repositories(document, problems: list[str],
                   or not _IDENTIFIER.fullmatch(lineage)):
                 _problem(problems,
                          label + ".lineage_id is not a valid identifier")
+        origin = repository.get("origin")
+        if _placeholder(origin):
+            if not allow_placeholders:
+                _problem(problems, label + ".origin is still a placeholder")
+        elif not _valid_origin(origin):
+            _problem(problems, label + ".origin is not a valid origin")
         hidden = repository.get("hidden_tests")
         if partition == "holdout":
             if not isinstance(hidden, Mapping):
@@ -237,7 +254,8 @@ def _validate_repositories(document, problems: list[str],
 
 def _verify_repository_trees(by_id: dict[str, dict],
                              problems: list[str]
-                             ) -> tuple[dict[str, str], dict[str, str]]:
+                             ) -> tuple[dict[str, str], dict[str, str],
+                                        dict[str, str]]:
     """Re-fingerprint every repository path and reject duplicate codebases.
 
     A declared snapshot digest is a claim. When paths are available the
@@ -249,9 +267,14 @@ def _verify_repository_trees(by_id: dict[str, dict],
     the same codebase, however they are named and whatever digests they
     declare. Identical induction repositories are permitted: they only
     duplicate training material.
+
+    The execution fingerprint is recomputed and verified separately: it
+    binds permission bits, entry types and symlink targets, which the
+    content digest deliberately ignores.
     """
     digests: dict[str, str] = {}
     versions: dict[str, str] = {}
+    execution: dict[str, str] = {}
     for repository_id, repository in by_id.items():
         path = repository.get("path")
         if not isinstance(path, str) or not path:
@@ -272,6 +295,18 @@ def _verify_repository_trees(by_id: dict[str, dict],
                      "repository_snapshot_mismatch: " + repository_id)
             continue
         digests[repository_id] = canonical
+        try:
+            state = repository_execution_digest(root)
+        except (OSError, RunnerError):
+            _problem(problems,
+                     "repository_execution_unverifiable: " + repository_id)
+            continue
+        execution[repository_id] = state
+        declared_execution = repository.get("repo_execution_digest")
+        if (not isinstance(declared_execution, str)
+                or state != declared_execution):
+            _problem(problems,
+                     "repository_execution_mismatch: " + repository_id)
     groups: dict[str, list[str]] = {}
     for repository_id, digest in digests.items():
         groups.setdefault(digest, []).append(repository_id)
@@ -284,7 +319,178 @@ def _verify_repository_trees(by_id: dict[str, dict],
             _problem(problems,
                      "repositories resolve to the same codebase: "
                      + ", ".join(sorted(ids)))
-    return digests, versions
+    return digests, versions, execution
+
+
+def _git(root: Path, *args: str) -> str | None:
+    """Run a read-only Git query, or return ``None`` when it cannot answer."""
+    try:
+        completed = subprocess.run(
+            ["git", "-C", str(root), *args], capture_output=True,
+            text=True, timeout=30, check=False)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if completed.returncode != 0:
+        return None
+    return completed.stdout.strip()
+
+
+def _git_ok(root: Path, *args: str) -> bool:
+    """Return whether a Git predicate exits zero."""
+    try:
+        completed = subprocess.run(
+            ["git", "-C", str(root), *args], capture_output=True,
+            text=True, timeout=30, check=False)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return completed.returncode == 0
+
+
+def verify_repository_binding(repository: Mapping
+                              ) -> tuple[str | None, list[str]]:
+    """Verify that a repository path is the clean checkout of its commit.
+
+    ``base_commit`` is a claim until it is matched against the checkout.
+    The path must be the root of a Git work tree whose HEAD is the
+    declared commit and whose working tree has no staged, unstaged or
+    untracked changes. Anything else is unverifiable provenance: the
+    manifest could name a commit the code never came from, or the run
+    could execute files that are not in the commit at all. Returns the
+    verified HEAD (or ``None``) and the problems found.
+    """
+    repository_id = str(repository.get("repository_id"))
+    path = repository.get("path")
+    if not isinstance(path, str) or not path:
+        return None, ["repository has no path: " + repository_id]
+    root = Path(path)
+    if root.is_symlink() or not root.is_dir():
+        return None, [
+            "repository_path_is_not_a_plain_directory: " + repository_id]
+    toplevel = _git(root, "rev-parse", "--show-toplevel")
+    if toplevel is None:
+        return None, ["repository_head_unverifiable: " + repository_id]
+    problems: list[str] = []
+    try:
+        same_root = Path(toplevel).resolve() == root.resolve()
+    except OSError:
+        same_root = False
+    if not same_root:
+        problems.append("repository_is_not_the_root: " + repository_id)
+    head = _git(root, "rev-parse", "HEAD")
+    if head is None or not (_HEX40.fullmatch(head)
+                            or _HEX64.fullmatch(head)):
+        problems.append("repository_head_unverifiable: " + repository_id)
+        head = None
+    declared = repository.get("base_commit")
+    if head is not None and (not isinstance(declared, str)
+                             or head.lower() != declared.lower()):
+        problems.append("repository_base_commit_mismatch: " + repository_id)
+    status = _git(root, "status", "--porcelain", "--untracked-files=all")
+    if status is None:
+        problems.append("repository_status_unverifiable: " + repository_id)
+    elif status:
+        problems.append("repository_is_dirty: " + repository_id)
+    return head, problems
+
+
+def verify_repository_provenance(repository: Mapping) -> list[str]:
+    """Verify a repository's declared origin and complete history.
+
+    The manifest names the origin the checkout must have, and the base
+    commit must be reachable from at least one remote-tracking ref. A
+    shallow clone is refused: its history boundary is reported as a
+    root commit, so two shallow clones of one repository could look
+    unrelated to the lineage check. This is local consistency, not
+    proof that the upstream contains the commit; that requires fetching
+    from the declared origin or a signed attestation.
+    """
+    repository_id = str(repository.get("repository_id"))
+    path = repository.get("path")
+    if not isinstance(path, str) or not path:
+        return ["repository has no path: " + repository_id]
+    root = Path(path)
+    if root.is_symlink() or not root.is_dir():
+        return ["repository_path_is_not_a_plain_directory: "
+                + repository_id]
+    problems: list[str] = []
+    declared_origin = repository.get("origin")
+    configured = _git(root, "remote", "get-url", "origin")
+    if configured is None:
+        problems.append("repository_origin_unverifiable: " + repository_id)
+    elif not isinstance(declared_origin, str) or configured != declared_origin:
+        problems.append("repository_origin_mismatch: " + repository_id)
+    shallow = _git(root, "rev-parse", "--is-shallow-repository")
+    if shallow is None:
+        problems.append("repository_history_unverifiable: " + repository_id)
+    elif shallow == "true":
+        problems.append("repository_history_is_shallow: " + repository_id)
+    head = _git(root, "rev-parse", "HEAD")
+    if head is None or not (_HEX40.fullmatch(head)
+                            or _HEX64.fullmatch(head)):
+        problems.append("repository_head_unverifiable: " + repository_id)
+        return problems
+    refs = _git(root, "for-each-ref", "--format=%(refname)", "refs/remotes")
+    if not refs:
+        problems.append("repository_has_no_remote_refs: " + repository_id)
+    elif not any(_git_ok(root, "merge-base", "--is-ancestor", head, ref)
+                 for ref in refs.splitlines()):
+        problems.append("repository_commit_not_on_remote: " + repository_id)
+    return problems
+
+
+def verify_repository_execution(repository: Mapping
+                                ) -> tuple[str | None, list[str]]:
+    """Verify a repository path against its execution fingerprint.
+
+    The content digest binds bytes; this fingerprint binds the metadata
+    that decides how those bytes execute: permission bits, entry types
+    and symlink targets. A checkout whose modes changed after the
+    manifest was built is rejected even when its content is identical.
+    Returns the computed fingerprint (or ``None``) and the problems.
+    """
+    repository_id = str(repository.get("repository_id"))
+    path = repository.get("path")
+    if not isinstance(path, str) or not path:
+        return None, ["repository has no path: " + repository_id]
+    root = Path(path)
+    if root.is_symlink() or not root.is_dir():
+        return None, [
+            "repository_path_is_not_a_plain_directory: " + repository_id]
+    try:
+        computed = repository_execution_digest(root)
+    except (OSError, RunnerError):
+        return None, [
+            "repository_execution_unverifiable: " + repository_id]
+    declared = repository.get("repo_execution_digest")
+    if not isinstance(declared, str) or computed != declared:
+        return computed, [
+            "repository_execution_mismatch: " + repository_id]
+    return computed, []
+
+
+def _verify_repository_commits(by_id: dict[str, dict],
+                               problems: list[str]) -> dict[str, str]:
+    """Re-verify every repository's commit, worktree and provenance.
+
+    A path that is missing, not a plain directory or unreadable was
+    already reported by :func:`_verify_repository_trees`; this pass
+    binds the declared commit to the checkout that will be executed and
+    checks its declared origin, history depth and remote reachability.
+    """
+    commits: dict[str, str] = {}
+    for repository_id, repository in by_id.items():
+        path = repository.get("path")
+        if not isinstance(path, str) or not path:
+            continue
+        root = Path(path)
+        if root.is_symlink() or not root.is_dir():
+            continue
+        head, found = verify_repository_binding(repository)
+        if head is not None:
+            commits[repository_id] = head
+        problems.extend(found)
+        problems.extend(verify_repository_provenance(repository))
+    return commits
 
 
 def _git_lineage(root: Path) -> str | None:
@@ -494,9 +700,12 @@ def validate_manifest(document, *, allow_placeholders: bool = False,
     protocol = _validate_protocol(
         document.get("protocol"), problems, allow_placeholders)
     by_id = _validate_repositories(document, problems, allow_placeholders)
-    repository_trees, repository_tree_versions = (
-        ({}, {}) if allow_placeholders or not check_paths
+    repository_trees, repository_tree_versions, repository_execution = (
+        ({}, {}, {}) if allow_placeholders or not check_paths
         else _verify_repository_trees(by_id, problems))
+    repository_commits = (
+        {} if allow_placeholders or not check_paths
+        else _verify_repository_commits(by_id, problems))
     sample_size = int(protocol.get("sample_size", 0) or 0)
     tasks = _validate_tasks(
         document, by_id, problems, allow_placeholders, sample_size,
@@ -625,6 +834,11 @@ def validate_manifest(document, *, allow_placeholders: bool = False,
         "repository_trees": dict(sorted(repository_trees.items())),
         "repository_tree_versions": dict(
             sorted(repository_tree_versions.items())),
+        "repository_execution": dict(sorted(repository_execution.items())),
+        "repository_commits": dict(sorted(repository_commits.items())),
+        "repository_origins": dict(sorted(
+            (repository_id, repository.get("origin"))
+            for repository_id, repository in by_id.items())),
         "distinct_repository_trees": len(set(repository_trees.values())),
         "repository_lineage": dict(sorted(repository_lineage.items())),
         "distinct_holdout_lineages": len(
@@ -648,4 +862,5 @@ def _walk(value):
 
 
 __all__ = ["MIN_HOLDOUT_REPOSITORIES", "MIN_REPOSITORIES",
-           "validate_manifest"]
+           "validate_manifest", "verify_repository_binding",
+           "verify_repository_execution", "verify_repository_provenance"]

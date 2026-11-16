@@ -4,10 +4,13 @@
 The spec is a declarative description of the study: protocol parameters,
 the pinned agent, preregistration identity, repository paths, and tasks.
 This tool does not invent repositories, prompts, or hidden tests. It
-computes the canonical repository digests, Git base commits, lineage
-metadata and hidden-test digests, assembles the manifest, and refuses to
-write it unless ``validate_manifest(check_paths=True)`` reports both
-``valid`` and ``ready``.
+computes the canonical repository digests, execution fingerprints, Git
+base commits, origin URLs, lineage metadata and hidden-test digests,
+assembles the manifest, and refuses to write it unless
+``validate_manifest(check_paths=True)`` reports both ``valid`` and
+``ready``. Every repository must be a clean Git checkout at its root
+with a configured origin and a complete history; a path that cannot
+prove its commit or origin is refused.
 
 Usage:
     PYTHONPATH=src python3 tools/build_efficacy_manifest.py \
@@ -39,7 +42,8 @@ from sis.v3.contracts import ContractError, canonical_digest  # noqa: E402
 from sis.v3.efficacy_manifest import validate_manifest  # noqa: E402
 from sis.v3.governed_eval import GOVERNED_ARMS, preregister  # noqa: E402
 from sis.v3.learning_qualification import codex_agent_status  # noqa: E402
-from sis.v3.runner import (RunnerError, external_symlinks, tree_digest)  # noqa: E402
+from sis.v3.runner import (RunnerError, external_symlinks,
+                           repository_execution_digest, tree_digest)  # noqa: E402
 
 MAX_SPEC_BYTES = 4 << 20
 HEX40 = re.compile(r"^[0-9a-f]{40}$")
@@ -210,16 +214,14 @@ def _base_commit(root: Path, declared) -> str:
                  and (HEX40.fullmatch(declared) or HEX64.fullmatch(declared)),
                  "repository.base_commit must be a 40- or 64-hex commit")
     head = _git(root, "rev-parse", "HEAD")
-    if head is not None:
-        _require(HEX40.fullmatch(head) or HEX64.fullmatch(head),
-                 "repository HEAD is not a commit hash")
-        if declared is not None:
-            _require(head.lower() == declared.lower(),
-                     "repository.base_commit does not match the checkout HEAD")
-        return head
-    _require(declared is not None,
-             "repository is not a Git checkout and has no base_commit")
-    return declared
+    _require(head is not None
+             and (HEX40.fullmatch(head) or HEX64.fullmatch(head)),
+             "repository is not a Git checkout; its base_commit cannot be"
+             " verified")
+    if declared is not None:
+        _require(head.lower() == declared.lower(),
+                 "repository.base_commit does not match the checkout HEAD")
+    return head
 
 
 def _hidden_tests(repository: Mapping, root: Path, label: str) -> dict:
@@ -267,15 +269,35 @@ def _repositories(spec: Mapping) -> tuple[list[dict], dict]:
         root = raw.resolve()
         _require(root.is_dir(), f"{label} path is not a directory")
         toplevel = _git(root, "rev-parse", "--show-toplevel")
-        if toplevel is not None:
-            _require(Path(toplevel).resolve() == root,
-                     f"{label} is not the repository root")
+        _require(toplevel is not None, f"{label} is not a Git checkout")
+        _require(Path(toplevel).resolve() == root,
+                 f"{label} is not the repository root")
+        configured_origin = _git(root, "remote", "get-url", "origin")
+        declared_origin = item.get("origin")
+        if declared_origin is not None:
+            _require(isinstance(declared_origin, str)
+                     and bool(declared_origin)
+                     and len(declared_origin) <= 2048
+                     and not any(ord(char) < 32 or ord(char) == 127
+                                 for char in declared_origin),
+                     f"{label}.origin is not a valid origin")
+            _require(configured_origin is not None,
+                     f"{label} has no origin remote")
+            _require(configured_origin == declared_origin,
+                     f"{label}.origin does not match the checkout remote")
+        else:
+            _require(configured_origin is not None,
+                     f"{label} has no origin remote; declare one")
+            declared_origin = configured_origin
+        _require(_git(root, "rev-parse", "--is-shallow-repository") != "true",
+                 f"{label} has a shallow history; fetch the complete history")
         external = external_symlinks(root)
         _require(not external,
                  f"{label} contains external symlinks: "
                  + ", ".join(external))
         try:
             digest = tree_digest(root, version=3)
+            execution = repository_execution_digest(root)
         except (OSError, RunnerError) as exc:
             raise StudySpecError(
                 f"{label} cannot be fingerprinted: {exc}") from exc
@@ -287,6 +309,8 @@ def _repositories(spec: Mapping) -> tuple[list[dict], dict]:
             "path": str(root),
             "base_commit": _base_commit(root, item.get("base_commit")),
             "repo_snapshot_digest": digest,
+            "repo_execution_digest": execution,
+            "origin": declared_origin,
             "partition": partition,
         }
         if lineage is not None:

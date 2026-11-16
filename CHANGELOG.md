@@ -1,5 +1,97 @@
 # Changelog
 
+## 2026-11-16 — Verified origins and complete histories (SIS-FIX-04)
+
+Lineage was derived from a checkout's Git root commits, but a shallow
+clone reports its boundary as a root, so two shallow clones of one
+repository could look independent. A manifest also had no way to say
+which upstream a checkout came from, so a locally fabricated commit
+that happened to be HEAD still passed.
+
+- Every repository now declares an `origin`. The builder records the
+  checkout's configured `origin` remote (or verifies a declared value)
+  and refuses a checkout without one or with a shallow history.
+- With `check_paths=True` the validator verifies that the checkout's
+  `remote.origin.url` equals the declared origin, that the history is
+  not shallow, and that the base commit is reachable from at least one
+  remote-tracking ref. The report adds `repository_origins`.
+- `tools/five_arm_campaign.py` repeats the provenance check before
+  registering tasks. A locally fabricated commit reports
+  `repository_commit_not_on_remote`; an origin mismatch reports
+  `repository_origin_mismatch`; a shallow clone reports
+  `repository_history_is_shallow`.
+- This is local consistency, not proof that the upstream contains the
+  commit. Independent verification still requires fetching from the
+  declared origin or a signed attestation. A manifest built before this
+  repair lacks `origin` and must be rebuilt.
+- Regression coverage lives in
+  `tests/v3/test_build_efficacy_manifest.py` and
+  `tests/v3/test_five_arm_real_run.py`.
+
+## 2026-11-16 — Repository execution fingerprint (SIS-FIX-03)
+
+The repository-content digest binds file bytes and symlink targets but
+deliberately ignores permissions, so two checkouts with identical
+content can still execute differently: a script that is executable in
+one and not the other, a directory that cannot be traversed, or a
+setuid binary. The manifest had no way to pin that state.
+
+- `runner.repository_execution_digest()` hashes each entry's type and
+  permission bits (including setuid, setgid and sticky), the root
+  directory mode, and symlink targets. It uses the same canonical
+  ordering and VCS exclusion as the content digest. Ownership and
+  hard-link identity are excluded: Git does not preserve them and the
+  staged workspace is runner-owned.
+- The content digest is unchanged. The execution fingerprint is a
+  separate field, `repo_execution_digest`, so content identity stays
+  shareable between clones while execution state is pinned per
+  checkout.
+- `validate_manifest(check_paths=True)` recomputes and verifies the
+  fingerprint (`repository_execution_mismatch`); the report adds
+  `repository_execution`. The study-kit builder records it,
+  `tools/five_arm_campaign.py` re-verifies it before registering tasks,
+  and `BenchmarkHarness` requires every staged workspace to match it
+  before an arm runs.
+- The manifest template carries the new field. A manifest built before
+  this repair omits it and is refused; rebuild it with the study kit.
+  Regression coverage lives in
+  `tests/v3/test_build_efficacy_manifest.py` and
+  `tests/v3/test_five_arm_real_run.py`.
+
+## 2026-11-16 — Manifest commit binding (SIS-FIX-02)
+
+`validate_manifest(check_paths=True)` re-fingerprinted each repository
+but never checked its declared `base_commit`. A manifest assembled
+outside the study kit could name a fabricated commit — for example,
+replacing a repository's commit with `0000…` — as long as its task
+records agreed, and the validator still reported `valid` and `ready`.
+The builder checked the real HEAD; the validator did not.
+
+- With `check_paths=True` the validator now binds every repository to
+  its commit: the path must be the root of a Git checkout, HEAD must be
+  the declared `base_commit`, and the working tree must have no staged,
+  unstaged or untracked changes. A repository that cannot prove its
+  commit reports `repository_head_unverifiable`; a mismatch reports
+  `repository_base_commit_mismatch`; a dirty checkout reports
+  `repository_is_dirty`. The report adds `repository_commits`.
+- `tools/five_arm_campaign.py` repeats the binding immediately before
+  it registers tasks, so a checkout that moves between validation and
+  execution cannot run. The check covers every repository, not only
+  those named by a task.
+- `tools/build_efficacy_manifest.py` no longer accepts a non-Git
+  directory with a declared commit: an unverifiable commit is refused
+  when the manifest is built, not only when it is validated.
+- Regression coverage lives in `tests/v3/test_build_efficacy_manifest.py`
+  and `tests/v3/test_five_arm_real_run.py`; the latter's fixtures are
+  now real Git checkouts.
+
+Executable permissions remain outside the repository-content
+fingerprint: a v3 digest binds file bytes and symlink targets, not
+modes. SIS-FIX-03 adds a separate execution fingerprint rather than
+changing the content identity.
+
+This is a provenance repair, not an efficacy result.
+
 ## 2026-11-15 — Canonical repository fingerprint (SIS-FIX-01)
 
 The v3 tree digest hashed entries in `os.walk` order, which is

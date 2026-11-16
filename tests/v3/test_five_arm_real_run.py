@@ -22,7 +22,7 @@ from types import SimpleNamespace
 
 from sis.v3.efficacy_manifest import validate_manifest
 from sis.v3.governed_eval import GOVERNED_ARMS, preregister
-from sis.v3.runner import tree_digest
+from sis.v3.runner import repository_execution_digest, tree_digest
 
 ROOT = Path(__file__).resolve().parents[2]
 _SPEC = importlib.util.spec_from_file_location(
@@ -42,6 +42,32 @@ ACCEPTANCE = ("from pathlib import Path\n\n"
               "def test_solution():\n"
               "    assert 'OK' in Path('solution.py').read_text()\n")
 
+GIT = shutil.which("git")
+
+
+def _git(repo: Path, *args: str):
+    return subprocess.run(
+        ["git", "-C", str(repo), *args], check=True,
+        capture_output=True, text=True)
+
+
+def _commit(repo: Path, message: str = "base") -> str:
+    _git(repo, "-c", "user.name=SIS", "-c",
+         "user.email=sis@example.invalid", "commit", "-qm", message)
+    return _git(repo, "rev-parse", "HEAD").stdout.strip()
+
+
+def _repository(path: Path, filename: str, content: str) -> tuple[str, str]:
+    path.mkdir()
+    (path / filename).write_text(content)
+    _git(path, "init", "-q")
+    _git(path, "add", ".")
+    commit = _commit(path)
+    origin = f"https://example.invalid/{path.name}.git"
+    _git(path, "remote", "add", "origin", origin)
+    _git(path, "update-ref", "refs/remotes/origin/main", commit)
+    return commit, origin
+
 
 def _status(available=True, authenticated=True):
     return {"agent": "codex-cli", "available": available,
@@ -54,21 +80,22 @@ def _manifest(root: Path) -> dict:
     repositories = []
     for index in range(5):
         path = root / f"induction-{index}"
-        path.mkdir()
-        (path / "seed.py").write_text("SEED = 1\n")
+        base_commit, origin = _repository(path, "seed.py", "SEED = 1\n")
         repositories.append({
             "repository_id": f"repo-induction-{index}",
             "lineage_id": f"lineage-induction-{index}",
             "path": str(path),
-            "base_commit": f"{index:040x}",
+            "origin": origin,
+            "base_commit": base_commit,
             "repo_snapshot_digest": tree_digest(path, version=3),
+            "repo_execution_digest": repository_execution_digest(path),
             "partition": "induction",
         })
     holdout_repos = []
     for index in range(5):
         holdout = root / f"holdout-{index}"
-        holdout.mkdir()
-        (holdout / "solution.py").write_text(f"NO = {index}\n")
+        base_commit, origin = _repository(
+            holdout, "solution.py", f"NO = {index}\n")
         hidden = root / "private" / f"hidden-{index}.py"
         hidden.parent.mkdir(exist_ok=True)
         hidden.write_text("def test_placeholder():\n    assert True\n")
@@ -76,8 +103,10 @@ def _manifest(root: Path) -> dict:
             "repository_id": f"repo-holdout-{index}",
             "lineage_id": f"lineage-holdout-{index}",
             "path": str(holdout),
-            "base_commit": "f" * 40,
+            "origin": origin,
+            "base_commit": base_commit,
             "repo_snapshot_digest": tree_digest(holdout, version=3),
+            "repo_execution_digest": repository_execution_digest(holdout),
             "partition": "holdout",
             "hidden_tests": {
                 "path": str(hidden),
@@ -282,6 +311,7 @@ class CodexMeteringTests(unittest.TestCase):
         self.assertIsNone(_token_total({}))
 
 
+@unittest.skipUnless(GIT, "git is required for repository commit binding")
 class GuidanceBundleLineageTests(unittest.TestCase):
     """A bundle is learned only when its candidate records resolve."""
 
@@ -405,6 +435,7 @@ class GuidanceBundleLineageTests(unittest.TestCase):
                          ("candidate-B", "candidate-C", "candidate-D"))
 
 
+@unittest.skipUnless(GIT, "git is required for repository commit binding")
 class RealAgentGateTests(unittest.TestCase):
     def setUp(self):
         self._status = campaign_tool.codex_agent_status
@@ -781,8 +812,20 @@ class RealAgentGateTests(unittest.TestCase):
             outside.parent.mkdir(exist_ok=True)
             outside.write_text("EVALUATOR-ONLY")
             (Path(holdout["path"]) / "escape").symlink_to(outside)
+            # The link is committed so the checkout stays clean; custody
+            # still refuses to stage a repository with an external link.
+            _git(Path(holdout["path"]), "add", "escape")
+            holdout["base_commit"] = _commit(
+                Path(holdout["path"]), "external symlink")
+            _git(Path(holdout["path"]), "update-ref",
+                 "refs/remotes/origin/main", "HEAD")
+            for task in document["tasks"]:
+                if task["repository_id"] == holdout["repository_id"]:
+                    task["base_commit"] = holdout["base_commit"]
             holdout["repo_snapshot_digest"] = tree_digest(
                 Path(holdout["path"]), version=3)
+            holdout["repo_execution_digest"] = repository_execution_digest(
+                Path(holdout["path"]))
             manifest = _write(root, document)
             output = root / "report.json"
             code = campaign_tool.run_real(
@@ -815,6 +858,7 @@ class RealAgentGateTests(unittest.TestCase):
         self.assertIn("plain_directory", report["note"])
 
 
+@unittest.skipUnless(GIT, "git is required for repository commit binding")
 class RepositoryTreeValidationTests(unittest.TestCase):
     """A declared snapshot digest is verified against the tree it names.
 
@@ -842,6 +886,8 @@ class RepositoryTreeValidationTests(unittest.TestCase):
                 (Path(source["path"]) / "solution.py").read_text())
             copy["repo_snapshot_digest"] = tree_digest(
                 Path(copy["path"]), version=3)
+            copy["repo_execution_digest"] = repository_execution_digest(
+                Path(copy["path"]))
             report = validate_manifest(document, check_paths=True)
         self.assertFalse(report["valid"])
         self.assertTrue(any("same codebase" in problem
@@ -861,6 +907,8 @@ class RepositoryTreeValidationTests(unittest.TestCase):
                 (Path(holdout["path"]) / "solution.py").read_text())
             induction["repo_snapshot_digest"] = tree_digest(
                 Path(induction["path"]), version=3)
+            induction["repo_execution_digest"] = repository_execution_digest(
+                Path(induction["path"]))
             report = validate_manifest(document, check_paths=True)
         self.assertFalse(report["valid"])
         self.assertEqual(report["holdout_snapshots_used"], 5)
@@ -895,15 +943,6 @@ class RepositoryTreeValidationTests(unittest.TestCase):
             "repository")
 
 
-    def _git(self, repo: Path, *args: str):
-        return subprocess.run(
-            ["git", "-C", str(repo), *args], check=True,
-            capture_output=True, text=True)
-
-    def _commit(self, repo: Path, message: str):
-        self._git(repo, "-c", "user.name=SIS", "-c",
-                  "user.email=sis@example.invalid", "commit", "-qm", message)
-
     @unittest.skipUnless(shutil.which("git"),
                          "git is required for lineage derivation")
     def test_two_revisions_of_one_repository_share_a_lineage(self):
@@ -913,25 +952,30 @@ class RepositoryTreeValidationTests(unittest.TestCase):
             holdout = [item for item in document["repositories"]
                        if item["partition"] == "holdout"]
             first = Path(holdout[0]["path"])
-            self._git(first, "init", "-q")
-            self._git(first, "add", ".")
-            self._commit(first, "base")
-            holdout[0]["repo_snapshot_digest"] = tree_digest(
-                first, version=3)
-
             revision = root / "holdout-0-revision"
             subprocess.run(
                 ["git", "clone", "-q", str(first), str(revision)],
                 check=True, capture_output=True)
             (revision / "solution.py").write_text("REVISION = 2\n")
-            self._git(revision, "add", ".")
-            self._commit(revision, "revision")
+            _git(revision, "add", ".")
+            _commit(revision, "revision")
             second = holdout[1]
             shutil.rmtree(second["path"])
             shutil.move(str(revision), second["path"])
+            _git(Path(second["path"]), "remote", "set-url", "origin",
+                 second["origin"])
+            _git(Path(second["path"]), "update-ref",
+                 "refs/remotes/origin/main", "HEAD")
             second["repo_snapshot_digest"] = tree_digest(
                 Path(second["path"]), version=3)
+            second["repo_execution_digest"] = repository_execution_digest(
+                Path(second["path"]))
+            second["base_commit"] = _git(
+                Path(second["path"]), "rev-parse", "HEAD").stdout.strip()
             second["lineage_id"] = "claimed-independent"
+            for task in document["tasks"]:
+                if task["repository_id"] == second["repository_id"]:
+                    task["base_commit"] = second["base_commit"]
             report = validate_manifest(document, check_paths=True)
         self.assertFalse(report["valid"])
         self.assertTrue(any("share a lineage" in problem
@@ -948,10 +992,20 @@ class RepositoryTreeValidationTests(unittest.TestCase):
                             for problem in report["problems"]),
                         report["problems"])
 
-    def test_a_confirmatory_manifest_requires_a_lineage(self):
+    def test_a_repository_without_history_requires_a_lineage(self):
         with tempfile.TemporaryDirectory() as temp:
-            document = _manifest(Path(temp))
-            del document["repositories"][0]["lineage_id"]
+            root = Path(temp)
+            document = _manifest(root)
+            repository = document["repositories"][0]
+            plain = root / "plain-induction"
+            plain.mkdir()
+            (plain / "seed.py").write_text("SEED = 1\n")
+            repository["path"] = str(plain)
+            repository["repo_snapshot_digest"] = tree_digest(
+                plain, version=3)
+            repository["repo_execution_digest"] = (
+                repository_execution_digest(plain))
+            del repository["lineage_id"]
             report = validate_manifest(document, check_paths=True)
         self.assertFalse(report["valid"])
         self.assertTrue(any("no lineage_id" in problem
