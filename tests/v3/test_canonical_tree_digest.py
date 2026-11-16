@@ -11,6 +11,8 @@ included.
 from __future__ import annotations
 
 import os
+import shutil
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -23,6 +25,7 @@ from sis.v3.runner import (
     TREE_DIGEST_VERSIONS,
     scan_tree,
     tree_digest,
+    verify_repository_digest,
     verify_tree_digest,
 )
 
@@ -59,7 +62,7 @@ class CanonicalTreeDigestTests(unittest.TestCase):
         scan = scan_tree(self.root)
         self.assertEqual(scan.version, CANONICAL_TREE_DIGEST_VERSION)
         self.assertEqual(CANONICAL_TREE_DIGEST_VERSION, 2)
-        self.assertEqual(TREE_DIGEST_VERSIONS, (1, 2))
+        self.assertEqual(TREE_DIGEST_VERSIONS, (1, 2, 3))
 
     def test_identical_contents_ignore_traversal_order(self):
         self._write("a.txt", b"one\n")
@@ -186,19 +189,52 @@ class CanonicalTreeDigestTests(unittest.TestCase):
 
     def test_unknown_digest_versions_are_refused(self):
         self._write("a.txt", b"one\n")
-        for version in (0, 3, True, "2", None):
+        for version in (0, 4, True, "2", None):
             with self.assertRaisesRegex(
                     RunnerError, "unsupported_tree_digest_version"):
                 tree_digest(self.root, version=version)
 
+    @unittest.skipUnless(shutil.which("git"), "git is required")
+    def test_repository_format_ignores_vcs_metadata(self):
+        repo = self.base / "repo-git"
+        repo.mkdir()
+        (repo / "a.py").write_bytes(b"A = 1\n")
+        subprocess.run(["git", "-C", str(repo), "init", "-q"],
+                       check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(repo), "add", "."],
+                       check=True, capture_output=True)
+        subprocess.run(
+            ["git", "-C", str(repo), "-c", "user.name=t", "-c",
+             "user.email=t@e", "commit", "-qm", "base"],
+            check=True, capture_output=True)
+        clone = self.base / "clone-git"
+        subprocess.run(["git", "clone", "-q", str(repo), str(clone)],
+                       check=True, capture_output=True)
+        self.assertNotEqual(tree_digest(repo), tree_digest(clone))
+        self.assertEqual(tree_digest(repo, version=3),
+                         tree_digest(clone, version=3))
+        self.assertEqual(scan_tree(repo, version=3).version, 3)
+
+    def test_verify_repository_digest_reports_the_format(self):
+        self._write("a.txt", b"one\n")
+        repository = tree_digest(self.root, version=3)
+        full = tree_digest(self.root)
+        legacy = tree_digest(self.root, version=1)
+        self.assertEqual(verify_repository_digest(self.root, repository),
+                         "repository")
+        self.assertEqual(verify_repository_digest(self.root, full), "tree:2")
+        self.assertEqual(verify_repository_digest(self.root, legacy), "tree:1")
+        with self.assertRaisesRegex(RunnerError, "tree_digest_mismatch"):
+            verify_repository_digest(self.root, legacy, allow_legacy=False)
+
     def test_stage_repository_binds_the_canonical_digest(self):
         self._write("a.txt", b"one\n")
         self._write("sub/b.txt", b"two\n")
-        expected = tree_digest(self.root)
+        expected = tree_digest(self.root, version=3)
         staged = self.base / "staged"
         self.assertEqual(stage_repository(self.root, staged), expected)
-        self.assertEqual(tree_digest(staged), expected)
-        self.assertEqual(scan_tree(staged).version, 2)
+        self.assertEqual(tree_digest(staged, version=3), expected)
+        self.assertEqual(scan_tree(staged, version=3).version, 3)
 
 
 if __name__ == "__main__":

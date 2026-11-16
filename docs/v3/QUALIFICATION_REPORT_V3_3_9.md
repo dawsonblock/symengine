@@ -20,8 +20,10 @@ general effectiveness remains unproven.
 ## Re-seal: canonical fingerprint repair (2026-11-16)
 
 The archive was re-sealed over the canonical repository fingerprint and
-lineage repair. `release/release_manifest.json` records the source
-commit and archive digest.
+lineage repair. Repository identity now uses the working tree and
+excludes VCS metadata, so clones of one revision share a snapshot
+digest. `release/release_manifest.json` records the source commit and
+archive digest.
 
 Test evidence is the executed suite at that commit, recorded in
 `release/test_evidence.json`; `release/release_manifest.json` records

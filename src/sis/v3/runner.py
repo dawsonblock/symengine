@@ -418,15 +418,21 @@ def mark_private_material_modified(
     )
 
 
-TREE_DIGEST_VERSIONS = (1, 2)
+TREE_DIGEST_VERSIONS = (1, 2, 3)
 # New records always carry the canonical version. Version 1 is legacy:
 # it is retained only to re-verify digests recorded before the canonical
-# format existed.
+# format existed. Version 3 is the repository-content format: it hashes
+# the working tree and excludes VCS metadata, so two clones of one
+# revision share an identity. Version 2 remains the full-tree format
+# used for workspace execution receipts and disk accounting.
 CANONICAL_TREE_DIGEST_VERSION = 2
+REPOSITORY_DIGEST_VERSION = 3
 _TREE_DIGEST_DOMAINS = {
     1: b"sis-v3:tree:1\0",
     2: b"sis-v3:tree:2\0",
+    3: b"sis-v3:repository:1\0",
 }
+_VCS_DIRECTORIES = frozenset({".git", ".hg", ".svn"})
 _HEX_256 = re.compile(r"^[0-9a-f]{64}$")
 
 
@@ -502,7 +508,12 @@ def _scan_tree_legacy(root: Path) -> TreeScan:
                     tuple(sorted(external)), 1)
 
 
-def _scan_tree_canonical(root: Path) -> TreeScan:
+def _scan_tree_canonical(
+    root: Path, *,
+    exclude: frozenset[str] = frozenset(),
+    domain: bytes = _TREE_DIGEST_DOMAINS[2],
+    version: int = 2,
+) -> TreeScan:
     """Canonical v2 tree fingerprint: traversal order is part of the format.
 
     Directory names and entry names are sorted by their encoded bytes at
@@ -514,9 +525,12 @@ def _scan_tree_canonical(root: Path) -> TreeScan:
     and symlinks are interleaved in name order. Empty directories,
     special files, and file permissions are not part of the fingerprint —
     this is a content identity, not a filesystem metadata identity.
+
+    ``exclude`` removes matching names at every level; the repository
+    format uses it to drop VCS metadata so clones share an identity.
     """
     root = Path(root)
-    hasher = hashlib.sha256(_TREE_DIGEST_DOMAINS[2])
+    hasher = hashlib.sha256(domain)
     file_count = 0
     total_bytes = 0
     external: list[str] = []
@@ -524,6 +538,8 @@ def _scan_tree_canonical(root: Path) -> TreeScan:
         kept = []
         linked_dirs = []
         for name in dirnames:
+            if name in exclude:
+                continue
             full = Path(dirpath) / name
             if full.is_symlink():
                 linked_dirs.append(name)
@@ -531,6 +547,8 @@ def _scan_tree_canonical(root: Path) -> TreeScan:
                 kept.append(name)
         dirnames[:] = sorted(kept, key=os.fsencode)
         for name in sorted(filenames + linked_dirs, key=os.fsencode):
+            if name in exclude:
+                continue
             full = Path(dirpath) / name
             relative = full.relative_to(root).as_posix()
             path_bytes = os.fsencode(relative)
@@ -557,20 +575,31 @@ def _scan_tree_canonical(root: Path) -> TreeScan:
                 + b"\0" + str(size).encode("ascii") + b"\0"
             )
     return TreeScan(hasher.hexdigest(), file_count, total_bytes,
-                    tuple(sorted(external)), 2)
+                    tuple(sorted(external)), version)
+
+
+def _scan_tree_repository(root: Path) -> TreeScan:
+    return _scan_tree_canonical(
+        Path(root), exclude=_VCS_DIRECTORIES,
+        domain=_TREE_DIGEST_DOMAINS[REPOSITORY_DIGEST_VERSION],
+        version=REPOSITORY_DIGEST_VERSION)
 
 
 def scan_tree(root: Path, *, version: int = CANONICAL_TREE_DIGEST_VERSION) -> TreeScan:
     """Digest every file byte and symlink target under ``root``.
 
-    ``version=2`` (default) is the canonical, order-independent format
-    used for every new record. ``version=1`` reproduces the legacy
-    traversal-order-dependent digest and is supported only to re-verify
-    records created before the canonical format existed.
+    ``version=2`` (default) is the canonical full-tree format used for
+    workspace execution receipts and disk accounting. ``version=3`` is
+    the repository-content format: it excludes VCS metadata, so two
+    clones of one revision share an identity. ``version=1`` reproduces
+    the legacy traversal-order-dependent digest and is supported only to
+    re-verify records created before the canonical format existed.
     """
     _check_tree_digest_version(version)
     if version == 1:
         return _scan_tree_legacy(Path(root))
+    if version == REPOSITORY_DIGEST_VERSION:
+        return _scan_tree_repository(Path(root))
     return _scan_tree_canonical(Path(root))
 
 
@@ -609,6 +638,41 @@ def verify_tree_digest(
             legacy = None
         if legacy == expected:
             return 1
+    raise RunnerError("tree_digest_mismatch")
+
+
+def verify_repository_digest(
+    root: Path,
+    expected: str,
+    *,
+    canonical: str | None = None,
+    allow_full_tree: bool = True,
+    allow_legacy: bool = True,
+) -> str:
+    """Match a recorded repository digest and report the format that matched.
+
+    The repository-content v3 digest (working tree, no VCS metadata) is
+    checked first. ``allow_full_tree`` accepts a v2 full-tree digest so
+    records minted before the repository format remain replayable;
+    ``allow_legacy`` accepts the order-dependent v1 digest. Returns
+    ``"repository"``, ``"tree:2"`` or ``"tree:1"``. ``canonical`` must be
+    the v3 digest of ``root`` when supplied.
+    """
+    if not isinstance(expected, str) or not _HEX_256.fullmatch(expected):
+        raise RunnerError("tree_digest_malformed")
+    if canonical is None:
+        canonical = tree_digest(root, version=REPOSITORY_DIGEST_VERSION)
+    if canonical == expected:
+        return "repository"
+    if allow_full_tree and tree_digest(root) == expected:
+        return "tree:2"
+    if allow_legacy:
+        try:
+            legacy = tree_digest(root, version=1)
+        except UnicodeEncodeError:
+            legacy = None
+        if legacy == expected:
+            return "tree:1"
     raise RunnerError("tree_digest_mismatch")
 
 

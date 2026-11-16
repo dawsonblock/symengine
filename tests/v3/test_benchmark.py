@@ -37,7 +37,8 @@ class BenchmarkTests(unittest.TestCase):
         (self.repo / "calc.py").write_text("def scale(a, b):\n    return a - b\n")
         self.task = TaskEnvelopeV1(
             schema_version=1, task_id="t1",
-            repo_snapshot_digest=tree_digest(self.repo), base_commit=None,
+            repo_snapshot_digest=tree_digest(self.repo, version=3),
+            base_commit=None,
             task_statement_digest="0" * 64, permitted_commands=("x",),
             isolation_profile="unverified_local", time_budget_seconds=60,
             token_budget=1000, tool_budget=10, actor_id="a",
@@ -169,7 +170,8 @@ class StagingTests(unittest.TestCase):
             files={"acc.py": b"assert True\n"})
         self.task = TaskEnvelopeV1(
             schema_version=1, task_id="t1",
-            repo_snapshot_digest=tree_digest(self.repo), base_commit=None,
+            repo_snapshot_digest=tree_digest(self.repo, version=3),
+            base_commit=None,
             task_statement_digest="0" * 64, permitted_commands=("x",),
             isolation_profile="unverified_local", time_budget_seconds=60,
             token_budget=1000, tool_budget=10, actor_id="a",
@@ -223,7 +225,7 @@ class StagingTests(unittest.TestCase):
         (self.repo / "a.py").write_text("A = 1\n")
         os.link(self.repo / "a.py", self.repo / "b.py")
         task = replace(self.task,
-                       repo_snapshot_digest=tree_digest(self.repo))
+                       repo_snapshot_digest=tree_digest(self.repo, version=3))
         seen = {}
 
         def agent(ctx):
@@ -240,7 +242,7 @@ class StagingTests(unittest.TestCase):
         from dataclasses import replace
         (self.repo / "alias.py").symlink_to("calc.py")
         task = replace(self.task,
-                       repo_snapshot_digest=tree_digest(self.repo))
+                       repo_snapshot_digest=tree_digest(self.repo, version=3))
         seen = {}
 
         def agent(ctx):
@@ -286,7 +288,8 @@ class TerminationTests(unittest.TestCase):
             files={"acc.py": b"assert True\n"})
         self.task = TaskEnvelopeV1(
             schema_version=1, task_id="t1",
-            repo_snapshot_digest=tree_digest(self.repo), base_commit=None,
+            repo_snapshot_digest=tree_digest(self.repo, version=3),
+            base_commit=None,
             task_statement_digest="0" * 64, permitted_commands=("x",),
             isolation_profile="unverified_local", time_budget_seconds=1,
             token_budget=1000, tool_budget=10, actor_id="a",

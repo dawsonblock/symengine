@@ -271,7 +271,7 @@ def _repositories(spec: Mapping) -> tuple[list[dict], dict]:
             _require(Path(toplevel).resolve() == root,
                      f"{label} is not the repository root")
         try:
-            digest = tree_digest(root)
+            digest = tree_digest(root, version=3)
         except (OSError, RunnerError) as exc:
             raise StudySpecError(
                 f"{label} cannot be fingerprinted: {exc}") from exc

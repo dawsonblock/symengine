@@ -23,7 +23,7 @@ from pathlib import Path
 
 from .contracts import ContractError, canonical_digest
 from .governed_eval import GOVERNED_ARMS, preregister, required_sample_size
-from .runner import RunnerError, tree_digest, verify_tree_digest
+from .runner import (RunnerError, tree_digest, verify_repository_digest)
 
 PLACEHOLDER = re.compile(r"^<[^<>]+>$")
 _HEX40 = re.compile(r"^[0-9a-f]{40}$")
@@ -237,20 +237,21 @@ def _validate_repositories(document, problems: list[str],
 
 def _verify_repository_trees(by_id: dict[str, dict],
                              problems: list[str]
-                             ) -> tuple[dict[str, str], dict[str, int]]:
+                             ) -> tuple[dict[str, str], dict[str, str]]:
     """Re-fingerprint every repository path and reject duplicate codebases.
 
     A declared snapshot digest is a claim. When paths are available the
-    validator recomputes the canonical v2 tree digest, verifies the
-    declared digest (legacy v1 records are accepted read-only), and
-    groups repositories by the *computed* digest. Two holdout entries —
-    or an induction and a holdout entry — that resolve to the same tree
-    are the same codebase, however they are named and whatever digests
-    they declare. Identical induction repositories are permitted: they
-    only duplicate training material.
+    validator recomputes the repository-content digest (working tree,
+    VCS metadata excluded), verifies the declared digest (full-tree v2
+    and legacy v1 records are accepted read-only), and groups
+    repositories by the *computed* digest. Two holdout entries — or an
+    induction and a holdout entry — that resolve to the same tree are
+    the same codebase, however they are named and whatever digests they
+    declare. Identical induction repositories are permitted: they only
+    duplicate training material.
     """
     digests: dict[str, str] = {}
-    versions: dict[str, int] = {}
+    versions: dict[str, str] = {}
     for repository_id, repository in by_id.items():
         path = repository.get("path")
         if not isinstance(path, str) or not path:
@@ -263,8 +264,8 @@ def _verify_repository_trees(by_id: dict[str, dict],
             continue
         declared = repository.get("repo_snapshot_digest")
         try:
-            canonical = tree_digest(root)
-            versions[repository_id] = verify_tree_digest(
+            canonical = tree_digest(root, version=3)
+            versions[repository_id] = verify_repository_digest(
                 root, declared, canonical=canonical)
         except (OSError, RunnerError):
             _problem(problems,

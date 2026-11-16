@@ -29,7 +29,8 @@ from pathlib import Path
 
 from .contracts import ContractError, GuidanceV1, TaskEnvelopeV1, canonical_digest
 from .episode_store import EpisodeStore
-from .runner import RunnerError, scan_tree, tree_digest
+from .runner import (RunnerError, scan_tree, tree_digest,
+                     verify_repository_digest)
 from .verifier import OutcomeVerifier
 
 ARMS = ("A", "B", "C", "D")
@@ -108,7 +109,7 @@ def stage_repository(base_dir: str | Path, workspace: str | Path) -> str:
         raise BenchmarkError("repository_source_is_not_a_plain_directory")
     _reject_hard_links(source)
     try:
-        before = scan_tree(source)
+        before = scan_tree(source, version=3)
     except (OSError, RunnerError) as exc:
         raise BenchmarkError(f"repository_scan_failed:{exc}") from exc
     if before.external_symlinks:
@@ -120,7 +121,7 @@ def stage_repository(base_dir: str | Path, workspace: str | Path) -> str:
     except (OSError, shutil.Error) as exc:
         raise BenchmarkError(f"repository_staging_failed:{exc}") from exc
     try:
-        after = scan_tree(target)
+        after = scan_tree(target, version=3)
     except (OSError, RunnerError) as exc:
         raise BenchmarkError(f"repository_scan_failed:{exc}") from exc
     if after.external_symlinks:
@@ -342,14 +343,16 @@ class BenchmarkHarness:
         retain_workspace = False
         try:
             staged_digest = stage_repository(base_dir, workspace)
-            if (task.repo_snapshot_digest
-                    and staged_digest != task.repo_snapshot_digest
-                    and tree_digest(workspace, version=1)
-                    != task.repo_snapshot_digest):
-                # The staged tree is the authority; the legacy v1 digest
-                # is only consulted so a pre-canonical task envelope can
-                # still be replayed.
-                raise BenchmarkError("repository_snapshot_mismatch")
+            if task.repo_snapshot_digest and staged_digest != task.repo_snapshot_digest:
+                try:
+                    verify_repository_digest(
+                        workspace, task.repo_snapshot_digest,
+                        canonical=staged_digest)
+                except RunnerError as exc:
+                    # The staged tree is the authority; a full-tree v2 or
+                    # legacy v1 record is accepted only if it matches.
+                    raise BenchmarkError(
+                        "repository_snapshot_mismatch") from exc
             guidance = context_provider(task, arm) if context_provider else None
             context_digest = None
             if arm in {"B", "C"}:

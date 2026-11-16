@@ -67,7 +67,8 @@ from sis.v3.learning_qualification import (  # noqa: E402
     CodexCliAgent, FiveArmCampaign, build_context_provider,
     codex_agent_status, write_report)
 from sis.v3.runner import (LocalSubprocessExecutor, ResourceLimits,  # noqa: E402
-                           RunnerError, tree_digest, verify_tree_digest)
+                           RunnerError, tree_digest,
+                           verify_repository_digest)
 from sis.v3.verifier import OutcomeVerifier  # noqa: E402
 
 PY = sys.executable
@@ -122,7 +123,7 @@ def _build_demo(root: Path):
             base_commit="abc1234")
         tasks.append((TaskEnvelopeV1(
             schema_version=1, task_id=task_id,
-            repo_snapshot_digest=tree_digest(repo),
+            repo_snapshot_digest=tree_digest(repo, version=3),
             base_commit="abc1234",
             task_statement_digest=hashlib.sha256(
                 task_id.encode()).hexdigest(),
@@ -498,16 +499,16 @@ def _real_tasks(document: Mapping, verifier: OutcomeVerifier, *,
                              + repository["repository_id"])
         snapshot = snapshots.get(repository["repository_id"])
         if snapshot is None:
-            canonical = tree_digest(repo_path)
+            canonical = tree_digest(repo_path, version=3)
             declared = repository["repo_snapshot_digest"]
             if canonical == declared:
                 snapshot = canonical
             else:
-                # A pre-canonical manifest may carry a legacy v1 digest;
-                # the repository is accepted only if its exact tree
-                # matches that record.
+                # A pre-canonical manifest may carry a full-tree v2 or
+                # legacy v1 digest; the repository is accepted only if
+                # its exact tree matches that record.
                 try:
-                    verify_tree_digest(
+                    verify_repository_digest(
                         repo_path, declared, canonical=canonical)
                 except RunnerError as exc:
                     raise ValueError(

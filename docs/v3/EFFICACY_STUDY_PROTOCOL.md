@@ -94,10 +94,11 @@ The validator enforces:
   holdout codebases and lineages;
 - at least ten repositories, of which at least five are holdout
   repositories, and at least `sample_size` tasks;
-- `--check-paths` re-fingerprints every repository, verifies the
-  declared canonical snapshot digest (legacy v1 digests are accepted
-  read-only), derives Git lineage, and rejects duplicate codebases or
-  shared lineages across holdout entries;
+- `--check-paths` re-fingerprints every repository with the
+  repository-content format (working tree, VCS metadata excluded),
+  verifies the declared digest (full-tree v2 and legacy v1 records are
+  accepted read-only), derives Git lineage, and rejects duplicate
+  codebases or shared lineages across holdout entries;
 - hidden tests outside the public repository;
 - safe relative acceptance-file paths;
 - pinned agent kind/model/CLI version;

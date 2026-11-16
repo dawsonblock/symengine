@@ -221,15 +221,20 @@ The v3 tree digest hashed entries in filesystem traversal order, so
 identical contents could receive different identities and staging an
 unchanged repository could fail. Tree digests are now versioned.
 
-- `scan_tree(..., version=2)` is the default and canonical format. It
-  sorts every directory level by encoded name bytes, so the digest
-  depends only on contents, never on directory iteration order. Empty
-  directories, special files and permissions are not part of the
-  fingerprint.
+- `scan_tree(..., version=2)` is the default full-tree format used for
+  workspace receipts and disk accounting. It sorts every directory
+  level by encoded name bytes, so the digest depends only on contents,
+  never on directory iteration order. Empty directories, special files
+  and permissions are not part of the fingerprint.
+- Repository identity uses `version=3`, which hashes the working tree
+  and excludes `.git`, `.hg` and `.svn`, so two clones of one revision
+  share a snapshot digest. Manifests, task envelopes and study-kit
+  specs use it; full-tree v2 and legacy v1 records remain replayable
+  read-only.
 - `version=1` reproduces the legacy digest byte for byte and is used
-  only to re-verify historical records. `verify_tree_digest()` reports
-  which version matched; new receipts, task envelopes, registry
-  identities and manifests carry v2.
+  only to re-verify historical records. `verify_tree_digest()` and
+  `verify_repository_digest()` report which format matched; new
+  receipts and task envelopes carry v2 or v3 respectively.
 - A task envelope or manifest that carries a legacy digest is accepted
   only when the exact tree matches that record.
 - Manifest validation with `--check-paths` re-fingerprints every

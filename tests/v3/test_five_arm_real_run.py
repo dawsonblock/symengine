@@ -61,7 +61,7 @@ def _manifest(root: Path) -> dict:
             "lineage_id": f"lineage-induction-{index}",
             "path": str(path),
             "base_commit": f"{index:040x}",
-            "repo_snapshot_digest": tree_digest(path),
+            "repo_snapshot_digest": tree_digest(path, version=3),
             "partition": "induction",
         })
     holdout_repos = []
@@ -77,7 +77,7 @@ def _manifest(root: Path) -> dict:
             "lineage_id": f"lineage-holdout-{index}",
             "path": str(holdout),
             "base_commit": "f" * 40,
-            "repo_snapshot_digest": tree_digest(holdout),
+            "repo_snapshot_digest": tree_digest(holdout, version=3),
             "partition": "holdout",
             "hidden_tests": {
                 "path": str(hidden),
@@ -782,7 +782,7 @@ class RealAgentGateTests(unittest.TestCase):
             outside.write_text("EVALUATOR-ONLY")
             (Path(holdout["path"]) / "escape").symlink_to(outside)
             holdout["repo_snapshot_digest"] = tree_digest(
-                Path(holdout["path"]))
+                Path(holdout["path"]), version=3)
             manifest = _write(root, document)
             output = root / "report.json"
             code = campaign_tool.run_real(
@@ -840,7 +840,8 @@ class RepositoryTreeValidationTests(unittest.TestCase):
             source, copy = holdout[0], holdout[1]
             (Path(copy["path"]) / "solution.py").write_text(
                 (Path(source["path"]) / "solution.py").read_text())
-            copy["repo_snapshot_digest"] = tree_digest(Path(copy["path"]))
+            copy["repo_snapshot_digest"] = tree_digest(
+                Path(copy["path"]), version=3)
             report = validate_manifest(document, check_paths=True)
         self.assertFalse(report["valid"])
         self.assertTrue(any("same codebase" in problem
@@ -859,7 +860,7 @@ class RepositoryTreeValidationTests(unittest.TestCase):
             (Path(induction["path"]) / "solution.py").write_text(
                 (Path(holdout["path"]) / "solution.py").read_text())
             induction["repo_snapshot_digest"] = tree_digest(
-                Path(induction["path"]))
+                Path(induction["path"]), version=3)
             report = validate_manifest(document, check_paths=True)
         self.assertFalse(report["valid"])
         self.assertEqual(report["holdout_snapshots_used"], 5)
@@ -887,9 +888,11 @@ class RepositoryTreeValidationTests(unittest.TestCase):
             report = validate_manifest(document, check_paths=True)
         self.assertTrue(report["valid"], report["problems"])
         self.assertEqual(
-            report["repository_tree_versions"][induction["repository_id"]], 1)
+            report["repository_tree_versions"][induction["repository_id"]],
+            "tree:1")
         self.assertEqual(
-            report["repository_tree_versions"]["repo-holdout-0"], 2)
+            report["repository_tree_versions"]["repo-holdout-0"],
+            "repository")
 
 
     def _git(self, repo: Path, *args: str):
@@ -913,7 +916,8 @@ class RepositoryTreeValidationTests(unittest.TestCase):
             self._git(first, "init", "-q")
             self._git(first, "add", ".")
             self._commit(first, "base")
-            holdout[0]["repo_snapshot_digest"] = tree_digest(first)
+            holdout[0]["repo_snapshot_digest"] = tree_digest(
+                first, version=3)
 
             revision = root / "holdout-0-revision"
             subprocess.run(
@@ -926,7 +930,7 @@ class RepositoryTreeValidationTests(unittest.TestCase):
             shutil.rmtree(second["path"])
             shutil.move(str(revision), second["path"])
             second["repo_snapshot_digest"] = tree_digest(
-                Path(second["path"]))
+                Path(second["path"]), version=3)
             second["lineage_id"] = "claimed-independent"
             report = validate_manifest(document, check_paths=True)
         self.assertFalse(report["valid"])

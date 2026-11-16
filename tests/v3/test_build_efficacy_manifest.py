@@ -120,7 +120,7 @@ def study(root: Path) -> dict:
 
 def _bundle(spec: dict) -> dict:
     induction = sorted(
-        tree_digest(Path(repository["path"]))
+        tree_digest(Path(repository["path"]), version=3)
         for repository in spec["repositories"]
         if repository["partition"] == "induction")
     components = {}
@@ -353,7 +353,7 @@ class StudyKitTests(unittest.TestCase):
         holdout = next(repository for repository in self.spec["repositories"]
                        if repository["partition"] == "holdout")
         bundle["training"]["repository_digests"] = [
-            tree_digest(Path(holdout["path"]))]
+            tree_digest(Path(holdout["path"]), version=3)]
         bundle["bundle_digest"] = canonical_digest(
             "learned_guidance_bundle", 1,
             {key: value for key, value in bundle.items()

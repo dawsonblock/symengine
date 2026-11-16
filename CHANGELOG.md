@@ -16,6 +16,12 @@ with `repository_changed_during_staging`. The digest is now versioned.
 - `version=1` reproduces the legacy traversal-order-dependent digest
   byte for byte. It exists only to re-verify historical records and
   must not mint a digest for a new record.
+- `version=3` is the repository-content format: it hashes the working
+  tree and excludes `.git`, `.hg` and `.svn`, so two clones of one
+  revision share a snapshot digest. Manifests, task envelopes and the
+  study kit use it. Workspace receipts and disk accounting stay on the
+  full-tree v2 format. `verify_repository_digest()` accepts v3 first
+  and replays full-tree v2 and legacy v1 records read-only.
 - `verify_tree_digest(root, expected)` returns the version that
   matched (2, then 1 unless `allow_legacy=False`). `TreeScan` records
   its `version`. New execution receipts, task envelopes, registry
