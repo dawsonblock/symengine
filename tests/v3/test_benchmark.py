@@ -1,5 +1,6 @@
 """SIS3-012: paired four-arm harness with independent scoring."""
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -48,6 +49,46 @@ class BenchmarkTests(unittest.TestCase):
             verifier=self.verifier, work_root=self.root / "work",
         )
         self.budget = BudgetCaps(wall_seconds=60, token_budget=1000, tool_budget=10)
+
+    @unittest.skipUnless(shutil.which("git"), "git is required")
+    def test_a_local_git_clone_stages_and_scores(self):
+        source = self.root / "git-source"
+        source.mkdir()
+        (source / "calc.py").write_text(
+            "def scale(a, b):\n    return a - b\n")
+        subprocess.run(["git", "-C", str(source), "init", "-q"],
+                       check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(source), "add", "."],
+                       check=True, capture_output=True)
+        subprocess.run(
+            ["git", "-C", str(source), "-c", "user.name=t", "-c",
+             "user.email=t@e", "commit", "-qm", "base"],
+            check=True, capture_output=True)
+        clone = self.root / "git-clone"
+        subprocess.run(
+            ["git", "clone", "--local", "-q", str(source), str(clone)],
+            check=True, capture_output=True)
+        self.verifier.register_task(
+            actor_role="evaluator", task_id="t-git",
+            criterion_version="v1", argv=(sys.executable, "acc.py"),
+            files={"acc.py": b"import calc; assert calc.scale(3,4)==12\n"})
+        task = TaskEnvelopeV1(
+            schema_version=1, task_id="t-git",
+            repo_snapshot_digest=tree_digest(clone, version=3),
+            base_commit=None, task_statement_digest="0" * 64,
+            permitted_commands=("x",), isolation_profile="unverified_local",
+            time_budget_seconds=60, token_budget=1000, tool_budget=10,
+            actor_id="a", evaluator_task_ref="t-git")
+
+        def agent(ctx):
+            (ctx.workspace / "calc.py").write_text(
+                "def scale(a, b):\n    return a * b\n")
+
+        report = self.harness.run([(task, clone)], agent,
+                                  budget=self.budget, arms=("A",))
+        row = report["per_task"][0]["arms"]["A"]
+        self.assertNotIn("error", row)
+        self.assertEqual(row["outcome"], "pass")
 
     def test_d_guided_agent_wins_paired(self):
         """D arm gets guidance and fixes; A/B/C leave the bug in place."""

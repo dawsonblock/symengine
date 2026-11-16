@@ -458,6 +458,23 @@ def _external_symlink(root: Path, full: Path) -> bool:
     return not resolved.is_relative_to(root.resolve())
 
 
+def external_symlinks(root: Path) -> tuple[str, ...]:
+    """List symlinks anywhere under ``root`` that resolve outside it.
+
+    Unlike the repository-content scan, this walker includes VCS
+    metadata. Staging must reject an external link even when it lives
+    under ``.git``, because the link is copied into the workspace.
+    """
+    root = Path(root)
+    external: list[str] = []
+    for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
+        for name in dirnames + filenames:
+            full = Path(dirpath) / name
+            if full.is_symlink() and _external_symlink(root, full):
+                external.append(full.relative_to(root).as_posix())
+    return tuple(sorted(external))
+
+
 def _scan_tree_legacy(root: Path) -> TreeScan:
     """Reproduce the pre-canonical digest byte for byte.
 

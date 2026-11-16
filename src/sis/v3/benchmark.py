@@ -29,7 +29,7 @@ from pathlib import Path
 
 from .contracts import ContractError, GuidanceV1, TaskEnvelopeV1, canonical_digest
 from .episode_store import EpisodeStore
-from .runner import (RunnerError, scan_tree, tree_digest,
+from .runner import (RunnerError, external_symlinks, scan_tree, tree_digest,
                      verify_repository_digest)
 from .verifier import OutcomeVerifier
 
@@ -40,6 +40,11 @@ ALL_ARMS = ("A", "B", "C", "D", "E")
 # How long the harness waits for a cancelled arm to actually stop before
 # it declares the workspace unsafe to remove or reuse.
 _TERMINATION_GRACE_SECONDS = 10.0
+# VCS metadata is not repository content: the v3 identity excludes it,
+# and a local Git clone legitimately hard-links its object database to
+# the source. The staging guard must not treat those links as external
+# content links.
+_VCS_DIRECTORIES = frozenset({".git", ".hg", ".svn"})
 
 
 class BenchmarkError(RuntimeError):
@@ -58,8 +63,12 @@ def _reject_hard_links(root: Path) -> None:
     """
     counts: dict[tuple[int, int], int] = {}
     entries: list[tuple[Path, os.stat_result]] = []
-    for dirpath, _dirnames, filenames in os.walk(root, followlinks=False):
+    for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
+        dirnames[:] = [name for name in dirnames
+                       if name not in _VCS_DIRECTORIES]
         for name in filenames:
+            if name in _VCS_DIRECTORIES:
+                continue
             full = Path(dirpath) / name
             if full.is_symlink():
                 continue
@@ -116,6 +125,10 @@ def stage_repository(base_dir: str | Path, workspace: str | Path) -> str:
         raise BenchmarkError(
             "repository_contains_external_symlinks:"
             + ",".join(before.external_symlinks))
+    external = external_symlinks(source)
+    if external:
+        raise BenchmarkError(
+            "repository_contains_external_symlinks:" + ",".join(external))
     try:
         shutil.copytree(source, target, dirs_exist_ok=True, symlinks=True)
     except (OSError, shutil.Error) as exc:
@@ -128,6 +141,10 @@ def stage_repository(base_dir: str | Path, workspace: str | Path) -> str:
         raise BenchmarkError(
             "repository_contains_external_symlinks:"
             + ",".join(after.external_symlinks))
+    external = external_symlinks(target)
+    if external:
+        raise BenchmarkError(
+            "repository_contains_external_symlinks:" + ",".join(external))
     if after.digest != before.digest:
         raise BenchmarkError("repository_changed_during_staging")
     # A hard link swapped in during the copy is copied as an independent

@@ -18,7 +18,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from sis.v3.benchmark import stage_repository
+from sis.v3.benchmark import BenchmarkError, stage_repository
 from sis.v3.runner import (
     CANONICAL_TREE_DIGEST_VERSION,
     RunnerError,
@@ -214,6 +214,49 @@ class CanonicalTreeDigestTests(unittest.TestCase):
         self.assertEqual(tree_digest(repo, version=3),
                          tree_digest(clone, version=3))
         self.assertEqual(scan_tree(repo, version=3).version, 3)
+
+    @unittest.skipUnless(shutil.which("git"), "git is required")
+    def test_local_clone_stages_without_hard_link_rejection(self):
+        repo = self.base / "repo-local"
+        repo.mkdir()
+        (repo / "a.py").write_bytes(b"A = 1\n")
+        subprocess.run(["git", "-C", str(repo), "init", "-q"],
+                       check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(repo), "add", "."],
+                       check=True, capture_output=True)
+        subprocess.run(
+            ["git", "-C", str(repo), "-c", "user.name=t", "-c",
+             "user.email=t@e", "commit", "-qm", "base"],
+            check=True, capture_output=True)
+        clone = self.base / "clone-local"
+        subprocess.run(
+            ["git", "clone", "--local", "-q", str(repo), str(clone)],
+            check=True, capture_output=True)
+        staged = self.base / "staged-local"
+        digest = stage_repository(clone, staged)
+        self.assertEqual(digest, tree_digest(clone, version=3))
+        self.assertEqual(tree_digest(staged, version=3), digest)
+
+    @unittest.skipUnless(shutil.which("git"), "git is required")
+    @unittest.skipUnless(POSIX, "symlink semantics are POSIX-only")
+    def test_staging_rejects_external_symlink_inside_git(self):
+        repo = self.base / "repo-evil"
+        repo.mkdir()
+        (repo / "a.py").write_bytes(b"A = 1\n")
+        subprocess.run(["git", "-C", str(repo), "init", "-q"],
+                       check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(repo), "add", "."],
+                       check=True, capture_output=True)
+        subprocess.run(
+            ["git", "-C", str(repo), "-c", "user.name=t", "-c",
+             "user.email=t@e", "commit", "-qm", "base"],
+            check=True, capture_output=True)
+        outside = self.base / "secret.txt"
+        outside.write_text("EVALUATOR-ONLY")
+        (repo / ".git" / "evil").symlink_to(outside)
+        with self.assertRaisesRegex(BenchmarkError,
+                                    "repository_contains_external_symlinks"):
+            stage_repository(repo, self.base / "staged-evil")
 
     def test_verify_repository_digest_reports_the_format(self):
         self._write("a.txt", b"one\n")

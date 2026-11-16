@@ -39,7 +39,7 @@ from sis.v3.contracts import ContractError, canonical_digest  # noqa: E402
 from sis.v3.efficacy_manifest import validate_manifest  # noqa: E402
 from sis.v3.governed_eval import GOVERNED_ARMS, preregister  # noqa: E402
 from sis.v3.learning_qualification import codex_agent_status  # noqa: E402
-from sis.v3.runner import RunnerError, tree_digest  # noqa: E402
+from sis.v3.runner import (RunnerError, external_symlinks, tree_digest)  # noqa: E402
 
 MAX_SPEC_BYTES = 4 << 20
 HEX40 = re.compile(r"^[0-9a-f]{40}$")
@@ -270,6 +270,10 @@ def _repositories(spec: Mapping) -> tuple[list[dict], dict]:
         if toplevel is not None:
             _require(Path(toplevel).resolve() == root,
                      f"{label} is not the repository root")
+        external = external_symlinks(root)
+        _require(not external,
+                 f"{label} contains external symlinks: "
+                 + ", ".join(external))
         try:
             digest = tree_digest(root, version=3)
         except (OSError, RunnerError) as exc:

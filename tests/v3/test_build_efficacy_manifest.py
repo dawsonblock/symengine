@@ -223,6 +223,17 @@ class StudyKitTests(unittest.TestCase):
                                     "below the preregistered sample_size"):
             builder.build_manifest(self.spec, check_agent=False)
 
+    @unittest.skipUnless(sys.platform != "win32", "symlink semantics are POSIX")
+    def test_an_external_symlink_is_refused(self):
+        induction = next(repository for repository in self.spec["repositories"]
+                         if repository["partition"] == "induction")
+        outside = self.root / "secret.txt"
+        outside.write_text("EVALUATOR-ONLY")
+        (Path(induction["path"]) / "escape").symlink_to(outside)
+        with self.assertRaisesRegex(builder.StudySpecError,
+                                    "external symlinks"):
+            builder.build_manifest(self.spec, check_agent=False)
+
     def test_a_dirty_repository_is_refused(self):
         induction = next(repository for repository in self.spec["repositories"]
                          if repository["partition"] == "induction")
