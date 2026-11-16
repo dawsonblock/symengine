@@ -150,7 +150,7 @@ def _handler_class(*, key, admin_key, service, v3_only, v3_service):
                     raw = self.rfile.read(int(length))
                     try:
                         data = json.loads(raw)
-                    except (ValueError, UnicodeDecodeError):
+                    except (ValueError, UnicodeDecodeError, RecursionError):
                         return self.respond(400, {"error": "invalid JSON"})
                     try:
                         code, body = v3_service.handle(path, data, self.headers)
@@ -169,7 +169,7 @@ def _handler_class(*, key, admin_key, service, v3_only, v3_service):
                 raw = self.rfile.read(int(length))
                 try:
                     data = json.loads(raw)
-                except (ValueError, UnicodeDecodeError):
+                except (ValueError, UnicodeDecodeError, RecursionError):
                     return self.respond(400, {"error": "invalid JSON"})
                 if path not in POST_ROUTE_HANDLERS:
                     return self.respond(404, {"error": "not found"})

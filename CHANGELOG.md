@@ -26,6 +26,19 @@ contained.
   redirect the query; `tests/v3/test_release_artifact.py` covers the
   porcelain path.
 
+## 2026-11-16 — A deeply nested JSON body is answered, not dropped (SIS-FIX-07)
+
+`json.loads` raises `RecursionError` for a body such as 200 KB of `[`.
+Both HTTP parse sites caught only `ValueError` and `UnicodeDecodeError`,
+so the exception escaped `do_POST` and the connection closed without a
+response. `RecursionError` is now treated as invalid JSON and answered
+with `400`. Regression coverage lives in
+`tests/v3/test_v332_security_regressions.py`.
+
+The README quickstart now passes `--namespace arithmetic_demo` to
+`sis rules`; the study trains that namespace, so the previous command
+printed an empty list.
+
 ## 2026-11-16 — Powered-plan direction and release-path validation (SIS-FIX-05)
 
 The powered planner could not register the study it exists to power. A

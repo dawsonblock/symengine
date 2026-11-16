@@ -63,7 +63,7 @@ Then learn and apply a rule:
 ```bash
 sis --db ./knowledge.sqlite3 train examples/arithmetic_study.json
 sis --db ./knowledge.sqlite3 predict examples/predict.json
-sis --db ./knowledge.sqlite3 rules
+sis --db ./knowledge.sqlite3 rules --namespace arithmetic_demo
 sis --db ./knowledge.sqlite3 audit
 ```
 

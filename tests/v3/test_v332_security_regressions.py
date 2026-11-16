@@ -969,6 +969,17 @@ class HttpBoundaryTests(_Base):
              "execution_identity": self.fixture.identity().to_dict()})
         self.assertEqual(status, 401)
 
+    def test_deeply_nested_json_is_rejected_with_a_response(self):
+        connection = http.client.HTTPConnection(
+            "127.0.0.1", self.port, timeout=8)
+        connection.request("POST", "/v3/guidance", b"[" * 200_000,
+                           {"Content-Type": "application/json"})
+        response = connection.getresponse()
+        payload = json.loads(response.read())
+        connection.close()
+        self.assertEqual(response.status, 400)
+        self.assertEqual(payload["error"], "invalid JSON")
+
     def test_health_reports_v3_readiness(self):
         status, body = self.request("GET", "/health")
         self.assertEqual(status, 200)
