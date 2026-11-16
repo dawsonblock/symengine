@@ -17,6 +17,49 @@ Until that key ceremony is completed, `tools/check_release_ci.py --mode
 release` must reject this bundle. The learning workflow is unchanged; its
 general effectiveness remains unproven.
 
+## Re-seal: canonical fingerprint repair (2026-11-16)
+
+The archive was re-sealed over the canonical repository fingerprint and
+lineage repair. The source commit is
+`c5843280b8410daaf6cef0b186ccd41844507462`; the seal commit is
+`7748f32`. The archive is
+`732ee816166ef92bd8b8422f3bf45c6faedffbfc310680c4234a8eb93b15fe8d`
+(468 files).
+
+Test evidence is the executed suite at that commit: 1703 passed,
+7 skipped, 0 failed, with Docker and PostgreSQL available. The Docker
+containment probe passed 13/13 checks; the fresh isolation attestation
+verifies against image digest
+`5af4f6ceed7041f1665fdb077708c9b8fdd71cedf451e0adbfb0490e5e914466`,
+policy digest
+`2cce5dcb68cedcc27f7f5b95b2d85d227d13455281a5a1dfb1312fc94168a050`,
+and a locally generated qualification-only isolator key. Every
+out-of-band file matches `release/SHA256SUMS`; `verify_release.py`
+accepts the ZIP.
+
+The trust roots remain local. `check_release_ci.py --mode release`
+rejects the bundle with `release provenance trust root is not
+production`. A production seal still requires independently held
+release, CI-evidence and isolator keys.
+
+### Re-seal test matrix
+
+| Environment | Command | Result |
+| --- | --- | --- |
+| macOS 3.12, Docker + PostgreSQL | `tools/run_tests.py --json ...` | 1703 passed, 7 skipped |
+| macOS 3.12, Docker enabled, no PostgreSQL | `pytest tests/ -q` | 1695 passed, 15 skipped |
+| macOS 3.10, Docker disabled | `DOCKER_HOST=unix:///nonexistent/docker.sock pytest tests/ -q` | 1672 passed, 38 skipped |
+| macOS 3.13, Docker disabled | same | 1672 passed, 38 skipped |
+| Linux 3.12 (`sis-evaluator:3.3.9`), no git/Docker/PostgreSQL | same | 1654 passed, 56 skipped |
+| Linux 3.12 with git, no Docker/PostgreSQL | same | 1657 passed, 53 skipped |
+| Docker containment | `pytest tests/v3/test_docker_sandbox.py tests/v3/test_split_custody.py -q` | 72 passed |
+| PostgreSQL 14 concurrency | `pytest tests/v3/test_control_plane_postgres.py -q` | 8 passed |
+
+The remaining skips are platform-specific and enumerated in each run
+(Windows ACL, seatbelt, cgroup v2, missing vskill corpus, absent pinned
+Git baseline, optional z3/cryptography dependencies, and non-UTF-8
+filename support). No failure was left unexplained.
+
 ## What changed
 
 v3.3.9 closes the release-authenticity, evidence-authentication and
@@ -41,7 +84,7 @@ feature.
 - The local runner and Docker sandbox bound process-group termination and
   mark an execution that exits after the parent deadline as a timeout.
 
-## Test matrix
+## Test matrix (original seal, 2026-11-14)
 
 | Environment | Command | Result |
 | --- | --- | --- |

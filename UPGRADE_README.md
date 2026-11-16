@@ -215,6 +215,35 @@ Regression coverage lives in `tests/v3/test_benchmark.py`,
 `tests/v3/test_five_arm_real_run.py`. This repair does not reseal the
 archive and does not constitute an efficacy result.
 
+### Post-seal repair: canonical repository fingerprint and lineage
+
+The v3 tree digest hashed entries in filesystem traversal order, so
+identical contents could receive different identities and staging an
+unchanged repository could fail. Tree digests are now versioned.
+
+- `scan_tree(..., version=2)` is the default and canonical format. It
+  sorts every directory level by encoded name bytes, so the digest
+  depends only on contents, never on directory iteration order. Empty
+  directories, special files and permissions are not part of the
+  fingerprint.
+- `version=1` reproduces the legacy digest byte for byte and is used
+  only to re-verify historical records. `verify_tree_digest()` reports
+  which version matched; new receipts, task envelopes, registry
+  identities and manifests carry v2.
+- A task envelope or manifest that carries a legacy digest is accepted
+  only when the exact tree matches that record.
+- Manifest validation with `--check-paths` re-fingerprints every
+  repository, verifies the declared digest and rejects duplicate
+  holdout codebases. A confirmatory manifest requires a `lineage_id`
+  for every repository; Git checkouts derive lineage from root commits,
+  so two revisions or clones of one repository cannot count as
+  independent holdout evidence.
+
+The archive was re-sealed at source commit `c584328` with 1703 passed,
+7 skipped and 0 failed; the ZIP hashes to `732ee816…`. The release and
+isolator keys remain local, so strict release mode still rejects the
+bundle until the key ceremony is completed.
+
 ### Qualification status
 
 The v3.3.9 archive is engineering-verified and qualification-only. A
