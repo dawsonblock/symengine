@@ -105,9 +105,9 @@
     }
   ],
   "docker_server_version": "29.9.3",
-  "generated_at": "2026-11-16T07:25:49Z",
-  "image": "sis-evaluator:3.3.9@sha256:8c98a24680180cc4a6a3863c823c83f9214081cba52ef8608613dee98ecf0573",
-  "image_id": "8c98a24680180cc4a6a3863c823c83f9214081cba52ef8608613dee98ecf0573",
+  "generated_at": "2026-11-16T07:41:41Z",
+  "image": "sis-evaluator:3.3.9@sha256:2c10724de03d141f69f3cf8ad41e5cecb3cd4ed443c141a73b2278dfb142f30c",
+  "image_id": "2c10724de03d141f69f3cf8ad41e5cecb3cd4ed443c141a73b2278dfb142f30c",
   "kind": "docker_sandbox_probe",
   "note": "Factual containment probe, not a signed isolation attestation. Production qualification still requires an IsolationAttestationV1 from a separately trusted isolator.",
   "ok": true,
