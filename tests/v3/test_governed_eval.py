@@ -530,6 +530,28 @@ class CampaignCLITests(unittest.TestCase):
             self.assertEqual(len(stdout["digest"]), 64)
 
 
+    def test_primary_contrast_demo_runs_two_arms(self):
+        with tempfile.TemporaryDirectory() as temp:
+            out = Path(temp) / "demo.json"
+            proc = subprocess.run(
+                [sys.executable,
+                 str(REPO / "tools" / "five_arm_campaign.py"),
+                 "--demo", "--arms", "primary",
+                 "--allow-local-executor", "-o", str(out)],
+                capture_output=True, text=True, env=_env(), cwd=REPO,
+                timeout=300)
+            self.assertEqual(proc.returncode, 0, proc.stderr[-2000:])
+            report = json.loads(out.read_text())
+        self.assertEqual(
+            report["kind"],
+            "primary_contrast_learning_qualification_demo")
+        self.assertEqual(report["governed"]["arms"], ["A", "E"])
+        analysis = report["learning_qualification"]
+        self.assertEqual(analysis["evidence_class"], "demonstration")
+        self.assertEqual(analysis["decisive_contrast"]["wins"], 2)
+        self.assertEqual(analysis["decisive_contrast"]["losses"], 0)
+
+
 class LocalExecutorAuthorizationTests(unittest.TestCase):
     def test_campaign_scripts_require_the_local_executor_flag(self):
         scripts = (

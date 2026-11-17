@@ -141,7 +141,8 @@ def _build_demo(root: Path):
     return verifier, tasks, profile
 
 
-def run_demo(output: Path) -> int:
+def run_demo(output: Path, *,
+             arms: tuple[str, ...] = GOVERNED_ARMS) -> int:
     with tempfile.TemporaryDirectory(prefix="sis-five-arm-demo-") as temp:
         root = Path(temp)
         verifier, tasks, profile = _build_demo(root)
@@ -154,11 +155,11 @@ def run_demo(output: Path) -> int:
             sample_size=len(tasks), powered=False,
             budget={"wall_seconds": 120, "token_budget": 1000,
                     "tool_budget": 100},
-            arms=GOVERNED_ARMS)
+            arms=arms)
         served: dict = {}
-        provider = build_context_provider(
-            {"A": None, "B": _guidance(), "C": _guidance(),
-             "D": _guidance(), "E": _guidance()}, served)
+        guidance = {arm: _guidance() for arm in arms if arm != "A"}
+        guidance["A"] = None
+        provider = build_context_provider(guidance, served)
         campaign = FiveArmCampaign(
             harness=BenchmarkHarness(
                 verifier=verifier, work_root=root / "work"),
@@ -166,9 +167,13 @@ def run_demo(output: Path) -> int:
             budget=BudgetCaps(wall_seconds=120, token_budget=1000,
                               tool_budget=100),
             protocol=protocol, context_provider=provider,
-            served_map=served, learned_repo_digests=(), real_agent=False)
+            served_map=served, learned_repo_digests=(), real_agent=False,
+            arms=arms)
         report = campaign.run()
-        report["kind"] = "five_arm_learning_qualification_demo"
+        report["kind"] = (
+            "primary_contrast_learning_qualification_demo"
+            if tuple(arms) == PRIMARY_CONTRAST_ARMS
+            else "five_arm_learning_qualification_demo")
         report["evidence"] = (
             "scripted demonstration; machinery evidence only, not a claim "
             "about real coding-agent efficacy")
@@ -947,6 +952,10 @@ def main() -> int:
     parser.add_argument("--demo", action="store_true")
     parser.add_argument("--real-agent", action="store_true")
     parser.add_argument("--manifest", type=Path)
+    parser.add_argument("--arms", choices=("five", "primary"),
+                        default="five",
+                        help="demo design; a real-agent manifest declares"
+                             " its own arms")
     parser.add_argument("--output", "-o", type=Path, required=True)
     parser.add_argument("--allow-local-executor", action="store_true",
                         help="local execution is development-only")
@@ -967,11 +976,16 @@ def main() -> int:
     if args.demo and args.real_agent:
         parser.error("choose --demo or --real-agent")
     if args.real_agent:
+        if args.arms != "five":
+            parser.error("--arms applies to --demo; the manifest declares"
+                         " the real-agent arms")
         return run_real(args.output, args.manifest,
                         allow_shared_custody=args.allow_shared_custody,
                         guidance_path=args.guidance_bundle,
                         candidate_registry=args.candidate_registry)
-    return run_demo(args.output)
+    selected = (PRIMARY_CONTRAST_ARMS if args.arms == "primary"
+                else GOVERNED_ARMS)
+    return run_demo(args.output, arms=selected)
 
 
 if __name__ == "__main__":

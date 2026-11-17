@@ -20,9 +20,13 @@ floor that is 515 runs instead of 206.
   `primary_contrast_study_spec` and writes the matching manifest kind.
 - Template: `docs/v3/efficacy_manifest_two_arm_template.json`. The
   study-protocol and build-plan docs describe the design and its cost.
+- `tools/five_arm_campaign.py --demo --arms primary` runs the scripted
+  two-arm demonstration; `evidence/evaluation/two_arm_demo.json` records
+  the two-task run (A 0/2, E 2/2, exact p=0.5, `demonstration` class).
 - Regression coverage lives in `tests/v3/test_efficacy_manifest.py`,
-  `tests/v3/test_build_efficacy_manifest.py` and
-  `tests/v3/test_five_arm_real_run.py`.
+  `tests/v3/test_build_efficacy_manifest.py`,
+  `tests/v3/test_five_arm_real_run.py` and
+  `tests/v3/test_governed_eval.py`.
 - This is machinery, not evidence. A powered run still requires the
   repositories, the pinned Codex CLI and the agent budget.
 

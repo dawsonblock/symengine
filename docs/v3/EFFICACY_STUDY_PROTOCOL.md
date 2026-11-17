@@ -63,7 +63,9 @@ version, prompt, budget and evaluator. Arm order is randomized per task.
   [efficacy_manifest_two_arm_template.json](efficacy_manifest_two_arm_template.json)
   with `kind: primary_contrast_efficacy_manifest` and protocol arms
   `["A","E"]`. The five-arm manifest remains valid; the manifest kind and
-  the protocol arms must agree.
+  the protocol arms must agree. `tools/five_arm_campaign.py --demo
+  --arms primary` runs the scripted two-task demonstration; it is
+  machinery evidence, never an efficacy result.
 - **Equal budgets.** Every arm gets the same wall-clock, token and tool
   budget per task. Budget-exceeded runs are not passes.
 - **Hidden, independently verified outcomes.** Acceptance tests are
