@@ -1,5 +1,24 @@
 # Changelog
 
+## 2026-11-16 — v3 authenticates before reading the body (SIS-FIX-10)
+
+The `/v3` handler read and parsed the request body before
+`V3ServingService` authenticated it, so an unauthenticated client could
+force JSON parsing (including the `RecursionError` path) and the server
+had no request socket timeout.
+
+- `V3ServingService.authenticate()` authenticates headers on their own;
+  `handle()` accepts the already-authenticated requester. The HTTP
+  handler authenticates first, answers `401` without reading the body
+  and closes the connection. Authenticated invalid JSON still answers
+  `400`.
+- The request handler sets a 30-second socket timeout, so a stalled
+  client cannot hold a handler thread indefinitely.
+- `docs/LEGACY_README.md` had 24 local links written relative to the
+  repository root instead of the file; they now resolve.
+- Regression coverage lives in
+  `tests/v3/test_v332_security_regressions.py`.
+
 ## 2026-11-16 — Primary-contrast two-arm study path (SIS-FIX-08)
 
 The five-arm design spends five agent runs per task, but only A vs E is

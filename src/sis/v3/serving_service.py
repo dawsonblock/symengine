@@ -105,10 +105,15 @@ class V3ServingService:
     def health(self) -> dict:
         return self._gateway.health()
 
-    def handle(self, path: str, payload: Mapping, headers) -> tuple[int, dict]:
+    def authenticate(self, headers) -> str:
+        """Authenticate one request before its body is read."""
+        return self._authenticate(headers)
+
+    def handle(self, path: str, payload: Mapping, headers, *,
+               requester: str | None = None) -> tuple[int, dict]:
         """Dispatch one authenticated v3 request."""
         try:
-            requester = self._authenticate(headers)
+            requester = requester or self._authenticate(headers)
             if path == "/v3/guidance":
                 return self._guidance(payload, requester)
             if path == "/v3/outcome":

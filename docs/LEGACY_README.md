@@ -10,7 +10,7 @@ dependencies** (Python 3.10+).
 **Status: `IMPLEMENTED_NOT_EFFICACY_QUALIFIED`.** The M0–M5 authority controls
 are implemented and covered by adversarial tests. Evaluator isolation (M6) and
 real-agent efficacy (M9) are **not** qualified, and no improvement in real LLM
-performance is claimed. See [the efficacy status](docs/V332_EFFICACY_STATUS.md).
+performance is claimed. See [the efficacy status](V332_EFFICACY_STATUS.md).
 
 ## What v3.3.2 adds
 
@@ -48,20 +48,20 @@ sis --db ./knowledge.sqlite3 audit
 
 The v3 serving boundary is constructed in application code
 (`create_server(..., v3_service=...)`); the `sis serve` CLI command exposes only
-the legacy `/v1` surface. See [operations](docs/V332_OPERATIONS.md) for the
+the legacy `/v1` surface. See [operations](V332_OPERATIONS.md) for the
 wiring and deployment profiles.
 
 ## Documentation map
 
 | Document | Contents |
 | --- | --- |
-| [CHANGELOG.md](CHANGELOG.md) | Release-by-release change history |
-| [docs/V332_AUTHORITY_CONSISTENCY.md](docs/V332_AUTHORITY_CONSISTENCY.md) | v3.3.2 defects, fixes and evidence |
-| [docs/V332_OPERATIONS.md](docs/V332_OPERATIONS.md) | Deployment, recovery and key rotation |
-| [docs/V332_ACCEPTANCE_MATRIX.md](docs/V332_ACCEPTANCE_MATRIX.md) | Executed acceptance scenarios |
-| [docs/V332_EFFICACY_STATUS.md](docs/V332_EFFICACY_STATUS.md) | What is and is not demonstrated |
-| [docs/v3/ARCHITECTURE_V3_3.md](docs/v3/ARCHITECTURE_V3_3.md) | v3 subsystem design |
-| [docs/SECURITY_THREAT_MODEL.md](docs/SECURITY_THREAT_MODEL.md) | Adversaries, mitigations and residual risk |
+| [CHANGELOG.md](../CHANGELOG.md) | Release-by-release change history |
+| [docs/V332_AUTHORITY_CONSISTENCY.md](V332_AUTHORITY_CONSISTENCY.md) | v3.3.2 defects, fixes and evidence |
+| [docs/V332_OPERATIONS.md](V332_OPERATIONS.md) | Deployment, recovery and key rotation |
+| [docs/V332_ACCEPTANCE_MATRIX.md](V332_ACCEPTANCE_MATRIX.md) | Executed acceptance scenarios |
+| [docs/V332_EFFICACY_STATUS.md](V332_EFFICACY_STATUS.md) | What is and is not demonstrated |
+| [docs/v3/ARCHITECTURE_V3_3.md](v3/ARCHITECTURE_V3_3.md) | v3 subsystem design |
+| [docs/SECURITY_THREAT_MODEL.md](SECURITY_THREAT_MODEL.md) | Adversaries, mitigations and residual risk |
 
 ---
 
@@ -76,9 +76,9 @@ promotion and retirement behind operator authority. Read-only agent/HTTP
 clients can request an unapplied unified-diff preview. There is **no shell
 execution, repository-write capability, real unit-test subprocess sandbox, or
 proven improvement in real LLM performance**. See
-[the v2.4 guide](docs/V2_4_CODE_REPAIR.md).
+[the v2.4 guide](V2_4_CODE_REPAIR.md).
 
-For repository updates after the v2.4.0 review, see the [upgrade guide](UPGRADE_README.md).
+For repository updates after the v2.4.0 review, see the [upgrade guide](../UPGRADE_README.md).
 
 Run locally: `PYTHONPATH=src python3 tools/demo_code_learning.py`.
 
@@ -93,7 +93,7 @@ promotion, SQLite persistence, hash-linked local audit, explicit retirement, and
 read-only agent/HTTP inference. **No filesystem, shell, code patching, browser or
 arbitrary external action execution is permitted.** Learning labels remain
 operator-supplied, and generalization to unseen task families is unproven.
-See [v2.3 documentation](docs/V2_3_WORKFLOW_LEARNING.md).
+See [v2.3 documentation](V2_3_WORKFLOW_LEARNING.md).
 
 Local demo: `PYTHONPATH=src python3 tools/demo_tabular_workflow.py`.
 
@@ -102,7 +102,7 @@ Local demo: `PYTHONPATH=src python3 tools/demo_tabular_workflow.py`.
 > captures, conservative cross-run procedural abstraction, disjoint evaluation
 > inputs, and a governed `experience-induce` route. Captures do not authenticate
 > operator ground truth or prove real-model skill transfer. See
-> [v2.2 guide](docs/V2_2_EXPERIENCE_ABSTRACTION.md).
+> [v2.2 guide](V2_2_EXPERIENCE_ABSTRACTION.md).
 >
 > Quick local demo: `PYTHONPATH=src python3 tools/demo_experience_capture.py`
 > and `sis --db ./v22.sqlite3 experience-induce examples/v2_2/experience_study.json`.
@@ -110,7 +110,7 @@ Local demo: `PYTHONPATH=src python3 tools/demo_tabular_workflow.py`.
 > **v2.1.0:** Adds operator-side typed execution-trace learning, per-step
 > replay, train-only procedural proposal reconstruction and existing
 > evidence-gated promotion. Failed traces never become proposals;
-> validation traces are forbidden. See [the v2.1 guide](docs/V2_1_TYPED_TRACE_LEARNING.md).
+> validation traces are forbidden. See [the v2.1 guide](V2_1_TYPED_TRACE_LEARNING.md).
 > **No real-model generalization improvement is claimed.**
 >
 > Quick local demo: `sis --db ./trace.sqlite3 trace-study examples/trace_study.json`.
@@ -119,21 +119,21 @@ Local demo: `PYTHONPATH=src python3 tools/demo_tabular_workflow.py`.
 > baseline LLM, LLM + frozen symbolic procedures, LoRA-adapted LLM, and optional
 > placebo. Signed experiment precommitment, declared split/input collision
 > checks, one-use SQLite admission, Holm-adjusted item and family-level tests, and
-> macro-by-family accuracy. See [v2.0 guide](docs/V2_0_FAMILY_QUALIFICATION.md).
+> macro-by-family accuracy. See [v2.0 guide](V2_0_FAMILY_QUALIFICATION.md).
 > **No real neural training or independent task transfer claim is bundled.**
 >
 > Run synthetic demo: `PYTHONPATH=src python tools/demo_family_eval.py`.
 
-> **v1.9.0:** Optional real LoRA fine-tuning of v1.8 custodian-exported, verified pseudo-labels and a controlled three/four-arm LLM comparison. Training requires separately installed PyTorch/Transformers/PEFT, model weights, and operator approval; no pretrained weights, GPU runs, or independently measured model improvement are bundled. See [v1.9 guide](docs/V1_9_LORA_AND_NEURAL_COMPARISON.md).
+> **v1.9.0:** Optional real LoRA fine-tuning of v1.8 custodian-exported, verified pseudo-labels and a controlled three/four-arm LLM comparison. Training requires separately installed PyTorch/Transformers/PEFT, model weights, and operator approval; no pretrained weights, GPU runs, or independently measured model improvement are bundled. See [v1.9 guide](V1_9_LORA_AND_NEURAL_COMPARISON.md).
 
 
 **Full runnable research upgrade — local automated regression suite, Python 3.10+, zero required third-party runtime packages.**
 
-**New in v1.8:** frozen and hash-bound active procedural-skill dependency snapshots, an **evaluator-owned one-use sealed holdout** for procedural skills with HMAC-authenticated scoring and exact replay, and guarded pseudo-labeled JSONL export after policy qualification. Does **not** alter model weights or prove independent results without separate evaluator control. See [v1.8 qualification and distillation guide](docs/V1_8_PROCEDURAL_HOLDOUT_AND_DISTILLATION.md).
+**New in v1.8:** frozen and hash-bound active procedural-skill dependency snapshots, an **evaluator-owned one-use sealed holdout** for procedural skills with HMAC-authenticated scoring and exact replay, and guarded pseudo-labeled JSONL export after policy qualification. Does **not** alter model weights or prove independent results without separate evaluator control. See [v1.8 qualification and distillation guide](V1_8_PROCEDURAL_HOLDOUT_AND_DISTILLATION.md).
 
 Local full workflow: `PYTHONPATH=src python tools/demo_skill_holdout.py` (synthetic demonstration, **not** independent evidence).
 
-**New in v1.7:** an additional governed *procedural skill* layer with bounded typed `if`, `let`, `fold` and active-skill `call` expressions, deterministic candidate induction, local validation and abstention, a separately verified SQLite skill log, failure-aware episode ingestion, CLI/HTTP interfaces, and a read-only `sis_skill_predict` agent tool. Full details and evidence limits: [v1.7 guide](docs/V1_7_PROCEDURAL_SKILLS.md). The v1.4 sealed evaluator and v1.6 paired LLM harness have **not** been extended to qualify these procedural skills on independent holdouts. No model weights are changed.
+**New in v1.7:** an additional governed *procedural skill* layer with bounded typed `if`, `let`, `fold` and active-skill `call` expressions, deterministic candidate induction, local validation and abstention, a separately verified SQLite skill log, failure-aware episode ingestion, CLI/HTTP interfaces, and a read-only `sis_skill_predict` agent tool. Full details and evidence limits: [v1.7 guide](V1_7_PROCEDURAL_SKILLS.md). The v1.4 sealed evaluator and v1.6 paired LLM harness have **not** been extended to qualify these procedural skills on independent holdouts. No model weights are changed.
 
 Quick v1.7 demo:
 
@@ -145,11 +145,11 @@ sis --db ./skills.sqlite3 skill-audit
 sis --db ./skills.sqlite3 skill-benchmark examples/skill_sum_benchmark.json
 ```
 
-**New in v1.6:** paired live comparison of the same LLM with and without a read-only SIS hint, with no labeled target outputs sent in the LLM requests, alternating arm order, strict typed JSON response checking, per-arm model errors and token-use accounting, and exact paired McNemar statistics. No model is bundled or called during automated unit tests. Local synthetic evidence is not independent validation. See [v1.6 paired LLM guide](docs/V1_6_PAIRED_LLM_BENCHMARK.md).
+**New in v1.6:** paired live comparison of the same LLM with and without a read-only SIS hint, with no labeled target outputs sent in the LLM requests, alternating arm order, strict typed JSON response checking, per-arm model errors and token-use accounting, and exact paired McNemar statistics. No model is bundled or called during automated unit tests. Local synthetic evidence is not independent validation. See [v1.6 paired LLM guide](V1_6_PAIRED_LLM_BENCHMARK.md).
 
-**v1.5:** read-only schema transfer of previously validated source rules, opt-in cross-task predictions labeled unverified, signed precommitted holdout qualification thresholds, Wilson uncertainty bounds, and evaluator-side qualification replay. **A policy pass is not independent task provenance.** See [v1.5 guide](docs/V1_5_TRANSFER_AND_QUALIFICATION.md).
+**v1.5:** read-only schema transfer of previously validated source rules, opt-in cross-task predictions labeled unverified, signed precommitted holdout qualification thresholds, Wilson uncertainty bounds, and evaluator-side qualification replay. **A policy pass is not independent task provenance.** See [v1.5 guide](V1_5_TRANSFER_AND_QUALIFICATION.md).
 
-**v1.4 foundation:** a *separate evaluator-owned* one-use sealed holdout harness, HMAC-bound public train/validation manifests, secret test/shifted-test labels held only in an evaluator vault, signed aggregate scoring receipts, and independent score replay by the vault custodian. This mitigates accidental adaptive test reuse **only when the secret, vault and test labels are actually isolated from the candidate developer**. This is **not** a guarantee of independent evaluation by itself. See [v1.4 evaluator guide](docs/EVALUATOR_V1_4.md).
+**v1.4 foundation:** a *separate evaluator-owned* one-use sealed holdout harness, HMAC-bound public train/validation manifests, secret test/shifted-test labels held only in an evaluator vault, signed aggregate scoring receipts, and independent score replay by the vault custodian. This mitigates accidental adaptive test reuse **only when the secret, vault and test labels are actually isolated from the candidate developer**. This is **not** a guarantee of independent evaluation by itself. See [v1.4 evaluator guide](EVALUATOR_V1_4.md).
 
 **New in v1.3:** the hash-linked audit verifier now checks rule event transition
 semantics, rather than just the final database projection. A bounded admission
@@ -157,7 +157,7 @@ firewall refuses rules that contradict existing active rules in the same typed
 namespace. Network mutation routes require an independent `SIS_ADMIN_KEY` when
 `SIS_API_KEY` is configured. Rule listings fail closed on corrupt audit state,
 and feedback rejects mismatched output types. Previous v1.2 controls remain.
-See [v1.3 upgrade notes](docs/UPGRADE_V1_3.md).
+See [v1.3 upgrade notes](UPGRADE_V1_3.md).
 
 Minimal demonstration:
 
@@ -350,7 +350,7 @@ export SIS_LLM_MODEL='your-exact-model-id'
 sis --db ./study.sqlite3 paired-eval examples/paired_eval_synthetic.json ./paired_result.json --allow-network
 ```
 
-This makes **60 LLM calls** for the included 30-row *synthetic* example (30 baseline, 30 SIS-assisted). It will incur inference compute/provider costs; the examples are for verifying the workflow, not claiming improved intelligence. Two explicit authorization steps are required for outgoing requests. Baseline and SIS-assisted are the **same LLM** and use the same decoding settings, but SIS hints increase prompt tokens. See [the full v1.6 design and evaluation caveats](docs/V1_6_PAIRED_LLM_BENCHMARK.md).
+This makes **60 LLM calls** for the included 30-row *synthetic* example (30 baseline, 30 SIS-assisted). It will incur inference compute/provider costs; the examples are for verifying the workflow, not claiming improved intelligence. Two explicit authorization steps are required for outgoing requests. Baseline and SIS-assisted are the **same LLM** and use the same decoding settings, but SIS hints increase prompt tokens. See [the full v1.6 design and evaluation caveats](V1_6_PAIRED_LLM_BENCHMARK.md).
 
 ### 8. Current boundaries
 
@@ -460,4 +460,4 @@ The regular `sis benchmark` command is unchanged.
 - Transfer a rule without creating or promoting a target rule: `sis --db knowledge.sqlite3 transfer examples/transfer.json` after replacing the example's source `rule_id` with an actual promoted ID.
 - Optional transfer-batch: `sis --db knowledge.sqlite3 transfer-batch examples/transfer_batch.json`. The tool bridge offers `sis_transfer`, read-only.
 - Precommitted post-score qualification: `sis eval-qualify PUBLIC RECEIPT --vault VAULT --qualification OUTPUT`. Verify with `sis eval-verify-qualification PUBLIC RECEIPT OUTPUT --vault VAULT`.
-- See [full guide](docs/V1_5_TRANSFER_AND_QUALIFICATION.md). Qualification is evaluator-dependent; local generated examples do not demonstrate independent generalization.
+- See [full guide](V1_5_TRANSFER_AND_QUALIFICATION.md). Qualification is evaluator-dependent; local generated examples do not demonstrate independent generalization.

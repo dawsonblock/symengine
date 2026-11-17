@@ -973,12 +973,39 @@ class HttpBoundaryTests(_Base):
         connection = http.client.HTTPConnection(
             "127.0.0.1", self.port, timeout=8)
         connection.request("POST", "/v3/guidance", b"[" * 200_000,
-                           {"Content-Type": "application/json"})
+                           {"Content-Type": "application/json",
+                            "Authorization": "Bearer " + TOKEN})
         response = connection.getresponse()
         payload = json.loads(response.read())
         connection.close()
         self.assertEqual(response.status, 400)
         self.assertEqual(payload["error"], "invalid JSON")
+
+    def test_v3_rejects_before_parsing_the_body(self):
+        connection = http.client.HTTPConnection(
+            "127.0.0.1", self.port, timeout=8)
+        connection.request("POST", "/v3/guidance", b"not json",
+                           {"Content-Type": "application/json"})
+        response = connection.getresponse()
+        payload = json.loads(response.read())
+        connection.close()
+        self.assertEqual(response.status, 401)
+        self.assertEqual(payload["error"], "unauthorized")
+
+    def test_v3_authenticated_invalid_json_is_400(self):
+        connection = http.client.HTTPConnection(
+            "127.0.0.1", self.port, timeout=8)
+        connection.request("POST", "/v3/guidance", b"not json",
+                           {"Content-Type": "application/json",
+                            "Authorization": "Bearer " + TOKEN})
+        response = connection.getresponse()
+        payload = json.loads(response.read())
+        connection.close()
+        self.assertEqual(response.status, 400)
+        self.assertEqual(payload["error"], "invalid JSON")
+
+    def test_request_socket_timeout_is_set(self):
+        self.assertEqual(self.httpd.RequestHandlerClass.timeout, 30)
 
     def test_health_reports_v3_readiness(self):
         status, body = self.request("GET", "/health")
