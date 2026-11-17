@@ -1,5 +1,25 @@
 # Changelog
 
+## 2026-11-16 — Resource limits no longer use preexec_fn (SIS-FIX-11)
+
+`LocalSubprocessExecutor` applied `RLIMIT_CPU`, `RLIMIT_AS`,
+`RLIMIT_FSIZE` and `RLIMIT_NPROC` through `subprocess`'s `preexec_fn`.
+Python documents that parameter as unsafe when other threads exist: the
+child between fork and exec can deadlock on a lock another thread holds.
+The evaluator can run from worker threads, so the risk was real even
+though the common path is single-threaded.
+
+- The runner now wraps the command in a small `python -c` launcher that
+  sets the same limits and `execvpe`s the target. The launcher is a
+  separate process, so no Python code runs between fork and exec, and
+  the limits apply to the target and to split-custody workers.
+  `rlimits:launcher` is recorded in the receipt's security markers.
+- The same `preexec_fn` pattern remains in `sis.enforced_induction` and
+  `sis.v3.linux_worker`; those paths are unchanged here.
+- Regression coverage includes the existing FSIZE, NPROC, wall-clock and
+  threaded-termination tests, plus a new test that applies a file-size
+  limit from a worker thread.
+
 ## 2026-11-16 — v3 authenticates before reading the body (SIS-FIX-10)
 
 The `/v3` handler read and parsed the request body before

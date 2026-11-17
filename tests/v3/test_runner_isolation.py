@@ -170,6 +170,32 @@ class RunnerIsolationTests(RunnerFixture):
         self.assertLessEqual((workspace.path / "big.bin").stat().st_size, 8 << 20)
         self.executor.destroy(workspace)
 
+    def test_file_size_limit_is_enforced_from_a_worker_thread(self):
+        try:
+            import resource as _resource
+            if not hasattr(_resource, "RLIMIT_FSIZE"):
+                raise ImportError
+        except ImportError:
+            self.skipTest("RLIMIT_FSIZE is unavailable on this platform")
+        import threading
+        workspace = self.executor.prepare(self.base)
+        holder = {}
+
+        def run():
+            holder["r"] = self.executor.run(
+                workspace,
+                self.spec("open('big.bin','wb').write(b'0' * 64_000_000)",
+                          limits=fast_limits(disk_bytes=8 << 20)))
+
+        thread = threading.Thread(target=run)
+        thread.start()
+        thread.join(timeout=30)
+        self.assertFalse(thread.is_alive())
+        self.assertNotEqual(holder["r"].exit_status, 0)
+        self.assertLessEqual(
+            (workspace.path / "big.bin").stat().st_size, 8 << 20)
+        self.executor.destroy(workspace)
+
     def test_aggregate_disk_budget_is_audited(self):
         workspace = self.executor.prepare(self.base)
         code = ("for i in range(3): open(f'f{i}.bin','wb').write(b'0' * (6 << 20))")

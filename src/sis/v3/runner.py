@@ -73,6 +73,29 @@ _ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,127}$")
 _SAFE_CWD = re.compile(r"^(?!/)(?![A-Za-z]:)(?!.*(?:^|/)\.\.(?:/|$))[A-Za-z0-9_.@/-]{0,512}$")
 _PRIVATE_NAME = re.compile(r"^(?!/)(?![A-Za-z]:)(?!.*(?:^|/)\.\.(?:/|$))[A-Za-z0-9_.@/-]{1,512}$")
 
+_LIMIT_LAUNCHER = r'''
+import os
+import resource
+import sys
+
+args = sys.argv[1:]
+pairs = []
+while args and args[0] != "--":
+    pairs.append((args.pop(0), int(args.pop(0))))
+if not args or args[0] != "--":
+    raise SystemExit(64)
+command = args[1:]
+for name, value in pairs:
+    limit = getattr(resource, name, None)
+    if limit is None:
+        continue
+    try:
+        resource.setrlimit(limit, (value, value))
+    except (OSError, ValueError):
+        pass
+os.execvpe(command[0], command, os.environ)
+'''
+
 _BOOTSTRAP_NAME = "_sis_bootstrap.py"
 # Staged read-only next to the private material and run as the Python entry
 # point. It imports the test runner before the graded workspace becomes
@@ -1117,9 +1140,7 @@ class LocalSubprocessExecutor:
         env = _minimal_env(record.path)
         env.update(spec.env)
         markers: list[str] = []
-        preexec = None
-        if resource is not None and hasattr(os, "setsid"):
-            preexec = self._make_preexec(spec.limits, markers)
+        argv = self._limit_argv(argv, spec.limits, markers)
         try:
             proc = subprocess.Popen(
                 argv,
@@ -1129,7 +1150,6 @@ class LocalSubprocessExecutor:
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 start_new_session=(os.name == "posix"),
-                preexec_fn=preexec,
                 pass_fds=(child_sock.fileno(),),
             )
         except OSError as exc:
@@ -1157,12 +1177,6 @@ class LocalSubprocessExecutor:
             "network:seatbelt_denied" if self._seatbelt
             else "network:not_enforced")
         limits = spec.limits
-        preexec = None
-        if resource is not None and hasattr(os, "setsid"):
-            preexec = self._make_preexec(limits, security_errors)
-        else:
-            security_errors.append("rlimits:unavailable_platform")
-
         argv = list(spec.argv)
         argv[0] = self._resolve_executable(argv[0])
         if self._seatbelt:
@@ -1180,6 +1194,7 @@ class LocalSubprocessExecutor:
                 security_errors.append("network:not_enforced")
                 security_errors.append("seatbelt:profile_unembeddable_path")
 
+        argv = self._limit_argv(argv, limits, security_errors)
         env = _minimal_env(record.path)
         env.update(spec.env)
 
@@ -1201,7 +1216,6 @@ class LocalSubprocessExecutor:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             start_new_session=(os.name == "posix"),
-            preexec_fn=preexec,
             pass_fds=pass_fds,
         )
         with self._lock:
@@ -1480,27 +1494,27 @@ class LocalSubprocessExecutor:
             except OSError:
                 pass
 
-    def _make_preexec(self, limits: ResourceLimits, security_errors: list[str]):
+    def _limit_argv(self, argv: list[str], limits: ResourceLimits,
+                    security_errors: list[str]) -> list[str]:
         if resource is None:
-            return None
-        pairs: list[tuple[int, int]] = [(resource.RLIMIT_CPU, limits.cpu_seconds)]
+            security_errors.append("rlimits:unavailable_platform")
+            return argv
+        pairs: list[tuple[str, int]] = [("RLIMIT_CPU", limits.cpu_seconds)]
         if hasattr(resource, "RLIMIT_AS"):
-            pairs.append((resource.RLIMIT_AS, limits.memory_bytes))
+            pairs.append(("RLIMIT_AS", limits.memory_bytes))
         if hasattr(resource, "RLIMIT_FSIZE"):
-            pairs.append((resource.RLIMIT_FSIZE, limits.disk_bytes))
-        if limits.process_count is not None and hasattr(resource, "RLIMIT_NPROC"):
-            pairs.append((resource.RLIMIT_NPROC, limits.process_count))
-        elif limits.process_count is not None:
-            security_errors.append("rlimit:nproc_unavailable")
-
-        def apply() -> None:
-            for limit_name, value in pairs:
-                try:
-                    resource.setrlimit(limit_name, (value, value))
-                except (OSError, ValueError):
-                    pass
-
-        return apply
+            pairs.append(("RLIMIT_FSIZE", limits.disk_bytes))
+        if limits.process_count is not None:
+            if hasattr(resource, "RLIMIT_NPROC"):
+                pairs.append(("RLIMIT_NPROC", limits.process_count))
+            else:
+                security_errors.append("rlimit:nproc_unavailable")
+        launcher = [sys.executable, "-c", _LIMIT_LAUNCHER]
+        for name, value in pairs:
+            launcher += [name, str(value)]
+        launcher.append("--")
+        security_errors.append("rlimits:launcher")
+        return [*launcher, *argv]
 
     @staticmethod
     def _reject_symlinks(base: Path) -> None:
