@@ -593,6 +593,7 @@ class PostgresControlPlane(_SqlControlPlane):
     # cannot cover the uninitialized case, where no authority_head row
     # exists yet and SELECT ... FOR UPDATE locks nothing.
     _AUTHORITY_LOCK_KEY = 0x5349535F41555448
+    _SCHEMA_LOCK_KEY = 0x5349535F53434845
 
     def __init__(self, dsn: str, *, connect_timeout: int = 10) -> None:
         if not isinstance(dsn, str) or not dsn:
@@ -607,13 +608,14 @@ class PostgresControlPlane(_SqlControlPlane):
         self._lock = threading.RLock()
         with self._transaction() as con:
             # Replicas starting together serialize schema creation and the
-            # version row on the same cluster-wide lock as authority
-            # writes; CREATE ... IF NOT EXISTS alone is not race-free.
-            self._lock_authority(con)
+            # version row; CREATE ... IF NOT EXISTS alone is not race-free.
+            # This is a lock of its own, not the authority lock: startup
+            # must not wait behind (or stall) an in-flight authorization.
+            self._lock_schema(con)
             for statement in _SCHEMA:
                 con.execute(statement)
         with self._transaction() as con:
-            self._lock_authority(con)
+            self._lock_schema(con)
             self._ensure_schema_version(con)
 
     def schema_version(self) -> int:
@@ -625,6 +627,11 @@ class PostgresControlPlane(_SqlControlPlane):
     def _transaction(self):
         return _PostgresTransaction(
             self._psycopg, self._dsn, self._connect_timeout, self._lock)
+
+    def _lock_schema(self, con) -> None:
+        """Serialize schema creation and versioning across replicas."""
+        con.execute("SELECT pg_advisory_xact_lock(%s)",
+                    (self._SCHEMA_LOCK_KEY,))
 
     def _lock_authority(self, con) -> None:
         """Serialize this transaction against every other authority writer.
