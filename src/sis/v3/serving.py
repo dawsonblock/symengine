@@ -19,21 +19,27 @@ Isolation invariants:
   the hash-chained transition log, requires the committed state column
   to match that projection, and re-authenticates the operator decision
   and evaluator evidence binding behind every qualified candidate. A
-  direct state flip, a forged decision/evidence row, or a legacy
-  unbacked qualification abstains with ``catalog_unavailable`` and an
-  audited ``integrity_error`` — never a partial serve.
-- Revoked, tampered, malformed, out-of-scope, family-mismatched (when
+  direct state flip, a forged decision/evidence row, missing or altered
+  custody objects, or a legacy unbacked qualification abstains with
+  ``catalog_unavailable`` and an audited ``integrity_error`` — never a
+  partial serve.
+- Revoked, withdrawn (custody-revoked/superseded evidence, expired or
+  signer-revoked basis), out-of-scope, family-mismatched (when
   ``task_family`` is declared), basis-revoked (a revocation naming the
-  candidate's receipt, evidence binding or decision) or inapplicable
-  candidates are excluded individually (each rejection is counted and
-  auditable); nothing silently degrades to permissive.
+  candidate digest, its receipts, evidence binding, certificate or
+  decision) or inapplicable candidates are excluded individually (each
+  rejection is counted and auditable); nothing silently degrades to
+  permissive. The revocation set is server-side — signed custody
+  revocations/supersessions and committed strict-path revocations —
+  unioned with any caller-supplied ``revoked_digests``.
 - ``decision`` remains honest: ``recommend`` only when the strict
   procedure path qualifies; candidate-only advice is an explicit
   ``advisory`` decision (never a procedure grant), and a genuine
   abstention stays ``abstain`` with a reason.
 - Serving outcomes bind a *signature-authenticated* receipt for the
   same task and outcome to the exact guidance digest this gateway
-  delivered; a bare digest is not evidence.
+  delivered; a bare digest is not evidence. One receipt backs at most
+  one outcome (the control plane enforces a unique ``receipt_digest``).
 - ``target_task_family``/``target_agent`` are provenance fields; the
   optional ``task_family`` argument turns the family field into an
   enforced gate for deployments that want it.
@@ -131,6 +137,9 @@ class GovernedServingGateway:
         # task_id -> digest of the guidance actually served, so an outcome
         # can only be attached to guidance this gateway delivered.
         self._served: dict[str, str] = {}
+        # Development (no control plane) analogue of the control plane's
+        # unique receipt_digest: one evaluator receipt, one outcome.
+        self._outcome_receipts: set[str] = set()
 
     # ------------------------------------------------------------------ #
     def serve(
@@ -502,7 +511,15 @@ class GovernedServingGateway:
         out: list[CandidateV1] = []
         requester = self._registry.resolve(requester_id)
         family = getattr(requester, "family_id", None)
-        for cand, basis in self._candidates.qualified_bases():
+        # The client-supplied set can only add revocations; the
+        # authoritative set is server-side (signed custody revocations and
+        # supersessions, plus committed strict-path revocations), so a
+        # client that omits a revocation cannot get it ignored.
+        revoked = frozenset(revoked) | self._server_revocations()
+        withdrawn: list[dict] = []
+        bases = self._candidates.qualified_bases(rejections=withdrawn)
+        served_map["rejections"].extend(withdrawn)
+        for cand, basis in bases:
             digest = cand.digest
             reject = None
             if digest in revoked:
@@ -529,6 +546,25 @@ class GovernedServingGateway:
             out.append(cand)
         return out
 
+    def _server_revocations(self) -> frozenset:
+        """Revocations this gateway learns from its own authority stores."""
+        out: set[str] = set()
+        withdrawn = getattr(self._candidates, "withdrawn_digests", None)
+        if callable(withdrawn):
+            out.update(withdrawn())
+        committed = getattr(self._strict, "_committed_revocations", None)
+        if callable(committed):
+            # A receipt or record revoked in the strict authority store
+            # also withdraws any candidate citing it.
+            try:
+                groups = committed()
+            except Exception as exc:
+                raise CandidateError(
+                    "strict_authority_unavailable") from exc
+            out.update(groups.get("receipt", ()))
+            out.update(groups.get("record", ()))
+        return frozenset(out)
+
     @staticmethod
     def _basis_revoked(basis: Mapping, revoked) -> bool:
         """True when a committed revocation names this candidate's basis.
@@ -539,8 +575,9 @@ class GovernedServingGateway:
         """
         handles = set(basis.get("receipt_refs", ())) \
             | set(basis.get("evidence_refs", ()))
-        if basis.get("decision_digest"):
-            handles.add(basis["decision_digest"])
+        for key in ("decision_digest", "certificate_digest"):
+            if basis.get(key):
+                handles.add(basis[key])
         return bool(handles & set(revoked))
 
     def _scope_covers(self, cand: CandidateV1, requester_id: str,
@@ -613,7 +650,11 @@ class GovernedServingGateway:
             raise ValueError("receipt_task_mismatch")
         if getattr(receipt, "outcome", None) != outcome:
             raise ValueError("receipt_outcome_mismatch")
-        if self._control_plane is not None:
+        if self._control_plane is None:
+            if receipt_digest in self._outcome_receipts:
+                raise ValueError("outcome_receipt_reused")
+            self._outcome_receipts.add(receipt_digest)
+        else:
             try:
                 self._control_plane.record_outcome(
                     authorization_id=authorization["authorization_id"],

@@ -388,7 +388,9 @@ class BackupAndIntegrityTests(unittest.TestCase):
         db_path = self.root / "s" / "authority.db"
         raw = bytearray(db_path.read_bytes())
         # Corrupt a byte inside a committed decision row's JSON payload.
-        needle = b'"new_status":"qualified"'
+        # (Anchored on the decision's own key order so the audit-event
+        # payload, which also names the status, is never the target.)
+        needle = b'"new_status":"qualified","old_qualified_head"'
         pos = raw.find(needle)
         self.assertGreater(pos, 0)
         raw[pos + 2] = ord('X')

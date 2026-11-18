@@ -409,6 +409,15 @@ class FileAuthorityCheckpointStore:
                              != latest.supersession_head)):
                     raise CheckpointConflict(
                         "checkpoint_custody_substitution")
+                if ((latest.revocation_head != GENESIS
+                     and checkpoint.revocation_head == GENESIS)
+                        or (latest.supersession_head != GENESIS
+                            and checkpoint.supersession_head == GENESIS)):
+                    # A witnessed log can never become empty again. Full
+                    # prefix extension is proven by the publisher against
+                    # the logs themselves (``verify_custody_extends``).
+                    raise CheckpointConflict(
+                        "checkpoint_custody_log_regression")
             payload = b"".join(
                 record.canonical_bytes() + b"\n"
                 for record in (*records, checkpoint))
@@ -805,6 +814,21 @@ class AuthorityJournal:
                 raise RollbackDetected(
                     "checkpoint_anchor_missing:"
                     f"sequence={latest.journal_sequence}")
+            # The same holds for custody: each log must still contain the
+            # checkpointed head, at positions that add up to the witnessed
+            # count. Without this a truncated revocation log padded with
+            # new supersessions would raise the combined count and be
+            # signed as if nothing had been removed.
+            extends = getattr(self.registry, "verify_custody_extends", None)
+            if callable(extends):
+                try:
+                    extends(
+                        revocation_head=latest.revocation_head,
+                        supersession_head=latest.supersession_head,
+                        custody_entry_count=latest.custody_entry_count)
+                except Exception as exc:
+                    raise RollbackDetected(
+                        f"custody_history_not_extended:{exc}") from exc
             checkpoint = self._signed(
                 sequence=latest.sequence + 1,
                 previous_digest=latest.digest,

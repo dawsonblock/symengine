@@ -287,11 +287,27 @@ class RevocationConsistencyTests(_Base):
             reason="bad evaluation", seed=self.fixture.custody_seed,
             key_id=self.fixture.custody_key)
         self.fixture.publish()
-        guidance = self.gateway().serve(
+        audit = []
+        gateway = GovernedServingGateway(
+            self.fixture.registry,
+            repository_registry=self.fixture.repo_registry,
+            production=True,
+            execution_identity_authority=self.fixture.identity_authority,
+            control_plane=self.fixture.control_plane,
+            audit_sink=audit.append)
+        guidance = gateway.serve(
             _request(), repository_id="repo-1",
             execution_identity=self.fixture.identity())
+        # The revoked candidate is excluded individually with an audited
+        # reason; a single custody revocation no longer takes the whole
+        # catalog down (catalog_unavailable).
         self.assertEqual(guidance.decision, "abstain")
-        self.assertEqual(guidance.reason_code, "catalog_unavailable")
+        self.assertNotEqual(guidance.reason_code, "catalog_unavailable")
+        self.assertNotIn("do the thing", " ".join(
+            guidance.helpful_next_checks))
+        self.assertEqual(
+            [r["reason"] for r in audit[-1]["rejections"]],
+            ["evidence_revoked"])
 
     def test_restored_revocation_history_is_detected(self):
         backup = self.root / "custody-backup"

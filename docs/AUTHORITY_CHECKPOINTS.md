@@ -57,8 +57,20 @@ Signing is domain-separated:
    candidate-state tamper).
 5. If local is **ahead**, require the local log to still contain the
    checkpointed head at the checkpointed sequence. A rewritten history
-   cannot extend it. Sign the new head, CAS-append, and retry once on a
+   cannot extend it. The custody logs must likewise still contain the
+   checkpointed revocation and supersession heads, at positions that sum
+   to the checkpointed `custody_entry_count`
+   (`registry.verify_custody_extends`); otherwise `RollbackDetected`
+   (`custody_history_not_extended`). This catches a truncated
+   revocation log padded back to a larger combined count with new
+   supersessions. Sign the new head, CAS-append, and retry once on a
    publication race.
+
+The checkpoint wire format is unchanged (per-log counts are derived from
+the heads' positions in the hash-chained logs, so v3.3.1 checkpoints and
+signatures remain valid). The store additionally refuses a checkpoint
+whose revocation or supersession head returns to genesis after a
+non-genesis head (`checkpoint_custody_log_regression`).
 
 The database commit and checkpoint append are separate operations. A
 crash after the commit leaves the local state ahead of the checkpoint:
