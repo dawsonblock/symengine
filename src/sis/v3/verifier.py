@@ -386,6 +386,8 @@ class OutcomeVerifier:
         self._bootstrap = None
         self.last_outcome_class: str | None = None
         self.last_bootstrap = None
+        # Diagnostic: the last pytest-report check (shared custody).
+        self.last_report_check = None
         self._tasks_path = self.registry_dir / "tasks.json"
         self._journal_path = self.registry_dir / "receipts.jsonl"
         self._tasks: dict[str, RegisteredTask] = {}
@@ -757,6 +759,7 @@ class OutcomeVerifier:
             except Exception:
                 pass
         report = None
+        self.last_report_check = None
         if report_nonce is not None:
             stdout = b""
             if callable(output):
@@ -766,6 +769,7 @@ class OutcomeVerifier:
                     stdout = b""
             report = check_pytest_report(
                 stdout, report_nonce, expected_files=expected_report_files)
+            self.last_report_check = report
         verification = None
         if self.isolation_policy is not None:
             attestation = isolation_attestation

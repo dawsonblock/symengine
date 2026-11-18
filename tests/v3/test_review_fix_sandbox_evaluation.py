@@ -143,9 +143,10 @@ class SharedCustodyVerdictTests(unittest.TestCase):
             evaluation_nonce=f"n-{self.nonce}")
 
     def test_correct_submission_passes(self):
-        self.assertEqual(
-            self.evaluate("def add(a, b):\n    return a + b\n").outcome,
-            "pass")
+        outcome = self.evaluate("def add(a, b):\n    return a + b\n").outcome
+        self.assertEqual(outcome, "pass", (
+            self.verifier.last_outcome_class,
+            self.verifier.last_report_check))
 
     def test_exit_zero_at_import_is_a_fail(self):
         outcome = self.evaluate(
