@@ -104,6 +104,7 @@ def preregister(
     power: float = 0.8,
     powered: bool = True,
     allow_underpowered: bool = False,
+    max_negative_transfer: float | None = None,
 ) -> dict:
     """Freeze the analysis plan; the digest proves it preceded the run.
 
@@ -113,6 +114,12 @@ def preregister(
     calculation is symmetric in the two rates, so a declared regression
     of the same size needs the same number of pairs and is accepted too.
     The recomputation never assumes the treatment is the lower rate.
+
+    The declared effect ``|expected_treatment - expected_baseline|`` may
+    not exceed the preregistered ``min_effect``: powering for an effect
+    larger than the smallest effect of interest would justify a sample
+    too small to detect the effect the study claims to care about. Both
+    rates must lie in (0, 1) and ``min_effect`` in (0, 1].
 
     ``powered=True`` (the default) freezes a powered-experiment plan: the
     declared expectations are recomputed into ``power_analysis.required_n``
@@ -129,6 +136,12 @@ def preregister(
     the same fields but carries no power claim. A diagnostic protocol
     honestly reports what it is: it can never satisfy production
     qualification because there is no floor for a validator to verify.
+
+    ``max_negative_transfer`` optionally preregisters the largest share of
+    paired tasks on which the treatment may lose a baseline solve before
+    negative transfer counts as material; when omitted the analysis uses
+    its documented default. It is only recorded when supplied, so existing
+    protocol digests are unchanged.
     """
     if type(powered) is not bool:
         raise ContractError("powered must be a bool")
@@ -151,7 +164,14 @@ def preregister(
         "arms": list(arms),
         "notes": notes,
     }
+    if max_negative_transfer is not None:
+        if type(max_negative_transfer) not in (int, float) or \
+                not 0 <= max_negative_transfer < 1:
+            raise ContractError("max_negative_transfer must be in [0, 1)")
+        doc["max_negative_transfer"] = max_negative_transfer
     if powered:
+        _check_declared_effect(min_effect, expected_baseline,
+                               expected_treatment)
         required_n = required_sample_size(
             expected_baseline, expected_treatment, power=power, alpha=alpha)
         doc["power_analysis"] = {
@@ -176,6 +196,29 @@ def preregister(
     doc["protocol_digest"] = canonical_digest(
         "eval_protocol", 1, normalized)
     return doc
+
+
+_EFFECT_TOLERANCE = 1e-9
+
+
+def _check_declared_effect(min_effect, expected_baseline,
+                           expected_treatment) -> None:
+    """Bind the powering effect to the preregistered minimum effect.
+
+    Direction-agnostic: only the size ``|treatment - baseline|`` is
+    compared, so a declared regression is treated like an improvement.
+    """
+    for value in (expected_baseline, expected_treatment):
+        if type(value) not in (int, float) or not 0 < value < 1:
+            raise ContractError("expected rates must be in (0, 1)")
+    if type(min_effect) not in (int, float) or not 0 < min_effect <= 1:
+        raise ContractError("min_effect must be in (0, 1]")
+    effect = abs(expected_treatment - expected_baseline)
+    if effect > min_effect + _EFFECT_TOLERANCE:
+        raise ContractError(
+            f"declared effect {effect:.6g} exceeds the preregistered "
+            f"min_effect {min_effect}; power for the minimum effect of "
+            "interest, not a larger one")
 
 
 def required_sample_size(p1: float = 0.6, p2: float = 0.4, *,
@@ -252,6 +295,14 @@ def protocol_required_sample_size(protocol: Mapping) -> int:
         raise ContractError("power_analysis_invalid") from exc
     if type(analysis.get("required_n")) is not int or analysis["required_n"] != required:
         raise ContractError("power_analysis_required_n_mismatch")
+    min_effect = protocol.get("min_effect")
+    if type(min_effect) not in (int, float) or not 0 < min_effect <= 1:
+        raise ContractError("power_analysis_min_effect_invalid")
+    try:
+        _check_declared_effect(min_effect, values[0], values[1])
+    except ContractError as exc:
+        raise ContractError(
+            "power_analysis_effect_exceeds_min_effect") from exc
     return required
 
 

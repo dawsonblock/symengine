@@ -16,6 +16,7 @@ concurrent writer is rejected atomically.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import re
 import secrets
 import threading
@@ -43,6 +44,19 @@ from .verifier import (
 )
 
 _SIGNATURE_DOMAIN = b"sis-v3:promotion_decision:1\0"
+_TOKEN_MAC_PREFIX = "operator_token_hmac:"
+_LEGACY_TOKEN_PREFIX = "operator_token_sha256:"
+
+
+def _token_mac(token: str, payload: bytes) -> str:
+    """Operator-token authorization bound to one decision payload.
+
+    Keyed by the token itself, so only a token holder can mint it and an
+    auditor holding the token can re-check every committed decision. The
+    configured *digest* alone (all a replica stores) can check the format
+    and which token was used, but cannot forge or verify the MAC.
+    """
+    return hmac.new(token.encode(), payload, hashlib.sha256).hexdigest()
 _TRANSITIONS: dict[str, frozenset[str]] = {
     "draft": frozenset({"candidate", "retired"}),
     "candidate": frozenset({"evaluated", "retired"}),
@@ -69,6 +83,8 @@ def verify_decision_v2(
     trusted: Mapping[str, str],
     operator_keys: Mapping[str, str],
     token_digest: str | None,
+    operator_token: str | None = None,
+    allow_legacy_token: bool = True,
 ) -> list[str]:
     """Re-verify one V2 decision against replayed state.
 
@@ -77,6 +93,13 @@ def verify_decision_v2(
     controller ran live, recomputable over committed rows by the store or the
     migration tool. ``statuses``/``qualified`` are mutated to include the
     decision's effect.
+
+    Token-mode authorizations (``operator_token_hmac:<digest>:<mac>``) are
+    checked against the configured token digest; the per-decision MAC is
+    verified whenever ``operator_token`` is supplied. Legacy
+    ``operator_token_sha256:<digest>`` constants carry no per-decision
+    proof: they are accepted when replaying history but refused for new
+    commits (``allow_legacy_token=False``).
     """
     problems: list[str] = []
     base = decision.to_dict()
@@ -107,7 +130,21 @@ def verify_decision_v2(
                 problems.append("operator_signature_invalid")
         except (ValueError, TypeError):
             problems.append("operator_authorization_malformed")
-    elif auth != f"operator_token_sha256:{token_digest}":
+    elif auth.startswith(_TOKEN_MAC_PREFIX):
+        parts = auth[len(_TOKEN_MAC_PREFIX):].split(":")
+        if len(parts) != 2 or token_digest is None or \
+                not hmac.compare_digest(parts[0], token_digest):
+            problems.append("operator_authorization_mismatch")
+        elif operator_token is not None:
+            signed = _SIGNATURE_DOMAIN + canonical_json(
+                {**base, "evaluator_signature": decision.evaluator_signature})
+            if hashlib.sha256(operator_token.encode()).hexdigest() \
+                    != token_digest or not hmac.compare_digest(
+                        parts[1], _token_mac(operator_token, signed)):
+                problems.append("operator_token_mac_invalid")
+    elif auth.startswith(_LEGACY_TOKEN_PREFIX) and not allow_legacy_token:
+        problems.append("operator_authorization_legacy_token")
+    elif auth != f"{_LEGACY_TOKEN_PREFIX}{token_digest}":
         problems.append("operator_authorization_mismatch")
     if decision.prior_status not in _TRANSITIONS or \
             decision.new_status not in _TRANSITIONS[decision.prior_status]:
@@ -376,8 +413,13 @@ class PromotionController:
             self._revoked_eval_keys.add(revocation.target_id)
         return suspended
 
-    def verify(self, *, check_projection: bool = True) -> dict:
-        """Replay committed decisions: signatures, chain continuity, projection."""
+    def verify(self, *, check_projection: bool = True,
+               operator_token: str | None = None) -> dict:
+        """Replay committed decisions: signatures, chain continuity, projection.
+
+        With ``operator_token`` (an auditor holding the shared token), every
+        token-mode decision's per-decision MAC is re-verified as well.
+        """
         structural = self.store.verify()
         problems: list[str] = list(structural["problems"])
         if problems:
@@ -404,6 +446,7 @@ class PromotionController:
                         trusted=self._trusted,
                         operator_keys=self._operator_keys,
                         token_digest=self._token_digest,
+                        operator_token=operator_token,
                     )
                 )
         if not problems and check_projection:
@@ -443,8 +486,11 @@ class PromotionController:
                 raise PromotionRejected("operator_signature_invalid")
             return f"ed25519:{key_id}:{sig_hex}"
         if operator_token is not None and self._token_digest is not None:
-            if hashlib.sha256(operator_token.encode()).hexdigest() == self._token_digest:
-                return "operator_token_sha256:" + self._token_digest
+            if hmac.compare_digest(
+                    hashlib.sha256(operator_token.encode()).hexdigest(),
+                    self._token_digest):
+                return (f"{_TOKEN_MAC_PREFIX}{self._token_digest}:"
+                        + _token_mac(operator_token, payload))
         raise PromotionRejected("operator_authorization_failed")
 
     def _verify_receipts(self, digests: tuple[str, ...]) -> list[OutcomeReceiptV1 | OutcomeReceiptV2]:

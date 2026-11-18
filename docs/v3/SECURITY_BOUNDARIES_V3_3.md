@@ -74,8 +74,11 @@
   cannot be imported from the trusted environment fails closed
   (`evaluation_runner_unavailable`, exit 70) before the workspace is
   importable, direct scripts install an import guard that refuses a
-  workspace `pytest` module, and the marker classifies as an evaluator
-  bootstrap error even when a receipt reports exit 0. Staging is bounded
+  workspace `pytest` module. Classification never reads submission-
+  controlled stderr: under shared custody exit 70 is an ordinary
+  failure (the bootstrap probe already verified the runner), and only a
+  split-custody receipt's exit 70 is an evaluator bootstrap error.
+  Staging is bounded
   (64 files, 1 MiB each, 8 MiB total) and registration enforces the
   same bounds. The execution receipt carries
   `evaluation:private_material_separated`. Backends without that
@@ -233,12 +236,61 @@
   loaded registry needs split custody but the executor has no second
   principal. The shared-custody path remains available only as that
   explicit development opt-out.
+- A shared-custody verdict is not trustworthy against the code it
+  grades. The submission runs inside the pytest process, so an exit
+  status alone proves nothing (`os._exit(0)` used to pass). The verifier
+  now requires a result report that the evaluator bootstrap writes after
+  pytest's session finished, tagged with a per-run nonce: at least one
+  collected and passed test, no failures or errors, a result for every
+  collected test, and at least one test from every private file named on
+  the command line. Exit 0 without that report is `fail`. This defeats
+  an early exit, not a submission that discovers the nonce in its own
+  process and forges the report; receipts of shared-custody runs carry
+  `custody:shared_unqualified`, and only split custody is
+  qualification-grade. There is no declared expected test count, so the
+  report cannot detect a test file that collects fewer tests than
+  intended.
 - Split custody is a boundary over module access, not a general
   interprocess sandbox. Workspace modules — including packages and their
-  submodules — are proxied, and only primitives, callables and
-  composites of primitives cross the socket. A test that deliberately
-  shells out to run the submission under the evaluator principal
-  re-opens the shared path.
+  submodules — are proxied, except names the evaluator's environment
+  provides (standard library, installed packages, modules beside the
+  tests): a workspace cannot shadow a library the tests import. Only
+  primitives, callables and composites of primitives cross the socket;
+  other call results stay in the worker behind a handle. A test that
+  deliberately shells out to run the submission under the evaluator
+  principal re-opens the shared path.
+- Resource limits are applied by an evaluator-owned launcher run as
+  `python -I` from a neutral directory, so no workspace module can run
+  before the limits or outside seatbelt. It fails closed: a limit it
+  cannot set stops the run with `sandbox:rlimits_not_applied:*`, and
+  `rlimits:launcher` is recorded only when the launcher reported every
+  limit applied. macOS refuses any `RLIMIT_AS` below the interpreter's
+  address space, so on macOS memory is not bounded: the launcher is not
+  asked to set it and the receipt records `memory:not_enforced`. Under
+  supervision the limits are applied in the forked command process, not
+  the supervisor, so `RLIMIT_NPROC` cannot refuse the supervisor's own
+  fork. On Linux the local launcher stays as a child subreaper
+  (`process:subreaper`) and kills every descendant, including ones that
+  called `setsid()`, when the command exits or times out; the process
+  group is also killed after every run. A submission that kills its own
+  launcher first loses that reaping (best effort, not a boundary). On
+  macOS there is no subreaper: the process group is killed after every
+  run, but a descendant that called `setsid()` can outlive it. The
+  Linux worker's launcher joins the cgroup before it execs bubblewrap.
+- `disk_bytes` is enforced live only per file (`RLIMIT_FSIZE`) on the
+  local and bubblewrap backends; the workspace total is audited after
+  the run (`fs:disk_budget_exceeded`, receipts carry
+  `disk:per_file_limit_post_run_audit`). Only Docker bounds the total
+  during the run (sized tmpfs).
+- The Linux worker's seccomp filter is a denylist. It also denies the
+  x32 ABI on x86_64, `clone` with any `CLONE_NEW*` flag, the new mount
+  API and io_uring, and makes `clone3` fail with ENOSYS (its flags are
+  in memory and cannot be inspected), but it is not an allowlist.
+- Repository validation never runs `git status`/`diff`: a checkout's
+  `.gitattributes` filter, textconv or external-diff driver would run.
+  Cleanliness is decided from raw object ids hashed in Python, with
+  replace refs, grafts and transports disabled; content-converting
+  attributes are not applied, so such a checkout reads as dirty.
 - A harness failure is not evidence about a submission. The bootstrap
   pings the worker before running the command and reports a missing or
   lost worker by exit status, which the executors map to

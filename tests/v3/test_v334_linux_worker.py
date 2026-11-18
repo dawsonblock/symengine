@@ -116,9 +116,11 @@ class BwrapArgvTests(unittest.TestCase):
             (str(self.seccomp_dir.resolve()), "/opt/sis-seccomp"), pairs)
         inner = argv[argv.index("--") + 1:]
         self.assertEqual(inner[0], sys.executable)
-        self.assertEqual(inner[1], "/opt/sis-seccomp/seccomp_exec.py")
-        self.assertEqual(inner[2], "--")
-        self.assertEqual(inner[3:], list(self.spec.argv))
+        # Isolated mode: /workspace and PYTHON* never reach its sys.path.
+        self.assertEqual(inner[1], "-I")
+        self.assertEqual(inner[2], "/opt/sis-seccomp/seccomp_exec.py")
+        self.assertEqual(inner[3], "--")
+        self.assertEqual(inner[4:], list(self.spec.argv))
 
     def test_seccomp_can_be_disabled(self):
         argv = self._argv(LinuxWorkerConfig(apply_seccomp=False))

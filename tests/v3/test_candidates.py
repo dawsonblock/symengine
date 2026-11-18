@@ -487,14 +487,21 @@ class RegistryLifecycleTests(RegistryFixture):
         self.stack.qualify(cand)
         self.assertEqual(len(self.reg.qualified()), 1)
         self.stack.decision_authority.revoke_signer(self.stack.op_key)
+        # A revoked signer withdraws the candidates it backs individually
+        # (the rest of the catalog keeps serving); the candidate itself
+        # still fails closed on direct reads.
+        rejections = []
+        self.assertEqual(self.reg.qualified_bases(rejections), [])
+        self.assertIn("decision_signer_revoked", rejections[0]["reason"])
         with self.assertRaisesRegex(
                 CandidateError, "decision_signer_revoked"):
-            self.reg.qualified()
+            self.reg.get(cand.candidate_id)
         self.stack.decision_authority._revoked.discard(self.stack.op_key)
         self.stack.evidence_authority.revoke_signer(self.stack.eval_key)
+        self.assertEqual(self.reg.qualified(), [])
         with self.assertRaisesRegex(
                 CandidateError, "evidence_signer_revoked"):
-            self.reg.qualified()
+            self.reg.get(cand.candidate_id)
 
     def test_expired_evidence_stops_serving(self):
         cand = make_candidate(cid="expired")
@@ -516,8 +523,10 @@ class RegistryLifecycleTests(RegistryFixture):
             actor_identity="test-operator", receipt_refs=(receipt.digest,),
             evidence_refs=(evidence.digest,), decision_ref=decision.digest)
         self.stack.evidence_authority._fixed_now = "2020-01-03T00:00:00Z"
+        # Expiry withdraws this candidate only, never the whole catalog.
+        self.assertEqual(self.reg.qualified(), [])
         with self.assertRaisesRegex(CandidateError, "evidence_expired"):
-            self.reg.qualified()
+            self.reg.get(cand.candidate_id)
 
     def test_expected_protocol_is_rechecked_at_serve_time(self):
         cand = make_candidate(cid="protocol")

@@ -7,6 +7,7 @@ being admitted for promotion for the first time.
 from __future__ import annotations
 
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 
 from .contracts import OutcomeEnvelopeV2
@@ -25,7 +26,11 @@ class OutcomeNonceStore:
     def __init__(self, database: str | Path):
         self.database = str(database)
         Path(database).parent.mkdir(parents=True, exist_ok=True)
-        with sqlite3.connect(self.database, timeout=15) as db:
+        # ``with sqlite3.connect(...)`` only ends a transaction; it never
+        # closes the connection. ``closing`` releases it (and rolls back
+        # any transaction left open by an exception) on every call.
+        with closing(sqlite3.connect(self.database, isolation_level=None,
+                                     timeout=15)) as db:
             db.execute("PRAGMA journal_mode=WAL")
             db.execute("CREATE TABLE IF NOT EXISTS accepted_envelopes ("
                        "signer TEXT NOT NULL, nonce TEXT NOT NULL, digest TEXT NOT NULL, "
@@ -35,7 +40,8 @@ class OutcomeNonceStore:
                            revoked_keys=frozenset(), at_time=None) -> str:
         if not verify_envelope(envelope, registry, revoked_keys=revoked_keys, at_time=at_time):
             raise EnvelopeAdmissionError("signature_or_policy_invalid")
-        with sqlite3.connect(self.database, isolation_level=None, timeout=15) as db:
+        with closing(sqlite3.connect(self.database, isolation_level=None,
+                                     timeout=15)) as db:
             db.execute("BEGIN IMMEDIATE")
             # Reverify inside the write transaction to minimize expiry races.
             if not verify_envelope(envelope, registry, revoked_keys=revoked_keys, at_time=at_time):

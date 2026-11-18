@@ -60,6 +60,10 @@ def main(argv=None):
     http = commands.add_parser("serve", help="run local HTTP JSON API")
     http.add_argument("--host", default="127.0.0.1")
     http.add_argument("--port", type=int, default=8765)
+    http.add_argument("--v3-config", default=None,
+                      help="JSON production v3 serving configuration; "
+                           "enables the authenticated /v3 boundary "
+                           "(fails closed on any missing requirement)")
     seal = commands.add_parser('eval-seal', help='custodian: seal a secret holdout into a private one-use vault')
     seal.add_argument('dataset', help='private evaluation dataset (never give to candidate agents)')
     seal.add_argument('public', help='new public train/validation file; refuses overwrite')
@@ -372,7 +376,16 @@ def main(argv=None):
                     print(json.dumps(value,indent=2))
             return 0
         if args.command == "serve":
-            serve(args.host, args.port, db_path=args.db)
+            v3_service = None
+            if args.v3_config:
+                from .v3.bootstrap import build_v3_service
+                try:
+                    v3_service = build_v3_service(args.v3_config)
+                except Exception as exc:  # noqa: BLE001 - fail closed
+                    raise InvalidInput(
+                        f"v3 serving configuration rejected: {exc}") from exc
+            serve(args.host, args.port, db_path=args.db,
+                  v3_service=v3_service)
             return 0
         if args.command == 'paired-eval':
             if not args.allow_network or os.getenv('SIS_ENABLE_LLM') != '1':

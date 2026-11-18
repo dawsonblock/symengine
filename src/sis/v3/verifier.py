@@ -48,8 +48,10 @@ from .evaluation_runtime import (
     EVALUATOR_BOOTSTRAP_ERROR,
     INFRASTRUCTURE_ERROR,
     SANDBOX_FAILURE,
+    REPORT_NONCE_ENV,
     EvaluationRuntimeProfile,
     bootstrap_check,
+    check_pytest_report,
     classify_execution,
     classify_production_execution,
 )
@@ -93,6 +95,19 @@ _JOURNAL_STRING_FIELDS = (
 # failure; a file that never reaches 32 bytes still fails closed.
 _SEED_READ_ATTEMPTS = 50
 _SEED_READ_DELAY_SECONDS = 0.01
+
+
+def _named_private_files(
+    args, private_files: Mapping[str, bytes],
+) -> tuple[str, ...]:
+    """Private files named on a pytest command line (as the runner rewrites them)."""
+    named = []
+    for arg in args:
+        candidate = arg[2:] if arg.startswith("./") else arg
+        head = candidate.partition("::")[0]
+        if head in private_files and head not in named:
+            named.append(head)
+    return tuple(named)
 
 
 class EvaluationRejected(RuntimeError):
@@ -659,6 +674,19 @@ class OutcomeVerifier:
         if len(argv) >= 3 and argv[1] == "-m" and argv[2] == "pytest":
             argv = self.runtime_profile.pytest_argv(argv)
         workspace = self.executor.prepare(submission, label="eval")
+        if workspace.before_tree_digest != evaluated_repo_digest:
+            # The receipt names ``evaluated_repo_digest``; the run must
+            # execute exactly that tree. A submission that changed between
+            # the digest and the executor's copy is not the one graded.
+            try:
+                self.executor.destroy(workspace)
+            except Exception:
+                pass
+            self.last_outcome_class = INFRASTRUCTURE_ERROR
+            raise EvaluationRejected(
+                "submission_changed_during_evaluation", registration.task_id)
+        report_nonce = None
+        expected_report_files: tuple[str, ...] = ()
         try:
             private_files = dict(registration.files)
             # A backend that supports private material stages it outside the
@@ -671,9 +699,20 @@ class OutcomeVerifier:
                     target = workspace.path / name
                     target.parent.mkdir(parents=True, exist_ok=True)
                     target.write_bytes(data)
+            env = self.runtime_profile.environment()
+            if (separated and not split and is_python_command(argv)
+                    and len(argv) >= 3 and argv[1] == "-m"
+                    and argv[2] == "pytest"):
+                # Shared custody: the submission runs inside the pytest
+                # process, so its exit status alone is not evidence. The
+                # evaluator bootstrap reports the finished session under
+                # this nonce, and the verdict requires that report.
+                report_nonce = secrets.token_hex(16)
+                env[REPORT_NONCE_ENV] = report_nonce
+                expected_report_files = _named_private_files(
+                    argv[3:], private_files)
             spec = CommandSpec(
-                argv=argv, limits=self.limits,
-                env=self.runtime_profile.environment())
+                argv=argv, limits=self.limits, env=env)
             if split:
                 receipt_exec = self.executor.run(
                     workspace, spec, private_files=private_files,
@@ -717,6 +756,16 @@ class OutcomeVerifier:
                 stderr_tail = stderr.decode("utf-8", "replace")[-800:]
             except Exception:
                 pass
+        report = None
+        if report_nonce is not None:
+            stdout = b""
+            if callable(output):
+                try:
+                    stdout, _ = output(receipt_exec.execution_id)
+                except Exception:
+                    stdout = b""
+            report = check_pytest_report(
+                stdout, report_nonce, expected_files=expected_report_files)
         verification = None
         if self.isolation_policy is not None:
             attestation = isolation_attestation
@@ -733,7 +782,7 @@ class OutcomeVerifier:
                 raise EvaluationRejected("isolation_attestation_required")
             classification = classify_production_execution(
                 receipt_exec, attestation, self.isolation_policy,
-                bootstrap_ok=True, stderr_tail=stderr_tail)
+                bootstrap_ok=True, stderr_tail=stderr_tail, report=report)
             verification = classification.verification
             if not verification.ok:
                 self.last_outcome_class = SANDBOX_FAILURE
@@ -742,7 +791,8 @@ class OutcomeVerifier:
             outcome_class = classification.outcome_class
         else:
             outcome_class = classify_execution(
-                receipt_exec, bootstrap_ok=True, stderr_tail=stderr_tail)
+                receipt_exec, bootstrap_ok=True, stderr_tail=stderr_tail,
+                report=report)
         self.last_outcome_class = outcome_class
         if outcome_class == "TASK_PASS":
             outcome = "pass"

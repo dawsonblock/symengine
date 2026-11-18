@@ -12,7 +12,11 @@ This module provides the transactional substrate:
   one transaction, so exactly one racing replica wins.
 - ``authorization_receipt`` is the durable decision record. A guidance
   outcome can only be attached to a receipt this control plane issued.
-- ``guidance_outcome`` replaces the in-memory ``_served`` map.
+- ``guidance_outcome`` replaces the in-memory ``_served`` map. Each
+  authorization takes at most one outcome, and each authenticated
+  evaluator receipt backs at most one outcome (unique
+  ``receipt_digest``), so one receipt cannot be replayed onto many
+  authorizations.
 - ``authority_head`` records the witnessed authority snapshot a decision
   was committed against, so a stale snapshot cannot be committed after a
   revocation publication advanced the head.
@@ -41,7 +45,7 @@ _MAX_ID = 256
 _DECISIONS = frozenset({"recommend", "advisory", "abstain"})
 _OUTCOMES = frozenset({"pass", "fail", "partial", "error"})
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 _SCHEMA = (
     """CREATE TABLE IF NOT EXISTS schema_meta (
@@ -210,11 +214,19 @@ class _SqlControlPlane:
         row = con.execute(
             "SELECT version FROM schema_meta WHERE singleton=1").fetchone()
         if row is None:
+            # Replicas may initialize the same database concurrently; the
+            # loser of the insert race reads the winner's row instead of
+            # failing on the primary key.
             con.execute(
                 "INSERT INTO schema_meta (singleton, version)"
-                f" VALUES (1, {self.placeholder})",
+                f" VALUES (1, {self.placeholder})"
+                " ON CONFLICT (singleton) DO NOTHING",
                 (SCHEMA_VERSION,))
-            return
+            row = con.execute(
+                "SELECT version FROM schema_meta WHERE singleton=1"
+            ).fetchone()
+            if row is None:
+                raise ControlPlaneError("control_plane_schema_invalid")
         version = row[0]
         if type(version) is not int:
             raise ControlPlaneError("control_plane_schema_invalid")
@@ -235,6 +247,27 @@ class _SqlControlPlane:
                 "UPDATE schema_meta SET version="
                 f"{self.placeholder} WHERE singleton=1",
                 (SCHEMA_VERSION,))
+        self._ensure_outcome_receipt_unique(con)
+
+    def _ensure_outcome_receipt_unique(self, con) -> None:
+        """v3: one authenticated evaluator receipt backs one outcome.
+
+        Idempotent for fresh and upgraded databases. A v2 database that
+        already attached one receipt to several authorizations cannot be
+        upgraded silently; it fails closed for an operator to resolve.
+        """
+        duplicate = con.execute(
+            "SELECT receipt_digest FROM guidance_outcome"
+            " GROUP BY receipt_digest HAVING COUNT(*) > 1 LIMIT 1"
+        ).fetchone()
+        if duplicate is not None:
+            raise ControlPlaneError(
+                "control_plane_outcome_receipt_reused",
+                str(duplicate[0])[:16])
+        con.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS"
+            " guidance_outcome_receipt_digest"
+            " ON guidance_outcome (receipt_digest)")
 
     def _check_expected_head(self, current: dict | None,
                              expected: dict | None) -> None:
@@ -429,6 +462,11 @@ class SqliteControlPlane(_SqlControlPlane):
                 (authorization_id,)).fetchone()
             if existing is not None:
                 raise ControlPlaneError("outcome_already_recorded")
+            reused = con.execute(
+                "SELECT 1 FROM guidance_outcome WHERE receipt_digest=?",
+                (receipt_digest,)).fetchone()
+            if reused is not None:
+                raise ControlPlaneError("outcome_receipt_reused")
             con.execute(
                 "INSERT INTO guidance_outcome"
                 " (authorization_id, task_id, served_digest, receipt_digest,"
@@ -555,6 +593,7 @@ class PostgresControlPlane(_SqlControlPlane):
     # cannot cover the uninitialized case, where no authority_head row
     # exists yet and SELECT ... FOR UPDATE locks nothing.
     _AUTHORITY_LOCK_KEY = 0x5349535F41555448
+    _SCHEMA_LOCK_KEY = 0x5349535F53434845
 
     def __init__(self, dsn: str, *, connect_timeout: int = 10) -> None:
         if not isinstance(dsn, str) or not dsn:
@@ -568,9 +607,15 @@ class PostgresControlPlane(_SqlControlPlane):
         self._connect_timeout = connect_timeout
         self._lock = threading.RLock()
         with self._transaction() as con:
+            # Replicas starting together serialize schema creation and the
+            # version row; CREATE ... IF NOT EXISTS alone is not race-free.
+            # This is a lock of its own, not the authority lock: startup
+            # must not wait behind (or stall) an in-flight authorization.
+            self._lock_schema(con)
             for statement in _SCHEMA:
                 con.execute(statement)
         with self._transaction() as con:
+            self._lock_schema(con)
             self._ensure_schema_version(con)
 
     def schema_version(self) -> int:
@@ -582,6 +627,11 @@ class PostgresControlPlane(_SqlControlPlane):
     def _transaction(self):
         return _PostgresTransaction(
             self._psycopg, self._dsn, self._connect_timeout, self._lock)
+
+    def _lock_schema(self, con) -> None:
+        """Serialize schema creation and versioning across replicas."""
+        con.execute("SELECT pg_advisory_xact_lock(%s)",
+                    (self._SCHEMA_LOCK_KEY,))
 
     def _lock_authority(self, con) -> None:
         """Serialize this transaction against every other authority writer.
@@ -685,16 +735,24 @@ class PostgresControlPlane(_SqlControlPlane):
                 raise ControlPlaneError("served_guidance_unknown")
             if receipt[2] != requester:
                 raise ControlPlaneError("outcome_requester_mismatch")
+            # No conflict target: either unique constraint (one outcome
+            # per authorization, one authorization per receipt) turns a
+            # racing duplicate into a clean refusal.
             inserted = con.execute(
                 "INSERT INTO guidance_outcome"
                 " (authorization_id, task_id, served_digest, receipt_digest,"
                 "  outcome, recorded_at) VALUES (%s,%s,%s,%s,%s,%s)"
-                " ON CONFLICT (authorization_id) DO NOTHING RETURNING"
-                " authorization_id",
+                " ON CONFLICT DO NOTHING RETURNING authorization_id",
                 (authorization_id, task_id, served_digest, receipt_digest,
                  outcome, recorded_at or _utcnow())).fetchone()
             if inserted is None:
-                raise ControlPlaneError("outcome_already_recorded")
+                existing = con.execute(
+                    "SELECT 1 FROM guidance_outcome"
+                    " WHERE authorization_id=%s",
+                    (authorization_id,)).fetchone()
+                if existing is not None:
+                    raise ControlPlaneError("outcome_already_recorded")
+                raise ControlPlaneError("outcome_receipt_reused")
         return self.outcome(authorization_id)
 
     def outcome(self, authorization_id: str) -> dict | None:

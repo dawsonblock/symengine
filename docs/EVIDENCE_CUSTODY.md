@@ -61,16 +61,30 @@ cyclic, revoked or superseded dependencies make the certificate
 
 `CandidateRegistry` consults custody status for the certificate on every
 qualified serving read. `evidence_missing`, `evidence_corrupt`,
-`evidence_revoked`, `evidence_superseded` and
-`evidence_custody_unavailable` all fail closed.
+`evidence_invalid` and `evidence_custody_unavailable` fail the catalog
+closed. `evidence_revoked` and `evidence_superseded` are signed,
+candidate-scoped withdrawals: the candidate is excluded individually
+(with an audited rejection) and the rest of the catalog keeps serving.
+
+The certificate walk does not reach the candidate digest or the
+operator decision digest. Serving therefore also consults
+`withdrawn_digests()` — every digest named by a signed revocation or
+supersession — and rejects a candidate whose digest, decision,
+certificate, receipts or evidence binding is in that set, unioned with
+any caller-supplied `revoked_digests`.
 
 ## Revocation and supersession
 
 `revoke(target_digest, kind, reason, seed, key_id)` appends a signed
 entry with a previous-entry digest. `supersede(old, new, ...)` does the
 same. Loaders verify the chain and every signature; a rewritten log fails
-closed. Revoking a receipt invalidates every certificate that links it;
-revoking a certificate invalidates the candidate's serving basis.
+closed. A store refuses to append onto a log shorter than one it has
+already observed (`revocation_log_truncated` /
+`supersession_log_truncated`), and `verify_extends(...)` proves the
+current logs still contain a previously checkpointed pair of heads at
+positions summing to the checkpointed count. Revoking a receipt
+invalidates every certificate that links it; revoking a certificate
+invalidates the candidate's serving basis.
 
 ## Offline policy
 

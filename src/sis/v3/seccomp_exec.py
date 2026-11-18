@@ -6,11 +6,18 @@ applies a BPF filter to itself, then ``execvpe``s the real command, so
 the filter is inherited by the command and every descendant.
 
 The filter denies syscalls that can escape or subvert the containment:
-mount/umount/pivot_root, namespace changes, ptrace, kernel module and
-key management, BPF/perf, process memory access, handle-based file
-access, and host identity/time changes. It does not deny fork/clone,
-execve, sockets, or ordinary file access; the network namespace and
-cgroup limits bound those.
+mount/umount/pivot_root and the new mount API (fsopen, fsconfig,
+fsmount, fspick, move_mount, open_tree, mount_setattr), namespace
+changes (unshare, setns, and ``clone`` with any ``CLONE_NEW*`` flag),
+io_uring, ptrace, kernel module and key management, BPF/perf, process
+memory access, handle-based file access, and host identity/time
+changes. On x86_64 every x32-ABI syscall (``nr & 0x40000000``) is
+denied, so the x32 aliases cannot bypass the native-number denylist.
+``clone3`` passes its flags in memory, which a seccomp filter cannot
+inspect, so it fails with ENOSYS; libc then falls back to ``clone``,
+whose flags are checked. It does not deny fork/clone, execve, sockets,
+or ordinary file access; the network namespace and cgroup limits bound
+those.
 
 No part of this file claims containment. It is one layer of the worker;
 the isolator attests the properties the worker enforced.
@@ -30,6 +37,31 @@ SECCOMP_RET_ALLOW = 0x7FFF0000
 SECCOMP_RET_KILL_PROCESS = 0x80000000
 SECCOMP_RET_ERRNO = 0x00050000
 EPERM = 1
+ENOSYS = 38
+
+#: x32 ABI syscalls on x86_64 carry this bit in the syscall number.
+X32_SYSCALL_BIT = 0x40000000
+#: ``CLONE_NEWNS | CLONE_NEWCGROUP | CLONE_NEWUTS | CLONE_NEWIPC |
+#: CLONE_NEWUSER | CLONE_NEWPID | CLONE_NEWNET``. ``CLONE_NEWTIME``
+#: (0x80) overlaps the exit-signal byte of ``clone`` and is only valid
+#: for ``clone3``/``unshare``, both denied outright.
+CLONE_NAMESPACE_FLAGS = 0x7E020000
+
+# Syscall numbers from 424 upward are shared by every architecture.
+_DENY_COMMON = (
+    425,   # io_uring_setup
+    426,   # io_uring_enter
+    427,   # io_uring_register
+    428,   # open_tree
+    429,   # move_mount
+    430,   # fsopen
+    431,   # fsconfig
+    432,   # fsmount
+    433,   # fspick
+    442,   # mount_setattr
+)
+CLONE3 = 435
+_CLONE = {"x86_64": 56, "aarch64": 220}
 
 AUDIT_ARCH_X86_64 = 0xC000003E
 AUDIT_ARCH_AARCH64 = 0xC00000B7
@@ -133,33 +165,62 @@ def detect_arch(machine: str | None = None) -> str:
 
 
 def build_filter(arch: str) -> list[SockFilter]:
-    """Build the BPF program: arch check, syscall denylist, allow."""
+    """Build the BPF program.
+
+    Order: architecture check (kill on mismatch), x32 rejection on
+    x86_64, the syscall denylist (EPERM), ``clone3`` (ENOSYS), ``clone``
+    with namespace flags (EPERM), allow. The program always ends with
+    the ``ALLOW``, ``KILL_PROCESS`` and ``ERRNO|EPERM`` returns.
+    """
     if arch == "x86_64":
         audit_arch, denied = AUDIT_ARCH_X86_64, _DENY_X86_64
     elif arch == "aarch64":
         audit_arch, denied = AUDIT_ARCH_AARCH64, _DENY_AARCH64
     else:
         raise SeccompUnavailable(f"unsupported_arch:{arch}")
-    count = len(denied)
-    allow_index = 3 + count
-    kill_index = allow_index + 1
-    deny_index = kill_index + 1
-
-    def ins(code, jt, jf, k):
-        return SockFilter(code, jt, jf, k)
-
-    filters = [
-        ins(0x20, 0, 0, 4),                     # ld [4]  (arch)
-        ins(0x15, 0, kill_index - 2, audit_arch),  # jeq arch -> next, else kill
-        ins(0x20, 0, 0, 0),                     # ld [0]  (syscall nr)
+    denied = tuple(denied) + _DENY_COMMON
+    # Symbolic program: jump targets are labels resolved below.
+    program: list[tuple] = [
+        (0x20, None, None, 4),                  # ld [4]  (arch)
+        (0x15, None, "kill", audit_arch),       # jeq arch, else kill
+        (0x20, None, None, 0),                  # ld [0]  (syscall nr)
     ]
-    for position, number in enumerate(denied):
-        filters.append(
-            ins(0x15, deny_index - (4 + position), 0, number))
-    filters.append(ins(0x06, 0, 0, SECCOMP_RET_ALLOW))
-    filters.append(ins(0x06, 0, 0, SECCOMP_RET_KILL_PROCESS))
-    filters.append(ins(0x06, 0, 0, SECCOMP_RET_ERRNO | EPERM))
-    return filters
+    if arch == "x86_64":
+        program.append((0x45, "deny", None, X32_SYSCALL_BIT))  # jset x32
+    for number in denied:
+        program.append((0x15, "deny", None, number))
+    program.append((0x15, "enosys", None, CLONE3))
+    program.append((0x15, None, "allow", _CLONE[arch]))  # not clone: allow
+    program.append((0x20, None, None, 16))   # ld args[0] (low 32 bits)
+    program.append((0x45, "deny", "allow", CLONE_NAMESPACE_FLAGS))
+    labels = {}
+    program.append(("label", "enosys"))
+    program.append((0x06, None, None, SECCOMP_RET_ERRNO | ENOSYS))
+    program.append(("label", "allow"))
+    program.append((0x06, None, None, SECCOMP_RET_ALLOW))
+    program.append(("label", "kill"))
+    program.append((0x06, None, None, SECCOMP_RET_KILL_PROCESS))
+    program.append(("label", "deny"))
+    program.append((0x06, None, None, SECCOMP_RET_ERRNO | EPERM))
+    instructions = []
+    for item in program:
+        if item[0] == "label":
+            labels[item[1]] = len(instructions)
+        else:
+            instructions.append(item)
+
+    def offset(index: int, target) -> int:
+        if target is None:
+            return 0
+        jump = labels[target] - (index + 1)
+        if not 0 <= jump <= 255:
+            raise SeccompUnavailable("filter_jump_out_of_range")
+        return jump
+
+    return [
+        SockFilter(code, offset(index, jt), offset(index, jf), k)
+        for index, (code, jt, jf, k) in enumerate(instructions)
+    ]
 
 
 def apply_filter(arch: str | None = None) -> None:

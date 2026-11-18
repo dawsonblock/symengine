@@ -280,19 +280,21 @@ class StagingTests(unittest.TestCase):
         self.assertEqual(seen["b"], "A = 1\n")
 
     @unittest.skipUnless(hasattr(os, "symlink"), "symlinks unavailable")
-    def test_internal_symlink_is_staged_as_a_link(self):
+    def test_internal_symlink_is_rejected_before_the_agent_runs(self):
+        # Every executor refuses to evaluate a tree containing a link, so
+        # staging one would only fail after the agent had already run.
         from dataclasses import replace
         (self.repo / "alias.py").symlink_to("calc.py")
         task = replace(self.task,
                        repo_snapshot_digest=tree_digest(self.repo, version=3))
-        seen = {}
 
         def agent(ctx):
-            seen["is_link"] = (ctx.workspace / "alias.py").is_symlink()
+            raise AssertionError("the agent must never run on this repo")
 
-        self.harness.run([(task, self.repo)], agent,
-                         budget=self.budget, arms=("A",))
-        self.assertTrue(seen["is_link"])
+        with self.assertRaisesRegex(BenchmarkError,
+                                    "repository_contains_symlinks:alias.py"):
+            self.harness.run([(task, self.repo)], agent,
+                             budget=self.budget, arms=("A",))
 
     @unittest.skipUnless(hasattr(os, "symlink"), "symlinks unavailable")
     def test_link_created_during_copy_is_detected(self):

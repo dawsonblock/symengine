@@ -92,8 +92,10 @@ class ClassificationTests(unittest.TestCase):
     def test_resource_limit_is_not_task_fail(self):
         self.assertEqual(classify_execution(receipt(
             security_errors=("fs:disk_budget_exceeded",))), RESOURCE_LIMIT)
+        # Submission-controlled stderr is never a classification input:
+        # printing "MemoryError" must not turn a failure into an error.
         self.assertEqual(classify_execution(receipt(
-            exit_status=1), stderr_tail="MemoryError"), RESOURCE_LIMIT)
+            exit_status=1), stderr_tail="MemoryError"), TASK_FAIL)
         self.assertEqual(classify_execution(receipt(
             security_errors=("output:stdout_truncated",))), RESOURCE_LIMIT)
 
@@ -114,9 +116,20 @@ class ClassificationTests(unittest.TestCase):
             receipt(), infrastructure_error="worker crashed"),
             INFRASTRUCTURE_ERROR)
 
-    def test_missing_runner_is_a_bootstrap_error_even_with_exit_zero(self):
+    def test_runner_unavailable_text_in_stderr_is_not_trusted(self):
+        # Under shared custody the submission writes to the same stderr
+        # as the bootstrap, so the text cannot reclassify a verdict.
         self.assertEqual(classify_execution(
-            receipt(), stderr_tail="evaluation_runner_unavailable: pytest\n"),
+            receipt(exit_status=1),
+            stderr_tail="evaluation_runner_unavailable: pytest\n"),
+            TASK_FAIL)
+
+    def test_split_runner_unavailable_exit_is_a_bootstrap_error(self):
+        # Split custody: the acceptance process never runs submitted code,
+        # so its bootstrap's runner-unavailable exit status is trusted.
+        self.assertEqual(classify_execution(receipt(
+            exit_status=70,
+            security_errors=("evaluation:process_split",))),
             EVALUATOR_BOOTSTRAP_ERROR)
 
 

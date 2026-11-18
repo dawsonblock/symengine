@@ -379,10 +379,12 @@ def verify_repository_binding(repository: Mapping
     if head is not None and (not isinstance(declared, str)
                              or head.lower() != declared.lower()):
         problems.append("repository_base_commit_mismatch: " + repository_id)
-    status = _git(root, "status", "--porcelain", "--untracked-files=all")
-    if status is None:
+    # Never ``git status``: it runs the checkout's configured clean
+    # filters. The comparison below runs no repository-configured program.
+    clean = gitquery.worktree_matches_head(root)
+    if clean is None:
         problems.append("repository_status_unverifiable: " + repository_id)
-    elif status:
+    elif not clean:
         problems.append("repository_is_dirty: " + repository_id)
     return head, problems
 

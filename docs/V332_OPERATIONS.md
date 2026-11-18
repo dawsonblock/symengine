@@ -28,9 +28,32 @@ controls. It does not qualify evaluator isolation (M6) or efficacy (M9).
 
 ## Wiring the service
 
-The `sis serve` CLI command starts only the legacy `/v1` learning surface. The
-v3 production boundary must be constructed in application code and bound with
-`create_server(..., v3_service=...)`:
+`sis serve` without options starts only the legacy `/v1` learning surface.
+`sis serve --v3-config v3.json` composes the production v3 boundary through
+`sis.v3.bootstrap.build_v3_service` and serves it (legacy `/v1` routes are then
+isolated unless `SIS_ALLOW_LEGACY_V1=1`). The JSON file carries only public
+trust anchors and paths (relative paths resolve against the file's directory);
+every key below is mandatory and a missing or malformed one refuses to start:
+
+| Key | Meaning |
+| --- | --- |
+| `candidate_database` | candidate registry SQLite file |
+| `custody_root`, `custody_revocation_keys` | evidence custody directory and its revocation signer keys (signed links are always required) |
+| `checkpoint_store`, `authority_keys`, `authority_epoch`, `authority_policy_version` | signed checkpoint log and verifier (`max_checkpoint_age_seconds` optional) |
+| `control_plane` | SQLite path or `postgresql://` DSN |
+| `repository_registry`, `repository_registry_public_key` | signed repository registry JSONL |
+| `execution_identity_keys` | harness keys for execution identities |
+| `evaluator_keys`, `operator_keys` | candidate evidence/receipt and decision signers |
+| `certificate_keys`, `delivery_keys` | certificate and delivery-attestation signers |
+| `evaluation_protocol` | preregistered protocol document (inline or a path) |
+| `qualification_policy` | `QualificationPolicy` fields |
+| `api_keys_file` | JSON `{token: requester}` (secret; keep it out of the config) |
+| `authority_signer` (optional) | `{"seed_file", "key_id", "issuer_identity"}`; binds the `AuthorityJournal` and `custody.bind_on_change(journal.publish)` in this process |
+
+Startup also refuses an authority that is not checkpoint-verified. Receipts and
+delivery attestations are resolved from custody and re-authenticated. The same
+composition can be built in application code and bound with
+`create_server(..., v3_service=...)`; the manual equivalent is:
 
 ```python
 from sis.server import create_server
@@ -69,6 +92,23 @@ run `registry.publish_pending()` to publish the pending state, then retry.
 
 Manual seeding is available through
 `CandidateRegistry.seed_authority_head(control_plane)`.
+
+Control-plane schema version 3 adds a unique index on
+`guidance_outcome.receipt_digest`: one authenticated evaluator receipt
+backs at most one outcome. A version-2 database that already attached
+one receipt to several authorizations is refused at open
+(`control_plane_outcome_receipt_reused`) for an operator to resolve.
+Schema creation and the version row are race-safe across replicas.
+
+## Operator token authorizations
+
+Token-mode promotion decisions record
+`operator_token_hmac:<token_sha256>:<HMAC-SHA256(token, decision payload)>`.
+Replicas holding only the token digest check the digest; an auditor
+holding the token re-verifies every decision with
+`PromotionController.verify(operator_token=...)`. The legacy constant
+`operator_token_sha256:<digest>` is still read from existing rows but is
+refused for new commits.
 
 ## Custody links
 

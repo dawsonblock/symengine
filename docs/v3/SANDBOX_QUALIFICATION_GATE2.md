@@ -136,3 +136,23 @@ are recorded in `release/release_manifest.json`; the digest in the
 sections above describes the 2026-11-14 qualification. The probe again
 passed 13/13 checks, the fresh attestation verified, and the real
 container denied the private tests.
+
+## Executor changes after the stored evidence (2026-11-18)
+
+These change how containers are started and cleaned up, not the
+launch controls the probe checks; the stored probe, receipt and
+attestation predate them and have not been regenerated.
+
+- Sandbox containers start with `--rm` and the label
+  `sis.v3.sandbox=<worker identity>`, so a container leaked by a crashed
+  evaluator can be listed and removed
+  (`docker ps -aq --filter label=sis.v3.sandbox`).
+- A workspace path containing a comma is refused
+  (`workspace_path_unrepresentable`) instead of being passed to
+  `--mount`, which has no escaping.
+- Background processes left by the command are killed (`kill -9 -1` as
+  each run principal) before the workspace is copied out.
+- The split-custody worker runs as `python3 -I`, so a workspace module
+  cannot shadow the worker's own imports.
+- Shared-custody (`/private` mount) receipts carry
+  `custody:shared_unqualified`; only split custody is qualification-grade.

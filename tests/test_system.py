@@ -61,7 +61,11 @@ class InductionTests(unittest.TestCase):
         result=induce(req['train'],req['validation'],namespace=req['namespace'])
         self.assertEqual(result['status'],'locally_validated')
         self.assertEqual(result['rule']['op'],'add')
-        self.assertEqual(result['validation_passed'],3)
+        # Legacy validation is split: one development row, two sealed
+        # holdout rows that never drive selection.
+        self.assertEqual(result['dev_count'],1)
+        self.assertEqual(result['validation_passed'],2)
+        self.assertTrue(result['holdout_sealed'])
 
     def test_sequence_copy_rule(self):
         req=fixture('sequence_study.json')
@@ -81,9 +85,14 @@ class InductionTests(unittest.TestCase):
 
     def test_failed_validation_is_not_promotion_evidence(self):
         req=fixture('arithmetic_study.json')
-        req['validation'][0]['output']=99
+        req['validation'][-1]['output']=99
         result=induce(req['train'],req['validation'])
         self.assertEqual(result['status'],'validation_failed')
+        # A corrupted development row is never promotion evidence either.
+        req=fixture('arithmetic_study.json')
+        req['validation'][0]['output']=99
+        result=induce(req['train'],req['validation'])
+        self.assertNotEqual(result['status'],'locally_validated')
 
     def test_validation_overlap_rejected(self):
         req=fixture('arithmetic_study.json')

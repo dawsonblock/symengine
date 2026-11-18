@@ -66,8 +66,29 @@ version, prompt, budget and evaluator. Arm order is randomized per task.
   the protocol arms must agree. `tools/five_arm_campaign.py --demo
   --arms primary` runs the scripted two-task demonstration; it is
   machinery evidence, never an efficacy result.
+- **Minimum effect binds power.** The declared expected rates must lie
+  in (0, 1) and their difference may not exceed the preregistered
+  `min_effect`; a plan cannot buy a small sample by declaring an
+  implausibly large effect.
+- **Repository-clustered decision.** Tasks within one repository are
+  correlated, so the efficacy decision is an exact repository-level
+  sign-flip test at the preregistered alpha (with a repository cluster
+  bootstrap interval). A confirmatory label needs at least 20 holdout
+  repositories contributing tasks: an exact sign-flip test over R
+  repositories cannot reach p below 2^(1-R), and cluster-level inference
+  with fewer than about twenty clusters is unreliable. The manifest
+  validator still accepts five holdout repositories for an exploratory
+  run. Task-level McNemar is reported as a secondary statistic.
 - **Equal budgets.** Every arm gets the same wall-clock, token and tool
-  budget per task. Budget-exceeded runs are not passes.
+  budget per task. Budget-exceeded runs are not passes. Budget-exceeded,
+  timed-out and errored agent runs are ordinary failures; they do not
+  make the study's accounting unverified.
+- **Per-task guidance.** A verified learned bundle is served per task
+  through the governed serving gateway with the task's repository,
+  failure class, prompt and files, so scope, applicability and
+  counterexample gates decide what each task receives; every decision
+  and rejection is recorded in `guidance.serving_decisions`. A run
+  whose guidance was not routed this way is not confirmatory.
 - **Hidden, independently verified outcomes.** Acceptance tests are
   evaluator-owned, live outside the public repository, and are applied by
   the evaluator. The agent never sees the hidden tests.
@@ -307,9 +328,14 @@ evidence; the bundle is.
 ## Metrics
 
 - Verified solve rate per arm.
-- Paired wins/losses/ties for A vs E and E vs B/C/D.
-- Exact McNemar p-value and Newcombe difference interval.
-- Negative transfer: guidance makes a task worse than baseline.
+- Paired wins/losses/ties for A vs E and E vs B/C/D (the latter
+  Holm-corrected secondary contrasts).
+- Exact McNemar p-value and Newcombe difference interval at the
+  preregistered alpha (task level, secondary).
+- Negative transfer: paired losses, tasks the baseline solves and E does
+  not, over all paired tasks; tasks marked `"misleading": true` in the
+  manifest are also reported separately. The threshold is the
+  preregistered `max_negative_transfer` (default 0.10).
 - Token, tool-call and wall-clock cost per verified solution.
 - Latency.
 - Per-repository generalization on unseen repositories.
@@ -324,12 +350,12 @@ evidence; the bundle is.
 | --- | --- |
 | `demonstration` | Scripted machinery evidence; never an efficacy claim |
 | `exploratory` | Real agent, but underpowered or not preregistered |
-| `confirmatory` | Real agent, hidden repository-disjoint holdout, protocol conformance and the preregistered sample size |
+| `confirmatory` | Real agent, hidden repository-disjoint holdout across at least 20 repositories, protocol conformance, the preregistered sample size, measured negative transfer and per-task governed serving |
 | `invalid` | Missing manifest, missing agent, infrastructure failure or protocol mismatch |
 
-Only `confirmatory` evidence with a statistically supported A→E
-improvement and no material negative transfer can support an efficacy
-claim. A `confirmatory` run that finds no evidence is still a result and
+Only `confirmatory` evidence with a repository-level statistically
+supported A→E improvement and measured, non-material negative transfer
+can support an efficacy claim. A `confirmatory` run that finds no evidence is still a result and
 must be preserved.
 
 ## Evidence placement

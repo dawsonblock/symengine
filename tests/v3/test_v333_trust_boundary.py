@@ -982,7 +982,10 @@ class SearchStarvationTests(unittest.TestCase):
         result = induce(train, validation, max_candidates=50000)
         self.assertIsNotNone(result["rule"], result["status"])
         self.assertEqual(
-            result["validation_passed"], len(validation), result["status"])
+            result["validation_passed"], result["holdout_count"],
+            result["status"])
+        self.assertEqual(result["dev_count"] + result["holdout_count"],
+                         len(validation))
         # The recovered rule must generalize to unseen oracle points.
         rng = random.Random(1)
         for _ in range(10):

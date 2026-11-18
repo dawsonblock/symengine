@@ -22,8 +22,12 @@ The boundary is factual, and the receipt says which one held:
   second numeric UID through ``docker exec --user`` and the private
   directory is mode 0700 owned by the evaluator UID.
 
-Only top-level modules are proxied, and only primitives, callables and
-composites of primitives cross the socket. The codec is JSON over a closed
+Only top-level modules are proxied, and never one the evaluator's own
+environment provides (standard library, installed packages, modules
+beside the tests): a workspace cannot shadow a library the tests import.
+Only primitives, callables and composites of primitives cross the
+socket; any other call result stays in the worker and is referred to by
+a handle. The codec is JSON over a closed
 type set: submission-produced bytes are never unpickled in the evaluator
 process.
 """
@@ -164,10 +168,10 @@ class SplitRef:
         self._client = client
         self._path = list(path)
 
-    def __getattr__(self, name: str) -> "SplitRef":
+    def __getattr__(self, name: str) -> Any:
         if name.startswith("__") and name.endswith("__"):
             raise AttributeError(name)
-        return SplitRef(self._client, self._path + [name])
+        return self._client.get(self._path + [name])
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         return self._client.call(self._path, args, kwargs)
@@ -237,8 +241,20 @@ class SplitClient:
             _raise_remote(response.get("error"))
         value = response.get("value")
         if isinstance(value, dict) and value.get("t") == "ref":
-            return SplitRef(self, path)
+            # The result stayed in the worker; refer to it by its handle,
+            # never by the callable's path (that would re-call it).
+            return SplitRef(self, [_handle(value)])
         return _decode(value)
+
+
+def _handle(value: Mapping[str, Any]) -> str:
+    handle = value.get("handle")
+    if not isinstance(handle, str) or not _HANDLE.fullmatch(handle):
+        raise SplitProtocolError("call result reference has no handle")
+    return handle
+
+
+_HANDLE = re.compile(r"^#[0-9]{1,9}$")
 
 
 def _host_encode(value: Any, depth: int = 0) -> dict:
@@ -247,6 +263,8 @@ def _host_encode(value: Any, depth: int = 0) -> dict:
         raise SplitProtocolError("argument nesting exceeds the bound")
     if value is None:
         return {"t": "none"}
+    if isinstance(value, SplitRef):
+        return {"t": "handle", "v": list(value._path)}
     if isinstance(value, bool):
         return {"t": "bool", "v": value}
     if isinstance(value, int):
@@ -288,6 +306,10 @@ import sys
 
 MAX_DEPTH = 32
 MAX_ITEMS = 10000
+MAX_HANDLES = 100000
+# Call results that cannot cross the socket stay here; the evaluator
+# refers to them by handle ("#<n>"), never by the callable's path.
+HANDLES = {}
 
 
 class NotEncodable(Exception):
@@ -298,6 +320,8 @@ def decode(payload):
     kind = payload.get("t")
     if kind == "none":
         return None
+    if kind == "handle":
+        return resolve(payload.get("v"))
     if kind == "bool":
         return bool(payload.get("v"))
     if kind == "int":
@@ -350,10 +374,24 @@ def encode(value, depth=0):
 
 
 def resolve(path):
-    obj = importlib.import_module(path[0])
+    if (not isinstance(path, list) or not path
+            or not all(isinstance(part, str) for part in path)):
+        raise ValueError("invalid path")
+    if path[0].startswith("#"):
+        obj = HANDLES[path[0]]
+    else:
+        obj = importlib.import_module(path[0])
     for name in path[1:]:
         obj = getattr(obj, name)
     return obj
+
+
+def keep(value):
+    if len(HANDLES) >= MAX_HANDLES:
+        raise NotEncodable("handles")
+    handle = "#%d" % (len(HANDLES) + 1,)
+    HANDLES[handle] = value
+    return {"t": "ref", "handle": handle}
 
 
 def handle(request):
@@ -385,7 +423,7 @@ def handle(request):
         try:
             return {"ok": True, "value": encode(result)}
         except NotEncodable:
-            return {"ok": True, "value": {"t": "ref"}}
+            return {"ok": True, "value": keep(result)}
     return {"ok": False,
             "error": {"type": "SplitProtocolError", "message": "unknown op"}}
 
@@ -550,9 +588,18 @@ class Ref:
         self._path = list(path)
 
     def __getattr__(self, name):
+        # Read the attribute in the worker: a plain value (``box.n``)
+        # comes back as data, anything else stays a reference.
         if name.startswith("__") and name.endswith("__"):
             raise AttributeError(name)
-        return Ref(self._path + [name])
+        path = self._path + [name]
+        response = request({"op": "get", "path": path})
+        if not response.get("ok"):
+            raise_remote(response.get("error"))
+        value = response.get("value") or {}
+        if value.get("t") == "ref":
+            return Ref(path)
+        return decode(value)
 
     def __call__(self, *args, **kwargs):
         response = request({"op": "call", "path": self._path,
@@ -563,7 +610,14 @@ class Ref:
             raise_remote(response.get("error"))
         value = response.get("value") or {}
         if value.get("t") == "ref":
-            return Ref(self._path)
+            # The result stayed in the worker: refer to it by its handle.
+            # Returning a reference to the callable instead would re-call
+            # it on every attribute access.
+            handle = value.get("handle")
+            if (not isinstance(handle, str) or not handle.startswith("#")
+                    or not handle[1:].isdigit() or len(handle) > 10):
+                fail(SPLIT_LOST_EXIT, "evaluation_split_worker_lost")
+            return Ref([handle])
         return decode(value)
 
     def __repr__(self):
@@ -575,6 +629,8 @@ def encode(value, depth=0):
         raise TypeError("split argument nesting exceeds the bound")
     if value is None:
         return {"t": "none"}
+    if isinstance(value, Ref):
+        return {"t": "handle", "v": list(value._path)}
     if isinstance(value, bool):
         return {"t": "bool", "v": value}
     if isinstance(value, int):
@@ -636,6 +692,30 @@ class WorkspaceLoader(importlib.abc.Loader):
         return self._is_package
 
 
+TRUSTED_PATH = [entry for entry in sys.path
+                if entry and os.path.abspath(entry) != os.path.abspath(workspace)]
+STDLIB = frozenset(getattr(sys, "stdlib_module_names", ())) | frozenset(
+    sys.builtin_module_names)
+
+
+def trusted_module(name):
+    """True when the evaluator's own environment provides ``name``.
+
+    The standard library, builtins, installed packages and modules beside
+    the acceptance tests always resolve from the evaluator's environment.
+    A workspace must never shadow a library the tests import later
+    (``numpy``, ``decimal``, ``hypothesis``): the test would then compare
+    against values the submission computed in its own process.
+    """
+    if name in STDLIB:
+        return True
+    try:
+        return importlib.machinery.PathFinder.find_spec(
+            name, TRUSTED_PATH) is not None
+    except Exception:
+        return True
+
+
 class WorkspaceFinder(importlib.abc.MetaPathFinder):
     def find_spec(self, fullname, path=None, target=None):
         parts = fullname.split(".")
@@ -647,6 +727,8 @@ class WorkspaceFinder(importlib.abc.MetaPathFinder):
                 return None
         elif len(parts) > 1:
             # A submodule of something the evaluator already resolved.
+            return None
+        elif trusted_module(root):
             return None
         search = [workspace] if len(parts) == 1 else [
             os.path.join(workspace, *parts[:-1])]
@@ -715,7 +797,10 @@ else:
 def worker_argv(transport: tuple[str, str], workspace: str) -> list[str]:
     """Argv for the restricted worker process."""
     mode, target = transport
-    return ["-c", WORKER_SOURCE, mode, target, workspace]
+    # -I: the worker starts inside the workspace, and its own imports
+    # (json, socket, ...) must resolve from the standard library. The
+    # workspace is added to sys.path only after they are loaded.
+    return ["-I", "-c", WORKER_SOURCE, mode, target, workspace]
 
 
 def split_bootstrap_argv(
