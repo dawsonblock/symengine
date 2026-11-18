@@ -259,8 +259,11 @@ class CodexCliAdapter:
             watchdog.cancel()
             with self._lock:
                 self._active.pop(turn_id, None)
-            if proc.poll() is None:
-                self._kill_group(proc)
+            # Always kill the group, not only a live leader: the CLI can
+            # exit while commands it started keep running in its group.
+            # The group id is the leader's pid (start_new_session), which
+            # still names the group after the leader has been reaped.
+            self._kill_group(proc)
             stderr_thread.join(timeout=5)
             for stream in (proc.stdout, proc.stderr):
                 try:

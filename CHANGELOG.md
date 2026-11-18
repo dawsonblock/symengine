@@ -1,5 +1,42 @@
 # Changelog
 
+## 2026-11-18 — Review fixes across authority, sandbox and study (SIS-FIX-12)
+
+A whole-repository review found defects in three layers. Each fix has a
+regression test in a `test_review_fix_*` file. The SIS-v3.3.9 release
+seal (`release/`, `RELEASE_SHA256.json`) predates these changes and must
+be rebuilt before the next release.
+
+- **Authority and serving.** Signed custody revocations and supersessions
+  of a candidate, decision or certificate now withdraw it at serve time.
+  Previously only client-supplied `revoked_digests` were consulted. A
+  withdrawn candidate is excluded individually instead of taking the
+  catalog down. `AuthorityDB` reads are locked. Checkpoints verify
+  append-only custody extension before signing. The control plane
+  (schema v3) accepts one outcome per evaluator receipt. Token-mode
+  operator authorizations are HMACs. `sis serve --v3-config` builds the
+  production v3 stack via `sis.v3.bootstrap`.
+- **Evaluator sandbox.** The rlimit launcher, split worker and seccomp
+  wrapper run as `python -I` from a neutral directory, fail closed when a
+  limit cannot be set, and reap descendants on Linux. Git queries on
+  untrusted checkouts no longer run repository filters. A shared-custody
+  pass requires a pytest report, so `os._exit(0)` fails, and receipts
+  mark shared custody unqualified. The split import proxy cannot shadow
+  libraries. Execution classification ignores submission-controlled
+  stderr. The verifier rejects submissions that change during
+  evaluation. The seccomp filter adds x32, `clone` namespace flags,
+  `clone3`, the new mount API and io_uring. The Linux worker joins its
+  cgroup before exec, and Docker containers are `--rm` and labelled.
+- **Efficacy study and induction.** Contrasts use the preregistered
+  alpha. Declared power effects cannot exceed `min_effect`. Timeouts and
+  budget overruns are attested failures. Negative transfer is measured
+  and gated. The confirmatory decision is a repository-level sign-flip
+  test requiring at least 20 holdout repositories, and secondary
+  contrasts are Holm-adjusted. The campaign serves guidance per task
+  through `GovernedServingGateway`. Legacy induction splits validation
+  into disjoint dev and holdout rows, and promotion requires a sealed
+  holdout.
+
 ## 2026-11-16 — Resource limits no longer use preexec_fn (SIS-FIX-11)
 
 `LocalSubprocessExecutor` applied `RLIMIT_CPU`, `RLIMIT_AS`,

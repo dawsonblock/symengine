@@ -100,6 +100,26 @@ def _reject_hard_links(root: Path) -> None:
                 "repository_contains_hard_links:" + relative)
 
 
+def _reject_symlinks(root: Path) -> None:
+    """Refuse every symlink, internal ones included.
+
+    Every executor's ``prepare`` rejects a tree containing any symlink,
+    so a repository staged with an internal link could never be
+    evaluated: the arm would end in an evaluator error after the agent
+    already ran. Refusing at staging keeps one coherent rule (no links
+    anywhere in an evaluated tree) and reports it before any work starts.
+    """
+    links: list[str] = []
+    for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
+        for name in dirnames + filenames:
+            full = Path(dirpath) / name
+            if full.is_symlink():
+                links.append(full.relative_to(root).as_posix())
+    if links:
+        raise BenchmarkError(
+            "repository_contains_symlinks:" + ",".join(sorted(links)[:20]))
+
+
 def stage_repository(base_dir: str | Path, workspace: str | Path, *,
                      expected_execution: str | None = None) -> str:
     """Copy a repository into a disposable workspace without dereferencing links.
@@ -111,7 +131,9 @@ def stage_repository(base_dir: str | Path, workspace: str | Path, *,
     (``symlinks=True``), and re-scans the staged tree so a link swapped
     in during the copy is observed as a link rather than followed. The
     source and staged tree must hash identically; any drift during
-    staging aborts the arm. When ``expected_execution`` is supplied, the
+    staging aborts the arm. Internal links are refused too, with
+    ``repository_contains_symlinks``: no executor will evaluate a tree
+    that contains a link. When ``expected_execution`` is supplied, the
     staged tree's execution fingerprint (permission bits, entry types
     and symlink targets) must also match it, so a mode change after
     manifest validation cannot reach the agent. Returns the staged tree
@@ -135,6 +157,7 @@ def stage_repository(base_dir: str | Path, workspace: str | Path, *,
     if external:
         raise BenchmarkError(
             "repository_contains_external_symlinks:" + ",".join(external))
+    _reject_symlinks(source)
     try:
         shutil.copytree(source, target, dirs_exist_ok=True, symlinks=True)
     except (OSError, shutil.Error) as exc:
@@ -152,6 +175,7 @@ def stage_repository(base_dir: str | Path, workspace: str | Path, *,
     if external:
         raise BenchmarkError(
             "repository_contains_external_symlinks:" + ",".join(external))
+    _reject_symlinks(target)
     if after.digest != before.digest:
         raise BenchmarkError("repository_changed_during_staging")
     if after_execution != before_execution:

@@ -37,7 +37,8 @@ from dataclasses import replace
 from pathlib import Path, PurePosixPath
 
 from .contracts import ContractError, ExecutionReceiptV1, canonical_digest
-from .runner import (MAX_WORKSPACE_FILES, CommandSpec, ResourceLimits,
+from .runner import (MARKER_SHARED_CUSTODY, MAX_WORKSPACE_FILES,
+                     CommandSpec, ResourceLimits,
                      RunnerError, Workspace, command_spec_digest,
                      mark_private_material_modified, private_command_spec,
                      private_material_modified, scan_tree,
@@ -48,6 +49,9 @@ from .split_harness import (MARKER_SEPARATE_UID, MARKER_SPLIT,
                             split_failure_marker, split_pytest_argv)
 from .workspace_guard import ManagedWorkspaceRegistry, protected_overlap
 
+#: Label on every sandbox container, so leaked ones can be listed and
+#: removed: ``docker rm -f $(docker ps -aq --filter label=sis.v3.sandbox)``.
+CONTAINER_LABEL = "sis.v3.sandbox"
 _IMAGE_DIGEST = re.compile(
     r"^[a-z0-9][a-z0-9._/-]*(?::[A-Za-z0-9._-]+)?@sha256:[0-9a-f]{64}$")
 _USER = re.compile(r"^([0-9]{1,10})(?::([0-9]{1,10}))?$")
@@ -316,6 +320,10 @@ class DockerSandboxExecutor:
                             workspace="/workspace")
                     receipt = self._run_workspace(
                         record, spec, private_host=material)
+                    if material is not None:
+                        receipt = replace(
+                            receipt, security_errors=receipt.security_errors
+                            + (MARKER_SHARED_CUSTODY,))
                     if material is not None and private_material_modified(
                             material, private_files):
                         # The mounted directory is the copy the run could
@@ -529,6 +537,9 @@ class DockerSandboxExecutor:
                 # say so rather than report the pre-run tree as final.
                 security_errors.append("fs:workspace_state_unavailable")
             else:
+                # Background processes the command left behind could keep
+                # writing while the workspace is archived; stop them first.
+                self._stop_background(container, split=split)
                 try:
                     # Files created by the submission are owned by the
                     # worker UID in split mode; collect them as that UID.
@@ -656,8 +667,18 @@ class DockerSandboxExecutor:
         # able to read the copied-in workspace; the evaluator UID keeps
         # write access. Only the two run principals can reach this tmpfs.
         workspace_mode = "0777" if split else "0770"
+        # Docker's --mount grammar has no escaping for commas, so a path
+        # that cannot be represented fails closed instead of being
+        # mounted somewhere unintended.
+        submission = str(record.real_path)
+        if "," in submission:
+            raise RunnerError("workspace_path_unrepresentable")
         command = [
-            self._docker, "run", "-d", "--name", container,
+            # --rm and the label: a container leaked by a crashed
+            # evaluator stops being kept once it stops, and a running one
+            # can be found with ``docker ps --filter label=...``.
+            self._docker, "run", "-d", "--rm", "--name", container,
+            "--label", f"{CONTAINER_LABEL}={self.worker_identity}",
             "--network", "none",
             "--read-only",
             "--tmpfs", f"/tmp:rw,noexec,nosuid,size={self._tmpfs}",
@@ -677,7 +698,7 @@ class DockerSandboxExecutor:
             "--ulimit", f"nofile={self._nofile}:{self._nofile}",
             "--ipc", "none",
             "--mount",
-            f"type=bind,source={record.real_path},target=/submission,readonly",
+            f"type=bind,source={submission},target=/submission,readonly",
             "--workdir", "/workspace",
             "-e", "HOME=/tmp",
             "-e", "TMPDIR=/tmp",
@@ -802,7 +823,7 @@ class DockerSandboxExecutor:
                 [self._docker, "exec", "-d", "--user", self._split_user,
                  "--workdir", "/workspace",
                  "-e", "HOME=/tmp", "-e", "TMPDIR=/tmp",
-                 container, "python3", "-c", WORKER_SOURCE,
+                 container, "python3", "-I", "-c", WORKER_SOURCE,
                  "--socket", self._split_socket, "/workspace"],
                 capture_output=True, text=True, timeout=60)
         except (OSError, subprocess.TimeoutExpired) as exc:
@@ -1031,6 +1052,26 @@ class DockerSandboxExecutor:
                     archive.extract(member, path=staging)
                 if member.isreg():
                     extracted += member.size
+
+    def _stop_background(self, container: str, *, split: bool) -> None:
+        """SIGKILL every run-principal process except the container's PID 1.
+
+        ``kill -9 -1`` signals every process the caller may signal except
+        PID 1 (the idle keeper) and itself. It runs as each run principal,
+        so it can only reach processes the submission could have started.
+        Best effort: a failure leaves the copy-out to its own checks.
+        """
+        users = [self._user]
+        if split and self._split_user:
+            users.append(self._split_user)
+        for user in users:
+            try:
+                subprocess.run(
+                    [self._docker, "exec", "--user", user, container,
+                     "sh", "-c", "kill -9 -1 2>/dev/null; exit 0"],
+                    capture_output=True, timeout=30)
+            except (OSError, subprocess.TimeoutExpired):
+                pass
 
     def _container_running(self, container: str) -> bool:
         try:

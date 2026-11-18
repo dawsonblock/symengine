@@ -76,23 +76,170 @@ _PRIVATE_NAME = re.compile(r"^(?!/)(?![A-Za-z]:)(?!.*(?:^|/)\.\.(?:/|$))[A-Za-z0
 _LIMIT_LAUNCHER = r'''
 import os
 import resource
+import signal
 import sys
 
+# Evaluator-owned launcher. It runs with ``python -I`` from a neutral
+# working directory, so nothing in the graded workspace is importable here,
+# and it fails closed: a limit it cannot apply stops the run before the
+# command starts instead of being skipped.
 args = sys.argv[1:]
-pairs = []
+status_fd = None
+cwd = None
+cgroup = None
+supervise = False
+triples = []
 while args and args[0] != "--":
-    pairs.append((args.pop(0), int(args.pop(0))))
-if not args or args[0] != "--":
+    option = args.pop(0)
+    if option == "--status-fd":
+        status_fd = int(args.pop(0))
+    elif option == "--cwd":
+        cwd = args.pop(0)
+    elif option == "--cgroup":
+        cgroup = args.pop(0)
+    elif option == "--supervise":
+        supervise = True
+    else:
+        triples.append((option, int(args.pop(0)), int(args.pop(0))))
+if not args or args[0] != "--" or len(args) < 2:
     raise SystemExit(64)
 command = args[1:]
-for name, value in pairs:
+
+
+def report(text):
+    global status_fd
+    if status_fd is None:
+        return
+    try:
+        os.write(status_fd, text.encode("ascii", "replace")[:512])
+        os.close(status_fd)
+    except OSError:
+        pass
+    status_fd = None
+
+
+def refuse(reason):
+    report("F" + reason)
+    sys.stderr.write("sis_launcher_refused: " + reason + "\n")
+    sys.stderr.flush()
+    os._exit(71)
+
+
+if cgroup is not None:
+    # Join the cgroup before anything is forked, so every descendant of
+    # the command is created inside it.
+    try:
+        with open(cgroup, "w") as handle:
+            handle.write(str(os.getpid()))
+    except OSError as exc:
+        refuse("cgroup_join_failed:%s" % (exc.errno,))
+for name, soft, hard in triples:
     limit = getattr(resource, name, None)
     if limit is None:
-        continue
+        refuse("rlimit_unavailable:" + name)
     try:
-        resource.setrlimit(limit, (value, value))
-    except (OSError, ValueError):
-        pass
+        resource.setrlimit(limit, (soft, hard))
+    except (OSError, ValueError) as exc:
+        refuse("rlimit_failed:" + name)
+if cwd is not None:
+    try:
+        os.chdir(cwd)
+    except OSError:
+        refuse("chdir_failed")
+
+
+def children():
+    found = []
+    me = str(os.getpid())
+    try:
+        names = os.listdir("/proc")
+    except OSError:
+        return found
+    for name in names:
+        if not name.isdigit():
+            continue
+        try:
+            with open("/proc/" + name + "/stat", "rb") as handle:
+                data = handle.read()
+        except OSError:
+            continue
+        fields = data[data.rfind(b")") + 2:].split()
+        if len(fields) > 1 and fields[1].decode() == me:
+            found.append(int(name))
+    return found
+
+
+def reap_all():
+    # Orphaned descendants, including ones that left the process group
+    # with setsid(), are reparented to this subreaper. Kill and reap until
+    # none remain (bounded, so a pathological tree cannot hold the run).
+    import time
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        for pid in children():
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except OSError:
+                pass
+        try:
+            pid, _status = os.waitpid(-1, os.WNOHANG)
+        except ChildProcessError:
+            return
+        except OSError:
+            return
+        if pid == 0:
+            time.sleep(0.005)
+
+
+if supervise and sys.platform.startswith("linux"):
+    import ctypes
+    libc = ctypes.CDLL(None, use_errno=True)
+    PR_SET_CHILD_SUBREAPER = 36
+    if libc.prctl(PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0) != 0:
+        supervise = False
+if supervise and sys.platform.startswith("linux"):
+    report("LS")
+    child = os.fork()
+    if child == 0:
+        try:
+            for number in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+                signal.signal(number, signal.SIG_DFL)
+            os.execvpe(command[0], command, os.environ)
+        except BaseException:
+            pass
+        os._exit(127)
+
+    def stop(_number, _frame):
+        try:
+            os.kill(child, signal.SIGKILL)
+        except OSError:
+            pass
+
+    signal.signal(signal.SIGTERM, stop)
+    signal.signal(signal.SIGHUP, stop)
+    while True:
+        try:
+            _pid, status = os.waitpid(child, 0)
+            break
+        except ChildProcessError:
+            status = 127 << 8
+            break
+    reap_all()
+    if os.WIFSIGNALED(status):
+        # Die by the same signal, so the runner sees the command's own
+        # termination (SIGXCPU/SIGKILL at the CPU limit, for example).
+        number = os.WTERMSIG(status)
+        try:
+            signal.signal(number, signal.SIG_DFL)
+        except (OSError, ValueError):
+            pass
+        try:
+            os.kill(os.getpid(), number)
+        except OSError:
+            pass
+        os._exit(128 + number)
+    os._exit(os.WEXITSTATUS(status) if os.WIFEXITED(status) else 1)
+report("L")
 os.execvpe(command[0], command, os.environ)
 '''
 
@@ -109,6 +256,7 @@ cannot supply ``sitecustomize`` or shadow ``pytest`` before the
 acceptance command runs.
 """
 import importlib
+import os
 import runpy
 import sys
 import warnings
@@ -120,6 +268,74 @@ workspace = sys.argv[1]
 target = sys.argv[2:]
 if not target:
     raise SystemExit(64)
+# A per-run nonce for the result report. It is removed from the
+# environment before any submitted code can be imported.
+REPORT_NONCE = os.environ.pop("SIS_PYTEST_REPORT_NONCE", "")
+HERE = os.path.dirname(os.path.abspath(__file__))
+
+
+def run_pytest_with_report(args):
+    """Run pytest in-process and emit positive evidence of the result.
+
+    An exit status alone is not evidence: submitted code shares this
+    process and can call ``os._exit(0)``. The report is written only
+    after pytest finished its session, so an early exit leaves no report
+    and the verifier fails the run.
+    """
+    import json
+    import pytest
+
+    counts = {"collected": 0, "passed": 0, "failed": 0, "errors": 0,
+              "skipped": 0, "xfailed": 0, "xpassed": 0,
+              "collection_errors": 0}
+    files = {}
+    state = {"finished": False, "exitstatus": None}
+
+    class SisReport:
+        def pytest_collectreport(self, report):
+            if report.failed:
+                counts["collection_errors"] += 1
+
+        def pytest_collection_finish(self, session):
+            counts["collected"] = len(session.items)
+            for item in session.items:
+                path = os.path.abspath(str(getattr(item, "path", "")))
+                if path.startswith(HERE + os.sep):
+                    key = os.path.relpath(path, HERE).replace(os.sep, "/")
+                else:
+                    key = "<outside>"
+                files[key] = files.get(key, 0) + 1
+
+        def pytest_runtest_logreport(self, report):
+            if report.when == "call":
+                if hasattr(report, "wasxfail"):
+                    counts["xpassed" if report.passed else "xfailed"] += 1
+                elif report.passed:
+                    counts["passed"] += 1
+                elif report.failed:
+                    counts["failed"] += 1
+                elif report.skipped:
+                    counts["skipped"] += 1
+            elif report.failed:
+                counts["errors"] += 1
+            elif report.when == "setup" and report.skipped:
+                counts["xfailed" if hasattr(report, "wasxfail")
+                       else "skipped"] += 1
+
+        def pytest_sessionfinish(self, session, exitstatus):
+            state["finished"] = True
+            state["exitstatus"] = int(exitstatus)
+
+    code = int(pytest.main(list(args), plugins=[SisReport()]))
+    payload = dict(counts, files=files, finished=state["finished"],
+                   exitstatus=state["exitstatus"], returned=code)
+    line = ("\\nSIS_PYTEST_REPORT:" + REPORT_NONCE + ":"
+            + json.dumps(payload, sort_keys=True) + "\\n")
+    try:
+        os.write(1, line.encode("utf-8"))
+    except OSError:
+        pass
+    raise SystemExit(code)
 
 
 def block_missing_runner():
@@ -155,6 +371,8 @@ if target[0] == "-m":
         raise SystemExit(70)
     sys.path.insert(0, workspace)
     sys.argv = [module, *target[2:]]
+    if module == "pytest" and REPORT_NONCE:
+        run_pytest_with_report(target[2:])
     runpy.run_module(module, run_name="__main__", alter_sys=True)
 elif target[0] == "-c":
     if len(target) < 2:
@@ -171,6 +389,119 @@ else:
 '''
 
 
+def limit_triples(
+    limits: ResourceLimits, security_errors: list[str], *,
+    extra: tuple[tuple[str, int, int], ...] = (),
+    cpu_grace_seconds: int = 0,
+) -> list[tuple[str, int, int]]:
+    """Resolve ``(RLIMIT_NAME, soft, hard)`` triples for the launcher.
+
+    A requested value above the evaluator's own hard limit cannot be set
+    by an unprivileged launcher; it is clamped to that hard limit (a
+    stricter bound) and recorded, instead of failing every run.
+    """
+    if resource is None:
+        return []
+    wanted: list[tuple[str, int, int]] = [
+        ("RLIMIT_CPU", limits.cpu_seconds,
+         limits.cpu_seconds + cpu_grace_seconds)]
+    if hasattr(resource, "RLIMIT_AS"):
+        wanted.append(("RLIMIT_AS", limits.memory_bytes, limits.memory_bytes))
+    if hasattr(resource, "RLIMIT_FSIZE"):
+        # RLIMIT_FSIZE bounds each file, not the workspace total; the
+        # total is audited after the run (``fs:disk_budget_exceeded``).
+        wanted.append(("RLIMIT_FSIZE", limits.disk_bytes, limits.disk_bytes))
+    if limits.process_count is not None:
+        if hasattr(resource, "RLIMIT_NPROC"):
+            wanted.append(("RLIMIT_NPROC", limits.process_count,
+                           limits.process_count))
+        else:
+            security_errors.append("rlimit:nproc_unavailable")
+    wanted.extend(extra)
+    resolved: list[tuple[str, int, int]] = []
+    for name, soft, hard in wanted:
+        try:
+            _current_soft, current_hard = resource.getrlimit(
+                getattr(resource, name))
+        except (AttributeError, OSError, ValueError):
+            current_hard = resource.RLIM_INFINITY
+        if current_hard != resource.RLIM_INFINITY and hard > current_hard:
+            hard = current_hard
+            soft = min(soft, hard)
+            security_errors.append(f"rlimits:clamped:{name}")
+        resolved.append((name, soft, hard))
+    return resolved
+
+
+def limit_launcher_argv(
+    argv, triples, *, cwd: str | Path | None = None,
+    status_fd: int | None = None, cgroup_procs: str | Path | None = None,
+    supervise: bool = False,
+) -> list[str]:
+    """Argv that applies ``triples`` (and optionally joins a cgroup) then execs.
+
+    The launcher is evaluator code run as ``python -I``: neither the
+    current directory nor ``PYTHON*`` variables reach its ``sys.path``.
+    Start it from a neutral directory and pass the workspace as ``cwd``;
+    it changes directory only after every limit is applied. With
+    ``cgroup_procs`` it writes its own pid to that ``cgroup.procs`` file
+    first, so nothing it starts is ever outside the cgroup. With
+    ``supervise`` (Linux) it stays as a child subreaper that kills and
+    reaps every descendant when the command exits or on SIGTERM.
+    """
+    launcher = [sys.executable, "-I", "-c", _LIMIT_LAUNCHER]
+    if cwd is not None:
+        launcher += ["--cwd", str(cwd)]
+    if status_fd is not None:
+        launcher += ["--status-fd", str(status_fd)]
+    if cgroup_procs is not None:
+        launcher += ["--cgroup", str(cgroup_procs)]
+    if supervise:
+        launcher.append("--supervise")
+    for name, soft, hard in triples:
+        launcher += [name, str(int(soft)), str(int(hard))]
+    launcher.append("--")
+    return [*launcher, *argv]
+
+
+def read_launcher_status(fd: int) -> str:
+    """Read what the limit launcher reported, without blocking."""
+    try:
+        os.set_blocking(fd, False)
+        data = os.read(fd, 1024)
+    except (BlockingIOError, OSError):
+        data = b""
+    finally:
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+    return data.decode("ascii", "replace")
+
+
+def launcher_markers(status: str) -> list[str]:
+    """Receipt markers for the launcher status: only what was applied.
+
+    ``L`` means every limit was set before exec; ``LS`` additionally
+    means the launcher supervised the command as a child subreaper. Any
+    other status (a refusal, or nothing because the launcher never ran)
+    is a sandbox failure, never a silent ``rlimits:launcher`` claim.
+    """
+    if status == "LS":
+        return ["rlimits:launcher", "process:subreaper"]
+    if status == "L":
+        return ["rlimits:launcher"]
+    reason = status[1:] if status.startswith("F") else "no_status"
+    return ["sandbox:rlimits_not_applied:" + (reason or "unknown")]
+
+
+#: Receipt marker for evaluator-private material run in the submission's
+#: own process (shared custody). Such a verdict is development evidence,
+#: never qualification-grade: submitted code shares the test runner's
+#: process and principal and can forge whatever that process reports.
+MARKER_SHARED_CUSTODY = "custody:shared_unqualified"
+
+
 class RunnerError(RuntimeError):
     """A workspace or command specification cannot be executed."""
 
@@ -183,6 +514,11 @@ class ResourceLimits:
     counts the real UID's existing processes rather than only descendants; a
     low value can therefore prevent a command from forking at all. Set ``None``
     to leave the limit untouched.
+
+    ``disk_bytes`` is enforced live only per file (``RLIMIT_FSIZE``) by the
+    local and bubblewrap backends; the workspace total is checked after
+    the run and reported as ``fs:disk_budget_exceeded``. Only the Docker
+    backend bounds the total during the run (a sized tmpfs).
     """
 
     cpu_seconds: int = 30
@@ -1087,7 +1423,10 @@ class LocalSubprocessExecutor:
                             spec, names=private_files, prefix=str(material),
                             workspace=str(record.path))
                     receipt = self._run_workspace(
-                        record, spec, private=material is not None)
+                        record, spec, private=material is not None,
+                        extra_markers=(
+                            (MARKER_SHARED_CUSTODY,) if material is not None
+                            else ()))
                 if material is not None and private_material_modified(
                         material, private_files):
                     # The local backend runs the submission as the same OS
@@ -1140,11 +1479,13 @@ class LocalSubprocessExecutor:
         env = _minimal_env(record.path)
         env.update(spec.env)
         markers: list[str] = []
-        argv = self._limit_argv(argv, spec.limits, markers)
+        # The launcher starts from a neutral directory and enters the
+        # workspace only after the limits are set.
+        argv = self._limit_argv(argv, spec.limits, markers, cwd=record.path)
         try:
             proc = subprocess.Popen(
                 argv,
-                cwd=str(record.path),
+                cwd=os.path.abspath(os.sep),
                 env=env,
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL,
@@ -1155,6 +1496,7 @@ class LocalSubprocessExecutor:
         except OSError as exc:
             raise RunnerError(
                 f"split_custody_worker_start_failed:{exc}") from exc
+        proc._sis_supervised = resource is not None
         return proc, markers
 
     def _run_workspace(
@@ -1194,7 +1536,12 @@ class LocalSubprocessExecutor:
                 security_errors.append("network:not_enforced")
                 security_errors.append("seatbelt:profile_unembeddable_path")
 
-        argv = self._limit_argv(argv, limits, security_errors)
+        status_read = status_write = None
+        if resource is not None:
+            status_read, status_write = os.pipe()
+        argv = self._limit_argv(
+            argv, limits, security_errors, cwd=workdir,
+            status_fd=status_write)
         env = _minimal_env(record.path)
         env.update(spec.env)
 
@@ -1206,18 +1553,34 @@ class LocalSubprocessExecutor:
         usage_before = (
             resource.getrusage(resource.RUSAGE_CHILDREN) if resource is not None else None
         )
-        if self._registry.is_closing(record.workspace_id):
-            raise RunnerError("workspace_is_closing")
-        proc = subprocess.Popen(
-            argv,
-            cwd=str(workdir),
-            env=env,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            start_new_session=(os.name == "posix"),
-            pass_fds=pass_fds,
-        )
+        try:
+            if self._registry.is_closing(record.workspace_id):
+                raise RunnerError("workspace_is_closing")
+            # A neutral cwd: the launcher must not start inside the
+            # untrusted workspace (see ``_limit_argv``).
+            proc = subprocess.Popen(
+                argv,
+                cwd=(os.path.abspath(os.sep) if status_write is not None
+                     else str(workdir)),
+                env=env,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                start_new_session=(os.name == "posix"),
+                pass_fds=(*pass_fds,
+                          *(() if status_write is None else (status_write,))),
+            )
+        except BaseException:
+            if status_read is not None:
+                os.close(status_read)
+            raise
+        finally:
+            if status_write is not None:
+                try:
+                    os.close(status_write)
+                except OSError:
+                    pass
+        proc._sis_supervised = status_write is not None
         with self._lock:
             self._live[execution_id] = proc
             self._live_ws[execution_id] = record.workspace_id
@@ -1240,6 +1603,8 @@ class LocalSubprocessExecutor:
                         pipe.close()
                 except OSError:
                     pass
+            if status_read is not None:
+                read_launcher_status(status_read)
             raise RunnerError("workspace_is_closing")
 
         stop = threading.Event()
@@ -1313,6 +1678,17 @@ class LocalSubprocessExecutor:
             except subprocess.TimeoutExpired:
                 proc.kill()
                 proc.wait(timeout=10)
+        # Nothing the command started may outlive the run: the launcher
+        # reaps descendants as a child subreaper where the platform allows
+        # it, and the process group is killed even after a normal exit, so
+        # a background child cannot keep running after the receipt.
+        self._kill_group(proc)
+        if status_read is not None:
+            security_errors.extend(
+                launcher_markers(read_launcher_status(status_read)))
+            # RLIMIT_FSIZE bounds each file; the workspace total is only
+            # audited after the run (``fs:disk_budget_exceeded``).
+            security_errors.append("disk:per_file_limit_post_run_audit")
         # The parent's monotonic deadline is authoritative even when the
         # child exits on its own just after the limit. Without this check a
         # search that overruns the cooperative deadline by a few
@@ -1483,38 +1859,55 @@ class LocalSubprocessExecutor:
 
     @staticmethod
     def _kill_group(proc: subprocess.Popen) -> None:
-        try:
-            if os.name == "posix":
-                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-            else:  # pragma: no cover - Windows fallback
-                proc.kill()
-        except (OSError, ProcessLookupError):
+        """Stop a launched command and everything it started.
+
+        A supervised launcher is asked first (SIGTERM to the launcher
+        only): it kills the command and reaps every reparented
+        descendant, including ones that left the group with ``setsid``.
+        The process group is then killed by its id, which equals the
+        leader's pid because every launch uses ``start_new_session``; this
+        still reaches group members after the leader has been reaped.
+        """
+        if os.name != "posix":  # pragma: no cover - Windows fallback
             try:
                 proc.kill()
             except OSError:
                 pass
+            return
+        if getattr(proc, "_sis_supervised", False) and proc.poll() is None:
+            try:
+                os.kill(proc.pid, signal.SIGTERM)
+                proc.wait(timeout=15)
+            except (OSError, subprocess.TimeoutExpired):
+                pass
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except (OSError, ProcessLookupError):
+            if proc.poll() is None:
+                try:
+                    proc.kill()
+                except OSError:
+                    pass
 
     def _limit_argv(self, argv: list[str], limits: ResourceLimits,
-                    security_errors: list[str]) -> list[str]:
+                    security_errors: list[str], *, cwd: Path,
+                    status_fd: int | None = None) -> list[str]:
+        """Wrap ``argv`` in the evaluator-owned limit launcher.
+
+        The launcher runs as ``python -I`` from a neutral working
+        directory and only changes into ``cwd`` after the limits are set,
+        so a workspace module (``resource.py``, ``signal.py``) can never be
+        imported before the limits apply or outside the seatbelt wrapper.
+        It fails closed: a limit it cannot set stops the run, and the
+        status it writes to ``status_fd`` lets the receipt record what was
+        actually applied (see :func:`launcher_markers`).
+        """
         if resource is None:
             security_errors.append("rlimits:unavailable_platform")
             return argv
-        pairs: list[tuple[str, int]] = [("RLIMIT_CPU", limits.cpu_seconds)]
-        if hasattr(resource, "RLIMIT_AS"):
-            pairs.append(("RLIMIT_AS", limits.memory_bytes))
-        if hasattr(resource, "RLIMIT_FSIZE"):
-            pairs.append(("RLIMIT_FSIZE", limits.disk_bytes))
-        if limits.process_count is not None:
-            if hasattr(resource, "RLIMIT_NPROC"):
-                pairs.append(("RLIMIT_NPROC", limits.process_count))
-            else:
-                security_errors.append("rlimit:nproc_unavailable")
-        launcher = [sys.executable, "-c", _LIMIT_LAUNCHER]
-        for name, value in pairs:
-            launcher += [name, str(value)]
-        launcher.append("--")
-        security_errors.append("rlimits:launcher")
-        return [*launcher, *argv]
+        return limit_launcher_argv(
+            argv, limit_triples(limits, security_errors), cwd=cwd,
+            status_fd=status_fd, supervise=True)
 
     @staticmethod
     def _reject_symlinks(base: Path) -> None:

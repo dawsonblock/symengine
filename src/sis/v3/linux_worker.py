@@ -33,7 +33,7 @@ import tempfile
 import threading
 import time
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 try:
@@ -44,14 +44,19 @@ except ImportError:  # Windows: the backend is unavailable, not import-broken
 from .cgroups import CgroupUnavailable, CgroupV2Controller
 from .contracts import ContractError, ExecutionReceiptV1, canonical_digest
 from .runner import (
+    MARKER_SHARED_CUSTODY,
     CommandSpec,
     ResourceLimits,
     RunnerError,
     Workspace,
     command_spec_digest,
+    launcher_markers,
+    limit_launcher_argv,
+    limit_triples,
     mark_private_material_modified,
     private_command_spec,
     private_material_modified,
+    read_launcher_status,
     scan_tree,
     stage_private_material,
 )
@@ -166,10 +171,18 @@ def build_bwrap_argv(config: LinuxWorkerConfig, workspace_path: Path,
     if config.die_with_parent:
         argv.append("--die-with-parent")
     argv.append("--new-session")
-    # --unshare-all covers user, PID, network, IPC, UTS and cgroup.
-    argv.append("--unshare-all")
-    if config.share_network:
-        argv.append("--share-net")
+    if config.use_pid_namespace:
+        # --unshare-all covers user, PID, network, IPC, UTS and cgroup.
+        argv.append("--unshare-all")
+        if config.share_network:
+            argv.append("--share-net")
+    else:
+        # Every namespace of --unshare-all except PID, so the
+        # ``use_pid_namespace=False`` opt-out is honoured, not ignored.
+        argv += ["--unshare-user-try", "--unshare-ipc", "--unshare-uts",
+                 "--unshare-cgroup-try"]
+        if not config.share_network:
+            argv.append("--unshare-net")
     for path in config.system_binds:
         source = Path(path)
         if source.exists():
@@ -180,7 +193,10 @@ def build_bwrap_argv(config: LinuxWorkerConfig, workspace_path: Path,
                 "seccomp_dir is required when apply_seccomp is enabled")
         argv += ["--ro-bind", str(Path(seccomp_dir).resolve()),
                  "/opt/sis-seccomp"]
-        inner = [sys.executable, "/opt/sis-seccomp/seccomp_exec.py",
+        # -I: the wrapper starts in /workspace, and neither that
+        # directory nor a PYTHON* variable from the spec may put a
+        # submission module on its path before the filter is applied.
+        inner = [sys.executable, "-I", "/opt/sis-seccomp/seccomp_exec.py",
                  "--", *inner]
     if config.bind_etc_files and "/etc" not in config.system_binds:
         # A plain --dir /etc would leave the directory writable. Make it
@@ -223,30 +239,26 @@ def _seccomp_mode() -> str:
     return "unknown"
 
 
-def _apply_limits(limits: ResourceLimits):
-    """preexec hook: bound the child before exec (same model as runner)."""
+def _limit_triples(limits: ResourceLimits,
+                   security_errors: list[str]) -> list[tuple[str, int, int]]:
+    """Limits the launcher applies before exec (same model as the runner).
+
+    Applied by the evaluator-owned launcher, never by ``preexec_fn``:
+    Python code between fork and exec can deadlock when the evaluator
+    runs from worker threads.
+    """
     if resource is None:
         raise WorkerBackendUnavailable("resource_limits_unavailable")
-
-    def apply() -> None:
-        resource.setrlimit(
-            resource.RLIMIT_AS, (limits.memory_bytes, limits.memory_bytes))
-        resource.setrlimit(
-            resource.RLIMIT_CPU, (limits.cpu_seconds, limits.cpu_seconds + 1))
-        resource.setrlimit(
-            resource.RLIMIT_FSIZE, (limits.disk_bytes, limits.disk_bytes))
-        resource.setrlimit(resource.RLIMIT_NOFILE, (256, 256))
-        resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
-        if limits.process_count is not None:
-            resource.setrlimit(
-                resource.RLIMIT_NPROC,
-                (limits.process_count, limits.process_count))
-    return apply
+    return limit_triples(
+        limits, security_errors, cpu_grace_seconds=1,
+        extra=(("RLIMIT_NOFILE", 256, 256), ("RLIMIT_CORE", 0, 0)))
 
 
 def _kill_group(process: subprocess.Popen) -> None:
+    # The group id equals the leader's pid (start_new_session), which
+    # still names the group after the leader has been reaped.
     try:
-        os.killpg(os.getpgid(process.pid), signal.SIGKILL)
+        os.killpg(process.pid, signal.SIGKILL)
     except (ProcessLookupError, PermissionError, OSError):
         pass
 
@@ -368,6 +380,10 @@ class LinuxRootlessWorker:
                         workspace="/workspace")
                 receipt = self._run_workspace(
                     record, spec, private_dir=material)
+                if material is not None:
+                    receipt = replace(
+                        receipt, security_errors=receipt.security_errors
+                        + (MARKER_SHARED_CUSTODY,))
                 if material is not None and private_material_modified(
                         material, private_files):
                     receipt = mark_private_material_modified(receipt)
@@ -415,6 +431,11 @@ class LinuxRootlessWorker:
                 raise WorkerBackendUnavailable(str(exc)) from exc
             security_errors.append("cgroup:v2")
 
+        triples = _limit_triples(spec.limits, security_errors)
+        # RLIMIT_FSIZE bounds each file; the workspace total is audited
+        # after the run. Say so instead of implying a live disk quota.
+        security_errors.append("disk:per_file_limit_post_run_audit")
+        status_read = None
         try:
             with tempfile.TemporaryDirectory(
                     dir=self.root, prefix=".worker-") as temp:
@@ -425,20 +446,31 @@ class LinuxRootlessWorker:
                 exit_status = -1
                 if self._registry.is_closing(record.workspace_id):
                     raise RunnerError("workspace_is_closing")
+                status_read, status_write = os.pipe()
+                # The launcher joins the cgroup before it execs bwrap, so
+                # no process of the run can be forked outside it, and sets
+                # the limits without a preexec_fn.
+                launch = limit_launcher_argv(
+                    argv, triples, status_fd=status_write,
+                    cgroup_procs=(None if cgroup is None
+                                  else cgroup.path / "cgroup.procs"))
                 with open(stdout_path, "wb") as out, open(
                         stderr_path, "wb") as err:
                     try:
                         process = subprocess.Popen(
-                            argv,
+                            launch,
+                            cwd=os.path.abspath(os.sep),
                             stdin=subprocess.PIPE,
                             stdout=out,
                             stderr=err,
                             start_new_session=True,
-                            preexec_fn=_apply_limits(spec.limits),
+                            pass_fds=(status_write,),
                             env={},
                         )
                     except OSError as exc:
                         raise RunnerError("worker_launch_failed") from exc
+                    finally:
+                        os.close(status_write)
                     with self._lock:
                         self._live[execution_id] = process
                         self._live_ws[execution_id] = record.workspace_id
@@ -459,14 +491,6 @@ class LinuxRootlessWorker:
                         except (OSError, ValueError):
                             pass
                         raise RunnerError("workspace_is_closing")
-                    if cgroup is not None:
-                        try:
-                            cgroup.attach(process.pid)
-                        except OSError as exc:
-                            _kill_group(process)
-                            process.wait()
-                            raise WorkerBackendUnavailable(
-                                f"cgroup_attach_failed:{exc}") from exc
                     try:
                         process.communicate(
                             input=spec.stdin,
@@ -486,6 +510,12 @@ class LinuxRootlessWorker:
                         with self._lock:
                             self._live.pop(execution_id, None)
                             self._live_ws.pop(execution_id, None)
+                status = read_launcher_status(status_read)
+                status_read = None
+                if status.startswith("Fcgroup_join_failed"):
+                    raise WorkerBackendUnavailable(
+                        "cgroup_attach_failed:" + status[1:])
+                security_errors.extend(launcher_markers(status))
                 elapsed = time.monotonic() - started
                 output_cap = min(
                     self.config.max_output_bytes, spec.limits.output_bytes)
@@ -496,6 +526,8 @@ class LinuxRootlessWorker:
                 if stderr_cut:
                     security_errors.append("output:stderr_truncated")
         finally:
+            if status_read is not None:
+                read_launcher_status(status_read)
             if cgroup is not None:
                 cgroup.kill()
                 cgroup.remove()
