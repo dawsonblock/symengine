@@ -694,6 +694,12 @@ def stage_private_material(
         raise ContractError(
             f"{SPLIT_BOOTSTRAP_NAME} is reserved for evaluator staging")
     directory = Path(tempfile.mkdtemp(dir=Path(root), prefix=".private-"))
+    if os.name == "nt":
+        # %TEMP% can be an 8.3 short path (C:\Users\RUNNER~1\...). Pytest
+        # builds its collection tree from the long path, so a test file
+        # named through the short one is "not found" and nothing is
+        # collected. Hand out the long path; POSIX paths are unchanged.
+        directory = Path(os.path.realpath(directory))
     try:
         # A Docker bind mount preserves host ownership, and the container
         # user may be a different numeric UID than the host owner. The
