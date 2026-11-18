@@ -319,10 +319,17 @@ def run_pytest_with_report(args):
 
         def pytest_collection_finish(self, session):
             counts["collected"] = len(session.items)
+            # Compare resolved, case-normalized paths: on Windows %TEMP%
+            # can be an 8.3 short name (RUNNER~1) while pytest reports the
+            # long one, and macOS /var is a link to /private/var.
+            # The key keeps the file's own case; normcase is only for the
+            # containment test.
+            here = os.path.realpath(HERE)
+            prefix = os.path.normcase(here) + os.sep
             for item in session.items:
-                path = os.path.abspath(str(getattr(item, "path", "")))
-                if path.startswith(HERE + os.sep):
-                    key = os.path.relpath(path, HERE).replace(os.sep, "/")
+                path = os.path.realpath(str(getattr(item, "path", "")))
+                if os.path.normcase(path).startswith(prefix):
+                    key = os.path.relpath(path, here).replace(os.sep, "/")
                 else:
                     key = "<outside>"
                 files[key] = files.get(key, 0) + 1

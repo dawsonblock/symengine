@@ -267,25 +267,62 @@ class PrivateDirectoryTests(unittest.TestCase):
 
     @unittest.skipUnless(os.name == 'nt', 'Windows DACL control checks')
     def test_unprotected_dacl_with_allowed_trustees_rejected(self):
+        from ctypes import wintypes
         ctx = vs._windows_api()
-        target = self.root / 'unprotected'
+        advapi32 = ctypes.WinDLL('advapi32', use_last_error=True)
+        advapi32.GetSecurityDescriptorDacl.argtypes = [
+            ctypes.c_void_p, ctypes.POINTER(wintypes.BOOL),
+            ctypes.POINTER(ctypes.c_void_p), ctypes.POINTER(wintypes.BOOL)]
+        advapi32.GetSecurityDescriptorDacl.restype = wintypes.BOOL
+        advapi32.SetNamedSecurityInfoW.argtypes = [
+            wintypes.LPWSTR, ctypes.c_int, wintypes.DWORD, ctypes.c_void_p,
+            ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p]
+        advapi32.SetNamedSecurityInfoW.restype = wintypes.DWORD
+        advapi32.GetNamedSecurityInfoW.argtypes = [
+            wintypes.LPWSTR, ctypes.c_int, wintypes.DWORD,
+            ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p,
+            ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p)]
+        advapi32.GetNamedSecurityInfoW.restype = wintypes.DWORD
+        # The parent is private: its ACEs are not inheritable, so once the
+        # target's DACL is unprotected the only difference from a private
+        # directory is the missing SE_DACL_PROTECTED bit. Creating with an
+        # SDDL that merely omits ``P`` did not yield an unprotected DACL on
+        # the Windows CI runner (the check accepted it), so the DACL is
+        # unprotected explicitly afterwards and the precondition asserted.
+        parent = private_directory(self.root / 'parent')
+        target = private_directory(parent / 'unprotected')
         descriptor = ctypes.c_void_p()
         try:
-            # Same restricted trustees as a private directory, but
-            # without the P (SE_DACL_PROTECTED) control flag — the DACL
-            # can still inherit parent ACEs and must fail closed.
             sddl, _ = vs._windows_user_sddl(ctx, lambda m: self.fail(m))
-            sddl = sddl.replace('D:P(', 'D:(', 1)
             self.assertTrue(
                 ctx.advapi.ConvertStringSecurityDescriptorToSecurityDescriptorW(
                     sddl, 1, ctypes.byref(descriptor), None))
-            attrs = ctx.security_attributes(
-                ctypes.sizeof(ctx.security_attributes), descriptor, False)
-            self.assertTrue(
-                ctx.kernel.CreateDirectoryW(str(target), ctypes.byref(attrs)))
+            present, defaulted = wintypes.BOOL(), wintypes.BOOL()
+            dacl = ctypes.c_void_p()
+            self.assertTrue(advapi32.GetSecurityDescriptorDacl(
+                descriptor, ctypes.byref(present), ctypes.byref(dacl),
+                ctypes.byref(defaulted)))
+            # SE_FILE_OBJECT; DACL_SECURITY_INFORMATION |
+            # UNPROTECTED_DACL_SECURITY_INFORMATION.
+            self.assertEqual(advapi32.SetNamedSecurityInfoW(
+                str(target), 1, 0x00000004 | 0x20000000,
+                None, None, dacl, None), 0)
         finally:
             if descriptor:
                 ctx.kernel.LocalFree(descriptor)
+        # Precondition: the DACL really is unprotected now.
+        observed = ctypes.c_void_p()
+        self.assertEqual(advapi32.GetNamedSecurityInfoW(
+            str(target), 1, 0x00000004, None, None, None, None,
+            ctypes.byref(observed)), 0)
+        try:
+            control, revision = wintypes.WORD(), wintypes.DWORD()
+            self.assertTrue(ctx.advapi.GetSecurityDescriptorControl(
+                observed, ctypes.byref(control), ctypes.byref(revision)))
+            self.assertFalse(control.value & 0x1000,
+                             'precondition: DACL must be unprotected')
+        finally:
+            ctx.kernel.LocalFree(observed)
         with self.assertRaises(InvalidInput):
             assert_private_acl(target)
         with self.assertRaises(InvalidInput):
