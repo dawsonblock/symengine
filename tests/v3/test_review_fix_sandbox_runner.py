@@ -12,7 +12,7 @@ from pathlib import Path
 from unittest import mock
 
 from sis.v3 import runner as runner_module
-from sis.v3.evaluation_runtime import SANDBOX_FAILURE, classify_execution
+from sis.v3.evaluation_runtime import SANDBOX_FAILURE, TASK_PASS, classify_execution
 from sis.v3.runner import (
     CommandSpec,
     LocalSubprocessExecutor,
@@ -153,6 +153,32 @@ class LauncherTests(unittest.TestCase):
 
 
 @unittest.skipUnless(sys.platform.startswith("linux"), "subreaper is Linux")
+class DarwinMemoryLimitTests(unittest.TestCase):
+    """macOS refuses RLIMIT_AS below the interpreter's address space."""
+
+    def test_darwin_omits_rlimit_as_and_records_it(self):
+        errors: list[str] = []
+        with mock.patch.object(runner_module.sys, "platform", "darwin"):
+            triples = runner_module.limit_triples(
+                ResourceLimits(process_count=None), errors)
+        self.assertNotIn("RLIMIT_AS", [name for name, _s, _h in triples])
+        self.assertIn("memory:not_enforced", errors)
+
+    def test_darwin_marker_does_not_change_the_verdict(self):
+        receipt = mock.Mock(security_errors=("memory:not_enforced",),
+                            exit_status=0, timeout=False)
+        self.assertEqual(classify_execution(receipt, bootstrap_ok=True),
+                         TASK_PASS)
+
+    @unittest.skipUnless(sys.platform.startswith("linux"), "Linux bounds AS")
+    def test_linux_still_bounds_memory(self):
+        errors: list[str] = []
+        triples = runner_module.limit_triples(
+            ResourceLimits(process_count=None), errors)
+        self.assertIn("RLIMIT_AS", [name for name, _s, _h in triples])
+        self.assertNotIn("memory:not_enforced", errors)
+
+
 class ProcessLifetimeTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()

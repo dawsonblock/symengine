@@ -426,8 +426,16 @@ def limit_triples(
     wanted: list[tuple[str, int, int]] = [
         ("RLIMIT_CPU", limits.cpu_seconds,
          limits.cpu_seconds + cpu_grace_seconds)]
-    if hasattr(resource, "RLIMIT_AS"):
+    if hasattr(resource, "RLIMIT_AS") and sys.platform != "darwin":
         wanted.append(("RLIMIT_AS", limits.memory_bytes, limits.memory_bytes))
+    else:
+        # macOS refuses an RLIMIT_AS below the interpreter's current
+        # address space (hundreds of GiB), so the launcher would refuse
+        # every run. Memory is not bounded there; record that instead of
+        # claiming it. The marker is informational like
+        # ``network:not_enforced``: an ``rlimit:`` prefix would classify
+        # every run as RESOURCE_LIMIT.
+        security_errors.append("memory:not_enforced")
     if hasattr(resource, "RLIMIT_FSIZE"):
         # RLIMIT_FSIZE bounds each file, not the workspace total; the
         # total is audited after the run (``fs:disk_budget_exceeded``).

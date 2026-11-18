@@ -264,7 +264,12 @@
   before the limits or outside seatbelt. It fails closed: a limit it
   cannot set stops the run with `sandbox:rlimits_not_applied:*`, and
   `rlimits:launcher` is recorded only when the launcher reported every
-  limit applied. On Linux the local launcher stays as a child subreaper
+  limit applied. macOS refuses any `RLIMIT_AS` below the interpreter's
+  address space, so on macOS memory is not bounded: the launcher is not
+  asked to set it and the receipt records `memory:not_enforced`. Under
+  supervision the limits are applied in the forked command process, not
+  the supervisor, so `RLIMIT_NPROC` cannot refuse the supervisor's own
+  fork. On Linux the local launcher stays as a child subreaper
   (`process:subreaper`) and kills every descendant, including ones that
   called `setsid()`, when the command exits or times out; the process
   group is also killed after every run. A submission that kills its own
