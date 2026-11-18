@@ -17,6 +17,12 @@ Usage:
       --spec /secure/study/spec.json \
       --output /secure/study/manifest.json
 
+The spec may declare ``"study_tier": "exploratory"`` (default
+``"confirmatory"``); the builder copies it into the manifest. A
+confirmatory manifest needs at least ``MIN_CONFIRMATORY_HOLDOUT_REPOSITORIES``
+(20) holdout repositories contributing tasks; an exploratory one needs
+``MIN_HOLDOUT_REPOSITORIES`` (5) and can never yield a confirmatory label.
+
 The output manifest is the input to ``tools/five_arm_campaign.py
 --real-agent --manifest``. A confirmatory label also requires a learned
 guidance bundle and split custody; this tool binds the bundle digest when
@@ -40,7 +46,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from sis.v3 import gitquery  # noqa: E402
 from sis.v3.contracts import ContractError, canonical_digest  # noqa: E402
-from sis.v3.efficacy_manifest import validate_manifest  # noqa: E402
+from sis.v3.efficacy_manifest import (CONFIRMATORY, EXPLORATORY,  # noqa: E402
+                                     validate_manifest)
 from sis.v3.governed_eval import (GOVERNED_ARMS, PRIMARY_CONTRAST_ARMS,  # noqa: E402
                                   preregister)
 from sis.v3.learning_qualification import codex_agent_status  # noqa: E402
@@ -211,6 +218,15 @@ def _protocol(spec: Mapping) -> dict:
     _require(protocol.get("analysis_kind") is None,
              "protocol.analysis_kind is not valid for a powered study")
     return registered
+
+
+def _study_tier(spec: Mapping) -> str:
+    """A spec builds a powered study: confirmatory unless declared exploratory."""
+    tier = spec.get("study_tier", CONFIRMATORY)
+    _require(tier in (CONFIRMATORY, EXPLORATORY),
+             "study_tier must be confirmatory or exploratory; the builder"
+             " only writes powered studies")
+    return tier
 
 
 def _base_commit(root: Path, declared) -> str:
@@ -522,6 +538,7 @@ def build_manifest(spec: Mapping, *, check_agent: bool = True
                    ) -> tuple[dict, dict]:
     """Assemble and validate a manifest; raise unless it is ready."""
     protocol = _protocol(spec)
+    study_tier = _study_tier(spec)
     agent, agent_report = _agent(spec, check_agent=check_agent)
     repositories, by_id = _repositories(spec)
     tasks = _tasks(spec, by_id, protocol)
@@ -547,6 +564,7 @@ def build_manifest(spec: Mapping, *, check_agent: bool = True
     document = {
         "schema_version": 1,
         "kind": KINDS[spec["kind"]][0],
+        "study_tier": study_tier,
         "protocol": protocol,
         "agent": agent,
         "partitions": {
@@ -567,11 +585,13 @@ def build_manifest(spec: Mapping, *, check_agent: bool = True
         raise StudySpecError(f"manifest cannot be validated: {exc}") from exc
     if not report["valid"] or not report["ready"]:
         problems = report["problems"] or [
-            "manifest is not ready for a confirmatory run"]
+            f"manifest is not ready for a {study_tier} run"]
         raise StudySpecError("; ".join(problems))
     summary = {
         "manifest_digest": report["manifest_digest"],
         "ready": report["ready"],
+        "study_tier": report["study_tier"],
+        "confirmatory": report["confirmatory"],
         "repositories": len(repositories),
         "holdout_repositories_used": report["holdout_repositories_used"],
         "holdout_snapshots_used": report["holdout_snapshots_used"],

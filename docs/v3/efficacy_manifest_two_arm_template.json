@@ -1,7 +1,8 @@
 {
   "schema_version": 1,
   "kind": "primary_contrast_efficacy_manifest",
-  "notes": "Template only. Two-arm primary contrast (A vs E). Replace every <placeholder>, provide at least 10 repositories of which at least 5 are holdout repositories, and at least 103 paired holdout tasks, commit the manifest before any holdout run, and keep hidden tests outside the public repository. Validate with tools/check_efficacy_manifest.py --allow-placeholders while editing, then without that flag before the run.",
+  "study_tier": "confirmatory",
+  "notes": "Template only. Two-arm primary contrast (A vs E). Replace every <placeholder>, provide at least 10 repositories and at least 20 holdout repositories with distinct snapshots that each contribute tasks (the five holdout entries below are only a skeleton; a smaller study with 5-19 holdout repositories must set study_tier to exploratory and can never be confirmatory), and at least 103 paired holdout tasks, commit the manifest before any holdout run, and keep hidden tests outside the public repository. Validate with tools/check_efficacy_manifest.py --allow-placeholders while editing, then without that flag before the run.",
   "protocol": {
     "schema_version": 1,
     "primary_metric": "paired solved_delta E vs A",

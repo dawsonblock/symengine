@@ -73,7 +73,9 @@ negative-transfer threshold (default 0.10).
 - `demonstration` for scripted/machinery runs;
 - `invalid` when the holdout is not hidden/disjoint or protocol
   conformance fails;
-- `exploratory` for a real run below the preregistered sample size;
+- `exploratory` for a real run below the preregistered sample size, or
+  with any provenance or design gap (for example, fewer than 20 holdout
+  repositories contributing tasks);
 - `confirmatory` only for a real agent, hidden holdout, conforming
   protocol, sufficient sample, at least 20 holdout repositories that
   contribute tasks (every task naming its repository), measured negative
@@ -104,12 +106,18 @@ counts tool events and returns usage. The evaluator independently
 verifies the resulting tree.
 
 `tools/five_arm_campaign.py --real-agent --manifest` executes a
-validated manifest: it builds the five arms, registers the evaluator's
-acceptance material and writes the paired report with receipt digests
-plus a `<report>.evidence/` bundle. A confirmatory label additionally
-requires recorded provenance: a real `codex-cli` agent, a matching
-installed version, split custody, learned guidance from
-`--guidance-bundle`, a committed manifest and fully metered usage. The
+validated, ready manifest. The manifest validator applies the same
+20-repository floor (`MIN_CONFIRMATORY_HOLDOUT_REPOSITORIES`): a powered
+manifest is a `confirmatory` study and is refused with fewer than 20
+contributing holdout repositories, unless it declares
+`"study_tier": "exploratory"`, which keeps a floor of five and can only
+produce an exploratory result. The gate builds the five arms,
+registers the evaluator's acceptance material and writes the paired
+report with receipt digests plus a `<report>.evidence/` bundle. A
+confirmatory label additionally requires recorded provenance: a real
+`codex-cli` agent, a matching installed version, split custody, learned
+guidance from `--guidance-bundle`, a committed manifest and fully
+metered usage. The
 built-in prompts are a fixed control condition. It writes a
 `BLOCKED_REAL_AGENT` / `BLOCKED_MANIFEST` / `BLOCKED_AGENT_VERSION`
 report when a real run cannot be started or the inputs are unusable.

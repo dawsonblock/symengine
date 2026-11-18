@@ -27,17 +27,24 @@ Integrity rules for a confirmatory label:
   an immutable candidate record, the training snapshots must be the
   manifest's induction repositories, and the manifest must precommit
   the bundle digest. The built-in fixed control prompts can never
-  qualify. Without ``--candidate-registry`` the bundle is recorded as
-  ``learned_unverified``;
+  qualify. ``--candidate-registry`` verifies every step against a
+  qualified record and requires ``--trust-config`` (the evaluator and
+  operator public keys and the pinned evaluation protocol, in the
+  ``sis.v3.bootstrap`` config format). Without a registry the bundle is
+  recorded as ``learned_unverified``; passing a registry without trust
+  anchors is refused unless ``--record-unverified`` acknowledges that;
 - guidance from a verified bundle is served per task through
   ``GovernedServingGateway`` (scope, applicability and counterexample
   gates decide what each task gets; every decision is recorded);
 - token and tool usage must be fully metered by the agent runtime;
   agent timeouts and errors count as ordinary failures;
 - the manifest must be ``ready`` (powered, preregistered, no
-  placeholders, and its tasks must span at least five holdout
-  repositories); the analysis labels a run confirmatory only when at
-  least 20 holdout repositories contribute tasks, and decides efficacy
+  placeholders, repository-covered). A manifest declared
+  ``study_tier: confirmatory`` (the default for a powered protocol)
+  needs at least 20 holdout repositories; one declared ``exploratory``
+  needs five and can never be labelled confirmatory. The analysis labels
+  a run confirmatory only when at least 20 holdout repositories
+  contribute tasks and the manifest was declared confirmatory, and decides efficacy
   with a repository-level test plus a negative-transfer gate. Tasks may
   set ``"misleading": true`` to be reported separately.
 
@@ -50,6 +57,9 @@ Usage:
     python3 tools/five_arm_campaign.py --demo -o evidence/evaluation/demo.json
     python3 tools/five_arm_campaign.py --real-agent --manifest tasks.json \
         -o evidence/evaluation/real.json
+    python3 tools/five_arm_campaign.py --real-agent --manifest tasks.json \
+        --guidance-bundle bundle.json --candidate-registry candidates.db \
+        --trust-config v3.json --allow-local-executor -o real.json
 """
 from __future__ import annotations
 
@@ -788,6 +798,132 @@ def _export_evidence(output: Path, report_sha256: str, verifier,
     }
 
 
+_MAX_TRUST_CONFIG_BYTES = 1024 * 1024
+# The fields of the v3 bootstrap configuration (``sis.v3.bootstrap``) that
+# re-authenticate a qualified candidate for serving. The same names and
+# formats are accepted here, so the production config file itself can be
+# passed; every other field is ignored.
+_TRUST_FIELDS = ("evaluator_keys", "operator_keys", "evaluation_protocol")
+
+
+class TrustConfigError(ValueError):
+    """The candidate trust configuration is missing or invalid."""
+
+
+def _trust_keys(config: Mapping, name: str) -> dict[str, str]:
+    value = config.get(name)
+    if not isinstance(value, Mapping) or not value or not all(
+            isinstance(k, str) and k and isinstance(v, str)
+            for k, v in value.items()):
+        raise TrustConfigError(f"trust_config_invalid:{name}")
+    return dict(value)
+
+
+def _trust_path(value, base: Path) -> Path:
+    path = Path(value)
+    return path if path.is_absolute() else base / path
+
+
+def load_trust_config(path: Path) -> dict:
+    """Read candidate trust anchors from a bootstrap-format JSON file.
+
+    ``evaluator_keys`` and ``operator_keys`` map key ids to Ed25519 public
+    keys (hex); ``evaluation_protocol`` is the pinned protocol document,
+    inline or as a path relative to the file. ``candidate_database``, when
+    present, names the default candidate registry. The authorities are
+    constructed here so a malformed key fails before anything runs.
+    """
+    from sis.v3.candidate_authority import (CandidateDecisionAuthority,
+                                            CandidateEvidenceAuthority)
+    from sis.v3.evaluation_certificate import ProtocolRegistry
+
+    path = Path(path)
+    try:
+        config = _json_object(
+            _read_bounded(path, _MAX_TRUST_CONFIG_BYTES, "trust config"),
+            "trust config")
+    except (OSError, ValueError) as exc:
+        raise TrustConfigError(f"trust_config_unreadable:{exc}") from exc
+    missing = [name for name in _TRUST_FIELDS
+               if config.get(name) in (None, "")]
+    if missing:
+        raise TrustConfigError("trust_config_missing:" + ",".join(missing))
+    base = path.resolve().parent
+    evaluator_keys = _trust_keys(config, "evaluator_keys")
+    operator_keys = _trust_keys(config, "operator_keys")
+    protocol = config["evaluation_protocol"]
+    if isinstance(protocol, str):
+        try:
+            protocol = _json_object(
+                _read_bounded(_trust_path(protocol, base),
+                              _MAX_TRUST_CONFIG_BYTES, "evaluation protocol"),
+                "evaluation protocol")
+        except (OSError, ValueError) as exc:
+            raise TrustConfigError(
+                "trust_config_unreadable:evaluation_protocol") from exc
+    if not isinstance(protocol, Mapping):
+        raise TrustConfigError("trust_config_invalid:evaluation_protocol")
+    try:
+        protocol_digest = ProtocolRegistry().register(protocol)
+    except Exception as exc:  # noqa: BLE001 - surfaced as config error
+        raise TrustConfigError(
+            "trust_config_invalid:evaluation_protocol") from exc
+    try:
+        CandidateEvidenceAuthority(trusted_evaluator_keys=evaluator_keys)
+    except Exception as exc:  # noqa: BLE001
+        raise TrustConfigError("trust_config_invalid:evaluator_keys") from exc
+    try:
+        CandidateDecisionAuthority(trusted_operator_keys=operator_keys)
+    except Exception as exc:  # noqa: BLE001
+        raise TrustConfigError("trust_config_invalid:operator_keys") from exc
+    database = config.get("candidate_database")
+    if database is not None and (not isinstance(database, str)
+                                 or not database):
+        raise TrustConfigError("trust_config_invalid:candidate_database")
+    return {
+        "path": str(path),
+        "evaluator_keys": evaluator_keys,
+        "operator_keys": operator_keys,
+        "evaluation_protocol_digest": protocol_digest,
+        "candidate_database": (_trust_path(database, base)
+                               if database is not None else None),
+    }
+
+
+def trusted_registry_factory(trust: Mapping) -> Callable:
+    """``registry_factory`` that opens a registry under ``trust``.
+
+    The registry re-authenticates every qualified candidate's operator
+    decision and evaluator evidence against the configured public keys
+    and the pinned evaluation protocol before it is verified or served.
+    The factory carries ``trust_anchors`` (key ids and protocol digest)
+    for the report.
+    """
+    from sis.v3.candidate_authority import (CandidateDecisionAuthority,
+                                            CandidateEvidenceAuthority)
+    from sis.v3.candidates import CandidateRegistry
+
+    evaluator_keys = dict(trust["evaluator_keys"])
+    operator_keys = dict(trust["operator_keys"])
+    protocol_digest = trust["evaluation_protocol_digest"]
+
+    def factory(path):
+        return CandidateRegistry(
+            path,
+            evidence_authority=CandidateEvidenceAuthority(
+                trusted_evaluator_keys=evaluator_keys),
+            decision_authority=CandidateDecisionAuthority(
+                trusted_operator_keys=operator_keys),
+            expected_evaluation_protocol_digest=protocol_digest)
+
+    factory.trust_anchors = {
+        "evaluator_key_ids": sorted(evaluator_keys),
+        "operator_key_ids": sorted(operator_keys),
+        "evaluation_protocol_digest": protocol_digest,
+    }
+    return factory
+
+
 def run_real(output: Path, manifest_path: Path | None, *,
              allow_shared_custody: bool = False,
              guidance_path: Path | None = None,
@@ -796,16 +932,13 @@ def run_real(output: Path, manifest_path: Path | None, *,
              registry_factory: Callable | None = None) -> int:
     """Execute a validated manifest with the real agent.
 
-    ``registry_factory(path)`` opens the candidate registry; the default
-    opens it without trusted evaluator/operator authorities, under which
-    qualified candidates cannot be re-verified and the bundle stays
-    ``learned_unverified``. A deployment supplies a factory wired to its
-    trusted keys so candidates verify and are served per task.
+    ``registry_factory(path)`` opens the candidate registry with trusted
+    evaluator/operator authorities and a pinned evaluation protocol
+    (:func:`trusted_registry_factory`; the CLI builds it from
+    ``--trust-config``). A registry without them cannot re-authenticate
+    a qualified candidate, so ``candidate_registry`` without a factory is
+    blocked rather than run as a campaign that can never serve.
     """
-    if registry_factory is None:
-        def registry_factory(path):
-            from sis.v3.candidates import CandidateRegistry
-            return CandidateRegistry(path)
     status = codex_agent_status()
     report: dict = {
         "schema_version": 1,
@@ -850,6 +983,7 @@ def run_real(output: Path, manifest_path: Path | None, *,
         "tasks_per_holdout_repository": validation.get(
             "tasks_per_holdout_repository"),
         "placeholders": validation["placeholders"],
+        "study_tier": validation.get("study_tier"),
     }
     report["manifest"] = manifest_block
     if not validation["valid"]:
@@ -900,6 +1034,12 @@ def run_real(output: Path, manifest_path: Path | None, *,
         return blocked(
             "BLOCKED_GUIDANCE",
             "candidate_registry requires a guidance bundle")
+    if candidate_registry is not None and registry_factory is None:
+        return blocked(
+            "BLOCKED_GUIDANCE",
+            "candidate_registry_untrusted: a candidate registry needs "
+            "trusted evaluator/operator keys and a pinned evaluation "
+            "protocol (--trust-config) to verify or serve candidates")
     if guidance_path is not None:
         registry = None
         try:
@@ -934,6 +1074,9 @@ def run_real(output: Path, manifest_path: Path | None, *,
         "cli_version_matches": bool(
             not injected and installed_version == expected_version),
         "custody": "shared" if allow_shared_custody else "split",
+        # The tier the manifest declared before the run; only a manifest
+        # declared confirmatory can yield a confirmatory label.
+        "study_tier": validation.get("study_tier"),
         "guidance_source": guidance_source,
         "guidance_candidates_verified": bool(
             learned_bundle is not None
@@ -1099,6 +1242,9 @@ def run_real(output: Path, manifest_path: Path | None, *,
                 list(learned_bundle["training_repository_digests"])
                 if learned_bundle is not None else None),
             "routing": guidance_routing,
+            "trust_anchors": (getattr(registry_factory, "trust_anchors",
+                                      None)
+                              if candidate_registry is not None else None),
             "serving_decisions": serving_decisions,
             "misleading_tasks": sorted(misleading),
         }
@@ -1154,8 +1300,49 @@ def run_real(output: Path, manifest_path: Path | None, *,
             "exploratory", "confirmatory") else 1
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
+def _registry_options(parser: argparse.ArgumentParser, args):
+    """Resolve ``(candidate_registry, registry_factory)`` or exit 2.
+
+    A candidate registry is only useful with trust anchors: without them
+    no qualified candidate re-authenticates and nothing can be served, so
+    that combination is refused unless ``--record-unverified``
+    acknowledges recording the bundle as ``learned_unverified``.
+    """
+    if args.trust_config is not None:
+        if args.record_unverified:
+            parser.error("--record-unverified contradicts --trust-config")
+        try:
+            trust = load_trust_config(args.trust_config)
+        except TrustConfigError as exc:
+            parser.error(f"--trust-config {args.trust_config}: {exc}")
+        registry = args.candidate_registry or trust["candidate_database"]
+        if registry is None:
+            parser.error("--trust-config requires --candidate-registry (or"
+                         " candidate_database in the trust config)")
+        if args.guidance_bundle is None:
+            parser.error("--trust-config requires --guidance-bundle")
+        return registry, trusted_registry_factory(trust)
+    if args.record_unverified:
+        if args.guidance_bundle is None:
+            parser.error("--record-unverified requires --guidance-bundle")
+        if args.candidate_registry is not None:
+            print("five_arm_campaign: --record-unverified: candidate registry"
+                  f" {args.candidate_registry} is not consulted; the bundle"
+                  " is recorded as learned_unverified", file=sys.stderr)
+        return None, None
+    if args.candidate_registry is not None:
+        parser.error(
+            "--candidate-registry requires --trust-config: without trusted"
+            " evaluator/operator keys and a pinned evaluation protocol no"
+            " candidate can be verified or served (pass --record-unverified"
+            " instead to record the bundle as learned_unverified)")
+    return None, None
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--demo", action="store_true")
     parser.add_argument("--real-agent", action="store_true")
     parser.add_argument("--manifest", type=Path)
@@ -1175,9 +1362,20 @@ def main() -> int:
                              "for the fixed control prompts")
     parser.add_argument("--candidate-registry", type=Path,
                         help="candidate registry that must resolve every"
-                             " bundle step to a qualified record; without it"
-                             " a learned bundle is recorded as unverified")
-    args = parser.parse_args()
+                             " bundle step to a qualified record, which is"
+                             " then served per task; requires"
+                             " --trust-config")
+    parser.add_argument("--trust-config", type=Path,
+                        help="JSON trust anchors in the v3 bootstrap format"
+                             " (evaluator_keys, operator_keys,"
+                             " evaluation_protocol; optional"
+                             " candidate_database); the production v3"
+                             " config file may be passed as is")
+    parser.add_argument("--record-unverified", action="store_true",
+                        help="acknowledge recording-only mode: the guidance"
+                             " bundle is recorded as learned_unverified and"
+                             " no candidate is verified or served")
+    args = parser.parse_args(argv)
     if not args.allow_local_executor:
         parser.error("local executor requires --allow-local-executor")
     if args.demo and args.real_agent:
@@ -1186,10 +1384,16 @@ def main() -> int:
         if args.arms != "five":
             parser.error("--arms applies to --demo; the manifest declares"
                          " the real-agent arms")
+        candidate_registry, registry_factory = _registry_options(
+            parser, args)
         return run_real(args.output, args.manifest,
                         allow_shared_custody=args.allow_shared_custody,
                         guidance_path=args.guidance_bundle,
-                        candidate_registry=args.candidate_registry)
+                        candidate_registry=candidate_registry,
+                        registry_factory=registry_factory)
+    if args.trust_config is not None or args.record_unverified:
+        parser.error("--trust-config and --record-unverified apply to"
+                     " --real-agent")
     selected = (PRIMARY_CONTRAST_ARMS if args.arms == "primary"
                 else GOVERNED_ARMS)
     return run_demo(args.output, arms=selected)

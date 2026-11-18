@@ -708,6 +708,14 @@ def analyze_report(
         if provenance.get("preregistration_anchored") is not True:
             provenance_gaps.append(
                 "manifest was not committed before the run")
+        tier = provenance.get("study_tier")
+        if tier is not None and tier != "confirmatory":
+            # The tier is declared in the manifest before the run; a study
+            # preregistered as exploratory or diagnostic cannot become
+            # confirmatory because it happened to reach the thresholds.
+            provenance_gaps.append(
+                f"manifest declares study_tier={tier!r}; a confirmatory "
+                "label requires a manifest declared confirmatory")
         if token_accounting != "verified":
             provenance_gaps.append(
                 "token and tool usage were not fully metered")

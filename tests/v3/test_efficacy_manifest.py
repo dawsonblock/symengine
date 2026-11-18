@@ -55,11 +55,17 @@ def repository(index: int, partition: str) -> dict:
 
 
 def manifest(*, sample_size=103, arms=GOVERNED_ARMS,
-             kind="five_arm_efficacy_manifest") -> dict:
+             kind="five_arm_efficacy_manifest", holdout_count=20) -> dict:
+    # A confirmatory manifest (the default for a powered protocol) needs
+    # MIN_CONFIRMATORY_HOLDOUT_REPOSITORIES (20) contributing holdouts.
+    # Smaller holdouts get extra induction repositories so the manifest
+    # still has the ten repositories every study needs.
     registered = protocol(sample_size=sample_size, arms=arms)
     repositories = [repository(0, "induction")]
     repositories += [repository(index, "holdout")
-                     for index in range(1, 10)]
+                     for index in range(1, holdout_count + 1)]
+    repositories += [repository(index, "induction")
+                     for index in range(holdout_count + 1, 10)]
     holdout = [item for item in repositories
                if item["partition"] == "holdout"]
     tasks = []
@@ -96,7 +102,8 @@ def manifest(*, sample_size=103, arms=GOVERNED_ARMS,
             "cli_version": "1.2.3",
         },
         "partitions": {
-            "induction": ["repo-00"],
+            "induction": [item["repository_id"] for item in repositories
+                          if item["partition"] == "induction"],
             "holdout": [item["repository_id"] for item in holdout],
         },
         "repositories": repositories,
@@ -162,11 +169,12 @@ class EfficacyManifestTests(unittest.TestCase):
         self.assertTrue(report["valid"], report["problems"])
         self.assertTrue(report["ready"])
         self.assertEqual(report["tasks"], 103)
-        self.assertEqual(report["repositories"], 10)
-        self.assertEqual(report["holdout_repositories"], 9)
-        self.assertEqual(report["holdout_repositories_used"], 9)
-        self.assertEqual(report["holdout_snapshots_used"], 9)
+        self.assertEqual(report["repositories"], 21)
+        self.assertEqual(report["holdout_repositories"], 20)
+        self.assertEqual(report["holdout_repositories_used"], 20)
+        self.assertEqual(report["holdout_snapshots_used"], 20)
         self.assertTrue(report["confirmatory"])
+        self.assertEqual(report["study_tier"], "confirmatory")
 
     def test_partition_overlap_is_rejected(self):
         document = manifest()
@@ -244,6 +252,7 @@ class EfficacyManifestTests(unittest.TestCase):
         report = validate_manifest(document)
         self.assertTrue(report["valid"], report["problems"])
         self.assertFalse(report["confirmatory"])
+        self.assertEqual(report["study_tier"], "diagnostic")
         self.assertFalse(report["ready"])
 
     def test_a_non_boolean_powered_flag_is_rejected(self):
@@ -305,7 +314,7 @@ class EfficacyManifestTests(unittest.TestCase):
 
     def test_declared_holdout_repositories_must_contribute_tasks(self):
         document = manifest()
-        # Five repositories are declared, but every task is drawn from one.
+        # Twenty repositories are declared, but every task is drawn from one.
         target = document["repositories"][1]
         for task in document["tasks"]:
             task["repository_id"] = target["repository_id"]
@@ -320,8 +329,8 @@ class EfficacyManifestTests(unittest.TestCase):
 
     def test_coverage_is_reported_per_repository(self):
         report = validate_manifest(manifest())
-        self.assertEqual(report["holdout_repositories_used"], 9)
-        self.assertEqual(report["holdout_snapshots_used"], 9)
+        self.assertEqual(report["holdout_repositories_used"], 20)
+        self.assertEqual(report["holdout_snapshots_used"], 20)
         self.assertEqual(sum(report["tasks_per_holdout_repository"].values()),
                          103)
 
@@ -353,7 +362,7 @@ class EfficacyManifestTests(unittest.TestCase):
         holdout[1]["lineage_id"] = holdout[0]["lineage_id"]
         report = validate_manifest(document)
         self.assertFalse(report["valid"])
-        self.assertEqual(report["distinct_holdout_lineages"], 8)
+        self.assertEqual(report["distinct_holdout_lineages"], 19)
         self.assertTrue(any("share a lineage" in problem
                             for problem in report["problems"]),
                         report["problems"])
@@ -371,13 +380,13 @@ class EfficacyManifestTests(unittest.TestCase):
 
     def test_identical_induction_lineages_are_allowed(self):
         document = manifest()
-        extra = repository(10, "induction")
+        extra = repository(30, "induction")
         extra["lineage_id"] = document["repositories"][0]["lineage_id"]
         document["repositories"].append(extra)
         document["partitions"]["induction"].append(extra["repository_id"])
         report = validate_manifest(document)
         self.assertTrue(report["valid"], report["problems"])
-        self.assertEqual(report["distinct_holdout_lineages"], 9)
+        self.assertEqual(report["distinct_holdout_lineages"], 20)
 
     def test_a_task_must_declare_the_holdout_partition(self):
         for declared in ("induction", None):

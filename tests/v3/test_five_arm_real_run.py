@@ -140,8 +140,10 @@ def _manifest(root: Path, *, arms=GOVERNED_ARMS,
                          "acceptance.py"],
                 "files": {"acceptance.py": ACCEPTANCE}},
         })
+    # Five holdout repositories: a declared exploratory study (the
+    # confirmatory floor is MIN_CONFIRMATORY_HOLDOUT_REPOSITORIES = 20).
     return {
-        "schema_version": 1, "kind": kind,
+        "schema_version": 1, "kind": kind, "study_tier": "exploratory",
         "protocol": protocol,
         "agent": {"kind": "codex-cli", "model": "test-model",
                   "cli_version": "1.2.3"},
@@ -741,6 +743,7 @@ class RealAgentGateTests(unittest.TestCase):
                 arms=GOVERNED_ARMS)
             diagnostic["powered"] = False
             document["protocol"] = diagnostic
+            document["study_tier"] = "diagnostic"
             document["preregistration"]["protocol_digest"] = (
                 diagnostic["protocol_digest"])
             manifest = _write(root, document)
