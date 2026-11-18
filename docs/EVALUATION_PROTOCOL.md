@@ -28,6 +28,11 @@ holdout is not a generalization measurement.
 sample size, budget and arm set into a domain-separated
 `eval_protocol` digest before the holdout run. The report embeds the
 digest. The protocol registry used by certificates verifies that digest.
+A powered plan's declared effect `|expected_treatment - expected_baseline|`
+may not exceed `min_effect`, and both expected rates must lie in (0, 1);
+otherwise the plan could justify a sample too small for the effect of
+interest. An optional `max_negative_transfer` preregisters the
+negative-transfer threshold (default 0.10).
 
 ## Metrics
 
@@ -35,7 +40,9 @@ digest. The protocol registry used by certificates verifies that digest.
 - paired wins/losses/ties against A
 - `verified_regression_rate` (baseline-solved tasks the arm no longer
   solves)
-- `negative_transfer_rate` (served misleading tasks that fail)
+- negative transfer: paired losses (A solved, E did not) over paired
+  tasks, always measured; `negative_transfer_rate` per arm is the
+  served-misleading-task failure rate when misleading tasks are declared
 - `abstention_rate`
 - mean tokens, tool calls and wall seconds per task
 - cost per verified solution
@@ -44,7 +51,15 @@ digest. The protocol registry used by certificates verifies that digest.
 
 ## Statistics
 
-- exact two-sided McNemar test for discordant pairs;
+- every test and interval uses the preregistered `alpha` (validated in
+  (0, 0.5)); 95% intervals are reported beside them;
+- primary decision: exact repository-level sign-flip test on the
+  per-repository E-minus-A totals, with a repository cluster bootstrap
+  interval, because tasks within one repository are correlated;
+- exact two-sided McNemar test for discordant pairs (task level,
+  reported as secondary);
+- E vs B/C/D contrasts are secondary mechanism controls with
+  Holm-corrected significance;
 - Wilson score intervals for per-arm solved rates;
 - Newcombe hybrid-score interval for the paired difference;
 - power analysis (`required_sample_size(0.6, 0.4)` by default);
@@ -60,11 +75,21 @@ digest. The protocol registry used by certificates verifies that digest.
   conformance fails;
 - `exploratory` for a real run below the preregistered sample size;
 - `confirmatory` only for a real agent, hidden holdout, conforming
-  protocol and sufficient sample.
+  protocol, sufficient sample, at least 20 holdout repositories that
+  contribute tasks (every task naming its repository), measured negative
+  transfer, fully metered usage and guidance selected per task through
+  the governed serving gateway.
+
+Agent-side timeouts, CLI errors and budget overruns are scored as
+ordinary failures (`attested_failure` accounting); they never demote a
+study. Unmetered passes, evaluator errors and unterminated workspaces
+still do.
 
 `release_gate` is `EFFICACY_SUPPORTED` only for a confirmatory run whose
-E-vs-A difference is positive, statistically significant and has a
-positive lower confidence bound. A regression is preserved as
+repository-level E-vs-A test is significant at the preregistered alpha
+with a positive cluster-bootstrap lower bound, and whose negative
+transfer is measured and not material. A significant task-level McNemar
+test alone is not enough. A regression is preserved as
 `NO_EFFICACY_CLAIM`. A scripted or underpowered run is
 `IMPLEMENTED_NOT_EFFICACY_QUALIFIED`; no scripted run is substituted for
 a confirmatory one.

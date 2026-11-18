@@ -241,7 +241,7 @@ class SearchState:
 
 
 def candidates(train, max_candidates=12000, observed_inputs=(), stats=None,
-               *, dev=None, state=None):
+               *, dev=None, state=None, rival_scan=False):
     """Yield shallow first; deepen only when development data rejects shallow.
 
     Stage 2 is signature-directed: instead of enumerating every
@@ -262,6 +262,8 @@ def candidates(train, max_candidates=12000, observed_inputs=(), stats=None,
     ``dev`` is the development partition that decides whether a shallow
     rule is suitable. Passing it is what makes early stopping sound: a
     rule that fits only the training rows is not a reason to stop.
+    ``rival_scan=True`` deepens even when a shallow rule fits, so a caller
+    can look for deeper rivals before declaring a rule unambiguous.
     """
     if state is None:
         state = SearchState(SearchBudget(max_candidates=max_candidates))
@@ -425,8 +427,8 @@ def candidates(train, max_candidates=12000, observed_inputs=(), stats=None,
         return
     # Deepening is bounded and only requested when no shallow rule fits
     # both the training rows and the development partition.
-    if any(_matches(ast, train, outputs) and _matches(ast, dev)
-           for ast in first_results):
+    if not rival_scan and any(_matches(ast, train, outputs) and _matches(ast, dev)
+                              for ast in first_results):
         return
     if not all(type(o) is int for o in outputs):
         # Stage 2 only covers numeric operators.
@@ -640,6 +642,77 @@ def _search_once(train, dev, observed, probes, state, proposals, use_z3):
     return {"best": best, "fits": fits, "ambiguous": ambiguous, "stage": stage}
 
 
+MAX_POST_SELECTION_ORACLE_CALLS = 4
+RIVAL_SCAN_CANDIDATES = 4000
+RIVAL_SCAN_SIGNATURE_CHECKS = 100_000
+RIVAL_SCAN_WALL_SECONDS = 5.0
+
+
+def _deep_rival_scan(train, labelled, observed, probes, best, budget):
+    """Bounded depth-2 search for a rival consistent with all labels.
+
+    Stage 1 stops as soon as a shallow rule fits training and development
+    data, so deeper rules are never compared with it. This scan runs only
+    after selection is final: it enumerates the depth-2 space and looks
+    for a rule that fits ``train`` and every ``labelled`` row yet
+    disagrees with ``best`` on a probe. It changes only the final status
+    label, never which rule is selected. Returns
+    ``((rival, witness) | None, report)``; it has its own budget so it
+    never truncates the primary search, and ``complete`` says whether the
+    bounded depth-2 space was exhausted.
+    """
+    sub = SearchState(SearchBudget(
+        max_candidates=min(RIVAL_SCAN_CANDIDATES, budget.max_candidates),
+        max_signature_checks=min(RIVAL_SCAN_SIGNATURE_CHECKS,
+                                 budget.max_signature_checks),
+        max_wall_seconds=min(RIVAL_SCAN_WALL_SECONDS, budget.max_wall_seconds),
+        max_memory_bytes=budget.max_memory_bytes,
+        max_expression_depth=budget.max_expression_depth))
+    sub.start()
+    outputs = tuple(e["output"] for e in train)
+    best_fp = fingerprint(best)
+    complete = True
+    found = None
+    try:
+        for ast, stage, _, exceeds in candidates(
+                train, observed_inputs=observed, dev=labelled, state=sub,
+                rival_scan=True):
+            if exceeds or ast is None:
+                complete = False
+                break
+            if stage != 2 or fingerprint(ast) == best_fp:
+                continue
+            if not (_matches(ast, train, outputs) and _matches(ast, labelled)):
+                continue
+            witness = _witness(best, ast, probes)
+            if witness:
+                found = (ast, witness)
+                break
+        if sub.limits_hit:
+            complete = False
+    finally:
+        sub.close()
+    return found, {"performed": True, "complete": complete if found is None else True,
+                   "candidates": sub.candidates}
+
+
+MIN_HOLDOUT_EXAMPLES = 2
+
+
+def legacy_split(validation):
+    """Deterministically split legacy ``validation`` into (dev, holdout).
+
+    The holdout is the trailing ``max(2, ceil(n / 2))`` rows (all rows
+    when fewer than two); the leading rows are development data. The two
+    parts are disjoint, so the holdout never influences selection.
+    """
+    rows = list(validation)
+    n = len(rows)
+    size = n if n < MIN_HOLDOUT_EXAMPLES else max(
+        MIN_HOLDOUT_EXAMPLES, n - n // 2)
+    return rows[:n - size], rows[n - size:]
+
+
 def induce(train, validation=None, *, namespace="default", max_candidates=12000,
            proposals=None, use_z3=False, budget=None, dev=None, holdout=None,
            counterexample_oracle=None, max_refinement_rounds=2,
@@ -648,13 +721,14 @@ def induce(train, validation=None, *, namespace="default", max_candidates=12000,
     """Induce a bounded rule; never confuse fit with proof.
 
     ``dev`` is the development partition used for early stopping,
-    candidate selection and refinement. When omitted, ``validation``
-    serves that role for backward compatibility. ``holdout`` is the
-    sealed partition used only for the final status; when omitted and
-    ``dev`` is supplied, ``validation`` becomes the holdout if present.
-    Without any sealed holdout the result reports ``holdout_sealed:
-    false`` and its ``locally_validated`` status is selection evidence,
-    not independent generalization evidence.
+    candidate selection and refinement. ``holdout`` is the sealed
+    partition used only for the final status; when ``dev`` is supplied
+    without ``holdout``, ``validation`` becomes the holdout if present.
+    A legacy call with only ``validation`` splits it with
+    :func:`legacy_split` into disjoint development rows and holdout rows,
+    so the holdout never drives selection. Without any holdout rows the
+    result reports ``holdout_sealed: false`` and cannot be
+    ``locally_validated``.
 
     ``counterexample_oracle(inputs) -> output`` labels distinguishing
     inputs when an authoritative function exists (for example a
@@ -736,16 +810,22 @@ def induce(train, validation=None, *, namespace="default", max_candidates=12000,
 
     original_train = check_examples(train, minimum=3)
     legacy = check_examples(validation or [])
-    dev_examples = check_examples(dev) if dev is not None else legacy
-    sealed = holdout is not None or (dev is not None and validation is not None)
-    if holdout is not None:
-        holdout_examples = check_examples(holdout)
-    elif dev is not None and validation is not None:
-        holdout_examples = legacy
-    elif dev is not None:
-        holdout_examples = []
+    partition_mode = "explicit"
+    if dev is None and holdout is None:
+        # Legacy two-way call: split ``validation`` into disjoint
+        # development and holdout rows so the holdout is never used for
+        # selection, early stopping or refinement.
+        dev_examples, holdout_examples = legacy_split(legacy)
+        partition_mode = "legacy_split"
     else:
-        holdout_examples = dev_examples
+        dev_examples = check_examples(dev) if dev is not None else legacy
+        if holdout is not None:
+            holdout_examples = check_examples(holdout)
+        elif validation is not None:
+            holdout_examples = legacy
+        else:
+            holdout_examples = []
+    sealed = bool(holdout_examples)
     _check_partition(original_train, dev_examples, holdout_examples)
     if proposals is not None and (not isinstance(proposals, list) or len(proposals) > 10):
         raise InvalidInput("proposals must be a list of at most 10 AST objects")
@@ -844,26 +924,71 @@ def induce(train, validation=None, *, namespace="default", max_candidates=12000,
                       if best else 0)
     dev_passes = sum(_matches(best, [ex]) for ex in dev_examples) if best else 0
     outcome = state.outcome
+    rival_scan = {"performed": False, "complete": None, "candidates": 0}
+    labelled = dev_examples + holdout_examples
+    if (best is not None and ambiguous is None and stage == 1
+            and outcome == "completed"
+            and len(holdout_examples) >= MIN_HOLDOUT_EXAMPLES
+            and dev_passes == len(dev_examples)
+            and holdout_passes == len(holdout_examples)
+            and all(type(e["output"]) is int for e in examples)):
+        # Only a result that would otherwise be locally validated is
+        # checked against deeper rivals. Selection is already final; an
+        # authoritative oracle may label a distinguishing input, which
+        # can refute the rival but never changes the selected rule.
+        out_type = type(original_train[0]["output"])
+        for _ in range(MAX_POST_SELECTION_ORACLE_CALLS + 1):
+            rival, scan = _deep_rival_scan(
+                examples, labelled, observed, probe_list, best, budget)
+            rival_scan = {**scan, "candidates": rival_scan["candidates"]
+                          + scan["candidates"]}
+            if rival is None:
+                break
+            ambiguous = rival[1]
+            if (counterexample_oracle is None
+                    or oracle_calls >= MAX_POST_SELECTION_ORACLE_CALLS
+                    + max_refinement_rounds):
+                fitting += 1
+                break
+            try:
+                label = counterexample_oracle(ambiguous["inputs"])
+            except (InvalidInput, KeyError, TypeError, ValueError):
+                label = None
+            oracle_calls += 1
+            if (type(label) is not out_type
+                    or label != ambiguous["candidate_output"]):
+                fitting += 1
+                break
+            labelled = labelled + [
+                {"inputs": ambiguous["inputs"], "output": label}]
+            ambiguous = None
+    if stage == 1 and rival_scan["performed"] and rival_scan["complete"]:
+        ambiguity_scope = "depth_1_and_depth_2"
+    elif stage == 1 and rival_scan["performed"]:
+        ambiguity_scope = "depth_1_and_bounded_depth_2_scan"
+    elif stage == 1:
+        ambiguity_scope = "depth_1_only"
+    else:
+        ambiguity_scope = "depth_1_and_depth_2"
     truncated = outcome != "completed"
     if not best:
         status = "search_incomplete" if truncated else "no_rule"
     elif truncated:
         status = "search_incomplete"
-    elif len(holdout_examples) >= 2 and holdout_passes != len(holdout_examples):
+    elif holdout_examples and holdout_passes != len(holdout_examples):
         # A rule that fails the holdout is not promotion evidence even if
         # several train-fitting rivals also disagree off-sample.
         status = "validation_failed"
     elif ambiguous:
         status = "ambiguous"
-    elif len(holdout_examples) < 2:
+    elif len(holdout_examples) < MIN_HOLDOUT_EXAMPLES:
         status = "provisional"
     else:
         status = "locally_validated"
     scope = ("bounded grammar, observed examples, deterministic unlabeled probes"
              + (" and optional bounded Z3 equivalence checks" if use_z3 else ""))
-    scope += ("; sealed holdout" if sealed
-              else "; validation also drove selection, so this is not independent "
-                   "generalization evidence")
+    scope += ("; sealed holdout disjoint from selection data" if sealed
+              else "; no holdout rows, so this is not generalization evidence")
     scope += "; not a mathematical or independent generalization proof"
     return {
         "namespace": namespace,
@@ -878,6 +1003,7 @@ def induce(train, validation=None, *, namespace="default", max_candidates=12000,
         "holdout_count": len(holdout_examples),
         "holdout_passed": holdout_passes,
         "holdout_sealed": sealed,
+        "partition_mode": partition_mode,
         "train_digest": digest(original_train),
         "validation_digest": digest(holdout_examples),
         "candidates_evaluated": state.candidates,
@@ -895,5 +1021,7 @@ def induce(train, validation=None, *, namespace="default", max_candidates=12000,
         "counterexamples_added": counterexamples_added,
         "oracle_calls": oracle_calls,
         "distinguishing_probe": ambiguous,
+        "ambiguity_scope": ambiguity_scope,
+        "rival_scan": rival_scan,
         "verification_scope": scope,
     }

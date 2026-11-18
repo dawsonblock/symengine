@@ -29,10 +29,17 @@ Integrity rules for a confirmatory label:
   the bundle digest. The built-in fixed control prompts can never
   qualify. Without ``--candidate-registry`` the bundle is recorded as
   ``learned_unverified``;
+- guidance from a verified bundle is served per task through
+  ``GovernedServingGateway`` (scope, applicability and counterexample
+  gates decide what each task gets; every decision is recorded);
 - token and tool usage must be fully metered by the agent runtime;
+  agent timeouts and errors count as ordinary failures;
 - the manifest must be ``ready`` (powered, preregistered, no
   placeholders, and its tasks must span at least five holdout
-  repositories).
+  repositories); the analysis labels a run confirmatory only when at
+  least 20 holdout repositories contribute tasks, and decides efficacy
+  with a repository-level test plus a negative-transfer gate. Tasks may
+  set ``"misleading": true`` to be reported separately.
 
 The run also writes ``<report>.evidence/`` with the signed receipt
 bytes, the evaluator public key, the exact manifest and a bundle digest,
@@ -56,6 +63,7 @@ import tempfile
 from collections.abc import Callable, Mapping
 from datetime import datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
@@ -462,6 +470,133 @@ def _served_guidance(bundle: Mapping, arm: str) -> GuidanceV1 | None:
         reason_code=None, approximate_tokens=60 * len(checks))
 
 
+class _ArmCatalogView:
+    """One arm's slice of the candidate catalog, read through the registry.
+
+    The gateway re-verifies the whole catalog on every serve; this view
+    only narrows ``qualified_bases`` to the candidates the arm is allowed
+    to draw from (B memory, C skills, D procedures, E all three), so the
+    composition, scope, applicability and counterexample gates are the
+    gateway's own.
+    """
+
+    def __init__(self, registry, candidate_ids) -> None:
+        self._registry = registry
+        self._ids = frozenset(candidate_ids)
+
+    def qualified_bases(self, *args, **kwargs):
+        return [(candidate, basis) for candidate, basis
+                in self._registry.qualified_bases(*args, **kwargs)
+                if candidate.candidate_id in self._ids]
+
+    def __getattr__(self, name):
+        return getattr(self._registry, name)
+
+
+class _ManifestRepositories:
+    """Resolve holdout repository ids from the validated, bound manifest.
+
+    The evaluator's manifest is the authority for which repository a
+    holdout task runs in; candidates learned on induction repositories
+    reach it only through a ``global`` or matching ``family_id`` scope.
+    """
+
+    def __init__(self, repositories) -> None:
+        self._by_id = {}
+        for item in repositories:
+            family = item.get("family_id")
+            self._by_id[item["repository_id"]] = SimpleNamespace(
+                registry_id=item["repository_id"],
+                family_id=family if isinstance(family, str) and family
+                else None)
+
+    def resolve(self, repository_id):
+        return self._by_id.get(repository_id)
+
+
+_MAX_CONTEXT_FILES = 2000
+
+
+def _files_present(path: Path) -> tuple[str, ...]:
+    """Bounded relative file listing used by ``file_present`` predicates."""
+    found: list[str] = []
+    for item in sorted(Path(path).rglob("*")):
+        if len(found) >= _MAX_CONTEXT_FILES:
+            break
+        relative = item.relative_to(path)
+        if ".git" in relative.parts or item.is_symlink() \
+                or not item.is_file():
+            continue
+        found.append(relative.as_posix())
+    return tuple(found)
+
+
+def _serving_provider(registry, bundle: Mapping, *,
+                      task_contexts: Mapping[str, Mapping],
+                      repositories, served: dict, decisions: list,
+                      gateway_factory=None):
+    """Route each (task, arm) through SIS's governed serving gateway.
+
+    Every task is served from its own context — repository identity,
+    failure class, prompt summary and the files in its snapshot — so
+    candidates whose scope, applicability or counterexamples do not fit
+    the task are rejected and the arm runs without guidance. Every
+    decision, delivered candidate and rejection is recorded.
+    """
+    from sis.v3.contracts import GuidanceRequestV1
+    from sis.v3.serving import GovernedServingGateway
+
+    factory = gateway_factory or GovernedServingGateway
+    resolver = _ManifestRepositories(repositories)
+    gateways = {}
+    audits: dict[str, list] = {}
+    for arm in ("B", "C", "D", "E"):
+        sources = ("B", "C", "D") if arm == "E" else (arm,)
+        ids = [record["candidate_id"] for source in sources
+               for record in bundle["components"].get(source, ())]
+        audits[arm] = []
+        gateways[arm] = factory(
+            _ArmCatalogView(registry, ids), repository_registry=resolver,
+            allow_global_scope=True, audit_sink=audits[arm].append)
+
+    def provider(task, arm):
+        if arm == "A":
+            served[(task.task_id, arm)] = False
+            return None
+        context = task_contexts[task.task_id]
+        request = GuidanceRequestV1(
+            schema_version=1, task_id=task.task_id,
+            repo_snapshot_digest=task.repo_snapshot_digest,
+            base_commit=task.base_commit, namespace="five-arm-study",
+            language=context.get("language", "python"),
+            toolchain=context.get("toolchain") or "pytest",
+            lockfile_digests={},
+            task_summary=context["prompt"][:2000],
+            failure_signatures=tuple(context.get("failure_signatures", ())),
+            present_symbols=(), semantic_contract_digest=None)
+        before = len(audits[arm])
+        guidance = gateways[arm].serve(
+            request, repository_id=context["repository_id"],
+            files_present=context.get("files_present", ()))
+        audit = audits[arm][before:]
+        record = audit[-1] if audit else {}
+        delivered = (guidance.decision != "abstain"
+                     and bool(guidance.helpful_next_checks))
+        served[(task.task_id, arm)] = delivered
+        decisions.append({
+            "task_id": task.task_id,
+            "arm": arm,
+            "decision": guidance.decision,
+            "reason_code": guidance.reason_code,
+            "guidance_digest": guidance.digest,
+            "candidates": list(record.get("candidate_digests") or ()),
+            "rejections": list(record.get("rejections") or ()),
+            "integrity_error": record.get("integrity_error"),
+        })
+        return guidance if delivered else None
+    return provider
+
+
 def _utcnow() -> str:
     return datetime.now(timezone.utc).isoformat(
         timespec="seconds").replace("+00:00", "Z")
@@ -567,6 +702,26 @@ def _real_tasks(document: Mapping, verifier: OutcomeVerifier, *,
     return tasks, prompts, classes
 
 
+def _task_contexts(document: Mapping, tasks) -> dict[str, dict]:
+    """Per-task serving context: repository, failure class, prompt, files."""
+    by_id = {task["task_id"]: task for task in document["tasks"]}
+    listings: dict[Path, tuple[str, ...]] = {}
+    contexts = {}
+    for envelope, path in tasks:
+        task = by_id[envelope.task_id]
+        if path not in listings:
+            listings[path] = _files_present(path)
+        contexts[envelope.task_id] = {
+            "repository_id": task["repository_id"],
+            "prompt": task["prompt"],
+            "failure_signatures": (task["failure_class"],),
+            "language": task.get("language", "python")
+            if isinstance(task.get("language"), str) else "python",
+            "files_present": listings[path],
+        }
+    return contexts
+
+
 def _codex_agent(prompts: Mapping[str, str], budget: BudgetCaps,
                  model: str | None):
     return CodexCliAgent(wall_seconds=budget.wall_seconds, model=model,
@@ -637,7 +792,20 @@ def run_real(output: Path, manifest_path: Path | None, *,
              allow_shared_custody: bool = False,
              guidance_path: Path | None = None,
              candidate_registry: Path | None = None,
-             agent_factory: Callable | None = None) -> int:
+             agent_factory: Callable | None = None,
+             registry_factory: Callable | None = None) -> int:
+    """Execute a validated manifest with the real agent.
+
+    ``registry_factory(path)`` opens the candidate registry; the default
+    opens it without trusted evaluator/operator authorities, under which
+    qualified candidates cannot be re-verified and the bundle stays
+    ``learned_unverified``. A deployment supplies a factory wired to its
+    trusted keys so candidates verify and are served per task.
+    """
+    if registry_factory is None:
+        def registry_factory(path):
+            from sis.v3.candidates import CandidateRegistry
+            return CandidateRegistry(path)
     status = codex_agent_status()
     report: dict = {
         "schema_version": 1,
@@ -736,8 +904,7 @@ def run_real(output: Path, manifest_path: Path | None, *,
         registry = None
         try:
             if candidate_registry is not None:
-                from sis.v3.candidates import CandidateRegistry
-                registry = CandidateRegistry(candidate_registry)
+                registry = registry_factory(candidate_registry)
             learned_bundle = _load_guidance_bundle(
                 guidance_path,
                 induction_digests=learned,
@@ -806,7 +973,28 @@ def run_real(output: Path, manifest_path: Path | None, *,
                 gate, f"campaign_setup_failed:{type(exc).__name__}: {exc}")
 
         served: dict = {}
-        if learned_bundle is not None:
+        serving_decisions: list = []
+        serving_registry = None
+        if learned_bundle is not None and learned_bundle["candidates_verified"]:
+            # Verified candidates are served the way SIS serves them: per
+            # task, through the governed gateway, so scope, applicability
+            # and counterexample gates decide what each task receives.
+            bundle_payload = learned_bundle["bundles"]
+            try:
+                serving_registry = registry_factory(candidate_registry)
+                provider = _serving_provider(
+                    serving_registry, learned_bundle,
+                    task_contexts=_task_contexts(document, tasks),
+                    repositories=document["repositories"], served=served,
+                    decisions=serving_decisions)
+            except Exception as exc:
+                if serving_registry is not None:
+                    serving_registry.close()
+                return blocked(
+                    "BLOCKED_GUIDANCE",
+                    f"guidance_serving_unavailable:{type(exc).__name__}:"
+                    f" {exc}")
+        elif learned_bundle is not None:
             bundle_payload = learned_bundle["bundles"]
 
             def provider(task, arm):
@@ -828,10 +1016,23 @@ def run_real(output: Path, manifest_path: Path | None, *,
                     guidance is not None and guidance.helpful_next_checks)
                 return guidance
 
+        guidance_routing = ("governed_serving" if serving_registry is not None
+                            else "static_bundle" if learned_bundle is not None
+                            else "fixed_control")
+        provenance["guidance_routing"] = guidance_routing
+        misleading = frozenset(
+            task["task_id"] for task in document["tasks"]
+            if task.get("misleading") is True)
+
+        def close_serving():
+            if serving_registry is not None:
+                serving_registry.close()
+
         factory = agent_factory or _codex_agent
         try:
             agent = factory(prompts, budget, document["agent"]["model"])
         except RuntimeError as exc:
+            close_serving()
             return blocked("BLOCKED_REAL_AGENT", str(exc))
         try:
             campaign = FiveArmCampaign(
@@ -843,6 +1044,7 @@ def run_real(output: Path, manifest_path: Path | None, *,
                         for repo in document["repositories"]}),
                 tasks=tasks, agent=agent, budget=budget, protocol=protocol,
                 context_provider=provider, served_map=served,
+                misleading_tasks=misleading,
                 learned_repo_digests=learned, real_agent=True,
                 hidden_holdout=True, provenance=provenance, arms=design_arms,
                 arm_order_seed=int(validation["manifest_digest"][:16], 16),
@@ -854,6 +1056,7 @@ def run_real(output: Path, manifest_path: Path | None, *,
             close = getattr(agent, "close", None)
             if callable(close):
                 close()
+            close_serving()
             return blocked(
                 "BLOCKED_MANIFEST",
                 f"campaign_setup_failed:{type(exc).__name__}: {exc}")
@@ -871,6 +1074,7 @@ def run_real(output: Path, manifest_path: Path | None, *,
             close = getattr(agent, "close", None)
             if callable(close):
                 close()
+            close_serving()
         analysis = report["learning_qualification"]
         report["kind"] = (
             "primary_contrast_learning_qualification_real_run"
@@ -894,6 +1098,9 @@ def run_real(output: Path, manifest_path: Path | None, *,
             "training_repository_digests": (
                 list(learned_bundle["training_repository_digests"])
                 if learned_bundle is not None else None),
+            "routing": guidance_routing,
+            "serving_decisions": serving_decisions,
+            "misleading_tasks": sorted(misleading),
         }
         report["arm_order_seed"] = int(
             validation["manifest_digest"][:16], 16)

@@ -42,7 +42,7 @@ def guidance(text="WRITE_OK"):
 
 
 def synthetic_report(n, *, a_pass, e_pass, b_pass=None, c_pass=None,
-                     d_pass=None, conformance=True):
+                     d_pass=None, conformance=True, repositories=None):
     b_pass = a_pass if b_pass is None else b_pass
     c_pass = a_pass if c_pass is None else c_pass
     d_pass = a_pass if d_pass is None else d_pass
@@ -59,6 +59,8 @@ def synthetic_report(n, *, a_pass, e_pass, b_pass=None, c_pass=None,
                      "C": arm(c_pass), "D": arm(d_pass),
                      "E": arm(e_pass)},
         })
+        if repositories:
+            per_task[-1]["repository_id"] = f"repo-{index % repositories}"
     report = {"per_task": per_task, "tasks": n,
               "budget": {"wall_seconds": 60, "token_budget": 1000,
                          "tool_budget": 100}}
@@ -146,6 +148,7 @@ def eligible_provenance(**overrides):
         "cli_version_matches": True,
         "custody": "split",
         "guidance_source": "learned",
+        "guidance_routing": "governed_serving",
         "preregistration_anchored": True,
     }
     provenance.update(overrides)
@@ -163,7 +166,8 @@ def powered_protocol(sample_size=103):
 
 class AnalysisTests(unittest.TestCase):
     def test_confirmatory_requires_real_agent_hidden_and_conforming(self):
-        report = synthetic_report(103, a_pass=False, e_pass=True)
+        report = synthetic_report(103, a_pass=False, e_pass=True,
+                                  repositories=20)
         analysis = analyze_report(
             report, protocol=powered_protocol(),
             real_agent=True, hidden_holdout=True,
@@ -310,7 +314,8 @@ class AnalysisTests(unittest.TestCase):
                             for item in analysis["limitations"]))
 
     def test_regression_is_preserved(self):
-        report = synthetic_report(103, a_pass=True, e_pass=False)
+        report = synthetic_report(103, a_pass=True, e_pass=False,
+                                  repositories=20)
         analysis = analyze_report(
             report, protocol=powered_protocol(),
             real_agent=True, hidden_holdout=True,
@@ -458,9 +463,12 @@ class CampaignTests(unittest.TestCase):
         self.assertEqual(analysis["decisive_contrast"]["losses"], 0)
         self.assertEqual(analysis["metrics"]["A"]["solved_task_rate"], 0.0)
         self.assertEqual(analysis["metrics"]["E"]["solved_task_rate"], 1.0)
-        # No misleading tasks were declared, so negative transfer is
-        # unmeasured (None), never fabricated as zero.
-        self.assertIsNone(analysis["negative_transfer"]["integrated_rate"])
+        # Negative transfer is measured from paired losses; with no
+        # misleading tasks declared the misleading-task rate stays None.
+        self.assertTrue(analysis["negative_transfer"]["measured"])
+        self.assertEqual(analysis["negative_transfer"]["integrated_rate"], 0.0)
+        self.assertIsNone(
+            analysis["negative_transfer"]["misleading_task_rate"])
         self.assertEqual(served[("task-0", "A")], False)
         self.assertEqual(served[("task-0", "E")], True)
 

@@ -64,9 +64,11 @@ class PromotionRecomputeTests(unittest.TestCase):
         # A four-field study that truncates at a small cap but validates at
         # the default budget: replaying with the altered budget must deny.
         # Field values decorrelate comparisons so 'a' is the only fitting rule.
+        # The last row refutes the depth-2 rival max(-b, a), which fits
+        # every other row.
         rows = [(5, -3, 8, 2), (-2, 4, -1, 9), (0, 3, -7, 1),
                 (3, 10, 0, -5), (7, 2, 11, 4), (11, -6, 5, 13),
-                (-5, 7, 0, 12)]
+                (-5, 7, 0, 12), (-6, 2, 3, 8)]
         vrows = [(13, 1, 2, 6), (17, -5, 9, 3)]
         case = {
             'train': [{'inputs': {'a': a, 'b': b, 'c': c, 'd': d}, 'output': a}

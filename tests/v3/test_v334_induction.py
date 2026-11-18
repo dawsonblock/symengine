@@ -135,11 +135,16 @@ class EarlyStoppingTests(unittest.TestCase):
         self.assertTrue(result["holdout_sealed"])
         self.assertLess(result["holdout_passed"], result["holdout_count"])
 
-    def test_legacy_validation_is_not_sealed(self):
+    def test_legacy_validation_is_split_into_sealed_holdout(self):
+        # Legacy validation is split into disjoint development and
+        # holdout rows; the holdout never drives selection.
         train, dev, _holdout = _deepen_study()
         result = induce(train, dev)
-        self.assertFalse(result["holdout_sealed"])
-        self.assertIn("not independent", result["verification_scope"])
+        self.assertTrue(result["holdout_sealed"])
+        self.assertEqual(result["partition_mode"], "legacy_split")
+        self.assertEqual(result["dev_count"] + result["holdout_count"],
+                         len(dev))
+        self.assertGreaterEqual(result["holdout_count"], 2)
 
     def test_partitions_must_be_disjoint(self):
         train, dev, _holdout = _deepen_study()
