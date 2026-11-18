@@ -24,6 +24,14 @@ from sis.v3.runner import (
 
 PY = sys.executable
 POSIX = os.name == "posix"
+_LINUX = sys.platform.startswith("linux")
+
+
+def _LIFETIME_LIMITS(wall_seconds: int) -> ResourceLimits:
+    # Lifetime tests exercise reaping, not RLIMIT_NPROC. The default
+    # process_count counts every process the user owns, so on a host where
+    # the user already runs more (macOS CI) the submission could not fork.
+    return ResourceLimits(wall_seconds=wall_seconds, process_count=None)
 
 
 def _alive(pid: int) -> bool:
@@ -220,10 +228,11 @@ class ProcessLifetimeTests(unittest.TestCase):
             "stderr=subprocess.DEVNULL)\n"
             f"open({str(self.pidfile)!r}, 'w').write(str(p.pid))\n")
         receipt = self.executor.run(self.workspace, CommandSpec(
-            argv=(PY, "-c", code), limits=ResourceLimits(wall_seconds=20)))
+            argv=(PY, "-c", code), limits=_LIFETIME_LIMITS(20)))
         self.assertFalse(receipt.timeout)
         self._assert_dead(self._pid())
 
+    @unittest.skipUnless(_LINUX, "subreaper reaping is Linux-only")
     def test_setsid_child_does_not_outlive_a_normal_exit(self):
         code = (
             "import os, sys, time\n"
@@ -235,11 +244,12 @@ class ProcessLifetimeTests(unittest.TestCase):
             "    os._exit(0)\n"
             "time.sleep(0.5)\n")
         receipt = self.executor.run(self.workspace, CommandSpec(
-            argv=(PY, "-c", code), limits=ResourceLimits(wall_seconds=20)))
+            argv=(PY, "-c", code), limits=_LIFETIME_LIMITS(20)))
         self.assertFalse(receipt.timeout)
         self.assertIn("process:subreaper", receipt.security_errors)
         self._assert_dead(self._pid())
 
+    @unittest.skipUnless(_LINUX, "subreaper reaping is Linux-only")
     def test_setsid_child_does_not_outlive_a_timeout(self):
         code = (
             "import os, time\n"
@@ -250,7 +260,7 @@ class ProcessLifetimeTests(unittest.TestCase):
             "    os._exit(0)\n"
             "time.sleep(60)\n")
         receipt = self.executor.run(self.workspace, CommandSpec(
-            argv=(PY, "-c", code), limits=ResourceLimits(wall_seconds=2)))
+            argv=(PY, "-c", code), limits=_LIFETIME_LIMITS(2)))
         self.assertTrue(receipt.timeout)
         self._assert_dead(self._pid())
 

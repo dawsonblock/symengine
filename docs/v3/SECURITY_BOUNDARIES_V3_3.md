@@ -273,7 +273,9 @@
   (`process:subreaper`) and kills every descendant, including ones that
   called `setsid()`, when the command exits or times out; the process
   group is also killed after every run. A submission that kills its own
-  launcher first loses that reaping (best effort, not a boundary). The
+  launcher first loses that reaping (best effort, not a boundary). On
+  macOS there is no subreaper: the process group is killed after every
+  run, but a descendant that called `setsid()` can outlive it. The
   Linux worker's launcher joins the cgroup before it execs bubblewrap.
 - `disk_bytes` is enforced live only per file (`RLIMIT_FSIZE`) on the
   local and bubblewrap backends; the workspace total is audited after
