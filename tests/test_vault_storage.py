@@ -32,13 +32,35 @@ class _MockFileAttributeTag(ctypes.Structure):
 def _mock_win_ctx(*, create_error=None, file_attrs=0x80, file_type=1,
                   write_error=None,
                   dacl_control=0x1000,
-                  dacl_sddl='D:P(A;;FA;;;U)(A;;FA;;;SY)'):
-    """Recording stand-in for ``_windows_api()`` — no real Win32 needed."""
+                  dacl_sddl='D:P(A;;FA;;;U)(A;;FA;;;SY)',
+                  sid_aliases=None):
+    """Recording stand-in for ``_windows_api()`` — no real Win32 needed.
+
+    ``sid_aliases`` maps SDDL trustee spellings to the ``S-1-...`` SID
+    ``ConvertStringSidToSidW`` would parse them as; a literal ``S-1-``
+    string parses as itself and anything else fails to parse.
+    """
     state = SimpleNamespace(
         create_calls=[], write_calls=[], deleted=[], closed=[],
-        file_handle=0x5150, descriptor=0xD000, keep=[], last_error=0)
+        file_handle=0x5150, descriptor=0xD000, keep=[], last_error=0,
+        sids={})
+    aliases = {'SY': 'S-1-5-18', 'BA': 'S-1-5-32-544', 'CO': 'S-1-3-0',
+               'WD': 'S-1-1-0', **(sid_aliases or {})}
 
     class Advapi:
+        def ConvertStringSidToSidW(self, text, out):
+            sid = aliases.get(text, text if text.startswith('S-1-') else None)
+            if sid is None:
+                return False
+            handle = 0x51D0 + len(state.sids)
+            state.sids[handle] = sid
+            out._obj.value = handle
+            return True
+
+        def ConvertSidToStringSidW(self, binary, out):
+            out._obj.value = state.sids[binary.value]
+            return True
+
         def ConvertStringSecurityDescriptorToSecurityDescriptorW(
                 self, sddl, rev, out, out_len):
             out._obj.value = state.descriptor
@@ -293,6 +315,73 @@ class WindowsDaclMockTests(unittest.TestCase):
         self.assertFalse(vs._windows_dacl_is_restricted(
             1, foreign, allowed, self.fail))
 
+    # The GitHub windows-latest runner user (runneradmin) is the RID-500
+    # built-in Administrator; the OS renders its SID as ``LA`` in SDDL
+    # while ConvertSidToStringSidW spells it out in full.
+    USER = 'S-1-5-21-1111-2222-3333-500'
+    RUNNER_ALIASES = {'LA': USER}
+
+    def _allowed(self):
+        return vs._windows_allowed_sids(self.USER)
+
+    def test_aliased_current_user_is_the_current_user(self):
+        ctx, _ = _mock_win_ctx(dacl_sddl='D:PAI(A;;FA;;;LA)(A;;FA;;;SY)',
+                               sid_aliases=self.RUNNER_ALIASES)
+        self.assertTrue(vs._windows_dacl_is_restricted(
+            1, ctx, self._allowed(), self.fail))
+
+    def test_alias_of_another_principal_is_still_rejected(self):
+        # ``LA`` naming someone other than the caller, Everyone, and
+        # Owner Rights (Python's os.mkdir(mode=0o700) DACL) all fail.
+        for sddl, aliases in (
+                ('D:P(A;;FA;;;LA)(A;;FA;;;SY)',
+                 {'LA': 'S-1-5-21-1111-2222-3333-501'}),
+                ('D:P(A;;FA;;;LA)(A;;FA;;;WD)', self.RUNNER_ALIASES),
+                ('D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;FA;;;OW)',
+                 {'OW': 'S-1-3-4'})):
+            with self.subTest(sddl=sddl):
+                ctx, _ = _mock_win_ctx(dacl_sddl=sddl, sid_aliases=aliases)
+                self.assertFalse(vs._windows_dacl_is_restricted(
+                    1, ctx, self._allowed(), self.fail))
+
+    def test_unparseable_trustee_and_deny_ace_are_rejected(self):
+        for sddl in ('D:P(A;;FA;;;??)', 'D:P(D;;FA;;;LA)(A;;FA;;;LA)',
+                     'D:P(A;;FA;;LA)'):
+            with self.subTest(sddl=sddl):
+                ctx, _ = _mock_win_ctx(dacl_sddl=sddl,
+                                       sid_aliases=self.RUNNER_ALIASES)
+                self.assertFalse(vs._windows_dacl_is_restricted(
+                    1, ctx, self._allowed(), self.fail))
+
+    def test_canonical_aces_compare_principals_in_order(self):
+        ctx, _ = _mock_win_ctx(sid_aliases=self.RUNNER_ALIASES)
+        expected = f'D:P(A;;FA;;;{self.USER})(A;;FA;;;SY)'
+        canonical = vs._windows_canonical_aces
+        self.assertEqual(canonical(ctx, 'D:PAI(A;;FA;;;LA)(A;;FA;;;SY)'),
+                         canonical(ctx, expected))
+        self.assertEqual(canonical(ctx, expected),
+                         [('A', '', 'FA', '', '', self.USER),
+                          ('A', '', 'FA', '', '', 'S-1-5-18')])
+        for observed in ('D:P(A;;FA;;;SY)(A;;FA;;;LA)',
+                         'D:P(A;;FA;;;LA)',
+                         'D:P(A;;FA;;;LA)(A;;FA;;;SY)(A;;FA;;;BA)',
+                         'D:P(A;;FR;;;LA)(A;;FA;;;SY)'):
+            with self.subTest(observed=observed):
+                self.assertNotEqual(canonical(ctx, observed),
+                                    canonical(ctx, expected))
+        self.assertIsNone(canonical(ctx, 'D:P(A;;FA;;;??)'))
+
+    @unittest.skipUnless(os.name == 'nt', 'real Win32 SID round trip')
+    def test_real_private_directory_trustees_canonicalize(self):
+        ctx = vs._windows_api()
+        _, user_sid = vs._windows_user_sddl(ctx, self.fail)
+        self.assertEqual(vs._windows_canonical_sid(ctx, user_sid), user_sid)
+        self.assertEqual(vs._windows_canonical_sid(ctx, 'SY'), 'S-1-5-18')
+        self.assertIsNone(vs._windows_canonical_sid(ctx, 'not-a-sid'))
+        with tempfile.TemporaryDirectory() as temp:
+            path = private_directory(Path(temp) / 'vault')
+            assert_private_acl(path)
+
 
 class WindowsFileCreateMockTests(unittest.TestCase):
     """Mocked-Win32 ``_windows_private_file_create`` — runnable on any
@@ -341,7 +430,7 @@ class WindowsFileCreateMockTests(unittest.TestCase):
         ctx, state = _mock_win_ctx(write_error=5)  # ERROR_ACCESS_DENIED
         with self.assertRaises(InvalidInput):
             self._create(ctx, state)
-        self.assertEqual(state.deleted, ['C:/x/seed'])
+        self.assertEqual(state.deleted, [str(Path('C:/x/seed'))])
 
 
 if __name__ == '__main__':

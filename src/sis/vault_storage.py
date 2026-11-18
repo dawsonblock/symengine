@@ -56,6 +56,9 @@ def _load_windows_api():
     advapi.ConvertSidToStringSidW.argtypes = [
         ctypes.c_void_p, ctypes.POINTER(ctypes.c_wchar_p)]
     advapi.ConvertSidToStringSidW.restype = wintypes.BOOL
+    advapi.ConvertStringSidToSidW.argtypes = [
+        wintypes.LPCWSTR, ctypes.POINTER(ctypes.c_void_p)]
+    advapi.ConvertStringSidToSidW.restype = wintypes.BOOL
     advapi.ConvertStringSecurityDescriptorToSecurityDescriptorW.argtypes = [
         wintypes.LPCWSTR, wintypes.DWORD, ctypes.POINTER(ctypes.c_void_p),
         ctypes.POINTER(wintypes.ULONG)]
@@ -153,6 +156,61 @@ def _windows_allowed_sids(user_sid):
     return {user_sid, 'SY', 'BA', 'CO'}
 
 
+def _windows_canonical_sid(ctx, trustee):
+    """Return the ``S-1-...`` spelling of an SDDL trustee, or None.
+
+    ``ConvertSecurityDescriptorToStringSecurityDescriptorW`` writes any
+    SID that has an SDDL alias as that alias. That covers well-known
+    SIDs (``SY``, ``BA``) and also machine-relative accounts: the
+    RID-500 built-in Administrator, which is the account the GitHub
+    Windows runner (``runneradmin``) and Azure VMs run as, reads back
+    as ``LA``. ``ConvertSidToStringSidW``, which produces the caller's
+    SID in :func:`_windows_user_sddl`, never abbreviates. A purely
+    textual comparison therefore rejects a DACL that names exactly the
+    current user, including the one this module just applied.
+
+    Round-tripping a trustee through its binary SID compares principals
+    instead of spellings; it neither adds nor removes any principal.
+    Anything that does not parse as a SID returns None, which never
+    matches an allowed SID.
+    """
+    advapi, kernel = ctx.advapi, ctx.kernel
+    binary = ctypes.c_void_p()
+    text = ctypes.c_wchar_p()
+    try:
+        if not advapi.ConvertStringSidToSidW(trustee, ctypes.byref(binary)):
+            return None
+        if not binary.value:
+            return None
+        if not advapi.ConvertSidToStringSidW(binary, ctypes.byref(text)):
+            return None
+        return text.value or None
+    finally:
+        if text.value is not None:
+            kernel.LocalFree(ctypes.cast(text, ctypes.c_void_p))
+        if binary:
+            kernel.LocalFree(binary)
+
+
+def _windows_canonical_aces(ctx, sddl):
+    """Return a DACL's ACEs with canonical trustees, or None if malformed.
+
+    Each ACE becomes ``(type, flags, rights, object, inherit-object,
+    S-1-... trustee)`` in DACL order. Used to compare an observed DACL
+    with the requested one by principal rather than by SID spelling.
+    """
+    canonical = []
+    for ace in re.findall(r'\(([^()]*)\)', sddl):
+        fields = ace.split(';')
+        if len(fields) != 6:
+            return None
+        trustee = _windows_canonical_sid(ctx, fields[5])
+        if trustee is None:
+            return None
+        canonical.append((*fields[:5], trustee))
+    return canonical
+
+
 def _windows_dacl_is_restricted(handle, ctx, allowed_sids, fail):
     """True when the object's DACL is protected and allow-lists only ``allowed_sids``.
 
@@ -194,11 +252,23 @@ def _windows_dacl_is_restricted(handle, ctx, allowed_sids, fail):
         aces = re.findall(r'\(([^()]*)\)', sddl)
         if not aces:
             return False
-        return all(
-            len(ace.split(';')) == 6
-            and ace.split(';')[0] == 'A'
-            and ace.split(';')[5] in allowed_sids
-            for ace in aces)
+        canonical_allowed = None
+        for ace in aces:
+            fields = ace.split(';')
+            if len(fields) != 6 or fields[0] != 'A':
+                return False
+            if fields[5] in allowed_sids:
+                continue
+            # Same principal, different spelling (e.g. ``LA`` for the
+            # caller's ``S-1-5-21-...-500``): compare binary SIDs.
+            if canonical_allowed is None:
+                canonical_allowed = {
+                    sid for sid in (_windows_canonical_sid(ctx, allowed)
+                                    for allowed in allowed_sids)
+                    if sid}
+            if _windows_canonical_sid(ctx, fields[5]) not in canonical_allowed:
+                return False
+        return True
     finally:
         if descriptor:
             kernel.LocalFree(descriptor)
@@ -298,7 +368,13 @@ def _windows_private_sqlite_file(path, label):
             queried_descriptor, 1, 0x00000004, ctypes.byref(sddl_buffer), ctypes.byref(length)),
                  'cannot serialize vault ACL')
         observed_sddl = ctypes.wstring_at(sddl_buffer)
-        if not (control.value & 0x1000) or observed_sddl != expected_sddl:
+        # Protected, and exactly the requested ACEs in the requested
+        # order. Trustees are compared as SIDs, not strings: the OS
+        # renders the RID-500 Administrator as ``LA`` while the expected
+        # SDDL spells it ``S-1-5-21-...-500`` (see _windows_canonical_sid).
+        observed_aces = _windows_canonical_aces(ctx, observed_sddl)
+        if (not (control.value & 0x1000) or not observed_aces
+                or observed_aces != _windows_canonical_aces(ctx, expected_sddl)):
             fail('vault ACL is not limited to the current user and SYSTEM')
         return path
     except InvalidInput:
