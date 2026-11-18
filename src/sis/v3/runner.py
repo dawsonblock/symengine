@@ -133,19 +133,27 @@ if cgroup is not None:
             handle.write(str(os.getpid()))
     except OSError as exc:
         refuse("cgroup_join_failed:%s" % (exc.errno,))
-for name, soft, hard in triples:
-    limit = getattr(resource, name, None)
-    if limit is None:
-        refuse("rlimit_unavailable:" + name)
-    try:
-        resource.setrlimit(limit, (soft, hard))
-    except (OSError, ValueError) as exc:
-        refuse("rlimit_failed:" + name)
-if cwd is not None:
-    try:
-        os.chdir(cwd)
-    except OSError:
-        refuse("chdir_failed")
+
+
+def apply_limits():
+    # Applied in the process that execs the command. Under supervision
+    # that is the forked child, never the supervisor: RLIMIT_NPROC counts
+    # every process of the user, so a supervisor that set it first could
+    # be refused its own fork when the user already runs more processes
+    # than the limit.
+    for name, soft, hard in triples:
+        limit = getattr(resource, name, None)
+        if limit is None:
+            refuse("rlimit_unavailable:" + name)
+        try:
+            resource.setrlimit(limit, (soft, hard))
+        except (OSError, ValueError):
+            refuse("rlimit_failed:" + name)
+    if cwd is not None:
+        try:
+            os.chdir(cwd)
+        except OSError:
+            refuse("chdir_failed")
 
 
 def children():
@@ -198,16 +206,28 @@ if supervise and sys.platform.startswith("linux"):
     if libc.prctl(PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0) != 0:
         supervise = False
 if supervise and sys.platform.startswith("linux"):
-    report("LS")
-    child = os.fork()
+    try:
+        child = os.fork()
+    except OSError:
+        refuse("supervisor_fork_failed")
     if child == 0:
         try:
             for number in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
                 signal.signal(number, signal.SIG_DFL)
+            apply_limits()
+            report("LS")
             os.execvpe(command[0], command, os.environ)
         except BaseException:
             pass
         os._exit(127)
+    # The child owns the status report; drop the supervisor's copy so the
+    # reader sees end-of-file once the child has reported and exec'd.
+    if status_fd is not None:
+        try:
+            os.close(status_fd)
+        except OSError:
+            pass
+        status_fd = None
 
     def stop(_number, _frame):
         try:
@@ -239,6 +259,7 @@ if supervise and sys.platform.startswith("linux"):
             pass
         os._exit(128 + number)
     os._exit(os.WEXITSTATUS(status) if os.WIFEXITED(status) else 1)
+apply_limits()
 report("L")
 os.execvpe(command[0], command, os.environ)
 '''
