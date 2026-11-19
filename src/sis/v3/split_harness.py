@@ -128,6 +128,32 @@ def _decode(payload: Any, depth: int = 0) -> Any:
             raise SplitProtocolError("sequence payload is out of bounds")
         decoded = [_decode(item, depth + 1) for item in items]
         return decoded if kind == "list" else tuple(decoded)
+    if kind in ("set", "frozenset"):
+        items = payload.get("v")
+        if not isinstance(items, list) or len(items) > MAX_ITEMS:
+            raise SplitProtocolError("set payload is out of bounds")
+        decoded = [_decode(item, depth + 1) for item in items]
+        try:
+            return set(decoded) if kind == "set" else frozenset(decoded)
+        except TypeError as exc:
+            raise SplitProtocolError(
+                "set payload has an unhashable element") from exc
+    if kind == "map":
+        items = payload.get("v")
+        if not isinstance(items, list) or len(items) > MAX_ITEMS:
+            raise SplitProtocolError("mapping payload is out of bounds")
+        mapping = {}
+        for item in items:
+            if not isinstance(item, list) or len(item) != 2:
+                raise SplitProtocolError("mapping entries must be pairs")
+            key = _decode(item[0], depth + 1)
+            value = _decode(item[1], depth + 1)
+            try:
+                mapping[key] = value
+            except TypeError as exc:
+                raise SplitProtocolError(
+                    "mapping payload has an unhashable key") from exc
+        return mapping
     if kind == "dict":
         items = payload.get("v")
         if not isinstance(items, list) or len(items) > MAX_ITEMS:
@@ -281,15 +307,27 @@ def _host_encode(value: Any, depth: int = 0) -> dict:
             raise SplitProtocolError("argument sequence exceeds the bound")
         return {"t": "list" if isinstance(value, list) else "tuple",
                 "v": [_host_encode(item, depth + 1) for item in value]}
+    if isinstance(value, (set, frozenset)):
+        if len(value) > MAX_ITEMS:
+            raise SplitProtocolError("argument set exceeds the bound")
+        return {"t": "frozenset" if isinstance(value, frozenset) else "set",
+                "v": [_host_encode(item, depth + 1) for item in value]}
     if isinstance(value, dict):
         if len(value) > MAX_ITEMS:
             raise SplitProtocolError("argument mapping exceeds the bound")
-        items = []
-        for key, item in value.items():
-            if not isinstance(key, str):
-                raise SplitProtocolError("argument mapping keys must be text")
-            items.append([key, _host_encode(item, depth + 1)])
-        return {"t": "dict", "v": items}
+        if all(isinstance(key, str) for key in value):
+            return {"t": "dict",
+                    "v": [[key, _host_encode(item, depth + 1)]
+                          for key, item in value.items()]}
+        return {"t": "map",
+                "v": [[_host_encode(key, depth + 1),
+                       _host_encode(item, depth + 1)]
+                      for key, item in value.items()]}
+    if isinstance(value, slice):
+        return {"t": "slice",
+                "v": [_host_encode(value.start, depth + 1),
+                      _host_encode(value.stop, depth + 1),
+                      _host_encode(value.step, depth + 1)]}
     raise SplitProtocolError(
         f"argument type is not transferable: {type(value).__name__}")
 
@@ -310,6 +348,7 @@ MAX_HANDLES = 100000
 # Call results that cannot cross the socket stay here; the evaluator
 # refers to them by handle ("#<n>"), never by the callable's path.
 HANDLES = {}
+HASHABLE_KINDS = frozenset({"none", "bool", "int", "float", "str", "bytes"})
 
 
 class NotEncodable(Exception):
@@ -335,9 +374,29 @@ def decode(payload):
     if kind in ("list", "tuple"):
         items = [decode(item) for item in payload.get("v") or []]
         return items if kind == "list" else tuple(items)
+    if kind in ("set", "frozenset"):
+        items = [decode(item) for item in payload.get("v") or []]
+        return set(items) if kind == "set" else frozenset(items)
     if kind == "dict":
         return {item[0]: decode(item[1]) for item in payload.get("v") or []}
+    if kind == "map":
+        return {decode(item[0]): decode(item[1])
+                for item in payload.get("v") or []}
+    if kind == "slice":
+        start, stop, step = [decode(item) for item in payload.get("v")]
+        return slice(start, stop, step)
     raise ValueError("unknown payload type: %r" % (kind,))
+
+
+def hashable(payload):
+    # The evaluator rebuilds set elements and mapping keys from their
+    # encoding, so the encoding itself must decode to something hashable.
+    kind = payload.get("t")
+    if kind in HASHABLE_KINDS:
+        return True
+    if kind in ("tuple", "frozenset"):
+        return all(hashable(item) for item in payload.get("v"))
+    return False
 
 
 def encode(value, depth=0):
@@ -361,15 +420,28 @@ def encode(value, depth=0):
             raise NotEncodable("sequence")
         return {"t": "list" if isinstance(value, list) else "tuple",
                 "v": [encode(item, depth + 1) for item in value]}
+    if isinstance(value, (set, frozenset)):
+        if len(value) > MAX_ITEMS:
+            raise NotEncodable("set")
+        items = [encode(item, depth + 1) for item in value]
+        if not all(hashable(item) for item in items):
+            raise NotEncodable("unhashable")
+        return {"t": "frozenset" if isinstance(value, frozenset) else "set",
+                "v": items}
     if isinstance(value, dict):
         if len(value) > MAX_ITEMS:
             raise NotEncodable("mapping")
+        if all(isinstance(key, str) for key in value):
+            return {"t": "dict",
+                    "v": [[key, encode(item, depth + 1)]
+                          for key, item in value.items()]}
         items = []
         for key, item in value.items():
-            if not isinstance(key, str):
+            encoded = encode(key, depth + 1)
+            if not hashable(encoded):
                 raise NotEncodable("key")
-            items.append([key, encode(item, depth + 1)])
-        return {"t": "dict", "v": items}
+            items.append([encoded, encode(item, depth + 1)])
+        return {"t": "map", "v": items}
     raise NotEncodable("object")
 
 
@@ -557,12 +629,31 @@ def decode(payload, depth=0):
     if kind == "bytes":
         import base64
         return base64.b64decode(payload.get("v").encode("ascii"), validate=True)
+    if kind in ("list", "tuple", "set", "frozenset", "dict", "map"):
+        items = payload.get("v") or []
+        if not isinstance(items, list) or len(items) > MAX_ITEMS:
+            raise ValueError("composite payload is out of bounds")
     if kind in ("list", "tuple"):
-        items = [decode(item, depth + 1) for item in payload.get("v") or []]
+        items = [decode(item, depth + 1) for item in items]
         return items if kind == "list" else tuple(items)
+    if kind in ("set", "frozenset"):
+        items = [decode(item, depth + 1) for item in items]
+        try:
+            return set(items) if kind == "set" else frozenset(items)
+        except TypeError:
+            raise ValueError("set payload has an unhashable element")
     if kind == "dict":
-        return {item[0]: decode(item[1], depth + 1)
-                for item in payload.get("v") or []}
+        return {item[0]: decode(item[1], depth + 1) for item in items}
+    if kind == "map":
+        result = {}
+        for item in items:
+            key = decode(item[0], depth + 1)
+            value = decode(item[1], depth + 1)
+            try:
+                result[key] = value
+            except TypeError:
+                raise ValueError("mapping payload has an unhashable key")
+        return result
     raise ValueError("unknown payload type: %r" % (kind,))
 
 
@@ -648,15 +739,26 @@ def encode(value, depth=0):
             raise TypeError("split argument sequence exceeds the bound")
         return {"t": "list" if isinstance(value, list) else "tuple",
                 "v": [encode(item, depth + 1) for item in value]}
+    if isinstance(value, (set, frozenset)):
+        if len(value) > MAX_ITEMS:
+            raise TypeError("split argument set exceeds the bound")
+        return {"t": "frozenset" if isinstance(value, frozenset) else "set",
+                "v": [encode(item, depth + 1) for item in value]}
     if isinstance(value, dict):
         if len(value) > MAX_ITEMS:
             raise TypeError("split argument mapping exceeds the bound")
-        items = []
-        for key, item in value.items():
-            if not isinstance(key, str):
-                raise TypeError("split argument keys must be text")
-            items.append([key, encode(item, depth + 1)])
-        return {"t": "dict", "v": items}
+        if all(isinstance(key, str) for key in value):
+            return {"t": "dict",
+                    "v": [[key, encode(item, depth + 1)]
+                          for key, item in value.items()]}
+        return {"t": "map",
+                "v": [[encode(key, depth + 1), encode(item, depth + 1)]
+                      for key, item in value.items()]}
+    if isinstance(value, slice):
+        return {"t": "slice",
+                "v": [encode(value.start, depth + 1),
+                      encode(value.stop, depth + 1),
+                      encode(value.step, depth + 1)]}
     raise TypeError("split argument type is not transferable: %s"
                     % type(value).__name__)
 
