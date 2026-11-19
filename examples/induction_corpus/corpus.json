@@ -5740,64 +5740,64 @@
     },
     {
      "inputs": {
-      "s": "zaaac",
-      "t": "badddz"
+      "s": "Zaaac",
+      "t": "badddZ"
      },
      "output": "ZAAAC"
     },
     {
      "inputs": {
-      "s": "cyxxac",
-      "t": "ycbb"
+      "s": "cYXXac",
+      "t": "Ycbb"
      },
      "output": "CYXXAC"
     },
     {
      "inputs": {
-      "s": "cacxb",
-      "t": "ay"
+      "s": "cacXb",
+      "t": "aY"
      },
      "output": "CACXB"
     },
     {
      "inputs": {
-      "s": "yb",
-      "t": "zyydz"
+      "s": "Yb",
+      "t": "ZYYdZ"
      },
      "output": "YB"
     },
     {
      "inputs": {
-      "s": "dbzb",
-      "t": "xca"
+      "s": "dbZb",
+      "t": "Xca"
      },
      "output": "DBZB"
     },
     {
      "inputs": {
-      "s": "cx",
+      "s": "cX",
       "t": "a"
      },
      "output": "CX"
     },
     {
      "inputs": {
-      "s": "yb",
+      "s": "Yb",
       "t": "dbc"
      },
      "output": "YB"
     },
     {
      "inputs": {
-      "s": "yxxyxa",
-      "t": "xzazdz"
+      "s": "YXXYXa",
+      "t": "XZaZdZ"
      },
      "output": "YXXYXA"
     },
     {
      "inputs": {
       "s": "b",
-      "t": "bay"
+      "t": "baY"
      },
      "output": "B"
     }
@@ -5805,22 +5805,22 @@
    "validation": [
     {
      "inputs": {
-      "s": "zdxd",
-      "t": "xxcc"
+      "s": "ZdXd",
+      "t": "XXcc"
      },
      "output": "ZDXD"
     },
     {
      "inputs": {
-      "s": "bzb",
+      "s": "bZb",
       "t": "bb"
      },
      "output": "BZB"
     },
     {
      "inputs": {
-      "s": "yy",
-      "t": "yxdax"
+      "s": "YY",
+      "t": "YXdaX"
      },
      "output": "YY"
     },
@@ -5834,14 +5834,14 @@
     {
      "inputs": {
       "s": "aa",
-      "t": "xbz"
+      "t": "XbZ"
      },
      "output": "AA"
     },
     {
      "inputs": {
-      "s": "adz",
-      "t": "dzddx"
+      "s": "adZ",
+      "t": "dZddX"
      },
      "output": "ADZ"
     }
@@ -5868,16 +5868,16 @@
     {
      "inputs": {
       "s": "b",
-      "t": "xydxd"
+      "t": "XYdXd"
      },
-     "output": "bxydxd"
+     "output": "bXYdXd"
     },
     {
      "inputs": {
-      "s": "z",
-      "t": "xya"
+      "s": "Z",
+      "t": "XYa"
      },
-     "output": "zxya"
+     "output": "ZXYa"
     },
     {
      "inputs": {
@@ -5888,96 +5888,96 @@
     },
     {
      "inputs": {
-      "s": "yzycz",
-      "t": "y"
+      "s": "YZYcZ",
+      "t": "Y"
      },
-     "output": "yzyczy"
+     "output": "YZYcZY"
     },
     {
      "inputs": {
       "s": "a",
-      "t": "ybba"
+      "t": "Ybba"
      },
-     "output": "aybba"
+     "output": "aYbba"
     },
     {
      "inputs": {
-      "s": "cyd",
+      "s": "cYd",
       "t": "dd"
      },
-     "output": "cyddd"
+     "output": "cYddd"
     },
     {
      "inputs": {
-      "s": "y",
-      "t": "dacyaz"
+      "s": "Y",
+      "t": "dacYaZ"
      },
-     "output": "ydacyaz"
+     "output": "YdacYaZ"
     },
     {
      "inputs": {
-      "s": "xx",
-      "t": "cycxa"
+      "s": "XX",
+      "t": "cYcXa"
      },
-     "output": "xxcycxa"
+     "output": "XXcYcXa"
     },
     {
      "inputs": {
-      "s": "y",
-      "t": "yczdyy"
+      "s": "Y",
+      "t": "YcZdYY"
      },
-     "output": "yyczdyy"
+     "output": "YYcZdYY"
     },
     {
      "inputs": {
-      "s": "bcyd",
-      "t": "yzay"
+      "s": "bcYd",
+      "t": "YZaY"
      },
-     "output": "bcydyzay"
+     "output": "bcYdYZaY"
     }
    ],
    "validation": [
     {
      "inputs": {
-      "s": "abdzbc",
+      "s": "abdZbc",
       "t": "dadba"
      },
-     "output": "abdzbcdadba"
+     "output": "abdZbcdadba"
     },
     {
      "inputs": {
-      "s": "yxyzyb",
-      "t": "xdccc"
+      "s": "YXYZYb",
+      "t": "Xdccc"
      },
-     "output": "yxyzybxdccc"
+     "output": "YXYZYbXdccc"
     },
     {
      "inputs": {
-      "s": "zyaa",
-      "t": "dybb"
+      "s": "ZYaa",
+      "t": "dYbb"
      },
-     "output": "zyaadybb"
+     "output": "ZYaadYbb"
     },
     {
      "inputs": {
       "s": "dc",
-      "t": "czxz"
+      "t": "cZXZ"
      },
-     "output": "dcczxz"
+     "output": "dccZXZ"
     },
     {
      "inputs": {
       "s": "cc",
-      "t": "yacadb"
+      "t": "Yacadb"
      },
-     "output": "ccyacadb"
+     "output": "ccYacadb"
     },
     {
      "inputs": {
-      "s": "yzxdb",
+      "s": "YZXdb",
       "t": "da"
      },
-     "output": "yzxdbda"
+     "output": "YZXdbda"
     }
    ]
   },
@@ -6001,59 +6001,59 @@
    "train": [
     {
      "inputs": {
-      "s": "byycaa",
+      "s": "bYYcaa",
       "t": "d"
      },
-     "output": "dbyycaa"
+     "output": "dbYYcaa"
     },
     {
      "inputs": {
-      "s": "cy",
+      "s": "cY",
       "t": "ac"
      },
-     "output": "accy"
+     "output": "accY"
     },
     {
      "inputs": {
-      "s": "byb",
-      "t": "xdz"
+      "s": "bYb",
+      "t": "XdZ"
      },
-     "output": "xdzbyb"
+     "output": "XdZbYb"
     },
     {
      "inputs": {
-      "s": "dacaxb",
+      "s": "dacaXb",
       "t": "cc"
      },
-     "output": "ccdacaxb"
+     "output": "ccdacaXb"
     },
     {
      "inputs": {
-      "s": "zyybbc",
-      "t": "zxcc"
+      "s": "ZYYbbc",
+      "t": "ZXcc"
      },
-     "output": "zxcczyybbc"
+     "output": "ZXccZYYbbc"
     },
     {
      "inputs": {
-      "s": "cxza",
-      "t": "bxxd"
+      "s": "cXZa",
+      "t": "bXXd"
      },
-     "output": "bxxdcxza"
+     "output": "bXXdcXZa"
     },
     {
      "inputs": {
-      "s": "xydcd",
+      "s": "XYdcd",
       "t": "b"
      },
-     "output": "bxydcd"
+     "output": "bXYdcd"
     },
     {
      "inputs": {
-      "s": "az",
+      "s": "aZ",
       "t": "da"
      },
-     "output": "daaz"
+     "output": "daaZ"
     },
     {
      "inputs": {
@@ -6065,53 +6065,53 @@
     {
      "inputs": {
       "s": "cdca",
-      "t": "yazbx"
+      "t": "YaZbX"
      },
-     "output": "yazbxcdca"
+     "output": "YaZbXcdca"
     }
    ],
    "validation": [
     {
      "inputs": {
-      "s": "azzcca",
-      "t": "xdcxd"
+      "s": "aZZcca",
+      "t": "XdcXd"
      },
-     "output": "xdcxdazzcca"
+     "output": "XdcXdaZZcca"
     },
     {
      "inputs": {
-      "s": "zybz",
+      "s": "ZYbZ",
       "t": "d"
      },
-     "output": "dzybz"
+     "output": "dZYbZ"
     },
     {
      "inputs": {
       "s": "cb",
-      "t": "dbyxxb"
+      "t": "dbYXXb"
      },
-     "output": "dbyxxbcb"
+     "output": "dbYXXbcb"
     },
     {
      "inputs": {
-      "s": "xya",
-      "t": "axaa"
+      "s": "XYa",
+      "t": "aXaa"
      },
-     "output": "axaaxya"
+     "output": "aXaaXYa"
     },
     {
      "inputs": {
       "s": "c",
-      "t": "dya"
+      "t": "dYa"
      },
-     "output": "dyac"
+     "output": "dYac"
     },
     {
      "inputs": {
-      "s": "zxdccx",
+      "s": "ZXdccX",
       "t": "dcc"
      },
-     "output": "dcczxdccx"
+     "output": "dccZXdccX"
     }
    ]
   },
@@ -6130,16 +6130,16 @@
     {
      "inputs": {
       "n": 0,
-      "s": "zzya"
+      "s": "ZZYa"
      },
-     "output": "ayzz"
+     "output": "aYZZ"
     },
     {
      "inputs": {
       "n": 5,
-      "s": "dbxc"
+      "s": "dbXc"
      },
-     "output": "cxbd"
+     "output": "cXbd"
     },
     {
      "inputs": {
@@ -6151,60 +6151,60 @@
     {
      "inputs": {
       "n": 7,
-      "s": "cya"
+      "s": "cYa"
      },
-     "output": "ayc"
+     "output": "aYc"
     },
     {
      "inputs": {
       "n": 9,
-      "s": "cxybc"
+      "s": "cXYbc"
      },
-     "output": "cbyxc"
+     "output": "cbYXc"
     },
     {
      "inputs": {
       "n": 8,
-      "s": "bz"
+      "s": "bZ"
      },
-     "output": "zb"
+     "output": "Zb"
     },
     {
      "inputs": {
       "n": 4,
-      "s": "dbaby"
+      "s": "dbabY"
      },
-     "output": "ybabd"
+     "output": "Ybabd"
     },
     {
      "inputs": {
       "n": 0,
-      "s": "azcxz"
+      "s": "aZcXZ"
      },
-     "output": "zxcza"
+     "output": "ZXcZa"
     },
     {
      "inputs": {
       "n": 9,
-      "s": "bcy"
+      "s": "bcY"
      },
-     "output": "ycb"
+     "output": "Ycb"
     },
     {
      "inputs": {
       "n": 9,
-      "s": "yyb"
+      "s": "YYb"
      },
-     "output": "byy"
+     "output": "bYY"
     }
    ],
    "validation": [
     {
      "inputs": {
       "n": 9,
-      "s": "xzax"
+      "s": "XZaX"
      },
-     "output": "xazx"
+     "output": "XaZX"
     },
     {
      "inputs": {
@@ -6216,30 +6216,30 @@
     {
      "inputs": {
       "n": 9,
-      "s": "x"
+      "s": "X"
      },
-     "output": "x"
+     "output": "X"
     },
     {
      "inputs": {
       "n": 8,
-      "s": "zxyc"
+      "s": "ZXYc"
      },
-     "output": "cyxz"
+     "output": "cYXZ"
     },
     {
      "inputs": {
       "n": 9,
-      "s": "xyyydz"
+      "s": "XYYYdZ"
      },
-     "output": "zdyyyx"
+     "output": "ZdYYYX"
     },
     {
      "inputs": {
       "n": 2,
-      "s": "ddzd"
+      "s": "ddZd"
      },
-     "output": "dzdd"
+     "output": "dZdd"
     }
    ]
   },
@@ -6257,49 +6257,49 @@
    "train": [
     {
      "inputs": {
-      "s": "zzaacd",
+      "s": "ZZaacd",
       "t": "cc"
      },
      "output": 6
     },
     {
      "inputs": {
-      "s": "czddxc",
-      "t": "bzcyd"
+      "s": "cZddXc",
+      "t": "bZcYd"
      },
      "output": 6
     },
     {
      "inputs": {
-      "s": "dcaxdda",
-      "t": "cbyzd"
+      "s": "dcaXdda",
+      "t": "cbYZd"
      },
      "output": 7
     },
     {
      "inputs": {
-      "s": "xday",
+      "s": "XdaY",
       "t": "a"
      },
      "output": 4
     },
     {
      "inputs": {
-      "s": "aybdydzzd",
-      "t": "dycbcb"
+      "s": "aYbdYdZZd",
+      "t": "dYcbcb"
      },
      "output": 9
     },
     {
      "inputs": {
-      "s": "caxxdda",
-      "t": "zzaa"
+      "s": "caXXdda",
+      "t": "ZZaa"
      },
      "output": 7
     },
     {
      "inputs": {
-      "s": "yayb",
+      "s": "YaYb",
       "t": "adb"
      },
      "output": 4
@@ -6307,21 +6307,21 @@
     {
      "inputs": {
       "s": "c",
-      "t": "cyxa"
+      "t": "cYXa"
      },
      "output": 1
     },
     {
      "inputs": {
-      "s": "zd",
-      "t": "z"
+      "s": "Zd",
+      "t": "Z"
      },
      "output": 2
     },
     {
      "inputs": {
-      "s": "cxxxa",
-      "t": "dacdz"
+      "s": "cXXXa",
+      "t": "dacdZ"
      },
      "output": 5
     }
@@ -6329,43 +6329,43 @@
    "validation": [
     {
      "inputs": {
-      "s": "czbyxc",
-      "t": "yxbdcy"
+      "s": "cZbYXc",
+      "t": "YXbdcY"
      },
      "output": 6
     },
     {
      "inputs": {
-      "s": "aycyzxa",
-      "t": "xabca"
+      "s": "aYcYZXa",
+      "t": "Xabca"
      },
      "output": 7
     },
     {
      "inputs": {
-      "s": "azdcba",
-      "t": "x"
+      "s": "aZdcba",
+      "t": "X"
      },
      "output": 6
     },
     {
      "inputs": {
-      "s": "axy",
+      "s": "aXY",
       "t": "b"
      },
      "output": 3
     },
     {
      "inputs": {
-      "s": "z",
-      "t": "ydza"
+      "s": "Z",
+      "t": "YdZa"
      },
      "output": 1
     },
     {
      "inputs": {
       "s": "",
-      "t": "zxdz"
+      "t": "ZXdZ"
      },
      "output": 0
     }
@@ -6397,35 +6397,35 @@
    "train": [
     {
      "inputs": {
-      "s": "zyxdyxyzb",
-      "t": "by"
+      "s": "ZYXdYXYZb",
+      "t": "bY"
      },
      "output": 11
     },
     {
      "inputs": {
-      "s": "axcbxzyzc",
-      "t": "y"
+      "s": "aXcbXZYZc",
+      "t": "Y"
      },
      "output": 10
     },
     {
      "inputs": {
-      "s": "daaazyxx",
-      "t": "zyyxayacb"
+      "s": "daaaZYXX",
+      "t": "ZYYXaYacb"
      },
      "output": 17
     },
     {
      "inputs": {
       "s": "aa",
-      "t": "dxzbcbcb"
+      "t": "dXZbcbcb"
      },
      "output": 10
     },
     {
      "inputs": {
-      "s": "cdbczbyy",
+      "s": "cdbcZbYY",
       "t": "ccca"
      },
      "output": 12
@@ -6433,35 +6433,35 @@
     {
      "inputs": {
       "s": "bc",
-      "t": "czzyybx"
+      "t": "cZZYYbX"
      },
      "output": 9
     },
     {
      "inputs": {
-      "s": "cxxyx",
-      "t": "axdba"
+      "s": "cXXYX",
+      "t": "aXdba"
      },
      "output": 10
     },
     {
      "inputs": {
-      "s": "dbx",
-      "t": "cbyycaz"
+      "s": "dbX",
+      "t": "cbYYcaZ"
      },
      "output": 10
     },
     {
      "inputs": {
-      "s": "ya",
-      "t": "cy"
+      "s": "Ya",
+      "t": "cY"
      },
      "output": 4
     },
     {
      "inputs": {
-      "s": "dbzba",
-      "t": "bddzzzc"
+      "s": "dbZba",
+      "t": "bddZZZc"
      },
      "output": 12
     }
@@ -6469,7 +6469,7 @@
    "validation": [
     {
      "inputs": {
-      "s": "xczyy",
+      "s": "XcZYY",
       "t": ""
      },
      "output": 5
@@ -6477,27 +6477,27 @@
     {
      "inputs": {
       "s": "a",
-      "t": "zccyxz"
+      "t": "ZccYXZ"
      },
      "output": 7
     },
     {
      "inputs": {
-      "s": "x",
-      "t": "zaaa"
+      "s": "X",
+      "t": "Zaaa"
      },
      "output": 5
     },
     {
      "inputs": {
-      "s": "yacbbyz",
+      "s": "YacbbYZ",
       "t": ""
      },
      "output": 7
     },
     {
      "inputs": {
-      "s": "ccxacyx",
+      "s": "ccXacYX",
       "t": ""
      },
      "output": 7
@@ -6505,7 +6505,7 @@
     {
      "inputs": {
       "s": "acb",
-      "t": "abz"
+      "t": "abZ"
      },
      "output": 6
     }
@@ -6531,71 +6531,71 @@
    "train": [
     {
      "inputs": {
-      "s": "xbbcxa",
-      "t": "yycxc"
+      "s": "XbbcXa",
+      "t": "YYcXc"
      },
-     "output": "xbb"
+     "output": "Xbb"
     },
     {
      "inputs": {
-      "s": "zxday",
-      "t": "cyadb"
+      "s": "ZXdaY",
+      "t": "cYadb"
      },
-     "output": "zxd"
+     "output": "ZXd"
     },
     {
      "inputs": {
-      "s": "zcybbb",
-      "t": "yddxc"
+      "s": "ZcYbbb",
+      "t": "YddXc"
      },
-     "output": "zcy"
+     "output": "ZcY"
     },
     {
      "inputs": {
-      "s": "ycc",
+      "s": "Ycc",
       "t": "d"
      },
-     "output": "ycc"
+     "output": "Ycc"
     },
     {
      "inputs": {
-      "s": "xbz",
-      "t": "ayd"
+      "s": "XbZ",
+      "t": "aYd"
      },
-     "output": "xbz"
+     "output": "XbZ"
     },
     {
      "inputs": {
-      "s": "aaycac",
-      "t": "dxada"
+      "s": "aaYcac",
+      "t": "dXada"
      },
-     "output": "aay"
+     "output": "aaY"
     },
     {
      "inputs": {
-      "s": "zbyccax",
-      "t": "bzzbyc"
+      "s": "ZbYccaX",
+      "t": "bZZbYc"
      },
-     "output": "zby"
+     "output": "ZbY"
     },
     {
      "inputs": {
-      "s": "dyay",
-      "t": "bxbba"
+      "s": "dYaY",
+      "t": "bXbba"
      },
-     "output": "dya"
+     "output": "dYa"
     },
     {
      "inputs": {
-      "s": "acbyd",
-      "t": "bbddxc"
+      "s": "acbYd",
+      "t": "bbddXc"
      },
      "output": "acb"
     },
     {
      "inputs": {
-      "s": "bddadccz",
-      "t": "adxc"
+      "s": "bddadccZ",
+      "t": "adXc"
      },
      "output": "bdd"
     }
@@ -6603,45 +6603,45 @@
    "validation": [
     {
      "inputs": {
-      "s": "yzdacy",
-      "t": "yxbyzc"
+      "s": "YZdacY",
+      "t": "YXbYZc"
      },
-     "output": "yzd"
+     "output": "YZd"
     },
     {
      "inputs": {
-      "s": "xdbcbzcc",
-      "t": "czz"
+      "s": "XdbcbZcc",
+      "t": "cZZ"
      },
-     "output": "xdb"
+     "output": "Xdb"
     },
     {
      "inputs": {
-      "s": "xyczzac",
+      "s": "XYcZZac",
       "t": "ca"
      },
-     "output": "xyc"
+     "output": "XYc"
     },
     {
      "inputs": {
-      "s": "abybx",
-      "t": "dxcax"
+      "s": "abYbX",
+      "t": "dXcaX"
      },
-     "output": "aby"
+     "output": "abY"
     },
     {
      "inputs": {
-      "s": "zzzad",
-      "t": "axzy"
+      "s": "ZZZad",
+      "t": "aXZY"
      },
-     "output": "zzz"
+     "output": "ZZZ"
     },
     {
      "inputs": {
-      "s": "xdccd",
-      "t": "yyyxzb"
+      "s": "Xdccd",
+      "t": "YYYXZb"
      },
-     "output": "xdc"
+     "output": "Xdc"
     }
    ]
   },
@@ -6665,24 +6665,24 @@
    "train": [
     {
      "inputs": {
-      "s": "cddx",
-      "t": "abybcx"
+      "s": "cddX",
+      "t": "abYbcX"
      },
-     "output": "dx"
+     "output": "dX"
     },
     {
      "inputs": {
       "s": "dacdad",
-      "t": "ayddxy"
+      "t": "aYddXY"
      },
      "output": "ad"
     },
     {
      "inputs": {
-      "s": "yx",
-      "t": "yy"
+      "s": "YX",
+      "t": "YY"
      },
-     "output": "yx"
+     "output": "YX"
     },
     {
      "inputs": {
@@ -6693,89 +6693,89 @@
     },
     {
      "inputs": {
-      "s": "dbdcyxbb",
-      "t": "zxxdb"
+      "s": "dbdcYXbb",
+      "t": "ZXXdb"
      },
      "output": "bb"
     },
     {
      "inputs": {
-      "s": "yy",
-      "t": "xczaac"
+      "s": "YY",
+      "t": "XcZaac"
      },
-     "output": "yy"
+     "output": "YY"
     },
     {
      "inputs": {
       "s": "cc",
-      "t": "yzxbxz"
+      "t": "YZXbXZ"
      },
      "output": "cc"
     },
     {
      "inputs": {
-      "s": "yc",
+      "s": "Yc",
       "t": "d"
      },
-     "output": "yc"
+     "output": "Yc"
     },
     {
      "inputs": {
-      "s": "cbz",
-      "t": "y"
+      "s": "cbZ",
+      "t": "Y"
      },
-     "output": "bz"
+     "output": "bZ"
     },
     {
      "inputs": {
-      "s": "aazaccxx",
-      "t": "zby"
+      "s": "aaZaccXX",
+      "t": "ZbY"
      },
-     "output": "xx"
+     "output": "XX"
     }
    ],
    "validation": [
     {
      "inputs": {
-      "s": "xyzz",
-      "t": "dxbdac"
+      "s": "XYZZ",
+      "t": "dXbdac"
      },
-     "output": "zz"
+     "output": "ZZ"
     },
     {
      "inputs": {
-      "s": "xac",
-      "t": "daxyyd"
+      "s": "Xac",
+      "t": "daXYYd"
      },
      "output": "ac"
     },
     {
      "inputs": {
-      "s": "axzy",
-      "t": "zzxc"
+      "s": "aXZY",
+      "t": "ZZXc"
      },
-     "output": "zy"
+     "output": "ZY"
     },
     {
      "inputs": {
       "s": "bd",
-      "t": "ydxybd"
+      "t": "YdXYbd"
      },
      "output": "bd"
     },
     {
      "inputs": {
-      "s": "dyzzd",
+      "s": "dYZZd",
       "t": "abd"
      },
-     "output": "zd"
+     "output": "Zd"
     },
     {
      "inputs": {
-      "s": "xzxbcyx",
-      "t": "dxczcz"
+      "s": "XZXbcYX",
+      "t": "dXcZcZ"
      },
-     "output": "yx"
+     "output": "YX"
     }
    ]
   },
@@ -6799,71 +6799,71 @@
    "train": [
     {
      "inputs": {
-      "s": "bbbab",
-      "t": "bb"
+      "s": "BBBaB",
+      "t": "BB"
      },
      "output": true
     },
     {
      "inputs": {
-      "s": "bbb",
-      "t": "bb"
+      "s": "BBB",
+      "t": "BB"
      },
      "output": true
     },
     {
      "inputs": {
-      "s": "baabb",
-      "t": "b"
+      "s": "BaaBB",
+      "t": "B"
      },
      "output": true
     },
     {
      "inputs": {
-      "s": "bbaaba",
-      "t": "b"
+      "s": "BBaaBa",
+      "t": "B"
      },
      "output": true
     },
     {
      "inputs": {
-      "s": "baabbb",
-      "t": "ba"
+      "s": "BaaBBB",
+      "t": "Ba"
      },
      "output": true
     },
     {
      "inputs": {
-      "s": "bba",
-      "t": "b"
+      "s": "BBa",
+      "t": "B"
      },
      "output": true
     },
     {
      "inputs": {
-      "s": "babbba",
-      "t": "bb"
+      "s": "BaBBBa",
+      "t": "BB"
      },
      "output": true
     },
     {
      "inputs": {
-      "s": "bbaaaa",
-      "t": "ab"
+      "s": "BBaaaa",
+      "t": "aB"
      },
      "output": false
     },
     {
      "inputs": {
-      "s": "baabba",
-      "t": "b"
+      "s": "BaaBBa",
+      "t": "B"
      },
      "output": true
     },
     {
      "inputs": {
-      "s": "ba",
-      "t": "ab"
+      "s": "Ba",
+      "t": "aB"
      },
      "output": false
     }
@@ -6871,43 +6871,43 @@
    "validation": [
     {
      "inputs": {
-      "s": "bb",
-      "t": "b"
+      "s": "BB",
+      "t": "B"
      },
      "output": true
     },
     {
      "inputs": {
-      "s": "aba",
+      "s": "aBa",
       "t": "a"
      },
      "output": true
     },
     {
      "inputs": {
-      "s": "ab",
-      "t": "b"
+      "s": "aB",
+      "t": "B"
      },
      "output": true
     },
     {
      "inputs": {
-      "s": "aaab",
+      "s": "aaaB",
       "t": "a"
      },
      "output": true
     },
     {
      "inputs": {
-      "s": "abbba",
-      "t": "bb"
+      "s": "aBBBa",
+      "t": "BB"
      },
      "output": true
     },
     {
      "inputs": {
-      "s": "ab",
-      "t": "ab"
+      "s": "aB",
+      "t": "aB"
      },
      "output": true
     }
@@ -6928,7 +6928,7 @@
     {
      "inputs": {
       "n": 247,
-      "s": "cycb"
+      "s": "cYcb"
      },
      "output": "247"
     },
@@ -6949,49 +6949,49 @@
     {
      "inputs": {
       "n": 748,
-      "s": "zzz"
+      "s": "ZZZ"
      },
      "output": "748"
     },
     {
      "inputs": {
       "n": 70,
-      "s": "zbdxa"
+      "s": "ZbdXa"
      },
      "output": "70"
     },
     {
      "inputs": {
       "n": 82,
-      "s": "bczyxx"
+      "s": "bcZYXX"
      },
      "output": "82"
     },
     {
      "inputs": {
       "n": 406,
-      "s": "cxxzy"
+      "s": "cXXZY"
      },
      "output": "406"
     },
     {
      "inputs": {
       "n": 715,
-      "s": "zbbdcy"
+      "s": "ZbbdcY"
      },
      "output": "715"
     },
     {
      "inputs": {
       "n": 146,
-      "s": "xx"
+      "s": "XX"
      },
      "output": "146"
     },
     {
      "inputs": {
       "n": 305,
-      "s": "zddac"
+      "s": "Zddac"
      },
      "output": "305"
     }
@@ -7014,28 +7014,28 @@
     {
      "inputs": {
       "n": 829,
-      "s": "zzbz"
+      "s": "ZZbZ"
      },
      "output": "829"
     },
     {
      "inputs": {
       "n": 737,
-      "s": "xayxz"
+      "s": "XaYXZ"
      },
      "output": "737"
     },
     {
      "inputs": {
       "n": 501,
-      "s": "xy"
+      "s": "XY"
      },
      "output": "501"
     },
     {
      "inputs": {
       "n": 852,
-      "s": "yx"
+      "s": "YX"
      },
      "output": "852"
     }
@@ -7065,16 +7065,16 @@
     {
      "inputs": {
       "n": 40,
-      "s": "zyz"
+      "s": "ZYZ"
      },
-     "output": "zyz40"
+     "output": "ZYZ40"
     },
     {
      "inputs": {
       "n": 4,
-      "s": "xzz"
+      "s": "XZZ"
      },
-     "output": "xzz4"
+     "output": "XZZ4"
     },
     {
      "inputs": {
@@ -7086,37 +7086,37 @@
     {
      "inputs": {
       "n": 11,
-      "s": "xyby"
+      "s": "XYbY"
      },
-     "output": "xyby11"
+     "output": "XYbY11"
     },
     {
      "inputs": {
       "n": 34,
-      "s": "yc"
+      "s": "Yc"
      },
-     "output": "yc34"
+     "output": "Yc34"
     },
     {
      "inputs": {
       "n": 45,
-      "s": "zx"
+      "s": "ZX"
      },
-     "output": "zx45"
+     "output": "ZX45"
     },
     {
      "inputs": {
       "n": 85,
-      "s": "dxxc"
+      "s": "dXXc"
      },
-     "output": "dxxc85"
+     "output": "dXXc85"
     },
     {
      "inputs": {
       "n": 4,
-      "s": "yxdza"
+      "s": "YXdZa"
      },
-     "output": "yxdza4"
+     "output": "YXdZa4"
     },
     {
      "inputs": {
@@ -7128,53 +7128,53 @@
     {
      "inputs": {
       "n": 14,
-      "s": "abxbd"
+      "s": "abXbd"
      },
-     "output": "abxbd14"
+     "output": "abXbd14"
     }
    ],
    "validation": [
     {
      "inputs": {
       "n": 53,
-      "s": "z"
+      "s": "Z"
      },
-     "output": "z53"
+     "output": "Z53"
     },
     {
      "inputs": {
       "n": 99,
-      "s": "xyab"
+      "s": "XYab"
      },
-     "output": "xyab99"
+     "output": "XYab99"
     },
     {
      "inputs": {
       "n": 64,
-      "s": "cay"
+      "s": "caY"
      },
-     "output": "cay64"
+     "output": "caY64"
     },
     {
      "inputs": {
       "n": 84,
-      "s": "ydyy"
+      "s": "YdYY"
      },
-     "output": "ydyy84"
+     "output": "YdYY84"
     },
     {
      "inputs": {
       "n": 31,
-      "s": "xcxdyy"
+      "s": "XcXdYY"
      },
-     "output": "xcxdyy31"
+     "output": "XcXdYY31"
     },
     {
      "inputs": {
       "n": 85,
-      "s": "bydcz"
+      "s": "bYdcZ"
      },
-     "output": "bydcz85"
+     "output": "bYdcZ85"
     }
    ]
   },
@@ -7201,22 +7201,22 @@
    "train": [
     {
      "inputs": {
-      "s": "zbda",
-      "t": "y"
+      "s": "Zbda",
+      "t": "Y"
      },
      "output": "ZB"
     },
     {
      "inputs": {
-      "s": "zzcxy",
-      "t": "azxcyd"
+      "s": "ZZcXY",
+      "t": "aZXcYd"
      },
      "output": "ZZ"
     },
     {
      "inputs": {
-      "s": "xbbzczzz",
-      "t": "bay"
+      "s": "XbbZcZZZ",
+      "t": "baY"
      },
      "output": "XB"
     },
@@ -7229,43 +7229,43 @@
     },
     {
      "inputs": {
-      "s": "aycc",
-      "t": "aybz"
+      "s": "aYcc",
+      "t": "aYbZ"
      },
      "output": "AY"
     },
     {
      "inputs": {
-      "s": "ybb",
-      "t": "acyd"
+      "s": "Ybb",
+      "t": "acYd"
      },
      "output": "YB"
     },
     {
      "inputs": {
-      "s": "babyzyx",
-      "t": "ybdyb"
+      "s": "babYZYX",
+      "t": "YbdYb"
      },
      "output": "BA"
     },
     {
      "inputs": {
-      "s": "xxdydc",
-      "t": "y"
+      "s": "XXdYdc",
+      "t": "Y"
      },
      "output": "XX"
     },
     {
      "inputs": {
-      "s": "bbdz",
-      "t": "bz"
+      "s": "bbdZ",
+      "t": "bZ"
      },
      "output": "BB"
     },
     {
      "inputs": {
-      "s": "adbay",
-      "t": "ax"
+      "s": "adbaY",
+      "t": "aX"
      },
      "output": "AD"
     }
@@ -7273,43 +7273,43 @@
    "validation": [
     {
      "inputs": {
-      "s": "xayab",
-      "t": "xzzyzz"
+      "s": "XaYab",
+      "t": "XZZYZZ"
      },
      "output": "XA"
     },
     {
      "inputs": {
-      "s": "cccazdd",
-      "t": "dbxxx"
+      "s": "cccaZdd",
+      "t": "dbXXX"
      },
      "output": "CC"
     },
     {
      "inputs": {
-      "s": "zybdbzd",
-      "t": "x"
+      "s": "ZYbdbZd",
+      "t": "X"
      },
      "output": "ZY"
     },
     {
      "inputs": {
-      "s": "cdy",
-      "t": "zd"
+      "s": "cdY",
+      "t": "Zd"
      },
      "output": "CD"
     },
     {
      "inputs": {
-      "s": "xycaxdy",
-      "t": "czx"
+      "s": "XYcaXdY",
+      "t": "cZX"
      },
      "output": "XY"
     },
     {
      "inputs": {
-      "s": "xxxbbb",
-      "t": "yzycz"
+      "s": "XXXbbb",
+      "t": "YZYcZ"
      },
      "output": "XX"
     }
@@ -7705,71 +7705,71 @@
    "train": [
     {
      "inputs": {
-      "s": "x",
+      "s": "X",
       "t": "adb"
-     },
-     "output": "blue"
-    },
-    {
-     "inputs": {
-      "s": "yyaax",
-      "t": "dcyda"
      },
      "output": "red"
     },
     {
      "inputs": {
-      "s": "az",
-      "t": "az"
+      "s": "YYaaX",
+      "t": "dcYda"
      },
-     "output": "green"
+     "output": "blue"
     },
     {
      "inputs": {
-      "s": "z",
-      "t": "az"
+      "s": "aZ",
+      "t": "aZ"
+     },
+     "output": "blue"
+    },
+    {
+     "inputs": {
+      "s": "Z",
+      "t": "aZ"
      },
      "output": "blue"
     },
     {
      "inputs": {
       "s": "dddcac",
-      "t": "zxazxa"
-     },
-     "output": "green"
-    },
-    {
-     "inputs": {
-      "s": "yxca",
-      "t": "c"
-     },
-     "output": "green"
-    },
-    {
-     "inputs": {
-      "s": "addbc",
-      "t": "zxxxaa"
-     },
-     "output": "blue"
-    },
-    {
-     "inputs": {
-      "s": "xyxcx",
-      "t": "yz"
+      "t": "ZXaZXa"
      },
      "output": "red"
     },
     {
      "inputs": {
-      "s": "xbb",
-      "t": "dczz"
+      "s": "YXca",
+      "t": "c"
+     },
+     "output": "red"
+    },
+    {
+     "inputs": {
+      "s": "addbc",
+      "t": "ZXXXaa"
      },
      "output": "blue"
     },
     {
      "inputs": {
-      "s": "yacccd",
-      "t": "zbddzz"
+      "s": "XYXcX",
+      "t": "YZ"
+     },
+     "output": "red"
+    },
+    {
+     "inputs": {
+      "s": "Xbb",
+      "t": "dcZZ"
+     },
+     "output": "red"
+    },
+    {
+     "inputs": {
+      "s": "Yacccd",
+      "t": "ZbddZZ"
      },
      "output": "red"
     }
@@ -7777,7 +7777,7 @@
    "validation": [
     {
      "inputs": {
-      "s": "cy",
+      "s": "cY",
       "t": "b"
      },
      "output": "green"
@@ -7791,29 +7791,29 @@
     },
     {
      "inputs": {
-      "s": "zxbdc",
-      "t": "dzdaa"
+      "s": "ZXbdc",
+      "t": "dZdaa"
      },
      "output": "red"
     },
     {
      "inputs": {
-      "s": "adyd",
-      "t": "zydcax"
+      "s": "adYd",
+      "t": "ZYdcaX"
      },
      "output": "red"
     },
     {
      "inputs": {
-      "s": "bzy",
+      "s": "bZY",
       "t": "acdc"
      },
-     "output": "green"
+     "output": "blue"
     },
     {
      "inputs": {
-      "s": "bzxzbb",
-      "t": "dzza"
+      "s": "bZXZbb",
+      "t": "dZZa"
      },
      "output": "blue"
     }
@@ -8347,51 +8347,51 @@
    "train": [
     {
      "inputs": {
-      "s": "yadazda"
-     },
-     "output": 4
-    },
-    {
-     "inputs": {
-      "s": "bzbya"
+      "s": "YadaZda"
      },
      "output": 3
     },
     {
      "inputs": {
-      "s": "xdyaxbx"
+      "s": "bZbYa"
      },
      "output": 6
     },
     {
      "inputs": {
-      "s": "xdz"
+      "s": "XdYaXbX"
      },
-     "output": 2
+     "output": 8
     },
     {
      "inputs": {
-      "s": "bybb"
+      "s": "XdZ"
+     },
+     "output": 7
+    },
+    {
+     "inputs": {
+      "s": "bYbb"
      },
      "output": 0
     },
     {
      "inputs": {
-      "s": "ccaczxxzb"
+      "s": "ccacZXXZb"
      },
      "output": 6
     },
     {
      "inputs": {
-      "s": "caczaxy"
+      "s": "cacZaXY"
      },
-     "output": 1
+     "output": 2
     },
     {
      "inputs": {
-      "s": "yayx"
+      "s": "YaYX"
      },
-     "output": 6
+     "output": 8
     },
     {
      "inputs": {
@@ -8401,47 +8401,47 @@
     },
     {
      "inputs": {
-      "s": "ycbzczy"
+      "s": "YcbZcZY"
      },
-     "output": 7
+     "output": 5
     }
    ],
    "validation": [
     {
      "inputs": {
-      "s": "cy"
+      "s": "cY"
      },
-     "output": 6
+     "output": 0
     },
     {
      "inputs": {
-      "s": "xby"
-     },
-     "output": 7
-    },
-    {
-     "inputs": {
-      "s": "ydacbdbd"
-     },
-     "output": 6
-    },
-    {
-     "inputs": {
-      "s": "zdacyxx"
-     },
-     "output": 4
-    },
-    {
-     "inputs": {
-      "s": "y"
+      "s": "XbY"
      },
      "output": 3
     },
     {
      "inputs": {
-      "s": "xyxzbbac"
+      "s": "Ydacbdbd"
      },
-     "output": 4
+     "output": 1
+    },
+    {
+     "inputs": {
+      "s": "ZdacYXX"
+     },
+     "output": 8
+    },
+    {
+     "inputs": {
+      "s": "Y"
+     },
+     "output": 1
+    },
+    {
+     "inputs": {
+      "s": "XYXZbbac"
+     },
+     "output": 1
     }
    ]
   },

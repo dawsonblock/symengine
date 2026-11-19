@@ -16,7 +16,8 @@ Categories:
   drawn so the legacy validation split leaves at least one holdout row on
   every branch and training covers every branch at least twice.
 - ``string``: case, reversal, concatenation, prefixes/suffixes, length,
-  containment and integer formatting.
+  containment and integer formatting. Strings mix upper and lower case so
+  that a case conversion is never a no-op on every row.
 - ``distractor``: outputs that no rule explains (hash-derived labels,
   noisy near-rules). A learner should return ``no_rule`` / ``ambiguous`` /
   ``validation_failed`` here, never ``locally_validated``.
@@ -68,7 +69,7 @@ def I(lo, hi, *, nonzero=False):
     return {"kind": "int", "lo": lo, "hi": hi, "nonzero": nonzero}
 
 
-def S(alphabet="abcdxyz", lo=1, hi=6):
+def S(alphabet="abcdXYZ", lo=1, hi=6):
     return {"kind": "str", "alphabet": alphabet, "lo": lo, "hi": hi}
 
 
@@ -255,7 +256,7 @@ TARGETS = [
     T("str_suffix2", "string", {"s": S(lo=2, hi=8), "t": S()},
       lambda x: x["s"][-2:], B("slice_suffix", s, C(2))),
     T("str_contains", "string",
-      {"s": S("ab", 2, 6), "t": S("ab", 1, 2)},
+      {"s": S("aB", 2, 6), "t": S("aB", 1, 2)},
       lambda x: x["t"] in x["s"], B("contains", s, t)),
     T("str_of_int", "string", {"n": I(-99, 999), "s": S()},
       lambda x: str(x["n"]), U("str_of_int", n)),
