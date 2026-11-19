@@ -493,5 +493,220 @@ class SplitProtocolTests(SplitHarness):
         self.assertEqual(str(bag), "bag of 2")
 
 
+ERRORS_MODULE = """
+class BaseError(Exception):
+    default_code = 500
+
+
+class NotFound(BaseError, KeyError):
+    def __init__(self, key, code=404):
+        super().__init__(key)
+        self.key = key
+        self.code = code
+    def __str__(self):
+        return "missing %s (%d)" % (self.key, self.code)
+
+
+class Fatal(BaseException):
+    pass
+
+
+class Mixin:
+    pass
+
+
+class Mixed(Mixin, ValueError):
+    pass
+"""
+
+PACKAGE_INIT = """
+import json
+
+from .errors import BaseError, NotFound, Fatal, Mixed
+
+SEEN = []
+
+
+def find(key):
+    raise NotFound(key)
+
+
+def fail_base():
+    raise BaseError("base " + "x" * 600)
+
+
+def fatal():
+    raise Fatal("stop")
+
+
+def mixed():
+    raise Mixed("mixed")
+
+
+def parse(text):
+    return json.loads(text)
+
+
+def missing(key):
+    return {}[key]
+
+
+def no_file(path):
+    open(path)
+
+
+def make_error():
+    return NotFound("made", 1)
+
+
+def inspect(error):
+    return [type(error).__name__, error.code]
+
+
+def clean():
+    try:
+        raise KeyError("inner")
+    except KeyError:
+        return "handled"
+"""
+
+
+@unittest.skipUnless(os.name == "posix", "socketpair transport")
+class SplitExceptionTests(SplitHarness):
+    def setUp(self):
+        super().setUp()
+        self.write("pkg/__init__.py", PACKAGE_INIT)
+        self.write("pkg/errors.py", ERRORS_MODULE)
+
+    def test_pytest_raises_matches_submission_exceptions(self):
+        self.assertPasses({"test_hidden.py": (
+            "import pytest\n"
+            "import pkg\n"
+            "from pkg import errors\n"
+            "def test_raises():\n"
+            "    with pytest.raises(pkg.NotFound, match=r'missing k \\(404\\)')"
+            " as info:\n"
+            "        pkg.find('k')\n"
+            "    assert info.value.code == 404 and info.value.key == 'k'\n"
+            "    assert isinstance(info.value, KeyError)\n"
+            "    assert isinstance(info.value, pkg.BaseError)\n"
+            "    assert type(info.value) is errors.NotFound\n"
+            "    assert pkg.NotFound is errors.NotFound\n"
+            "    assert issubclass(pkg.NotFound, pkg.BaseError)\n"
+            "    assert pkg.NotFound.__name__ == 'NotFound'\n"
+            "    assert pkg.BaseError.default_code == 500\n"
+            "    with pytest.raises(pkg.BaseError, match='x' * 600):\n"
+            "        pkg.fail_base()\n"
+            "    try:\n"
+            "        pkg.find('j')\n"
+            "    except pkg.BaseError as exc:\n"
+            "        assert pkg.inspect(exc) == ['NotFound', 404]\n"
+            "    else:\n"
+            "        raise AssertionError('not raised')\n"
+            "    with pytest.raises(ValueError):\n"
+            "        pkg.mixed()\n"
+            "    with pytest.raises(pkg.Mixed):\n"
+            "        pkg.mixed()\n"
+            "    assert pkg.clean() == 'handled'\n"
+        )})
+
+    def test_builtin_and_trusted_exceptions_keep_their_type(self):
+        self.assertPasses({"test_hidden.py": (
+            "import json\n"
+            "import pytest\n"
+            "import pkg\n"
+            "def test_builtins():\n"
+            "    with pytest.raises(KeyError, match=\"'gone'\") as info:\n"
+            "        pkg.missing('gone')\n"
+            "    assert type(info.value) is KeyError\n"
+            "    assert info.value.args == ('gone',)\n"
+            "    with pytest.raises(FileNotFoundError, match='nowhere'):\n"
+            "        pkg.no_file('/nowhere/at/all')\n"
+            "    with pytest.raises(json.JSONDecodeError):\n"
+            "        pkg.parse('{')\n"
+        )})
+
+    def test_isinstance_of_a_returned_exception_asks_the_worker(self):
+        self.assertPasses({"test_hidden.py": (
+            "import pkg\n"
+            "def test_instance():\n"
+            "    made = pkg.make_error()\n"
+            "    assert isinstance(made, pkg.NotFound)\n"
+            "    assert isinstance(made, pkg.BaseError)\n"
+            "    assert not isinstance(made, pkg.Mixed)\n"
+            "    assert made.code == 1\n"
+        )})
+
+    def test_base_exceptions_arrive_as_ordinary_exceptions(self):
+        self.assertPasses({"test_hidden.py": (
+            "import pytest\n"
+            "import pkg\n"
+            "def test_fatal():\n"
+            "    with pytest.raises(pkg.Fatal) as info:\n"
+            "        pkg.fatal()\n"
+            "    assert isinstance(info.value, Exception)\n"
+            "    assert issubclass(pkg.Fatal, Exception)\n"
+        )})
+
+    def test_a_forging_worker_cannot_raise_base_exceptions(self):
+        # The submission runs in the worker and can rewrite what the
+        # worker reports. Whatever it claims, the evaluator only ever
+        # raises ordinary Exception subclasses and builds no class it
+        # was not asked to stand in for.
+        self.write("evil.py", (
+            "import sys\n"
+            "_main = sys.modules['__main__']\n"
+            "_original = _main.describe_error\n"
+            "_annotate = _main.annotate\n"
+            "B = {'module': 'builtins', 'qualname': 'BaseException',"
+            " 'bases': []}\n"
+            "FORGED = {\n"
+            "    'kbd': [{'module': 'builtins', 'qualname':"
+            " 'KeyboardInterrupt', 'bases': [1]}, B],\n"
+            "    'exit': [{'module': 'builtins', 'qualname': 'SystemExit',"
+            " 'bases': [1]}, B],\n"
+            "    'derived': [{'module': 'evil', 'qualname': 'Evil',"
+            " 'bases': [1]}, {'module': 'builtins', 'qualname':"
+            " 'KeyboardInterrupt', 'bases': [2]}, B],\n"
+            "    'cycle': [{'module': 'evil', 'qualname': 'Loop',"
+            " 'bases': [0]}],\n"
+            "    'garbage': 'nonsense',\n"
+            "    'gen': [{'module': 'builtins', 'qualname': 'GeneratorExit',"
+            " 'bases': []}],\n"
+            "}\n"
+            "def forged(exc):\n"
+            "    error = _original(exc)\n"
+            "    kind = str(exc)\n"
+            "    if kind in FORGED:\n"
+            "        error['classes'] = FORGED[kind]\n"
+            "        error['type'] = 'KeyboardInterrupt'\n"
+            "        error['args'] = {'t': 'bogus'}\n"
+            "    return error\n"
+            "def annotate(ref, value):\n"
+            "    ref = _annotate(ref, value)\n"
+            "    if getattr(value, 'claim', False):\n"
+            "        ref['exc'] = FORGED['kbd']\n"
+            "    return ref\n"
+            "_main.describe_error = forged\n"
+            "_main.annotate = annotate\n"
+            "class Claimed:\n"
+            "    claim = True\n"
+            "def boom(kind):\n"
+            "    raise ValueError(kind)\n"))
+        self.assertPasses({"test_hidden.py": (
+            "import pytest\n"
+            "import evil\n"
+            "@pytest.mark.parametrize('kind', ['kbd', 'exit', 'derived',"
+            " 'cycle', 'garbage', 'gen'])\n"
+            "def test_forged(kind):\n"
+            "    with pytest.raises(Exception) as info:\n"
+            "        evil.boom(kind)\n"
+            "    assert isinstance(info.value, Exception)\n"
+            "def test_claimed_class_is_not_a_base_exception():\n"
+            "    claimed = evil.Claimed\n"
+            "    assert not isinstance(claimed, type)\n"
+        )})
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -447,6 +447,7 @@ import sys
 MAX_DEPTH = 32
 MAX_ITEMS = 10000
 MAX_HANDLES = 100000
+MAX_CLASSES = 64
 MAX_MESSAGE = 8192
 # Call results that cannot cross the socket stay here; the evaluator
 # refers to them by handle ("#<n>"), never by the callable's path.
@@ -584,13 +585,42 @@ def keep(value):
     return {"t": "ref", "handle": handle}
 
 
+def describe(cls):
+    """The class chain of an exception class, for evaluator stand-ins.
+
+    Each entry names one class of the MRO (``object`` excluded) by module
+    and qualified name, and lists its direct bases as indices into the
+    chain. Only names cross; the evaluator never receives the class.
+    """
+    chain = [item for item in cls.__mro__ if item is not object]
+    chain = chain[:MAX_CLASSES]
+    index = {id(item): position for position, item in enumerate(chain)}
+    return [{"module": str(getattr(item, "__module__", "") or ""),
+             "qualname": str(getattr(item, "__qualname__", item.__name__)),
+             "bases": [index[id(base)] for base in item.__bases__
+                       if id(base) in index]}
+            for item in chain]
+
+
+def annotate(ref, value):
+    # An exception class stays in the worker like any other class, but the
+    # evaluator needs its name chain to stand in for it locally, so that
+    # pytest.raises(pkg.Error) and except pkg.Error match what is raised.
+    if isinstance(value, type) and issubclass(value, BaseException):
+        try:
+            ref["exc"] = describe(value)
+        except Exception:
+            pass
+    return ref
+
+
 def result(value, force_ref=False):
     if not force_ref:
         try:
             return {"ok": True, "value": encode(value)}
         except NotEncodable:
             pass
-    return {"ok": True, "value": keep(value)}
+    return {"ok": True, "value": annotate(keep(value), value)}
 
 
 def reflected(function):
@@ -698,7 +728,7 @@ def handle(request):
         try:
             return {"ok": True, "value": encode(obj)}
         except NotEncodable:
-            return {"ok": True, "value": {"t": "ref"}}
+            return {"ok": True, "value": annotate({"t": "ref"}, obj)}
     if op == "call":
         obj = resolve(path)
         if not callable(obj):
@@ -720,6 +750,30 @@ def handle(request):
         return dunder(obj, name, args)
     return {"ok": False,
             "error": {"type": "SplitProtocolError", "message": "unknown op"}}
+
+
+def describe_error(exc):
+    try:
+        message = str(exc)
+    except BaseException:
+        message = "<unprintable %s>" % (type(exc).__name__,)
+    error = {"type": type(exc).__name__, "message": message[:MAX_MESSAGE]}
+    try:
+        error["classes"] = describe(type(exc))
+    except Exception:
+        pass
+    try:
+        error["args"] = encode(tuple(exc.args))
+    except Exception:
+        pass
+    if not isinstance(exc, (StopIteration, StopAsyncIteration)):
+        # The raised object stays here; the evaluator reads its attributes
+        # (``excinfo.value.code``) through this handle.
+        try:
+            error["handle"] = keep(exc)["handle"]
+        except Exception:
+            pass
+    return error
 
 
 def main():
@@ -744,9 +798,7 @@ def main():
             request = json.loads(line)
             response = handle(request)
         except BaseException as exc:
-            response = {"ok": False,
-                        "error": {"type": type(exc).__name__,
-                                  "message": str(exc)[:MAX_MESSAGE]}}
+            response = {"ok": False, "error": describe_error(exc)}
         stream.write(json.dumps(response).encode("utf-8") + b"\n")
         stream.flush()
 
@@ -788,6 +840,10 @@ RESERVED = frozenset({
 # never a way into the object model. The worker holds the same set.
 READABLE_DUNDERS = frozenset({"__name__", "__qualname__", "__version__",
                               "__all__"})
+MAX_CLASSES = 64
+MAX_STAND_INS = 4096
+# Local stand-ins for worker exception classes, by (module, qualname).
+STAND_INS = {}
 
 mode, target, workspace = sys.argv[1], sys.argv[2], sys.argv[3]
 command = sys.argv[4:]
@@ -884,19 +940,220 @@ def decode(payload, depth=0):
     raise ValueError("unknown payload type: %r" % (kind,))
 
 
+class RemoteExceptionMeta(type):
+    """Metaclass of the local stand-ins for worker exception classes.
+
+    A stand-in is built here from the names the worker reports; it holds
+    no worker code and always derives from ``Exception``. Reading a class
+    attribute the stand-in lacks asks the worker, and isinstance() of a
+    Ref asks the worker; a local instance is checked locally.
+    """
+
+    def __getattr__(cls, name):
+        path = cls.__dict__.get("_sis_path")
+        if path is None or is_dunder(name) or name.startswith("_sis_"):
+            raise AttributeError(name)
+        return fetch(list(path) + [name])
+
+    def __instancecheck__(cls, instance):
+        path = cls.__dict__.get("_sis_path")
+        if path is not None and isinstance(instance, Ref):
+            return bool(forward(path, "__instancecheck__", [encode(instance)]))
+        return type.__instancecheck__(cls, instance)
+
+
+def stand_in_str(self):
+    # str() of the worker's exception, so pytest.raises(match=...) sees
+    # the message the submission produced.
+    message = self.__dict__.get("_sis_message")
+    if message is not None:
+        return message
+    for klass in type(self).__mro__:
+        if "_sis_remote" not in klass.__dict__ and "__str__" in klass.__dict__:
+            return klass.__dict__["__str__"](self)
+    return BaseException.__str__(self)
+
+
+def stand_in_getattr(self, name):
+    # ``excinfo.value.code``: attributes of the raised object stay in the
+    # worker and are read through its handle.
+    handle = self.__dict__.get("_sis_handle")
+    if handle is None or is_dunder(name) or name.startswith("_sis_"):
+        raise AttributeError(name)
+    return fetch([handle, name])
+
+
+def class_entries(classes):
+    """Validate a worker-reported class chain; None when malformed."""
+    if (not isinstance(classes, list) or not classes
+            or len(classes) > MAX_CLASSES):
+        return None
+    entries = []
+    for position, entry in enumerate(classes):
+        if not isinstance(entry, dict):
+            return None
+        module, qualname = entry.get("module"), entry.get("qualname")
+        bases = entry.get("bases")
+        if (not isinstance(module, str) or not isinstance(qualname, str)
+                or not qualname or len(module) > 512 or len(qualname) > 512):
+            return None
+        # Bases come later in an MRO; requiring it rules out cycles.
+        if not isinstance(bases, list) or not all(
+                type(base) is int and position < base < len(classes)
+                for base in bases):
+            return None
+        entries.append((module, qualname, bases))
+    return entries
+
+
+def trusted_class(module, qualname):
+    """An Exception class the evaluator already has under this name.
+
+    Builtins, and classes of modules the evaluator itself imported (never
+    a proxied workspace module). The lookup is static: nothing is
+    imported and no attribute hook runs.
+    """
+    if module == "builtins":
+        candidate = vars(builtins).get(qualname)
+    else:
+        loaded = sys.modules.get(module)
+        root = sys.modules.get(module.split(".")[0])
+        if (loaded is None or isinstance(loaded, ProxyModule)
+                or isinstance(root, ProxyModule)):
+            return None
+        candidate = loaded
+        for part in qualname.split("."):
+            namespace = getattr(candidate, "__dict__", None)
+            if not isinstance(namespace, (dict, types.MappingProxyType)):
+                return None
+            candidate = namespace.get(part)
+    if isinstance(candidate, type) and issubclass(candidate, Exception):
+        return candidate
+    return None
+
+
+def stand_in(module, qualname, bases, path):
+    key = (module, qualname)
+    cls = STAND_INS.get(key)
+    if cls is not None or len(STAND_INS) >= MAX_STAND_INS:
+        return cls
+    parts = qualname.split(".")
+    if path is None and module and all(part.isidentifier() for part in parts):
+        path = [module, *parts]
+    namespace = {"__module__": module, "__qualname__": qualname,
+                 "__doc__": None, "_sis_remote": key, "_sis_path": path,
+                 "__str__": stand_in_str, "__getattr__": stand_in_getattr}
+    for candidate in (bases, (Exception,)):
+        try:
+            cls = RemoteExceptionMeta(parts[-1], candidate, dict(namespace))
+        except (TypeError, ValueError):
+            continue
+        # Only ordinary exceptions exist on this side: never a
+        # BaseException a test cannot catch, SystemExit or
+        # KeyboardInterrupt.
+        if issubclass(cls, Exception):
+            STAND_INS[key] = cls
+            return cls
+    return None
+
+
+def exception_class(classes, path=None):
+    """The local class for a worker exception class chain, or None.
+
+    Each class of the chain resolves to the evaluator's own builtin or
+    already-imported class of that name, else to a cached stand-in keyed
+    by (module, qualname) whose bases are the resolved bases. So
+    ``pkg.CustomError`` read through the proxy and a ``CustomError`` the
+    worker raises are the same local class, and ``except pkg.Base`` also
+    catches a worker ``CustomError(Base)``. Bases that are not ordinary
+    exceptions on this side (``BaseException``, ``KeyboardInterrupt``)
+    are dropped; a class left with none derives from ``Exception``.
+    """
+    entries = class_entries(classes)
+    if entries is None:
+        return None
+    built = [None] * len(entries)
+    for position in range(len(entries) - 1, -1, -1):
+        module, qualname, bases = entries[position]
+        trusted = trusted_class(module, qualname)
+        if trusted is not None or module == "builtins":
+            built[position] = trusted
+            continue
+        local = []
+        for base in bases:
+            if built[base] is not None and built[base] not in local:
+                local.append(built[base])
+        # Drop a base another base already derives from, as an MRO would.
+        local = [base for base in local if not any(
+            other is not base and issubclass(other, base) for other in local)]
+        built[position] = stand_in(
+            module, qualname, tuple(local) or (Exception,),
+            path if position == 0 else None)
+    return built[0]
+
+
+def instantiate(cls, args, message):
+    """Build the local exception without running worker code."""
+    try:
+        exc = cls(*args)
+        if (isinstance(type(exc), RemoteExceptionMeta)
+                or str(exc) == message):
+            return exc
+    except Exception:
+        pass
+    # A builtin whose str() does not follow from its args alone
+    # (OSError's filename): keep the worker's message instead.
+    for attempt in ((message,), ()):
+        try:
+            return cls(*attempt)
+        except Exception:
+            continue
+    # A class whose __init__ wants other arguments (json.JSONDecodeError):
+    # allocate it without __init__ and keep the worker's args.
+    try:
+        exc = cls.__new__(cls)
+        exc.args = tuple(args)
+        return exc
+    except Exception:
+        return None
+
+
 def raise_remote(error):
-    name = (error or {}).get("type")
-    message = (error or {}).get("message") or ""
-    candidate = getattr(__builtins__, name, None) if isinstance(
-        __builtins__, types.ModuleType) else None
-    if candidate is None:
-        import builtins
-        candidate = getattr(builtins, name, None)
+    if not isinstance(error, dict):
+        error = {}
+    name = error.get("type")
+    name = name if isinstance(name, str) else "RemoteError"
+    message = error.get("message")
+    message = message if isinstance(message, str) else ""
+    try:
+        cls = exception_class(error.get("classes"))
+    except Exception:
+        cls = None
+    if cls is None:
+        candidate = vars(builtins).get(name)
+        if isinstance(candidate, type) and issubclass(candidate, Exception):
+            cls = candidate
     # Only ordinary exceptions cross the boundary: a worker must not be
     # able to raise SystemExit or KeyboardInterrupt in the evaluator.
-    if isinstance(candidate, type) and issubclass(candidate, Exception):
-        raise candidate(message)
-    raise RuntimeError("%s: %s" % (name, message))
+    if cls is None or not issubclass(cls, Exception):
+        raise RuntimeError("%s: %s" % (name, message))
+    args = (message,)
+    payload = error.get("args")
+    if isinstance(payload, dict) and payload.get("t") == "tuple":
+        try:
+            args = decode(payload)
+        except Exception:
+            pass
+    exc = instantiate(cls, args, message)
+    if exc is None or not isinstance(exc, Exception):
+        raise RuntimeError("%s: %s" % (name, message))
+    handle = error.get("handle")
+    if (isinstance(handle, str) and handle.startswith("#")
+            and handle[1:].isdigit() and len(handle) <= 10):
+        exc._sis_handle = handle
+    if isinstance(type(exc), RemoteExceptionMeta):
+        exc._sis_message = message
+    raise exc
 
 
 class SplitArgumentError(TypeError):
@@ -923,6 +1180,12 @@ def result_value(value, path=None):
                 or not handle[1:].isdigit() or len(handle) > 10):
             fail(SPLIT_LOST_EXIT, "evaluation_split_worker_lost")
         path = [handle]
+    if value.get("exc") is not None:
+        # A worker exception class: a local stand-in, so that
+        # pytest.raises(pkg.Error) and ``except pkg.Error`` work.
+        cls = exception_class(value.get("exc"), path)
+        if cls is not None:
+            return cls
     return Ref(path)
 
 
@@ -1020,6 +1283,9 @@ def exit_payload(exc):
     """Name the exception leaving a ``with`` block for the worker."""
     if exc is None:
         return encode(None)
+    if getattr(exc, "__dict__", {}).get("_sis_handle"):
+        # Raised by the worker: hand it back its own exception object.
+        return encode(exc)
     name = type(exc).__name__
     if getattr(builtins, name, None) is not type(exc):
         name = "Exception"
@@ -1073,6 +1339,14 @@ def encode(value, depth=0):
         return {"t": "none"}
     if isinstance(value, Ref):
         return {"t": "handle", "v": list(value._path)}
+    if isinstance(value, RemoteExceptionMeta) and value.__dict__.get(
+            "_sis_path"):
+        # A stand-in class names the worker class it stands for.
+        return {"t": "handle", "v": list(value.__dict__["_sis_path"])}
+    if isinstance(value, BaseException) and getattr(
+            value, "__dict__", {}).get("_sis_handle"):
+        # An exception the worker raised refers to the worker's object.
+        return {"t": "handle", "v": [value.__dict__["_sis_handle"]]}
     if isinstance(value, bool):
         return {"t": "bool", "v": value}
     if isinstance(value, int):
