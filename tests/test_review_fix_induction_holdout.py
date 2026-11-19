@@ -3,8 +3,9 @@
 - A legacy ``induce(train, validation)`` call splits validation into
   disjoint development and holdout rows; the holdout never reaches
   selection or refinement, and promotion requires a sealed holdout.
-- A shallow rule is not declared unambiguous until a bounded depth-2 scan
-  finds no rival consistent with every labelled row.
+- A shallow rule is not declared unambiguous until a rival scan over the
+  rest of the search space finds no rival consistent with every labelled
+  row.
 - A failed one-row holdout is ``validation_failed``, not ``provisional``.
 """
 from __future__ import annotations
@@ -108,7 +109,10 @@ class DeepAmbiguityTests(unittest.TestCase):
         validation = [_ex(4, 9, 13), _ex(1, 1, 2), _ex(11, 3, 14)]
         result = induce(train, validation)
         self.assertEqual(result["rule"]["op"], "add")
-        self.assertEqual(result["search_depth"], 1)
+        # Selection stops at the first stage with a fitting rule (depth 2);
+        # the max(a + b, 2) rival is only reached by the rival scan.
+        self.assertEqual(result["rule_depth"], 2)
+        self.assertLessEqual(result["search_depth"], 2)
         self.assertEqual(result["status"], "ambiguous")
         self.assertIsNotNone(result["distinguishing_probe"])
         self.assertTrue(result["rival_scan"]["performed"])
@@ -118,7 +122,9 @@ class DeepAmbiguityTests(unittest.TestCase):
             (ROOT / "examples" / "arithmetic_study.json").read_text())
         result = induce(study["train"], study["validation"])
         self.assertEqual(result["status"], "locally_validated")
-        self.assertEqual(result["ambiguity_scope"], "depth_1_and_depth_2")
+        # Learner v2 scans its whole declared space (typed pools up to the
+        # cost horizon plus completions), not a fixed depth-2 space.
+        self.assertEqual(result["ambiguity_scope"], "full_search_space")
         self.assertTrue(result["rival_scan"]["complete"])
 
 
