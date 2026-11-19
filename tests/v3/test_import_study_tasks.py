@@ -347,6 +347,19 @@ class SupportFileTests(unittest.TestCase):
             "conftest.py", "src/calc2/tests/__init__.py",
             "src/calc2/tests/helper.py"])
 
+    def test_links_are_never_captured(self):
+        path = self.repo["path"]
+        (path / "tests" / "linked.py").symlink_to("data.py")
+        commit(path, "Add a link")
+        (path / "calc.py").write_text("def add(x, y):\n    return y + x\n")
+        (path / "tests" / "test_add.py").write_text(
+            "from tests import linked, data\n"
+            "def test_link():\n    assert linked.PAIRS == data.PAIRS\n")
+        fix = commit(path, "Fix add argument order")
+        info = self.describe(fix)
+        self.assertIn("tests/data.py", info["support"])
+        self.assertNotIn("tests/linked.py", info["support"])
+
     def test_support_files_are_bounded(self):
         original = self.importer.MAX_SUPPORT_FILES
         self.importer.MAX_SUPPORT_FILES = 2

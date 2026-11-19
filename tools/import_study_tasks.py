@@ -217,12 +217,16 @@ def support_files(root: Path, commit: str, test_path: str,
     or ``pkg.py`` beside a root-level test) is never captured: the
     submission's code is always the submission's.
     """
-    listing = gitquery.raw_bytes(root, "ls-tree", "-r", "-z", "--name-only",
-                                 commit)
+    listing = gitquery.raw_bytes(root, "ls-tree", "-r", "-z", commit)
     if listing is None:
         raise ImportError_("tree_unreadable")
-    paths = {item.decode("utf-8", "replace")
-             for item in listing.split(b"\0") if item}
+    paths = set()
+    for item in listing.split(b"\0"):
+        # "<mode> <type> <object>\t<path>": regular files only, so a
+        # symbolic link or submodule is never captured as a helper.
+        header, _, name = item.partition(b"\t")
+        if header.split(b" ")[0] in (b"100644", b"100755") and name:
+            paths.add(name.decode("utf-8", "replace"))
     test = PurePosixPath(test_path)
 
     def in_test_dir(path: str) -> bool:
