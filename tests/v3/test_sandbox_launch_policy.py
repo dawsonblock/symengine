@@ -169,9 +169,12 @@ class PolicyRoundTripTests(unittest.TestCase):
         # memory allowance (gVisor's sentry and tmpfs live inside it).
         container_memory = (int(markers["memory_bytes"])
                             + int(markers.get("runtime_memory_overhead", 0)))
+        workload_pids = int(markers["pids_limit"])
         return {
             "memory_bytes": container_memory,
-            "pids_limit": markers["pids_limit"],
+            "pids_limit": workload_pids
+            + int(markers.get("runtime_pids_overhead", 0)),
+            "workload_pids_limit": workload_pids,
             "disk_bytes": markers["disk_bytes"],
             "cpu_seconds": markers["ulimit_cpu"],
             "uid": uid, "gid": gid,
@@ -221,7 +224,8 @@ class PolicyRoundTripTests(unittest.TestCase):
             wall_seconds=60, process_count=128))
         ceilings = executor.launch_policy()["ceilings"]
         values = self.values_from_receipt(receipt, executor)
-        self.assertLessEqual(int(values["pids_limit"]), ceilings["pids_limit"])
+        self.assertLessEqual(int(values["workload_pids_limit"]),
+                             ceilings["pids_limit"])
         self.assertLessEqual(
             int(values["memory_bytes"]) - ceilings["runtime_memory_overhead_bytes"],
             ceilings["memory_bytes"])
@@ -244,6 +248,26 @@ class PolicyRoundTripTests(unittest.TestCase):
         self.assertEqual(
             executor.launch_policy()["ceilings"]["runtime_memory_overhead_bytes"],
             RUNSC_MEMORY_OVERHEAD_BYTES)
+
+    def test_gvisor_pids_allowance_and_in_sandbox_nproc(self):
+        from sis.v3.docker_sandbox import RUNSC_PIDS_OVERHEAD
+        executor = _executor(self.root, docker_binary=str(self.fake))
+        receipt = self.run_once(executor, ResourceLimits(
+            wall_seconds=60, process_count=16))
+        flags = self.launched_flags(executor)
+        pairs = list(zip(flags, flags[1:]))
+        self.assertIn(("--pids-limit", str(16 + RUNSC_PIDS_OVERHEAD)), pairs)
+        self.assertIn(("--ulimit", "nproc=16:16"), pairs)
+        self.assertIn("docker:pids_limit:16", receipt.security_errors)
+        self.assertIn(f"docker:runtime_pids_overhead:{RUNSC_PIDS_OVERHEAD}",
+                      receipt.security_errors)
+
+    def test_default_runtime_sets_no_host_uid_nproc(self):
+        executor = _executor(self.root, runtime=None, production=False)
+        flags = " ".join(executor.launch_policy()["launch_flags"])
+        self.assertNotIn("nproc=", flags)
+        self.assertEqual(
+            executor.launch_policy()["ceilings"]["runtime_pids_overhead"], 0)
 
     def test_default_runtime_has_no_memory_allowance(self):
         executor = _executor(self.root, docker_binary=str(self.fake),

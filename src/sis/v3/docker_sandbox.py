@@ -82,6 +82,12 @@ PRODUCTION_RUNTIME = "runsc"
 #: to copy the workspace in. The workload limit itself is unchanged and is
 #: what receipts report; the allowance is part of the signed policy.
 RUNSC_MEMORY_OVERHEAD_BYTES = 256 * 1024 * 1024
+#: Host pids the container cgroup gets on top of the workload limit under
+#: gVisor: the sentry and gofer threads live in that cgroup, so a 16-pid
+#: workload limit used as the container limit left runsc unable to start.
+#: The workload limit is enforced inside the sandbox with RLIMIT_NPROC
+#: (``--ulimit nproc``), which gVisor accounts per sandbox.
+RUNSC_PIDS_OVERHEAD = 256
 BACKEND = "docker_sandbox"
 POLICY_SCHEMA_VERSION = 2
 #: Containment properties a production attestation for this backend must
@@ -110,6 +116,7 @@ GVISOR_KERNEL_SIGNATURE = "#1 SMP Sun Jan 10 15:06:54 PST 2016"
 LAUNCH_PLACEHOLDERS = {
     "memory_bytes": "{memory_bytes}",
     "pids_limit": "{pids_limit}",
+    "workload_pids_limit": "{workload_pids_limit}",
     "disk_bytes": "{disk_bytes}",
     "cpu_seconds": "{cpu_seconds}",
     "uid": "{uid}",
@@ -425,7 +432,7 @@ class DockerSandboxExecutor:
     # ---- launch policy -------------------------------------------------- #
     def launch_flags(
         self, *, memory_bytes, pids_limit, disk_bytes, cpu_seconds,
-        uid, gid, workspace_mode, seccomp_profile,
+        uid, gid, workspace_mode, seccomp_profile, workload_pids_limit,
     ) -> list[str]:
         """The security-relevant ``docker run`` flags, in launch order.
 
@@ -461,6 +468,11 @@ class DockerSandboxExecutor:
             "--ulimit", f"nofile={self._nofile}:{self._nofile}",
             "--ipc", "none",
         ]
+        if self._runtime == PRODUCTION_RUNTIME:
+            # Inside gVisor RLIMIT_NPROC is counted per sandbox, so it bounds
+            # the workload; under runc it would count the host UID instead.
+            flags += ["--ulimit",
+                      f"nproc={workload_pids_limit}:{workload_pids_limit}"]
         return flags
 
     def launch_policy(self) -> dict:
@@ -487,6 +499,7 @@ class DockerSandboxExecutor:
                 "tmpfs_bytes": self._tmpfs,
                 "runtime_memory_overhead_bytes":
                     self._runtime_memory_overhead(),
+                "runtime_pids_overhead": self._runtime_pids_overhead(),
                 "nofile_limit": self._nofile,
                 "cpus": f"{self._cpus:g}",
             },
@@ -640,6 +653,9 @@ class DockerSandboxExecutor:
         if self._runtime_memory_overhead():
             security_errors.append("docker:runtime_memory_overhead:"
                            f"{self._runtime_memory_overhead()}")
+        if self._runtime_pids_overhead():
+            security_errors.append("docker:runtime_pids_overhead:"
+                                   f"{self._runtime_pids_overhead()}")
         if self._seccomp_sha256 is not None:
             security_errors.append(
                 f"docker:seccomp_profile:{self._seccomp_sha256}")
@@ -978,6 +994,10 @@ class DockerSandboxExecutor:
                 "docker_start_failed:"
                 + (result.stderr or result.stdout).strip()[:200])
 
+    def _runtime_pids_overhead(self) -> int:
+        """Container pids added to the workload limit for the runtime."""
+        return RUNSC_PIDS_OVERHEAD if self._runtime == PRODUCTION_RUNTIME else 0
+
     def _runtime_memory_overhead(self) -> int:
         """Container memory added to the workload limit for the runtime."""
         return (RUNSC_MEMORY_OVERHEAD_BYTES
@@ -993,7 +1013,8 @@ class DockerSandboxExecutor:
         # write access. Only the two run principals can reach this tmpfs.
         return {
             "memory_bytes": memory + self._runtime_memory_overhead(),
-            "pids_limit": pids,
+            "pids_limit": pids + self._runtime_pids_overhead(),
+            "workload_pids_limit": pids,
             "disk_bytes": disk,
             "cpu_seconds": cpu_seconds,
             "uid": self._uid,
