@@ -104,6 +104,8 @@ class CommitTreeTests(unittest.TestCase):
                                   self.root / "head")
         self.assertTrue((head / "tests" / "test_f1.py").exists())
 
+    @unittest.skipIf(os.name == "nt",
+                     "NTFS has no POSIX executable bit to preserve")
     def test_keeps_the_executable_bit(self):
         script = self.repo["path"] / "run.sh"
         script.write_text("#!/bin/sh\n")

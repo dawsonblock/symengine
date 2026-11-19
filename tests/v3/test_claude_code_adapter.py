@@ -360,6 +360,22 @@ class StatusTests(unittest.TestCase):
                 self.assertTrue(status["authenticated"])
                 self.assertEqual(status["reason"], "claude_cli_not_found")
 
+    def test_status_survives_an_unresolvable_home_directory(self):
+        # Windows raises from Path.home() when HOME and USERPROFILE are
+        # unset; the probe must still answer from the environment.
+        with mock.patch.dict(os.environ, {"ANTHROPIC_API_KEY": "k"},
+                             clear=True), \
+                mock.patch("shutil.which", return_value="/bin/claude"), \
+                mock.patch.object(Path, "home", side_effect=RuntimeError):
+            status = claude_code_agent_status()
+            self.assertTrue(status["authenticated"])
+            self.assertEqual(status["reason"], "ok")
+        with mock.patch.dict(os.environ, {}, clear=True), \
+                mock.patch("shutil.which", return_value="/bin/claude"), \
+                mock.patch.object(Path, "home", side_effect=RuntimeError):
+            self.assertEqual(claude_code_agent_status()["reason"],
+                             "claude_not_authenticated")
+
 
 if __name__ == "__main__":
     unittest.main()

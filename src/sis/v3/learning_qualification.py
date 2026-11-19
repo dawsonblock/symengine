@@ -1138,14 +1138,22 @@ def claude_code_agent_status() -> dict:
     negative only blocks the run; it never substitutes a scripted agent.
     """
     binary = shutil.which("claude")
-    home = Path.home()
-    config_dir = Path(os.environ.get("CLAUDE_CONFIG_DIR") or home / ".claude")
+    try:
+        home: Path | None = Path.home()
+    except RuntimeError:
+        # No resolvable home directory (e.g. HOME/USERPROFILE unset on a
+        # service account): only the environment and CLAUDE_CONFIG_DIR
+        # can show credentials.
+        home = None
+    configured = os.environ.get("CLAUDE_CONFIG_DIR")
+    config_dir = (Path(configured) if configured
+                  else home / ".claude" if home is not None else None)
     authenticated = any(os.environ.get(name) for name in (
         "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN",
         "CLAUDE_CODE_OAUTH_TOKEN"))
-    if not authenticated:
+    if not authenticated and config_dir is not None:
         authenticated = (config_dir / ".credentials.json").is_file()
-    if not authenticated:
+    if not authenticated and home is not None:
         try:
             document = json.loads(
                 (home / ".claude.json").read_text(encoding="utf-8"))
