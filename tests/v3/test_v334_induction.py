@@ -57,7 +57,12 @@ def _field_study(features, rows=9):
 
 
 def _two_term_study(features, rows=9):
-    """``x[n-2] * x[n-1] + x0``: no single constant-offset completion."""
+    """``x[n-2] * x[n-1] * (x0 + 1)``: not affine, not a one-step completion.
+
+    Learner v2 fits ``x[n-2] * x[n-1] + x0`` exactly in its affine stage
+    (the product as an extra feature), so the study that must exhaust a
+    small budget now multiplies by the decoy instead of adding it.
+    """
     names = [f"x{i}" for i in range(features)]
     examples = []
     for i in range(rows):
@@ -67,7 +72,7 @@ def _two_term_study(features, rows=9):
         examples.append({
             "inputs": inputs,
             "output": (inputs[names[-2]] * inputs[names[-1]]
-                       + inputs[names[0]]),
+                       * (inputs[names[0]] + 1)),
         })
     return examples[:6], examples[6:]
 
@@ -113,7 +118,10 @@ class EarlyStoppingTests(unittest.TestCase):
     def test_development_rejection_deepens_search(self):
         train, dev, holdout = _deepen_study()
         result = induce(train, dev=dev, holdout=holdout)
-        self.assertEqual(result["search_depth"], 2)
+        # Development rows reject ``a*b``, so the search goes past the
+        # first stage that fits training (search_depth reports the depth
+        # the selection pass covered, no longer a stage number).
+        self.assertGreater(result["search_depth"], 1)
         self.assertEqual(result["dev_passed"], len(dev))
         self.assertEqual(result["holdout_passed"], len(holdout))
         self.assertNotEqual(result["rule"]["op"], "mul")
@@ -182,7 +190,9 @@ class BudgetEnforcementTests(unittest.TestCase):
         self.assertEqual(result["status"], "search_incomplete")
 
     def test_memory_limit(self):
-        train, dev = _field_study(16)
+        # The field study's rule is found by the cheap affine stage within
+        # 1 MiB; the product study needs the full 16-field pool.
+        train, dev = _two_term_study(16)
         result = induce(
             train, dev=dev,
             budget=SearchBudget(max_memory_bytes=1 << 20))

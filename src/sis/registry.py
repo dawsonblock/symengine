@@ -202,7 +202,10 @@ class Registry:
             raise RuleRejected('promotion result must be a valid induction record')
         if train is None or validation is None:
             raise RuleRejected('promotion requires original train and validation records for independent recomputation')
-        from .induction import induce
+        from .induction import check_engine_version, induce
+        # A result stamped by another grammar or engine cannot be reproduced
+        # byte for byte; say so instead of reporting an opaque mismatch.
+        check_engine_version(result)
         try:
             recomputed = induce(train, validation, namespace=result['namespace'],
                                 max_candidates=max_candidates, proposals=proposals,

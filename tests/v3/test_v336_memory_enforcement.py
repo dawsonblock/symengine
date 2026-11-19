@@ -56,6 +56,18 @@ def _study(features=8, rows=9):
     return examples[:6], examples[6:]
 
 
+def _heavy_study(features=16, rows=9):
+    """A workload that must build the full pool: learner v2 solves
+    ``_study`` in its cheap affine stage, well inside a 1 MiB soft budget."""
+    train, dev = _study(features, rows)
+    names = [f"x{i}" for i in range(features)]
+    for row in train + dev:
+        inputs = row["inputs"]
+        row["output"] = (inputs[names[-2]] * inputs[names[-1]]
+                         * (inputs[names[0]] + 1))
+    return train, dev
+
+
 def _receipt(**overrides) -> MemoryEnforcementReceipt:
     fields = dict(
         schema_version=1,
@@ -247,8 +259,9 @@ class EnforcedRunTests(unittest.TestCase):
 
     @unittest.skipUnless(POSIX, "RLIMIT_AS requires POSIX")
     def test_soft_budget_stays_diagnostic_under_hard_cap(self):
+        train, dev = _heavy_study()
         enforced = run_induction_enforced(
-            self.train, dev=self.dev,
+            train, dev=dev,
             budget=SearchBudget(
                 max_candidates=50000, max_memory_bytes=1 << 20),
             memory_limit_bytes=HARD_CAP, timeout_seconds=120)

@@ -21,6 +21,7 @@ import sys
 import unittest
 from pathlib import Path
 
+from sis.expression import evaluate
 from sis.induction import SearchBudget, induce
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -105,14 +106,30 @@ class StructuralMetricTests(unittest.TestCase):
             benchmark.structural_form(observational))
 
 
+_OBSERVATIONAL = {
+    "op": "absdiff",
+    "args": [
+        {"op": "mul", "args": [
+            {"op": "field", "name": "x2"},
+            {"op": "field", "name": "x3"},
+        ]},
+        {"op": "const", "value": -2},
+    ],
+}
+
+
 class CandidateVersusRecoveryTests(unittest.TestCase):
     def test_perfect_holdout_is_not_exact_recovery(self):
         case = benchmark.run_case(2, _args())
         self.assertTrue(case["candidate_found"])
         self.assertEqual(case["holdout_accuracy"], 1.0)
         self.assertTrue(case["search_complete"])
+        # Learner v2's affine stage now returns the intended structure, but
+        # on the non-negative domain the observational absdiff rival still
+        # fits every row, so the result stays ambiguous: neither a perfect
+        # holdout nor the right structure is exact recovery.
         self.assertTrue(case["ambiguous"])
-        self.assertFalse(case["target_structure_recovered"])
+        self.assertTrue(case["target_structure_recovered"])
         self.assertFalse(case["equivalence_verified"])
         self.assertFalse(case["exact_recovery_verified"])
         self.assertNotIn("rule_recovered", case)
@@ -143,7 +160,9 @@ class CandidateVersusRecoveryTests(unittest.TestCase):
         case = benchmark.run_case(
             2, _args(equivalence="z3"))
         self.assertTrue(case["candidate_found"])
-        self.assertFalse(case["target_structure_recovered"])
+        # Learner v2 selects the intended structure; the bounded proof is
+        # still scoped to the declared box and the result stays ambiguous.
+        self.assertTrue(case["target_structure_recovered"])
         self.assertTrue(case["equivalence_verified"])
         self.assertEqual(
             case["equivalence_scope"], "z3_box:0..9:all_features")
@@ -168,6 +187,10 @@ class AdversarialDomainTests(unittest.TestCase):
         self.assertIn("inputs", witness)
 
     def test_distribution_shift_breaks_the_observational_candidate(self):
+        # The observational candidate the old engine returned fails a
+        # shifted holdout. Learner v2 selects the intended rule, which
+        # passes it; x3 is never negative in the data, so x2 * abs(x3) + 2
+        # remains a rival and the result is ambiguous, not validated.
         train, dev, _holdout = benchmark.study(
             4, seed=0, train_n=6, dev_n=3, holdout_n=3)
         shifted = [
@@ -178,12 +201,17 @@ class AdversarialDomainTests(unittest.TestCase):
             {"inputs": {"x0": 1, "x1": 1, "x2": -3, "x3": 3},
              "output": -7},
         ]
+        self.assertFalse(all(
+            evaluate(_OBSERVATIONAL, row["inputs"]) == row["output"]
+            for row in shifted))
         result = induce(
             train, dev=dev, holdout=shifted,
             budget=SearchBudget(max_candidates=50000))
-        self.assertEqual(result["status"], "validation_failed")
-        self.assertLess(
-            result["holdout_passed"], result["holdout_count"])
+        self.assertEqual(
+            benchmark.structural_form(result["rule"]),
+            benchmark.structural_form(benchmark.target_rule(4)))
+        self.assertEqual(result["holdout_passed"], result["holdout_count"])
+        self.assertEqual(result["status"], "ambiguous")
 
 
 class SamplingFeasibilityTests(unittest.TestCase):
