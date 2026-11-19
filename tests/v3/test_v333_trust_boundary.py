@@ -24,6 +24,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -36,9 +37,6 @@ from sis.v3.contracts import (
 )
 from sis.v3.evaluation_runtime import (
     SANDBOX_FAILURE,
-    TASK_FAIL,
-    TASK_PASS,
-    TIMEOUT,
     classify_execution,
 )
 from sis.v3.memory import (
@@ -60,6 +58,32 @@ from sis.v3.verifier import (
 
 ROOT = Path(__file__).resolve().parents[2]
 NOW = "2026-11-08T12:00:00Z"
+# ``release/`` is out-of-band provenance and is never archived, so the
+# release-identity checks describe a checkout and cannot run from the
+# extracted bundle.
+
+
+def _sealed_archive(root: Path = ROOT) -> Path | None:
+    """Return the archive the release manifest names, when it is present.
+
+    The manifest is tracked but ``release/*.zip`` is git-ignored and
+    distributed out-of-band, so a checkout without the supplied archive
+    cannot answer a release-identity question. Checking only for the
+    manifest (as this module once did) turned that absence into a test
+    failure instead of a skip.
+    """
+    manifest = root / "release" / "release_manifest.json"
+    if not manifest.is_file():
+        return None
+    try:
+        release = json.loads(manifest.read_text())
+        archive = root / release["archive"]["path"]
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    return archive if archive.is_file() else None
+
+
+SEALED_ARCHIVE = _sealed_archive()
 
 
 def _base_tree(root: Path) -> Path:
@@ -174,18 +198,12 @@ class FabricatedMarkerTests(unittest.TestCase):
             classify_execution(receipt, production=True), SANDBOX_FAILURE)
 
     def test_unverified_local_marker_disqualifies_even_when_attested(self):
-        # A receipt self-reporting local execution must never qualify in
-        # production, whatever verification object the caller supplies.
-        from sis.v3.isolation import IsolationVerification
+        # production=True is fail-closed; a local marker can never qualify.
         receipt = SimpleNamespace(
             security_errors=("isolation:unverified_local",),
             timeout=False, exit_status=0)
         self.assertEqual(
-            classify_execution(
-                receipt, production=True,
-                isolation_verification=IsolationVerification(
-                    ok=True, reason="ok")),
-            SANDBOX_FAILURE)
+            classify_execution(receipt, production=True), SANDBOX_FAILURE)
 
 
 class IsolationAttestationTests(unittest.TestCase):
@@ -286,35 +304,29 @@ class IsolationAttestationTests(unittest.TestCase):
             self._issue(), required_policy_digest="aa" * 32))
 
     def test_attested_production_classification(self):
-        from sis.v3.isolation import IsolationVerification
+        # A preconstructed positive verification object is not an
+        # attestation; the evaluator-owned route rejects it.
+        from sis.v3.evaluation_runtime import classify_production_execution
+        from sis.v3.isolation import (
+            IsolationVerification,
+            ProductionIsolationPolicy,
+        )
         digest = "a" * 64
-        verification = IsolationVerification(
-            ok=True, reason="ok", receipt_digest=digest,
-            verified_properties=("net:denied",))
         receipt = SimpleNamespace(
             security_errors=("net:denied",), timeout=False, exit_status=0,
-            digest=digest)
-        self.assertEqual(
-            classify_execution(
-                receipt, production=True,
-                isolation_verification=verification),
-            TASK_PASS)
-        receipt = SimpleNamespace(
-            security_errors=("net:denied",), timeout=False, exit_status=1,
-            digest=digest)
-        self.assertEqual(
-            classify_execution(
-                receipt, production=True,
-                isolation_verification=verification),
-            TASK_FAIL)
-        receipt = SimpleNamespace(
-            security_errors=("net:denied",), timeout=True, exit_status=-1,
-            digest=digest)
-        self.assertEqual(
-            classify_execution(
-                receipt, production=True,
-                isolation_verification=verification),
-            TIMEOUT)
+            digest=digest, command_spec_digest="b" * 64,
+            before_tree_digest="c" * 64, worker_identity="worker-A")
+        policy = ProductionIsolationPolicy(
+            allowed_backends=frozenset({"linux-rootless-worker"}),
+            trusted_keys=self.keys,
+            required_policy_digest="aa" * 32,
+            required_image_digest="bb" * 32,
+            required_properties=frozenset({"net:denied"}))
+        forged = IsolationVerification(
+            ok=True, reason="ok", receipt_digest=digest)
+        result = classify_production_execution(receipt, forged, policy)
+        self.assertEqual(result.outcome_class, SANDBOX_FAILURE)
+        self.assertFalse(result.verification.ok)
 
 
 def _v1_record(**over):
@@ -497,6 +509,7 @@ class ReceiptIdentityTests(unittest.TestCase):
 
     def _verifier(self, registry, keys, criterion="acceptance-v1"):
         verifier = OutcomeVerifier(
+            allow_shared_custody=True,
             executor=LocalSubprocessExecutor(
                 self.root / ("exec-" + registry), use_seatbelt=False),
             key_dir=self.root / keys,
@@ -526,6 +539,7 @@ class ReceiptIdentityTests(unittest.TestCase):
 
     def _restart(self, registry="registry-1", keys="keys-1"):
         return OutcomeVerifier(
+            allow_shared_custody=True,
             executor=LocalSubprocessExecutor(
                 self.root / "exec-restart", use_seatbelt=False),
             key_dir=self.root / keys,
@@ -968,7 +982,10 @@ class SearchStarvationTests(unittest.TestCase):
         result = induce(train, validation, max_candidates=50000)
         self.assertIsNotNone(result["rule"], result["status"])
         self.assertEqual(
-            result["validation_passed"], len(validation), result["status"])
+            result["validation_passed"], result["holdout_count"],
+            result["status"])
+        self.assertEqual(result["dev_count"] + result["holdout_count"],
+                         len(validation))
         # The recovered rule must generalize to unseen oracle points.
         rng = random.Random(1)
         for _ in range(10):
@@ -990,18 +1007,51 @@ class SearchStarvationTests(unittest.TestCase):
         self.assertEqual(result["validation_passed"], 2, result["status"])
 
 
+class ReleaseMaterialGuardTests(unittest.TestCase):
+    """A missing out-of-band ZIP is absent material, not a test failure."""
+
+    def test_manifest_without_the_archive_is_not_material(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "release").mkdir()
+            (root / "release" / "release_manifest.json").write_text(
+                json.dumps({"archive": {"path": "release/SIS-test.zip"}}))
+            self.assertIsNone(_sealed_archive(root))
+            (root / "release" / "SIS-test.zip").write_bytes(
+                b"PK\x05\x06" + b"\x00" * 18)
+            self.assertEqual(
+                _sealed_archive(root), root / "release" / "SIS-test.zip")
+
+    def test_unreadable_manifest_is_not_material(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "release").mkdir()
+            (root / "release" / "release_manifest.json").write_text("{")
+            self.assertIsNone(_sealed_archive(root))
+
+
+@unittest.skipUnless(
+    SEALED_ARCHIVE is not None,
+    "release/ is out-of-band and absent from the archive; release "
+    "identity requires the supplied sealed ZIP")
 class ReleaseIdentityTests(unittest.TestCase):
     """T5: release/ provenance must describe the source it ships."""
 
-    def test_release_inventory_matches_current_manifest(self):
-        manifest = json.loads(
-            (ROOT / "RELEASE_SHA256.json").read_text())["files"]
+    def test_release_inventory_matches_sealed_archive(self):
+        release = json.loads(
+            (ROOT / "release" / "release_manifest.json").read_text())
         inventory = json.loads(
             (ROOT / "release" / "source_inventory.json").read_text())
+        archive_path = ROOT / release["archive"]["path"]
+        inner = release["archive"]["inner_project_dir"]
+        with zipfile.ZipFile(archive_path) as archive:
+            embedded = json.loads(
+                archive.read(f"{inner}/RELEASE_SHA256.json"))["files"]
+        self.assertEqual(inventory["release"], release["release"])
         self.assertEqual(
-            set(inventory["files"]), set(manifest),
+            set(inventory["files"]), set(embedded),
             "release source_inventory covers a different file set")
-        for relative, digest in manifest.items():
+        for relative, digest in embedded.items():
             self.assertEqual(
                 inventory["files"][relative]["sha256"], digest,
                 f"release inventory hash drifted at {relative}")
@@ -1010,13 +1060,27 @@ class ReleaseIdentityTests(unittest.TestCase):
         release = json.loads(
             (ROOT / "release" / "release_manifest.json").read_text())
         commit = release["source_commit"]
-        subprocess.run(
-            ["git", "-C", str(ROOT), "cat-file", "-e", f"{commit}^{{commit}}"],
-            check=True, capture_output=True)
-        head = subprocess.check_output(
-            ["git", "-C", str(ROOT), "rev-parse", "HEAD"]).decode().strip()
+        try:
+            subprocess.run(
+                ["git", "-C", str(ROOT), "cat-file", "-e",
+                 f"{commit}^{{commit}}"],
+                check=True, capture_output=True)
+            head = subprocess.check_output(
+                ["git", "-C", str(ROOT), "rev-parse", "HEAD"]
+            ).decode().strip()
+        except (OSError, subprocess.CalledProcessError):
+            self.skipTest(
+                "extracted source tree: the release commit is not in Git "
+                "history")
+        sys.path.insert(0, str(ROOT / "tools"))
+        from build_release import manifest_document
         manifest = json.loads(
             (ROOT / "RELEASE_SHA256.json").read_text())["files"]
+        if manifest != manifest_document(ROOT):
+            # A development tree is unsealed until package_release.py
+            # runs again. The release gate, not this unit test, refuses
+            # a stale manifest: check_release_ci.py --mode release.
+            self.skipTest("development tree: release manifest is stale")
         changed = subprocess.check_output(
             ["git", "-C", str(ROOT), "diff", "--name-only",
              commit, head, "--", *sorted(manifest)]).decode().split()

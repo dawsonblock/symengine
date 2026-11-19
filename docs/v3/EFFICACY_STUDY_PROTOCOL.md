@@ -1,0 +1,563 @@
+# Five-arm real-agent efficacy study protocol
+
+Status date: 2026-11-14. Status: **scaffolded, not executed**.
+
+This protocol defines the Phase 6 question and the evidence that would
+answer it. It is not an efficacy result. A valid manifest is a
+prerequisite for a run, not proof that SIS improves coding performance.
+
+## Question
+
+Does SIS guidance improve a real coding agent on repositories the learner
+has never seen, relative to the same agent without SIS?
+
+The primary contrast is **A vs E**. Arms B–D isolate the components and
+are secondary unless the study is powered for all five arms.
+
+## Arms
+
+| Arm | Guidance |
+| --- | --- |
+| A | Baseline: no SIS guidance |
+| B | Baseline + qualified experience memory |
+| C | Baseline + qualified evolved skills |
+| D | Baseline + qualified symbolic procedures |
+| E | Baseline + all governed learning components |
+
+Every arm runs the same task, repository snapshot, agent model/CLI
+version, prompt, budget and evaluator. Arm order is randomized per task.
+
+## Design
+
+- **Paired tasks.** Every task runs all five arms. The unit of analysis is
+  the task, not the arm run.
+- **Repository-disjoint holdout.** Induction repositories and holdout
+  repositories are disjoint. No holdout repository digest may appear in
+  learned material, and hidden tests never enter the public archive. No
+  two holdout entries may resolve to the same codebase or the same
+  repository lineage: a lineage is the history a checkout descends from
+  (its Git root commits), not just its current file contents, so two
+  revisions of one repository cannot count as independent evidence.
+  Every repository declares a stable `lineage_id`; when the path is a
+  Git checkout the validator derives the lineage from history.
+- **Preregistration.** The protocol, sample size, minimum effect, alpha,
+  budgets, arms and expectations are committed before the first holdout
+  run. The manifest records the protocol digest.
+- **Power target.** The planning heuristic gives:
+
+  | Baseline → treatment | Required paired tasks | Five-arm runs | Two-arm runs |
+  | --- | --- | --- | --- |
+  | 0.40 → 0.60 | 103 | 515 | 206 |
+  | 0.45 → 0.60 | 178 | 890 | 356 |
+
+  The two-sided calculation is symmetric: the same effect size needs the
+  same number of pairs whichever arm is expected to do better, so the
+  planner accepts an expected improvement as readily as a regression.
+  The 103-task figure is a design target for one assumed effect size, not
+  a universal minimum. A study powered only for A vs E may run B–D on a
+  subset and label them exploratory.
+- **Primary contrast.** A vs E is the decisive comparison; B–D are
+  mechanism controls. A two-arm study runs only A and E at the same
+  preregistered floor, halving the agent runs without weakening the
+  confirmatory test. It uses
+  [efficacy_manifest_two_arm_template.json](efficacy_manifest_two_arm_template.json)
+  with `kind: primary_contrast_efficacy_manifest` and protocol arms
+  `["A","E"]`. The five-arm manifest remains valid; the manifest kind and
+  the protocol arms must agree. `tools/five_arm_campaign.py --demo
+  --arms primary` runs the scripted two-task demonstration; it is
+  machinery evidence, never an efficacy result.
+- **Minimum effect binds power.** The declared expected rates must lie
+  in (0, 1) and their difference may not exceed the preregistered
+  `min_effect`; a plan cannot buy a small sample by declaring an
+  implausibly large effect.
+- **Repository-clustered decision.** Tasks within one repository are
+  correlated, so the efficacy decision is an exact repository-level
+  sign-flip test at the preregistered alpha (with a repository cluster
+  bootstrap interval). A confirmatory label needs at least 20 holdout
+  repositories contributing tasks: an exact sign-flip test over R
+  repositories cannot reach p below 2^(1-R), and cluster-level inference
+  with fewer than about twenty clusters is unreliable. The manifest
+  validator applies the same floor (`MIN_CONFIRMATORY_HOLDOUT_REPOSITORIES`,
+  imported from `sis.v3.learning_qualification`): a manifest for a
+  powered protocol is a `confirmatory` study unless it declares
+  `"study_tier": "exploratory"`, and a confirmatory manifest is refused
+  unless at least 20 holdout repositories with distinct snapshots
+  contribute tasks. A declared exploratory manifest (or a diagnostic
+  protocol) keeps the lower floor of five; it is still executable but
+  its result can only be exploratory. Task-level McNemar is reported as
+  a secondary statistic.
+- **Equal budgets.** Every arm gets the same wall-clock, token and tool
+  budget per task. Budget-exceeded runs are not passes. Budget-exceeded,
+  timed-out and errored agent runs are ordinary failures; they do not
+  make the study's accounting unverified.
+- **Per-task guidance.** A verified learned bundle is served per task
+  through the governed serving gateway with the task's repository,
+  failure class, prompt and files, so scope, applicability and
+  counterexample gates decide what each task receives; every decision
+  and rejection is recorded in `guidance.serving_decisions`. A run
+  whose guidance was not routed this way is not confirmatory.
+- **Hidden, independently verified outcomes.** Acceptance tests are
+  evaluator-owned, live outside the public repository, and are applied by
+  the evaluator. The agent never sees the hidden tests.
+- **Persistence.** A confirmatory result should be repeated in a second
+  independent run before it is treated as stable.
+
+## Manifest
+
+The five-arm template is
+[efficacy_manifest_template.json](efficacy_manifest_template.json); the
+two-arm primary-contrast template is
+[efficacy_manifest_two_arm_template.json](efficacy_manifest_two_arm_template.json).
+Replace every `<placeholder>`, provide at least ten repositories (at
+least 20 of them holdout repositories with distinct snapshots and
+distinct lineages that each contribute tasks — the templates list five
+holdout placeholders only as a skeleton) and at least 103 paired
+holdout tasks, and commit the manifest before any holdout run. The
+templates declare `"study_tier": "confirmatory"`; a smaller study with
+five to nineteen holdout repositories must declare
+`"study_tier": "exploratory"` and is reported as such. Each
+repository declares a `lineage_id` shared by every revision of that
+repository and distinct from every other holdout lineage, plus a
+`repo_execution_digest` that pins the permission and entry-type state
+its content digest deliberately ignores, and the `origin` URL its
+checkout must have. A manifest that omits the execution fingerprint or
+the origin is invalid; rebuild an older manifest with the study kit.
+
+Validate the template while editing:
+
+```bash
+PYTHONPATH=src python3 tools/check_efficacy_manifest.py \
+  docs/v3/efficacy_manifest_template.json --allow-placeholders
+```
+
+Validate a real manifest before the run:
+
+```bash
+PYTHONPATH=src python3 tools/check_efficacy_manifest.py \
+  /secure/study/manifest.json --check-paths
+```
+
+The validator enforces:
+
+- the five arms exactly;
+- a preregistered, powered protocol whose digest matches;
+- `sample_size` at or above the recomputed power floor;
+- repository-disjoint induction/holdout partitions, with distinct
+  holdout codebases and lineages;
+- at least ten repositories and at least `sample_size` tasks; every
+  declared holdout repository contributes tasks, and the holdout spans
+  at least 20 repositories with distinct snapshots for a
+  `confirmatory` study (the default for a powered protocol) or at least
+  five for a declared `exploratory` study or a diagnostic protocol;
+- a `study_tier` that agrees with the protocol: `confirmatory` or
+  `exploratory` for a powered protocol, `diagnostic` for a diagnostic
+  one (the report states the resolved `study_tier`, the
+  `min_holdout_repositories` floor it applied, and `confirmatory`);
+- `--check-paths` re-fingerprints every repository with the
+  repository-content format (working tree, VCS metadata excluded),
+  verifies the declared content digest (full-tree v2 and legacy v1
+  records are accepted read-only) and the declared execution
+  fingerprint (entry types, permission bits including setuid/setgid/
+  sticky, root directory mode and symlink targets), derives Git
+  lineage, and rejects duplicate codebases or shared lineages across
+  holdout entries;
+- `--check-paths` also binds every repository to its declared
+  `base_commit`: the path must be the root of a Git checkout whose HEAD
+  is that commit and whose working tree has no staged, unstaged or
+  untracked changes. A fabricated commit, a dirty checkout or a
+  directory that cannot prove its commit is rejected; the campaign
+  repeats the check immediately before execution so a checkout that
+  moves after validation cannot run;
+- `--check-paths` verifies provenance separately: the checkout's
+  `origin` remote must equal the declared origin, the history must not
+  be shallow, and the base commit must be reachable from a
+  remote-tracking ref. This is local consistency, not proof that the
+  upstream contains the commit;
+- hidden tests outside the public repository;
+- safe relative acceptance-file paths;
+- pinned agent kind/model/CLI version;
+- positive equal-budget fields per task.
+
+Exit status `0` means ready (a confirmatory study, or a declared
+exploratory one, which is executable but never confirmatory); `2` means
+structurally valid but not ready (for example, a diagnostic protocol or
+fewer tasks than `sample_size`); `1` means invalid, including a
+confirmatory manifest whose holdout is below 20 repositories.
+
+### Build from a study spec
+
+`tools/build_efficacy_manifest.py` turns a declarative spec into the
+manifest above. It computes canonical repository digests, execution
+fingerprints, Git base commits, lineage metadata and hidden-test
+digests, then refuses to write unless the validator reports both
+`valid` and `ready`. Every repository must be a clean Git checkout at
+its root with a configured origin and a complete history; a path that
+cannot prove its commit, origin or history is refused. It never invents
+repositories, prompts, hidden tests or guidance.
+
+```json
+{
+  "schema_version": 1,
+  "kind": "five_arm_study_spec",
+  "protocol": {
+    "primary_metric": "paired solved_delta E vs A",
+    "method": "mcnemar_exact",
+    "alpha": 0.05,
+    "min_effect": 0.2,
+    "sample_size": 103,
+    "budget": {"wall_seconds": 900, "token_budget": 100000,
+                "tool_budget": 100},
+    "arms": ["A", "B", "C", "D", "E"],
+    "powered": true,
+    "expected_baseline": 0.4,
+    "expected_treatment": 0.6,
+    "power": 0.8
+  },
+  "agent": {"kind": "codex-cli", "model": "<pinned-model>",
+             "cli_version": "<pinned-cli-version>"},
+  "preregistration": {"registered_at": "<ISO-8601 timestamp>",
+                       "registered_by": "<operator>"},
+  "repositories": [
+    {"repository_id": "repo-induction", "path": "/secure/repos/induction",
+     "partition": "induction", "lineage_id": "lineage-induction"},
+    {"repository_id": "repo-holdout", "path": "/secure/repos/holdout",
+     "partition": "holdout", "lineage_id": "lineage-holdout",
+     "hidden_tests": {"path": "/secure/private/hidden.py"}}
+  ],
+  "tasks": [
+    {"task_id": "task-001", "repository_id": "repo-holdout",
+     "prompt": "<prompt given to every arm>", "failure_class": "bug_fix",
+     "acceptance": {"argv": ["python3", "-m", "pytest", "-q", "hidden.py"],
+                     "hidden_tests_path": "/secure/private/hidden.py"}}
+  ],
+  "guidance_bundle": "/secure/study/bundle.json"
+}
+```
+
+```bash
+PYTHONPATH=src python3 tools/build_efficacy_manifest.py \
+  --spec /secure/study/spec.json \
+  --output /secure/study/manifest.json
+```
+
+`--skip-agent-check` builds off-host without requiring an installed,
+matching Codex CLI; the run host still enforces the pin. The output path
+may not be inside a repository, because writing there would change the
+tree digest the manifest just recorded.
+
+The spec may set `"study_tier": "exploratory"` (default
+`"confirmatory"`); the builder copies the tier into the manifest and
+refuses a confirmatory spec whose tasks span fewer than 20 holdout
+repositories. A `diagnostic` tier is refused: the builder writes only
+powered studies.
+
+For the two-arm primary contrast, set `kind` to
+`primary_contrast_study_spec` and `protocol.arms` to `["A","E"]`; the
+builder writes a `primary_contrast_efficacy_manifest`. Everything else,
+including the power floor and the repository requirements, is unchanged.
+
+## Execution
+
+1. Freeze the learning material from the induction partition only.
+2. Commit the manifest and its protocol digest.
+3. Preflight the agent: binary, authentication, model and CLI version.
+4. Run the declared arms with randomized order and per-`(task, arm)`
+   checkpointing. With `--state-dir` every finished arm is appended to
+   a digest-chained journal (`journal.jsonl`) bound to the manifest,
+   protocol, guidance bundle, executor and evaluator key; rerunning the
+   same command after an interruption resumes from it instead of
+   starting over. A journaled row is reused only when its receipt
+   reloads from the evaluator's store with the same outcome
+   (`BLOCKED_RESUME` otherwise). `--workers N` runs tasks in parallel;
+   each task keeps its manifest-seeded arm order, guidance is resolved
+   in serial order and evaluations are serialized, so the report equals
+   a serial run's.
+5. Verify every outcome with the evaluator-owned acceptance tests.
+6. Preserve the raw report and receipts. Do not edit a failed or
+   underpowered result after the fact.
+
+The library interface is `sis.v3.learning_qualification.FiveArmCampaign`
+with `CodexCliAgent` or `ClaudeCodeAgent` (the manifest's
+`agent.kind`, `codex-cli` or `claude-code`, selects the agent, its
+availability gate and its `--version` check);
+`tools/five_arm_campaign.py --real-agent --manifest` is the gate. A validated manifest is executed: the gate builds the
+declared arms from the manifest, registers the evaluator-owned acceptance
+material, runs the agent against each repository snapshot and writes the
+paired report with a receipt digest per `(task, arm)`. The gate still
+fails closed with `BLOCKED_REAL_AGENT` when the pinned agent CLI is
+unavailable or unauthenticated, `BLOCKED_EXECUTOR` when the evaluator
+backend cannot be constructed (for example no Docker daemon), `BLOCKED_MANIFEST` when the manifest is invalid, not ready (a
+diagnostic or unpowered plan) or a repository snapshot has drifted,
+`BLOCKED_SPLIT_CUSTODY` when the
+backend cannot keep acceptance tests out of the submission's process,
+`BLOCKED_AGENT_VERSION` when the installed CLI does not match the
+pinned `agent.cli_version`, and `BLOCKED_GUIDANCE` when a supplied
+guidance bundle is unusable.
+
+Executing a manifest is not evidence. A confirmatory label additionally
+requires all of the following, recorded in the report's `provenance`
+block and enforced by the classifier:
+
+- the agent is the real `codex-cli` or `claude-code` (an injected test
+  agent is `invalid`, never `exploratory`);
+- the installed CLI version matched the manifest;
+- private acceptance tests ran under split custody — on Linux,
+  `--executor docker`, which grades in `DockerSandboxExecutor` with a
+  second container identity (`--docker-split-user`, default
+  `65533:65533`; image `--docker-image`, default the pinned
+  `sis-evaluator:3.3.9@sha256:5af4f6ce…`; `--docker-runtime runsc` is
+  passed through once the executor supports a runtime);
+- guidance came from `--guidance-bundle`, a frozen file whose every
+  step resolves to a qualified candidate record; the built-in
+  `Recall…`/`Workflow…`/`Procedure…` prompts are a fixed control
+  condition and can never qualify;
+- the manifest was committed before the run (Git anchor) and carries
+  the precommitted `guidance_bundle_digest`;
+- token and tool usage were fully metered by the agent runtime
+  (`budget_accounting: verified`).
+
+A learned bundle is a frozen JSON file supplied with
+`--guidance-bundle`. A file that merely declares `"source": "learned"`
+is not evidence: every step names the immutable candidate record it was
+produced from, the training partitions are the manifest's induction
+repositories, and the manifest precommits the bundle digest before the
+run. Passing `--candidate-registry` additionally requires each
+candidate to resolve to a qualified record whose evidence covers the
+declared digest; the verified candidates are then served per task
+through `GovernedServingGateway`. Without a registry the bundle is
+recorded as `learned_unverified` and can never support a confirmatory
+label.
+
+The registry re-authenticates each candidate's signed operator
+decision and evaluator evidence, so `--candidate-registry` requires
+`--trust-config`: a JSON file in the `sis.v3.bootstrap` format whose
+`evaluator_keys` and `operator_keys` (key id → Ed25519 public key hex)
+and `evaluation_protocol` (the pinned protocol document, inline or a
+path relative to the file) are read; the production v3 config can be
+passed as is, and its `candidate_database` is the default registry.
+A registry without trust anchors is an argument error, because nothing
+could be served; `--record-unverified` instead acknowledges the
+recording-only mode (the registry is not consulted).
+
+```bash
+python3 tools/five_arm_campaign.py --real-agent --allow-local-executor \
+  --manifest /secure/study/manifest.json \
+  --guidance-bundle /secure/study/bundle.json \
+  --candidate-registry /srv/sis/candidates.db \
+  --trust-config /srv/sis/v3.json -o /secure/study/report.json
+```
+
+```json
+{
+  "schema_version": 2,
+  "kind": "learned_guidance_bundle",
+  "source": "learned",
+  "training": {
+    "repository_digests": ["<induction repo snapshot sha256>"]
+  },
+  "qualification": {
+    "repository_digests": ["<other induction repo snapshot sha256>"],
+    "tasks": [{"task_id": "<qualification task>",
+               "repository_digest": "<one of the above>"}],
+    "receipt_signer": {"key_id": "<evaluator key id>",
+                       "public_key": "<ed25519 public key hex>"},
+    "receipts": {"<receipt sha256>": {"...": "signed outcome receipt"}}
+  },
+  "components": {
+    "B": [{
+      "candidate_id": "cand-memory-1",
+      "candidate_digest": "<candidate record sha256>",
+      "content_digest": "<candidate content sha256>",
+      "evidence_digest": "<qualified evidence sha256>",
+      "text": "<qualified memory step>"
+    }],
+    "C": [{"candidate_id": "...", "candidate_digest": "...",
+           "content_digest": "...", "evidence_digest": "...",
+           "text": "<qualified skill step>"}],
+    "D": [{"candidate_id": "...", "candidate_digest": "...",
+           "content_digest": "...", "evidence_digest": "...",
+           "text": "<qualified symbolic step>"}]
+  },
+  "bundle_digest": "<canonical digest of the bundle body>"
+}
+```
+
+The manifest carries the same digest as `guidance_bundle_digest`; the
+gate refuses a bundle that does not match it, a bundle whose training
+repositories are outside the induction partition, or a bundle whose
+declared digest does not recompute. Arm E receives the B, C and D steps
+in that order. The built-in prompts are never mixed into a learned
+bundle.
+
+The `qualification` block says where the candidates were qualified. The
+gate refuses the bundle when a qualification repository is a study
+holdout repository (`guidance_qualification_uses_holdout`), is not an
+induction repository of the manifest, or is one of the bundle's own
+training repositories; when a qualification task is a study task; or
+when a receipt does not hash to its address, names an undeclared task,
+or is not signed by the declared evaluator key (which must be a trusted
+`evaluator_keys` entry when `--trust-config` is given). With a registry,
+every receipt a candidate was qualified on must be one of the declared
+receipts. A verified bundle without a `qualification` block is refused.
+
+### Producing the bundle
+
+`tools/build_guidance_bundle.py` produces this file from the induction
+partition alone. Its learning spec (`kind: guidance_learning_spec`)
+lists induction repositories, each with `learning_split: training` or
+`qualification` (disjoint by snapshot and by Git lineage), their tasks
+(as written by `tools/import_study_tasks.py --partition induction`),
+the pinned agent and the per-task budget; `--exclude-spec` names the
+study spec or manifest whose holdout repositories and tasks it must
+never touch.
+
+1. The agent runs every training task without guidance; the evaluator
+   grades each run and the verified source change is captured.
+2. Candidates are derived with `sis.v3.learning`: C (skill) from the
+   tool actions every verified solve shared (`induce_strategies`), D
+   (symbolic procedure) from the most frequent verified single-operator
+   change (`induce_structural_change`, `structure_to_record`), B
+   (memory) from the size of the verified fixes.
+3. On the qualification split, arm A runs once and each candidate runs
+   alone; `select_improvement` keeps a candidate with net paired wins
+   across `--min-repositories` repositories (`--rule non_inferior`
+   accepts wins ≥ losses with at least one assisted pass).
+4. Kept candidates are submitted to `--candidate-registry` and qualified
+   with evidence signed by the evaluator key (the same key directory
+   signs the outcome receipts) and a decision signed by the operator
+   key. Both keys must be listed in `--trust-config`;
+   `--print-public-keys` prints the entries to add. No test keys are
+   involved.
+
+If any of B, C, D has no qualified candidate, no bundle is written and
+`<output>.report.json` says why.
+
+### Claude Code
+
+`ClaudeCodeAdapter` runs `claude -p --output-format stream-json
+--verbose` in the task workspace; `claude_code_argv()` is the one place
+the command line is built (no session persistence, `--safe-mode`, no MCP
+servers or slash commands, `--permission-mode acceptEdits` with an
+allowed tool set and web tools denied). The environment is rebuilt from
+an allowlist (credentials, proxy and CA settings only) and a watchdog
+kills the process group at the wall clock. Tokens are
+`input_tokens + output_tokens`, de-duplicated per API message and
+reconciled with the final `result` usage; cache reads/writes and the
+reported cost are recorded per row as `usage_detail`, not as budget
+tokens. Tool calls are distinct `tool_use` blocks. The token and tool
+budgets are enforced while the run streams: on an overrun the CLI is
+killed and the arm fails with `real_agent_budget_exceeded:<tokens|tools>`,
+an attested budget failure. The manifest pins `agent.cli_version`
+against `claude --version`.
+
+### Importing tasks
+
+`tools/import_study_tasks.py` turns the bug-fix history of a full Git
+clone into tasks: a commit whose message reads as a fix and that changes
+Python source and exactly one Python test file becomes a task whose
+`base_commit` is the commit's parent, whose hidden acceptance file is
+the fix's version of that test (stored outside the repository, staged
+at its original path via `acceptance.hidden_tests_target`) and whose
+prompt is the commit message (or issue text from `--prompt-file`). With
+`--verify local|docker` each task is graded the way the runner grades
+it, and kept only when the base **fails** and the fix **passes**.
+`--merge-into` adds the repository and tasks to a study or learning
+spec.
+
+A task may therefore carry its own `base_commit` inside its repository.
+It must be an ancestor of the repository's checkout, and the task binds
+the tree it starts from with its own `repo_snapshot_digest` and
+`repo_execution_digest`; the builder computes both and the validator
+re-materializes the commit (blob by blob, no checkout, no filters) to
+check them. The repository's `hidden_tests.path` may be a directory of
+per-task files, bound by a directory digest. Lineage disjointness is
+unchanged: tasks of one repository share its lineage.
+
+Imported tasks run in the evaluator image, which carries pytest only;
+a repository whose tests need other packages fails `--verify docker` and
+is rejected.
+
+The run writes `<report>.evidence/` next to the report: the signed
+receipt bytes under `receipts/`, the evaluator public key, the exact
+manifest and a `bundle.json` that binds the manifest digest, the report
+digest and every receipt. The verifier's temporary key store is not the
+evidence; the bundle is.
+
+## Metrics
+
+- Verified solve rate per arm.
+- Paired wins/losses/ties for A vs E and E vs B/C/D (the latter
+  Holm-corrected secondary contrasts).
+- Exact McNemar p-value and Newcombe difference interval at the
+  preregistered alpha (task level, secondary).
+- Negative transfer: paired losses, tasks the baseline solves and E does
+  not, over all paired tasks; tasks marked `"misleading": true` in the
+  manifest are also reported separately. The threshold is the
+  preregistered `max_negative_transfer` (default 0.10).
+- Token, tool-call and wall-clock cost per verified solution.
+- Latency.
+- Per-repository generalization on unseen repositories.
+- Repository-clustered uncertainty: tasks within one repository are not
+  independent draws, so per-repository outcomes and a cluster-robust
+  check accompany the paired task-level analysis.
+- Failure categories, including evaluator/bootstrap errors.
+
+## Sizing a confirmatory study
+
+`required_sample_size` assumes independent tasks. The confirmatory
+decision is the repository-level sign-flip test, so the study is sized
+in repositories with `sis.v3.governed_eval.required_repositories`. It
+simulates that exact test under a latent-threshold model with
+repository difficulty (`icc`), task difficulty shared by both arms
+(`task_correlation`) and a repository-specific treatment effect
+(`effect_sd`, or the pilot's `difference_icc`, which is calibrated to
+it), and returns the smallest repository count reaching the target
+power, the power curve, and a recommendation that is never below the 20
+repository floor. `pilot_planning_inputs(report)` extracts the per-arm
+rates, tasks per repository and the two ANOVA intra-repository
+correlations from a pilot report. Pilot estimates are noisy; plan with
+conservative values. The simulation is deterministic for a seed; it
+models the sign-flip test only (not the cluster-bootstrap interval or
+the negative-transfer gate), so it is an upper bound on the power of the
+full gate.
+
+## Evidence classes
+
+| Class | Meaning |
+| --- | --- |
+| `demonstration` | Scripted machinery evidence; never an efficacy claim |
+| `exploratory` | Real agent, but underpowered or not preregistered |
+| `confirmatory` | Real agent, hidden repository-disjoint holdout across at least 20 repositories, protocol conformance, the preregistered sample size, measured negative transfer and per-task governed serving |
+| `invalid` | Missing manifest, missing agent, infrastructure failure or protocol mismatch |
+
+Only `confirmatory` evidence with a repository-level statistically
+supported A→E improvement and measured, non-material negative transfer
+can support an efficacy claim. A `confirmatory` run that finds no evidence is still a result and
+must be preserved.
+
+## Evidence placement
+
+`evidence/` is manifest-covered. A completed study therefore either
+finishes before a release seal or publishes its evidence as an
+out-of-band bundle under `release/` and references it from the
+qualification report. Do not add study evidence after a seal and leave
+the seal claiming the old source.
+
+## Current status
+
+- The scaffold, template and validator are present.
+- The runner executes a validated manifest with Codex CLI or Claude
+  Code, randomizes arm order, meters usage (live token/tool budgets for
+  Claude Code), records provenance, exports a signed-receipt evidence
+  bundle, resumes from a per-`(task, arm)` journal and runs tasks in
+  parallel. `--executor docker` gives split custody on Linux.
+- Tasks can be imported from real bug-fix histories, and a learned,
+  signed guidance bundle can be produced from the induction partition.
+- An end-to-end dry run (scripted agent, imported temporary repositories,
+  kill and resume) is part of the test suite
+  (`tests/v3/test_efficacy_pilot_dry_run.py`).
+- No pilot or confirmatory run has been executed. The exploratory pilot
+  (`docs/v3/PILOT_RUNBOOK.md`, `docs/v3/pilot_study_spec_template.json`)
+  needs real repositories and agent quota.
+- The accurate claim remains: the learning workflow functions; its
+  general coding effectiveness is unproven.

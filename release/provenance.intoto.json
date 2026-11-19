@@ -1,0 +1,43 @@
+{
+  "_type": "https://in-toto.io/Statement/v1",
+  "predicate": {
+    "buildDefinition": {
+      "buildType": "https://sis.local/release/v1",
+      "externalParameters": {
+        "branch": "repair/v335-resource-security",
+        "release": "SIS-v3.3.9",
+        "source_commit": "b559b143307b6fa055776a2b0afcd48698c7dc05"
+      },
+      "internalParameters": {
+        "builder": "tools/package_release.py"
+      },
+      "resolvedDependencies": [
+        {
+          "digest": {
+            "sha1": "b559b143307b6fa055776a2b0afcd48698c7dc05"
+          },
+          "uri": "git+https://sis.local/repair/v335-resource-security"
+        }
+      ]
+    },
+    "runDetails": {
+      "builder": {
+        "id": "tools/package_release.py"
+      },
+      "metadata": {
+        "finishedOn": "2026-11-16T09:35:35Z",
+        "invocationId": "release-b205c989fcd745b1",
+        "startedOn": "2026-11-16T09:35:34Z"
+      }
+    }
+  },
+  "predicateType": "https://slsa.dev/provenance/v1",
+  "subject": [
+    {
+      "digest": {
+        "sha256": "b205c989fcd745b12af2421d5fd43bcecb076013b50e9da16a1a04a084ea6e00"
+      },
+      "name": "SIS-v3.3.9.zip"
+    }
+  ]
+}

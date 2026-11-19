@@ -1,14 +1,16 @@
 {
   "archive": {
-    "inner_project_dir": "SIS-v3.3.4",
-    "path": "release/SIS-v3.3.4.zip",
-    "sha256": "e43951ad4913eaeac9ac6145a2c928ef34e5b0501b0595201e7ff38f84b18465",
-    "source_files": 402
+    "inner_project_dir": "SIS-v3.3.9",
+    "path": "release/SIS-v3.3.9.zip",
+    "sha256": "b205c989fcd745b12af2421d5fd43bcecb076013b50e9da16a1a04a084ea6e00",
+    "source_files": 470
   },
-  "branch": "main",
+  "branch": "repair/v335-resource-security",
   "docs": [
     "docs/v3/ARCHITECTURE_V3_3.md",
+    "docs/v3/BUILD11_PLAN.md",
     "docs/v3/CODEX_ADAPTER.md",
+    "docs/v3/EFFICACY_STUDY_PROTOCOL.md",
     "docs/v3/EVALUATION_PROTOCOL_V3_3.md",
     "docs/v3/EVIDENCE_PROTOCOL.md",
     "docs/v3/EVOLUTION_DESIGN.md",
@@ -23,7 +25,14 @@
     "docs/v3/QUALIFICATION_REPORT.md",
     "docs/v3/QUALIFICATION_REPORT_V3_3_0.md",
     "docs/v3/QUALIFICATION_REPORT_V3_3_4.md",
+    "docs/v3/QUALIFICATION_REPORT_V3_3_5.md",
+    "docs/v3/QUALIFICATION_REPORT_V3_3_6.md",
+    "docs/v3/QUALIFICATION_REPORT_V3_3_7.md",
+    "docs/v3/QUALIFICATION_REPORT_V3_3_8.md",
+    "docs/v3/QUALIFICATION_REPORT_V3_3_9.md",
     "docs/v3/RELEASE_NOTES_V3_3.md",
+    "docs/v3/RELEASE_PROCESS.md",
+    "docs/v3/SANDBOX_QUALIFICATION_GATE2.md",
     "docs/v3/SECURITY_BOUNDARIES_V3_3.md",
     "docs/v3/SKILL_HOLDOUTS.md",
     "docs/v3/SKILL_INGESTION.md",
@@ -51,27 +60,48 @@
     "evidence/sandbox/",
     "evidence/security/",
     "evidence/skills/",
-    "evidence/v332/"
+    "evidence/v332/",
+    "evidence/v335/",
+    "evidence/v336/"
   ],
+  "isolation": {
+    "external_attestation": null
+  },
   "notes": "release/ artifacts are out-of-band provenance and are intentionally absent from the archive manifest",
   "provenance": {
-    "key_id": "release-v334-key-1",
-    "path": "release/provenance.dsse.json",
-    "public_key_path": "release/provenance_public_key.hex",
-    "signed": true,
-    "statement_sha256": "b2094539ce89a210d28a63fc65c20c0090044cc1c0ab79ac4c9c752d5ece7fcb",
-    "subject_sha256": "e43951ad4913eaeac9ac6145a2c928ef34e5b0501b0595201e7ff38f84b18465",
+    "path": "release/provenance.intoto.json",
+    "signed": false,
+    "statement_sha256": "1747f3cde4f5e7e388ece72ea9589d19585a188015a6fa71f033b45fb1331019",
+    "subject_sha256": "b205c989fcd745b12af2421d5fd43bcecb076013b50e9da16a1a04a084ea6e00",
     "trust_root": "qualification-only"
   },
-  "release": "SIS-v3.3.4",
+  "release": "SIS-v3.3.9",
   "schema_version": 1,
-  "source_commit": "28122956ac723c59bd580aa10e5547dd2bc643ab",
+  "source_commit": "b559b143307b6fa055776a2b0afcd48698c7dc05",
   "source_commit_note": "archive members are byte-identical to this commit for every manifest-covered file; the release commit itself touches only out-of-band release/ provenance",
   "status": "ENGINEERING_VERIFIED",
   "test_result": {
-    "command": "PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONNOUSERSITE=1 PYTHONPATH=src python3 -m pytest -q",
+    "command": "/Users/dawsonblock/.pyenv/versions/3.12.0/bin/python3 -m pytest tests/ -q",
+    "errors": 0,
+    "evidence": {
+      "counts": {
+        "errors": 0,
+        "failed": 0,
+        "passed": 1724,
+        "skipped": 34
+      },
+      "exit_status": 0,
+      "output_sha256": "b3eb32b1bef4186afdf5fca4effffdff062f568956c33d68f5c66d2982c67408",
+      "path": "release/test_evidence.json",
+      "pytest_version": "8.4.2",
+      "sha256": "9aa1c858bbc71260c43e65f095b1f409ac8c145f42474c5364ee7f21d6135ef1",
+      "signed": false,
+      "signer_key_id": null,
+      "source_commit": "b559b143307b6fa055776a2b0afcd48698c7dc05"
+    },
     "failed": 0,
-    "passed": 1255,
-    "skipped": 13
+    "passed": 1724,
+    "skipped": 34,
+    "source": "evidence"
   }
 }

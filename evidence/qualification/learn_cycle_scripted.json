@@ -1,0 +1,57 @@
+{
+  "agent": "scripted",
+  "baseline_holdout": {
+    "no_action": true,
+    "outcome": "fail",
+    "receipt_digest": "e46842975205c4d7a0c279191423fbedf6d17561a72ac9b9f30a7ea0367ed83b",
+    "report_digest": "bd0c796a0d1d0b40ef0498f350df60851cd6be59adb7feb822a59ceb4b375036",
+    "tokens_used": 100
+  },
+  "cross_class_control": {
+    "decision": "abstain",
+    "procedure_ids": [],
+    "reason_code": "precondition_failed",
+    "task_id": "task-slug2"
+  },
+  "dev": {
+    "outcome": "pass",
+    "receipt_digest": "8418ee40a09933d7906db7e2422ddc7ea759051bf6c64f85fc93b7497745711d",
+    "report_digest": "eac9ad10bfddb3e5d697ec3a4781f4071892009e1623a60cc653f833e6ba181f",
+    "task_id": "task-money"
+  },
+  "generated_at": "2026-11-11T08:49:07Z",
+  "kind": "learn_recommend_cycle",
+  "learned_procedure": {
+    "evidence_refs": [
+      "8418ee40a09933d7906db7e2422ddc7ea759051bf6c64f85fc93b7497745711d",
+      "317bcd2b0507d2511d487a1693796c9c5af3f06ed4c14c67c180b6dc71c918fe"
+    ],
+    "failure_class": "convention_unknown:money",
+    "procedure_id": "exp-exp-money",
+    "status": "qualified",
+    "steps": [
+      "round_money must use ROUND_HALF_UP decimal rounding and return the cents string"
+    ]
+  },
+  "memory_chain_verified": true,
+  "same_class_holdout": {
+    "decision": "recommend",
+    "procedure_ids": [
+      "exp-exp-money"
+    ],
+    "reason_code": null,
+    "task_id": "task-money3"
+  },
+  "schema_version": 1,
+  "served_holdout": {
+    "no_action": false,
+    "outcome": "pass",
+    "receipt_digest": "a50733f3a7ad325a754fab6a0de8e8664a4abcbb08265b675eb1d00100ba9493",
+    "report_digest": "5b09c2be96b15a760996b7493efec6026a1bc01b7bd8d275afb3f8da052ff7de",
+    "tokens_used": 100
+  },
+  "transfer_evidence": [
+    "8418ee40a09933d7906db7e2422ddc7ea759051bf6c64f85fc93b7497745711d",
+    "317bcd2b0507d2511d487a1693796c9c5af3f06ed4c14c67c180b6dc71c918fe"
+  ]
+}

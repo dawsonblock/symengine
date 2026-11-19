@@ -17,7 +17,7 @@ from collections import Counter
 from datetime import datetime, timezone
 
 from .errors import InvalidInput, RuleRejected
-from .expression import evaluate, validate_ast
+from .expression import GRAMMAR_VERSION, evaluate, validate_ast
 from .validation import canonical, check_examples, digest, input_schema, namespace_name
 from .qualification import check_policy, DEFAULT_POLICY, assess
 from .vault_storage import private_sqlite_path
@@ -200,11 +200,21 @@ class EvaluatorVault:
         return {'status':'candidate','submission':{
             'evaluation_id':public['evaluation_id'],
             'public_digest':digest(public), 'rule':value['rule'],
+            'grammar_version':value['grammar_version'],
         },'induction':value}
 
     def _validate_submission(self, public, submission):
-        if not isinstance(submission, dict) or set(submission) != {'evaluation_id','public_digest','rule'}:
+        if (not isinstance(submission, dict)
+                or not {'evaluation_id','public_digest','rule'} <= set(submission)
+                or not set(submission) <= {'evaluation_id','public_digest','rule','grammar_version'}):
             raise InvalidInput("submission must have evaluation_id, public_digest and rule")
+        if 'grammar_version' in submission and submission['grammar_version'] != GRAMMAR_VERSION:
+            # The rule is scored by this evaluator's grammar; a rule induced
+            # under another grammar could silently mean something else.
+            raise RuleRejected(
+                f"submission was induced under grammar {submission['grammar_version']!r}, "
+                f"but this evaluator runs grammar {GRAMMAR_VERSION!r}; "
+                "re-induce under the current engine")
         if submission['evaluation_id'] != public['evaluation_id'] or submission['public_digest'] != digest(public):
             raise RuleRejected("candidate is not bound to sealed public task")
         rule = validate_ast(submission['rule'])
@@ -240,6 +250,7 @@ class EvaluatorVault:
                 body = {
                     'protocol':'sis-evaluation-receipt-v1', 'evaluation_id':stored['evaluation_id'],
                     'public_digest':digest(stored), 'rule':rule, 'rule_digest':digest(rule),
+                    'grammar_version':GRAMMAR_VERSION,
                     'metrics':results, 'scored_utc':datetime.now(timezone.utc).isoformat(),
                     'statement':'one-use locally enforced holdout; independence and vault anti-rollback require external custody',
                 }
@@ -266,6 +277,10 @@ class EvaluatorVault:
                 raise RuleRejected("receipt not bound to this sealed task")
             if digest(body['rule']) != body['rule_digest']:
                 raise RuleRejected("receipt rule digest mismatch")
+            if body.get('grammar_version', GRAMMAR_VERSION) != GRAMMAR_VERSION:
+                raise RuleRejected(
+                    f"receipt was scored under grammar {body['grammar_version']!r}, but this "
+                    f"evaluator runs grammar {GRAMMAR_VERSION!r}; replay with that engine")
             if _mac(self.key, secret['test']) != stored['test_commitment'] or _mac(self.key, secret['shifted_test']) != stored['shifted_test_commitment']:
                 raise RuleRejected("vault private test commitment mismatch")
             rule = self._validate_submission(public,{

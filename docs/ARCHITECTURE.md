@@ -7,9 +7,13 @@
 
 ## Trust and execution boundaries
 
-Input examples (untrusted data) -> shape/type validation -> bounded grammar enumeration -> **interpreter-only** execution -> training fit -> rival disagreement probes -> untouched supplied validation -> evidence-gated `Registry.promote()` -> rule retrieval -> predictions.
+Input examples (untrusted data) -> shape/type validation -> bounded grammar enumeration -> **interpreter-only**
+execution -> training fit -> rival disagreement probes -> untouched supplied validation -> evidence-gated
+`Registry.promote()` -> rule retrieval -> predictions.
 
-LLM calls, when explicitly requested, are *proposal generators*. The model receives only the training examples (and public AST schema). Its returned JSON must pass the same AST parser and fit checks as every other candidate. It cannot determine the final evidence status or directly promote a rule.
+LLM calls, when explicitly requested, are *proposal generators*. The model receives only the training examples (and
+public AST schema). Its returned JSON must pass the same AST parser and fit checks as every other candidate. It cannot
+determine the final evidence status or directly promote a rule.
 
 ## Components
 
@@ -41,38 +45,80 @@ Study:
 }
 ```
 
-The above is the *shape*, **not** a valid promoted dataset: promotion requires three distinct train records and two distinct validation records. All examples must have an identical typed schema. Values are bounded and field names are identifier-only.
+The above is the *shape*, **not** a valid promoted dataset: promotion requires three distinct train records and two
+distinct validation records. All examples must have an identical typed schema. Values are bounded and field names are
+identifier-only.
 
 Rule AST example: `{ "op": "add", "args": [ {"op":"field","name":"a"}, {"op":"field","name":"b"} ] }`.
 
-Allowed AST constructors:
+Allowed AST constructors (grammar `sis-grammar-2`; every op is declared once in the `OpSpec` registry
+`sis.expression.OPS`, which validation, evaluation, cost, the enumerator, the Z3 translation, schema transfer and the
+LLM prompt all read):
 
 - `field(name)` and `item(name,index)`.
 - `const(value)`.
-- `add/sub/mul/min/max/absdiff/eq(args:[AST,AST])`.
-- `neg/abs/upper/lower/reverse(arg:AST)`.
-- `if_eq(left,right,then,else)` (model suggestions; deterministic search does not currently enumerate conditionals).
+- Integer: `add/sub/mul/min/max/absdiff(args:[AST,AST])`, `floordiv/mod(args:[AST,AST])` (Python floor semantics; a
+  zero divisor is an evaluation error on that record, never a value), `neg/abs(arg:AST)`.
+- Comparisons: `eq(args)` on any equal types; `lt/le/gt(args)` on integers, returning a boolean.
+- Text: `upper/lower/reverse(arg)`, `concat(args)` (result at most 128 characters), `slice_prefix/slice_suffix(args:
+  [AST, const n])` with a literal length `0 <= n <= 128`, `len(arg)` (string to integer), `contains(args)` (boolean),
+  `str_of_int(arg)`.
+- Conditionals: `if_eq(left,right,then,else)` and `if_lt(left,right,then,else)` (integer comparison).
 
-Max 31 AST nodes, max nesting depth 5, integer and text limits enforced at input and output. No Python evaluation, imports, subprocess, file system, reflection, or network access exists in the rule interpreter.
+Max 31 AST nodes and 6 nesting levels (leaves count as level 1, as in `depth()`), integer results within +-1e9, text
+within 128 characters. No Python evaluation, imports, subprocess, file system, reflection, or network access exists in
+the rule interpreter. Every induction result carries `grammar_version` and `engine_version`; promotion and sealed
+evaluation refuse a result or submission produced under another engine with "re-induce under the current engine".
 
 ## Induction algorithm
 
-First enumerate depth-one hypotheses, evaluate *only* training examples, retain perfect fits, rank by AST cost and canonical JSON, then generate deterministic input perturbations. If depth-one has no perfect fit, expand arithmetic depth two up to `max_candidates`; a budget hit is reflected as `search_truncated=true`. Compare alternatives on probes, producing a distinguishing input when possible. A probe does not carry truth labels. Finally test only the selected rule against separately supplied validation cases. This is deliberately conservative and not statistically calibrated.
+Learner v2 (`sis.synthesis`, engine `sis-induce-2`) is a typed bottom-up enumeration by cost. Programs live in one pool
+per result type; two programs that agree on every training and development row and on a fixed prefix of unlabeled
+probes are observationally equivalent and only the cheaper is kept. The stages are:
 
-The optional Z3 module can find a disagreement between *two symbolic formulas* in a bounded integer region. Even a Z3 `unsat` for two formulas does **not** prove either formula correctly models the external task. Use it as a falsification tool, not an oracle for the correct hypothesis.
+1. leaves, small constants (-2..3) and unary ops on leaves;
+2. exact small-integer affine fitting `c0 + sum(ci * xi)` over at most three integer features, then with one of the
+   best-ranked depth-2 programs (residual-variance order) as an extra feature; only an exact integer solution is
+   accepted;
+3. pool levels up to cost 7 (pool depth 3), each new program completed goal-directed against the training outputs:
+   `add/sub/mul` are inverted and the missing operand is looked up in the pool or is a constant, `min/max/absdiff` and
+   `floordiv/mod` by a constant 2..12 are checked forward, and string outputs look up a prefix or suffix for `concat`;
+4. when no unconditional rule fits training and development data, one-level conditionals: predicates compare leaves
+   with each other or with observed constants, the training rows are split by the predicate and each branch is learned
+   separately from the same pool.
+
+Selection stops at the first stage with a rule that fits training and development data and ranks fits by development
+failures, then cost. A rival scan then resumes the same enumerator to the end of its declared space (and runs the
+conditional stage) under its own budget; a rival that fits every labelled row, costs at most 4 more than the selected
+rule and disagrees on an unlabeled probe makes the result `ambiguous`. Probes add new-type values and data-derived
+boundaries (observed integers and their neighbours, records with two equal integer fields) to the generated probes;
+they never carry truth labels. `SearchBudget` limits still truncate the search explicitly
+(`search_truncated=true`, `search_outcome` truncated or resource_exhausted), and a `max_expression_depth` below the
+engine's own depth is reported as a limit hit. This is deliberately conservative and not statistically calibrated.
+
+The optional Z3 module can find a disagreement between *two symbolic formulas* in a bounded integer region. Even a Z3
+`unsat` for two formulas does **not** prove either formula correctly models the external task. Use it as a falsification
+tool, not an oracle for the correct hypothesis.
 
 ## Rule lifecycle
 
-- `provisional`: training fit without required validation.
-- `ambiguous`: competing training-fit candidates differ on constructed input; collect ground-truth labels and restart with new holdout.
+- `provisional`: training fit without enough independent validation: fewer than two holdout rows, a holdout that
+  carries less than 4 bits of evidence under the labelled-output distribution (three binary rows carry 3), or a
+  conditional rule whose holdout does not exercise both branches.
+- `ambiguous`: competing training-fit candidates differ on constructed input; collect ground-truth labels and restart
+  with new holdout.
 - `validation_failed`: selected training-fit hypothesis failed supplied validation.
 - `search_incomplete`: budget terminated a search.
 - `no_rule`: no candidate matched within grammar.
 - `locally_validated`: selected rule matched supplied validation and passed available ambiguity checks.
 - `active`: promoted rule stored persistently.
-- `suspended`: user reports a mismatched outcome. Human review/re-induction required; no untrusted automatic self-rewriting.
+- `suspended`: user reports a mismatched outcome. Human review/re-induction required; no untrusted automatic
+  self-rewriting.
 
-Feedback stores user-reported outcomes, does not treat them as independent ground truth, and suspends on a mismatch as a conservative risk control. On prediction, the registry abstains if zero valid rules apply or multiple rules disagree. As of v1.3, promotion rejects a new rule that disagrees with existing active rules on training, validation, or deterministic generated probes. This is bounded compatibility checking, not proof of equivalent domain behavior.
+Feedback stores user-reported outcomes, does not treat them as independent ground truth, and suspends on a mismatch as a
+conservative risk control. On prediction, the registry abstains if zero valid rules apply or multiple rules disagree. As
+of v1.3, promotion rejects a new rule that disagrees with existing active rules on training, validation, or
+deterministic generated probes. This is bounded compatibility checking, not proof of equivalent domain behavior.
 
 ## Important future extension points
 
@@ -85,7 +131,9 @@ Feedback stores user-reported outcomes, does not treat them as independent groun
 
 ## v1.7 procedural-skill subsystem
 
-See [V1_7_PROCEDURAL_SKILLS.md](V1_7_PROCEDURAL_SKILLS.md) for architecture, verification boundary, threat model and explicit limitations. The procedural skill chain is local integrity evidence, not a separately anchored cryptographic attestation.
+See [V1_7_PROCEDURAL_SKILLS.md](V1_7_PROCEDURAL_SKILLS.md) for architecture, verification boundary, threat model and
+explicit limitations. The procedural skill chain is local integrity evidence, not a separately anchored cryptographic
+attestation.
 
 ## v2.1 operator-side trace learning
 

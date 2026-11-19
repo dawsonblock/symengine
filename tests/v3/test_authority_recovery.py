@@ -174,6 +174,7 @@ def test_committed_qualification_serves_after_restart(tmp_path):
     seed, pub = signatures.generate_keypair()
     signer_id = "key-" + hashlib.sha256(pub).hexdigest()[:24]
     verifier = OutcomeVerifier(
+        allow_shared_custody=True,
         executor=LocalSubprocessExecutor(tmp_path / "exec", use_seatbelt=False),
         key_dir=tmp_path / "keys", registry_dir=tmp_path / "registry")
     verifier.register_task(actor_role="evaluator", task_id="recovery-task",

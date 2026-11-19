@@ -14,7 +14,7 @@ invalidation.
 """
 from __future__ import annotations
 
-from .contracts import ContractError, canonical_digest
+from .contracts import canonical_digest
 from .procedures import ProcedureStore
 
 SCOPES = frozenset({"repository", "family", "cross_repository"})

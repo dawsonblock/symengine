@@ -48,17 +48,25 @@ from .evaluation_runtime import (
     EVALUATOR_BOOTSTRAP_ERROR,
     INFRASTRUCTURE_ERROR,
     SANDBOX_FAILURE,
+    REPORT_NONCE_ENV,
     EvaluationRuntimeProfile,
     bootstrap_check,
+    check_pytest_report,
     classify_execution,
+    classify_production_execution,
 )
 from .isolation import (
-    IsolationVerification,
     ProductionIsolationPolicy,
-    verify_production_isolation,
 )
 from .policy import require_permission
-from .runner import CommandSpec, ResourceLimits, WorkspaceExecutor, tree_digest
+from .runner import (
+    CommandSpec,
+    ResourceLimits,
+    WorkspaceExecutor,
+    normalize_private_files,
+    tree_digest,
+)
+from .split_harness import MARKER_SPLIT, is_python_command
 from ..vault_storage import (
     assert_private_acl,
     create_private_file,
@@ -87,6 +95,19 @@ _JOURNAL_STRING_FIELDS = (
 # failure; a file that never reaches 32 bytes still fails closed.
 _SEED_READ_ATTEMPTS = 50
 _SEED_READ_DELAY_SECONDS = 0.01
+
+
+def _named_private_files(
+    args, private_files: Mapping[str, bytes],
+) -> tuple[str, ...]:
+    """Private files named on a pytest command line (as the runner rewrites them)."""
+    named = []
+    for arg in args:
+        candidate = arg[2:] if arg.startswith("./") else arg
+        head = candidate.partition("::")[0]
+        if head in private_files and head not in named:
+            named.append(head)
+    return tuple(named)
 
 
 class EvaluationRejected(RuntimeError):
@@ -231,6 +252,66 @@ class RegisteredTask:
     base_commit: str | None
     suite_commitment: str
     statement_digest: str | None = None
+    failure_class: str | None = None
+    custody: str = "shared"
+
+
+def _suite_commitment(
+    *,
+    task_id: str,
+    criterion_version: str,
+    argv,
+    files: Mapping[str, bytes],
+    base_commit: str | None,
+    failure_class: str | None,
+    custody: str,
+) -> str:
+    """The commitment a registration binds for its task identity.
+
+    Shared custody is the historical default and is not named in the
+    payload, so a registration that predates the field keeps its
+    commitment. Registry load uses the same function to recover custody
+    for a row written before it was persisted.
+    """
+    payload = {
+        "task_id": task_id,
+        "criterion_version": criterion_version,
+        "argv": list(argv),
+        "files": {name: hashlib.sha256(data).hexdigest()
+                  for name, data in sorted(files.items())},
+        "base_commit": base_commit,
+    }
+    if failure_class is not None:
+        # Bound only when declared, so existing registrations keep their
+        # historical commitments.
+        payload["failure_class"] = failure_class
+    if custody != "shared":
+        payload["custody"] = custody
+    return canonical_digest("test_suite", 1, payload)
+
+
+def _recover_custody(item: dict, files: Mapping[str, bytes]) -> str:
+    """Recover custody for a registry row written before it was persisted.
+
+    Returning the shared default for a split row would silently downgrade
+    the boundary the registration was meant to hold, and the worker
+    reloads the registry in every child process. The commitment names
+    custody only when it is not shared, so matching both variants
+    recovers the original mode without trusting an absent field.
+    """
+    for candidate in ("shared", "split"):
+        if _suite_commitment(
+            task_id=item["task_id"],
+            criterion_version=item["criterion_version"],
+            argv=tuple(item["argv"]),
+            files=files,
+            base_commit=item["base_commit"],
+            failure_class=item.get("failure_class"),
+            custody=candidate,
+        ) == item["suite_commitment"]:
+            return candidate
+    raise JournalIntegrityError(
+        "task registry custody cannot be recovered from its commitment")
 
 
 class OutcomeVerifier:
@@ -248,15 +329,41 @@ class OutcomeVerifier:
         runtime_profile: EvaluationRuntimeProfile | None = None,
         protected_paths=(),
         isolation_policy: ProductionIsolationPolicy | None = None,
+        require_split_custody: bool | None = None,
+        allow_shared_custody: bool = False,
     ) -> None:
         self.executor = executor
         self.identity = identity
+        if require_split_custody is None:
+            # A backend configured with a second principal was configured
+            # to use it. Requiring split custody for hidden tests is the
+            # same implication the worker CLI applies for --split-user.
+            require_split_custody = getattr(
+                executor, "split_user", None) is not None
+        # A deployment that requires split custody cannot be served by a
+        # backend with no second principal. Refuse construction rather
+        # than accepting registrations that could only fail later.
+        if (require_split_custody
+                and not getattr(executor, "supports_split_custody", False)):
+            raise ContractError("split_custody_required_but_unavailable")
+        self.require_split_custody = bool(require_split_custody)
         self.runtime_profile = runtime_profile or EvaluationRuntimeProfile()
         if (isolation_policy is not None
                 and not isinstance(isolation_policy, ProductionIsolationPolicy)):
             raise ContractError(
                 "isolation_policy must be a ProductionIsolationPolicy")
         self.isolation_policy = isolation_policy
+        # Shared custody for private acceptance material is a development
+        # opt-out, never a default and never a production configuration.
+        if type(allow_shared_custody) is not bool:
+            raise ContractError("allow_shared_custody must be a bool")
+        if allow_shared_custody and self.require_split_custody:
+            raise ContractError(
+                "allow_shared_custody_conflicts_with_require_split_custody")
+        if allow_shared_custody and isolation_policy is not None:
+            raise ContractError(
+                "allow_shared_custody_conflicts_with_production_policy")
+        self.allow_shared_custody = allow_shared_custody
         # Acceptance-suite resource envelope. The 2 GiB default covers
         # pytest plus plugin imports; a meta-test that runs the submitted
         # suite in a nested process needs process_count=None on platforms
@@ -279,6 +386,8 @@ class OutcomeVerifier:
         self._bootstrap = None
         self.last_outcome_class: str | None = None
         self.last_bootstrap = None
+        # Diagnostic: the last pytest-report check (shared custody).
+        self.last_report_check = None
         self._tasks_path = self.registry_dir / "tasks.json"
         self._journal_path = self.registry_dir / "receipts.jsonl"
         self._tasks: dict[str, RegisteredTask] = {}
@@ -298,6 +407,48 @@ class OutcomeVerifier:
         self._trusted[self.keystore.key_id] = self.keystore.public.hex()
         self._load_state()
 
+    def _supports_split_custody(self) -> bool:
+        return bool(getattr(self.executor, "supports_split_custody", False))
+
+    def _custody_for_registration(
+        self, custody: str | None, has_material: bool,
+    ) -> str:
+        """Resolve a requested custody mode into the mode to persist.
+
+        ``None`` is the secure default: split whenever private material is
+        present, with no fallback when the backend cannot provide a second
+        principal. Shared custody requires an explicit request *and* a
+        verifier built with ``allow_shared_custody=True``.
+        """
+        if not has_material:
+            if custody == "split":
+                raise ContractError(
+                    "split custody requires registered acceptance files")
+            return "shared"
+        if custody == "split":
+            # An explicit split registration is a durable record; the
+            # backend capability is checked when the task is evaluated,
+            # so a registry written by another worker still loads.
+            return "split"
+        if custody == "shared":
+            if self.isolation_policy is not None:
+                raise ContractError("production_requires_split_custody")
+            if self.require_split_custody:
+                raise ContractError(
+                    "split_custody_required_for_private_material")
+            if not self.allow_shared_custody:
+                raise ContractError(
+                    "shared_custody_requires_explicit_opt_out")
+            return "shared"
+        if self.require_split_custody:
+            return "split"
+        if self.allow_shared_custody:
+            return "shared"
+        if self._supports_split_custody():
+            return "split"
+        raise ContractError(
+            "split_custody_unavailable_for_private_material")
+
     def register_task(
         self,
         *,
@@ -308,29 +459,61 @@ class OutcomeVerifier:
         files: Mapping[str, bytes] | None = None,
         base_commit: str | None = None,
         statement_digest: str | None = None,
+        failure_class: str | None = None,
+        custody: str | None = None,
     ) -> RegisteredTask:
-        """Record evaluator-private acceptance material for a task identity."""
+        """Record evaluator-private acceptance material for a task identity.
+
+        Private material defaults to ``custody="split"``: the acceptance
+        command runs in the evaluator's process and reaches submitted code
+        only through an out-of-process proxy, so a submission cannot read
+        the tests it is graded against. A backend that cannot provide a
+        second principal refuses the registration instead of silently
+        sharing custody.
+
+        ``custody="shared"`` is a development opt-out. It requires a
+        verifier constructed with ``allow_shared_custody=True`` and is
+        refused outright when ``require_split_custody`` or a production
+        ``isolation_policy`` is set. ``custody=None`` (the default) picks
+        split when the backend supports it and fails closed otherwise.
+        """
         require_permission(actor_role, "outcome:evaluate")
+        if custody not in (None, "shared", "split"):
+            raise ContractError(
+                "custody must be 'shared', 'split', or None")
         if statement_digest is not None and not (
             isinstance(statement_digest, str)
             and re.fullmatch(r"[0-9a-f]{64}", statement_digest)
         ):
             raise ContractError("statement_digest must be a lowercase SHA-256 hex digest")
+        if failure_class is not None and not (
+            isinstance(failure_class, str)
+            and 0 < len(failure_class) <= 128
+            and not any(ord(ch) < 32 for ch in failure_class)
+        ):
+            raise ContractError(
+                "failure_class must be a bounded printable string")
         command = CommandSpec(argv=tuple(argv))
-        material = dict(files or {})
-        for name, data in material.items():
-            CommandSpec(argv=("x",), cwd=name)  # reuse normalized-relative-path validation
-            if name == ".":
-                raise ContractError("registered file names must be file paths, not directories")
-            if not isinstance(data, bytes) or len(data) > (1 << 20):
-                raise ContractError("registered test files must be bounded bytes")
-        commitment = canonical_digest("test_suite", 1, {
-            "task_id": task_id,
-            "criterion_version": criterion_version,
-            "argv": list(command.argv),
-            "files": {name: hashlib.sha256(data).hexdigest() for name, data in sorted(material.items())},
-            "base_commit": base_commit,
-        })
+        # The same bounds the executor enforces when staging private material
+        # are enforced here, so an over-bound registration fails at
+        # registration instead of surfacing as an infrastructure error.
+        material = normalize_private_files(dict(files or {}))
+        mode = self._custody_for_registration(custody, bool(material))
+        if mode == "split" and not is_python_command(command.argv):
+            # The split harness is a Python bootstrap. Refusing here keeps
+            # a non-Python command from being handed the bootstrap and
+            # scored as if the submission had failed.
+            raise ContractError(
+                "split custody requires a Python acceptance command")
+        commitment = _suite_commitment(
+            task_id=task_id,
+            criterion_version=criterion_version,
+            argv=command.argv,
+            files=material,
+            base_commit=base_commit,
+            failure_class=failure_class,
+            custody=mode,
+        )
         task = RegisteredTask(
             task_id=task_id,
             criterion_version=criterion_version,
@@ -339,11 +522,15 @@ class OutcomeVerifier:
             base_commit=base_commit,
             suite_commitment=commitment,
             statement_digest=statement_digest,
+            failure_class=failure_class,
+            custody=mode,
         )
         existing = self._tasks.get(task_id)
         if existing is not None:
             if (existing.suite_commitment != task.suite_commitment or
-                    existing.statement_digest != task.statement_digest):
+                    existing.statement_digest != task.statement_digest or
+                    existing.failure_class != task.failure_class or
+                    existing.custody != task.custody):
                 raise EvaluationRejected("task_registration_conflict", task_id)
             return existing
         self._tasks[task_id] = task
@@ -361,6 +548,21 @@ class OutcomeVerifier:
             return None
         return self._tasks.get(task_id)
 
+    def registry_requires_split_custody(self) -> bool:
+        """True when a registered task hides material behind split custody.
+
+        A worker can use this before evaluating to refuse a backend that
+        has no second principal, instead of failing every split task one
+        at a time.
+        """
+        return any(task.files and task.custody == "split"
+                   for task in self._tasks.values())
+
+    def failure_class_for(self, task_id: str) -> str | None:
+        """The trusted failure class registered for a task identity."""
+        task = self.registered_task(task_id)
+        return task.failure_class if task is not None else None
+
     def bootstrap(self):
         """Run the evaluator bootstrap probe once (cached)."""
         if self._bootstrap is None:
@@ -372,9 +574,12 @@ class OutcomeVerifier:
                     ok=False, reason="runtime_pin_mismatch",
                     detail=f"{type(exc).__name__}: {exc}")
             else:
+                # The bootstrap base tree must not live under the
+                # protected registry/key directories: workspace
+                # preparation rejects any source tree that overlaps
+                # evaluator material.
                 self._bootstrap = bootstrap_check(
-                    self.executor, self.runtime_profile,
-                    root=self.registry_dir)
+                    self.executor, self.runtime_profile)
         self.last_bootstrap = self._bootstrap
         return self._bootstrap
 
@@ -419,6 +624,19 @@ class OutcomeVerifier:
         if (registration.statement_digest is not None and
                 registration.statement_digest != task.task_statement_digest):
             raise EvaluationRejected("statement_mismatch", task.task_id)
+        if registration.files and registration.custody != "split":
+            # A registration can predate the policy. It still hides
+            # acceptance material, so it must not run beside the tests.
+            self.last_outcome_class = EVALUATOR_BOOTSTRAP_ERROR
+            if self.isolation_policy is not None:
+                raise EvaluationRejected(
+                    "production_requires_split_custody", registration.task_id)
+            if self.require_split_custody:
+                raise EvaluationRejected(
+                    "split_custody_required", registration.task_id)
+            if not self.allow_shared_custody:
+                raise EvaluationRejected(
+                    "shared_custody_not_permitted", registration.task_id)
         if (self.isolation_policy is not None
                 and task.isolation_profile == "unverified_local"):
             raise EvaluationRejected(
@@ -446,29 +664,92 @@ class OutcomeVerifier:
             raise EvaluationRejected(
                 "evaluator_bootstrap_error", bootstrap.reason)
 
+        split = registration.custody == "split"
+        if split and not getattr(self.executor, "supports_split_custody", False):
+            # A split task must never silently fall back to shared custody:
+            # that is the configuration the registration was meant to avoid.
+            self.last_outcome_class = EVALUATOR_BOOTSTRAP_ERROR
+            raise EvaluationRejected(
+                "split_custody_unavailable",
+                type(self.executor).__name__)
         argv = registration.argv
         if len(argv) >= 3 and argv[1] == "-m" and argv[2] == "pytest":
             argv = self.runtime_profile.pytest_argv(argv)
         workspace = self.executor.prepare(submission, label="eval")
+        if workspace.before_tree_digest != evaluated_repo_digest:
+            # The receipt names ``evaluated_repo_digest``; the run must
+            # execute exactly that tree. A submission that changed between
+            # the digest and the executor's copy is not the one graded.
+            try:
+                self.executor.destroy(workspace)
+            except Exception:
+                pass
+            self.last_outcome_class = INFRASTRUCTURE_ERROR
+            raise EvaluationRejected(
+                "submission_changed_during_evaluation", registration.task_id)
+        report_nonce = None
+        expected_report_files: tuple[str, ...] = ()
         try:
-            for name, data in registration.files.items():
-                target = workspace.path / name
-                target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_bytes(data)
-            receipt_exec = self.executor.run(
-                workspace,
-                CommandSpec(
-                    argv=argv, limits=self.limits,
-                    env=self.runtime_profile.environment()),
-            )
+            private_files = dict(registration.files)
+            # A backend that supports private material stages it outside the
+            # submission tree. Only a legacy backend without that capability
+            # still writes acceptance files into the workspace being graded.
+            separated = bool(private_files) and bool(
+                getattr(self.executor, "supports_private_material", False))
+            if private_files and not separated:
+                for name, data in private_files.items():
+                    target = workspace.path / name
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_bytes(data)
+            env = self.runtime_profile.environment()
+            if (separated and not split and is_python_command(argv)
+                    and len(argv) >= 3 and argv[1] == "-m"
+                    and argv[2] == "pytest"):
+                # Shared custody: the submission runs inside the pytest
+                # process, so its exit status alone is not evidence. The
+                # evaluator bootstrap reports the finished session under
+                # this nonce, and the verdict requires that report.
+                report_nonce = secrets.token_hex(16)
+                env[REPORT_NONCE_ENV] = report_nonce
+                expected_report_files = _named_private_files(
+                    argv[3:], private_files)
+            spec = CommandSpec(
+                argv=argv, limits=self.limits, env=env)
+            if split:
+                receipt_exec = self.executor.run(
+                    workspace, spec, private_files=private_files,
+                    split_custody=True)
+            elif separated:
+                receipt_exec = self.executor.run(
+                    workspace, spec, private_files=private_files)
+            else:
+                receipt_exec = self.executor.run(workspace, spec)
         except Exception as exc:
+            if str(exc).startswith("split_custody_"):
+                # The harness itself could not be established; the exit
+                # status says nothing about the submission.
+                self.last_outcome_class = EVALUATOR_BOOTSTRAP_ERROR
+                raise EvaluationRejected(
+                    "split_custody_unavailable",
+                    f"{type(exc).__name__}: {exc}") from exc
             self.last_outcome_class = INFRASTRUCTURE_ERROR
             raise EvaluationRejected(
                 "evaluator_infrastructure_error",
                 f"{type(exc).__name__}: {exc}") from exc
         finally:
-            self.executor.destroy(workspace)
+            # Cleanup failure must not replace the classified outcome;
+            # the workspace is disposable either way.
+            try:
+                self.executor.destroy(workspace)
+            except Exception:
+                pass
 
+        if split and MARKER_SPLIT not in (receipt_exec.security_errors or ()):
+            # The executor did not record the split it was asked for, so
+            # the tests may have run beside the submission.
+            self.last_outcome_class = SANDBOX_FAILURE
+            raise EvaluationRejected("split_custody_unverified",
+                                     receipt_exec.execution_id)
         stderr_tail = ""
         output = getattr(self.executor, "output", None)
         if callable(output):
@@ -477,6 +758,18 @@ class OutcomeVerifier:
                 stderr_tail = stderr.decode("utf-8", "replace")[-800:]
             except Exception:
                 pass
+        report = None
+        self.last_report_check = None
+        if report_nonce is not None:
+            stdout = b""
+            if callable(output):
+                try:
+                    stdout, _ = output(receipt_exec.execution_id)
+                except Exception:
+                    stdout = b""
+            report = check_pytest_report(
+                stdout, report_nonce, expected_files=expected_report_files)
+            self.last_report_check = report
         verification = None
         if self.isolation_policy is not None:
             attestation = isolation_attestation
@@ -491,16 +784,19 @@ class OutcomeVerifier:
             if attestation is None:
                 self.last_outcome_class = SANDBOX_FAILURE
                 raise EvaluationRejected("isolation_attestation_required")
-            verification = verify_production_isolation(
-                attestation, receipt_exec, self.isolation_policy)
+            classification = classify_production_execution(
+                receipt_exec, attestation, self.isolation_policy,
+                bootstrap_ok=True, stderr_tail=stderr_tail, report=report)
+            verification = classification.verification
             if not verification.ok:
                 self.last_outcome_class = SANDBOX_FAILURE
                 raise EvaluationRejected(
                     "isolation_unverified", verification.reason)
-        outcome_class = classify_execution(
-            receipt_exec, bootstrap_ok=True, stderr_tail=stderr_tail,
-            production=self.isolation_policy is not None,
-            isolation_verification=verification)
+            outcome_class = classification.outcome_class
+        else:
+            outcome_class = classify_execution(
+                receipt_exec, bootstrap_ok=True, stderr_tail=stderr_tail,
+                report=report)
         self.last_outcome_class = outcome_class
         if outcome_class == "TASK_PASS":
             outcome = "pass"
@@ -523,6 +819,10 @@ class OutcomeVerifier:
             "regression_evidence": [],
             "signer_key_id": self.keystore.key_id,
         }
+        if registration.failure_class is not None:
+            # Bound into the signed payload so a scope grant can check that
+            # the witness belongs to the procedure's failure class.
+            common["failure_class"] = registration.failure_class
         seed = self.keystore._seed or self.keystore.load_or_create()[0]
         if self.isolation_policy is not None:
             protocol_digest = canonical_digest("evaluation_protocol", 1, {
@@ -575,6 +875,22 @@ class OutcomeVerifier:
 
     def issued_receipts(self) -> list[str]:
         return [entry["receipt_digest"] for entry in self._journal]
+
+    def prior_receipt(self, task_ref: str, evaluated_repo_digest: str
+                      ) -> OutcomeReceiptV1 | OutcomeReceiptV2 | None:
+        """The receipt already issued for this exact submission, if any.
+
+        The evaluator refuses to grade one tree twice for a task
+        (``duplicate_evaluation``). A resumed study run can meet a tree
+        that was graded just before the interruption but never journaled;
+        it reuses that signed receipt instead of losing the arm.
+        """
+        for entry in reversed(self._journal):
+            if (entry.get("task_id") == task_ref
+                    and entry.get("evaluated_repo_digest")
+                    == evaluated_repo_digest):
+                return self.load_receipt(entry["receipt_digest"])
+        return None
 
     def load_receipt(self, receipt_digest: str) -> OutcomeReceiptV1 | OutcomeReceiptV2:
         """Reload a persisted signed receipt by its canonical digest.
@@ -675,14 +991,41 @@ class OutcomeVerifier:
             if not isinstance(document, dict) or set(document) != {"schema_version", "tasks"}:
                 raise JournalIntegrityError("task registry has an unexpected shape")
             for item in document["tasks"]:
+                files = {name: bytes.fromhex(data)
+                         for name, data in item["files"].items()}
+                custody = item.get("custody")
+                if custody is None:
+                    custody = _recover_custody(item, files)
+                elif custody not in ("shared", "split"):
+                    raise JournalIntegrityError(
+                        "task registry has an invalid custody mode")
+                else:
+                    # A declared mode must still agree with the
+                    # commitment: editing custody in the registry cannot
+                    # downgrade a split task to shared.
+                    expected = _suite_commitment(
+                        task_id=item["task_id"],
+                        criterion_version=item["criterion_version"],
+                        argv=tuple(item["argv"]),
+                        files=files,
+                        base_commit=item["base_commit"],
+                        failure_class=item.get("failure_class"),
+                        custody=custody,
+                    )
+                    if expected != item["suite_commitment"]:
+                        raise JournalIntegrityError(
+                            "task registry commitment does not match"
+                            " its registration")
                 task = RegisteredTask(
                     task_id=item["task_id"],
                     criterion_version=item["criterion_version"],
                     argv=tuple(item["argv"]),
-                    files={name: bytes.fromhex(data) for name, data in item["files"].items()},
+                    files=files,
                     base_commit=item["base_commit"],
                     suite_commitment=item["suite_commitment"],
                     statement_digest=item.get("statement_digest"),
+                    failure_class=item.get("failure_class"),
+                    custody=custody,
                 )
                 self._tasks[task.task_id] = task
         if self._journal_path.exists():
@@ -792,6 +1135,8 @@ class OutcomeVerifier:
                     "base_commit": task.base_commit,
                     "suite_commitment": task.suite_commitment,
                     "statement_digest": task.statement_digest,
+                    "failure_class": task.failure_class,
+                    "custody": task.custody,
                 }
                 for task in sorted(self._tasks.values(), key=lambda t: t.task_id)
             ],

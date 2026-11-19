@@ -7,7 +7,7 @@ from pathlib import Path
 
 from sis.distillation import INSTRUCTION, FORMAT
 from sis.errors import InvalidInput, RuleRejected
-from sis.neural_training import validate_export, preflight, encode_rows, train
+from sis.neural_training import validate_export, encode_rows, train
 from sis.neural_eval import evaluate, _strict_output
 from sis.validation import canonical, digest
 

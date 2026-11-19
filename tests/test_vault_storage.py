@@ -32,13 +32,35 @@ class _MockFileAttributeTag(ctypes.Structure):
 def _mock_win_ctx(*, create_error=None, file_attrs=0x80, file_type=1,
                   write_error=None,
                   dacl_control=0x1000,
-                  dacl_sddl='D:P(A;;FA;;;U)(A;;FA;;;SY)'):
-    """Recording stand-in for ``_windows_api()`` — no real Win32 needed."""
+                  dacl_sddl='D:P(A;;FA;;;U)(A;;FA;;;SY)',
+                  sid_aliases=None):
+    """Recording stand-in for ``_windows_api()`` — no real Win32 needed.
+
+    ``sid_aliases`` maps SDDL trustee spellings to the ``S-1-...`` SID
+    ``ConvertStringSidToSidW`` would parse them as; a literal ``S-1-``
+    string parses as itself and anything else fails to parse.
+    """
     state = SimpleNamespace(
         create_calls=[], write_calls=[], deleted=[], closed=[],
-        file_handle=0x5150, descriptor=0xD000, keep=[], last_error=0)
+        file_handle=0x5150, descriptor=0xD000, keep=[], last_error=0,
+        sids={})
+    aliases = {'SY': 'S-1-5-18', 'BA': 'S-1-5-32-544', 'CO': 'S-1-3-0',
+               'WD': 'S-1-1-0', **(sid_aliases or {})}
 
     class Advapi:
+        def ConvertStringSidToSidW(self, text, out):
+            sid = aliases.get(text, text if text.startswith('S-1-') else None)
+            if sid is None:
+                return False
+            handle = 0x51D0 + len(state.sids)
+            state.sids[handle] = sid
+            out._obj.value = handle
+            return True
+
+        def ConvertSidToStringSidW(self, binary, out):
+            out._obj.value = state.sids[binary.value]
+            return True
+
         def ConvertStringSecurityDescriptorToSecurityDescriptorW(
                 self, sddl, rev, out, out_len):
             out._obj.value = state.descriptor
@@ -245,25 +267,62 @@ class PrivateDirectoryTests(unittest.TestCase):
 
     @unittest.skipUnless(os.name == 'nt', 'Windows DACL control checks')
     def test_unprotected_dacl_with_allowed_trustees_rejected(self):
+        from ctypes import wintypes
         ctx = vs._windows_api()
-        target = self.root / 'unprotected'
+        advapi32 = ctypes.WinDLL('advapi32', use_last_error=True)
+        advapi32.GetSecurityDescriptorDacl.argtypes = [
+            ctypes.c_void_p, ctypes.POINTER(wintypes.BOOL),
+            ctypes.POINTER(ctypes.c_void_p), ctypes.POINTER(wintypes.BOOL)]
+        advapi32.GetSecurityDescriptorDacl.restype = wintypes.BOOL
+        advapi32.SetNamedSecurityInfoW.argtypes = [
+            wintypes.LPWSTR, ctypes.c_int, wintypes.DWORD, ctypes.c_void_p,
+            ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p]
+        advapi32.SetNamedSecurityInfoW.restype = wintypes.DWORD
+        advapi32.GetNamedSecurityInfoW.argtypes = [
+            wintypes.LPWSTR, ctypes.c_int, wintypes.DWORD,
+            ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p,
+            ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p)]
+        advapi32.GetNamedSecurityInfoW.restype = wintypes.DWORD
+        # The parent is private: its ACEs are not inheritable, so once the
+        # target's DACL is unprotected the only difference from a private
+        # directory is the missing SE_DACL_PROTECTED bit. Creating with an
+        # SDDL that merely omits ``P`` did not yield an unprotected DACL on
+        # the Windows CI runner (the check accepted it), so the DACL is
+        # unprotected explicitly afterwards and the precondition asserted.
+        parent = private_directory(self.root / 'parent')
+        target = private_directory(parent / 'unprotected')
         descriptor = ctypes.c_void_p()
         try:
-            # Same restricted trustees as a private directory, but
-            # without the P (SE_DACL_PROTECTED) control flag — the DACL
-            # can still inherit parent ACEs and must fail closed.
             sddl, _ = vs._windows_user_sddl(ctx, lambda m: self.fail(m))
-            sddl = sddl.replace('D:P(', 'D:(', 1)
             self.assertTrue(
                 ctx.advapi.ConvertStringSecurityDescriptorToSecurityDescriptorW(
                     sddl, 1, ctypes.byref(descriptor), None))
-            attrs = ctx.security_attributes(
-                ctypes.sizeof(ctx.security_attributes), descriptor, False)
-            self.assertTrue(
-                ctx.kernel.CreateDirectoryW(str(target), ctypes.byref(attrs)))
+            present, defaulted = wintypes.BOOL(), wintypes.BOOL()
+            dacl = ctypes.c_void_p()
+            self.assertTrue(advapi32.GetSecurityDescriptorDacl(
+                descriptor, ctypes.byref(present), ctypes.byref(dacl),
+                ctypes.byref(defaulted)))
+            # SE_FILE_OBJECT; DACL_SECURITY_INFORMATION |
+            # UNPROTECTED_DACL_SECURITY_INFORMATION.
+            self.assertEqual(advapi32.SetNamedSecurityInfoW(
+                str(target), 1, 0x00000004 | 0x20000000,
+                None, None, dacl, None), 0)
         finally:
             if descriptor:
                 ctx.kernel.LocalFree(descriptor)
+        # Precondition: the DACL really is unprotected now.
+        observed = ctypes.c_void_p()
+        self.assertEqual(advapi32.GetNamedSecurityInfoW(
+            str(target), 1, 0x00000004, None, None, None, None,
+            ctypes.byref(observed)), 0)
+        try:
+            control, revision = wintypes.WORD(), wintypes.DWORD()
+            self.assertTrue(ctx.advapi.GetSecurityDescriptorControl(
+                observed, ctypes.byref(control), ctypes.byref(revision)))
+            self.assertFalse(control.value & 0x1000,
+                             'precondition: DACL must be unprotected')
+        finally:
+            ctx.kernel.LocalFree(observed)
         with self.assertRaises(InvalidInput):
             assert_private_acl(target)
         with self.assertRaises(InvalidInput):
@@ -292,6 +351,73 @@ class WindowsDaclMockTests(unittest.TestCase):
             dacl_control=0x1000, dacl_sddl='D:P(A;;FA;;;WD)')
         self.assertFalse(vs._windows_dacl_is_restricted(
             1, foreign, allowed, self.fail))
+
+    # The GitHub windows-latest runner user (runneradmin) is the RID-500
+    # built-in Administrator; the OS renders its SID as ``LA`` in SDDL
+    # while ConvertSidToStringSidW spells it out in full.
+    USER = 'S-1-5-21-1111-2222-3333-500'
+    RUNNER_ALIASES = {'LA': USER}
+
+    def _allowed(self):
+        return vs._windows_allowed_sids(self.USER)
+
+    def test_aliased_current_user_is_the_current_user(self):
+        ctx, _ = _mock_win_ctx(dacl_sddl='D:PAI(A;;FA;;;LA)(A;;FA;;;SY)',
+                               sid_aliases=self.RUNNER_ALIASES)
+        self.assertTrue(vs._windows_dacl_is_restricted(
+            1, ctx, self._allowed(), self.fail))
+
+    def test_alias_of_another_principal_is_still_rejected(self):
+        # ``LA`` naming someone other than the caller, Everyone, and
+        # Owner Rights (Python's os.mkdir(mode=0o700) DACL) all fail.
+        for sddl, aliases in (
+                ('D:P(A;;FA;;;LA)(A;;FA;;;SY)',
+                 {'LA': 'S-1-5-21-1111-2222-3333-501'}),
+                ('D:P(A;;FA;;;LA)(A;;FA;;;WD)', self.RUNNER_ALIASES),
+                ('D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;FA;;;OW)',
+                 {'OW': 'S-1-3-4'})):
+            with self.subTest(sddl=sddl):
+                ctx, _ = _mock_win_ctx(dacl_sddl=sddl, sid_aliases=aliases)
+                self.assertFalse(vs._windows_dacl_is_restricted(
+                    1, ctx, self._allowed(), self.fail))
+
+    def test_unparseable_trustee_and_deny_ace_are_rejected(self):
+        for sddl in ('D:P(A;;FA;;;??)', 'D:P(D;;FA;;;LA)(A;;FA;;;LA)',
+                     'D:P(A;;FA;;LA)'):
+            with self.subTest(sddl=sddl):
+                ctx, _ = _mock_win_ctx(dacl_sddl=sddl,
+                                       sid_aliases=self.RUNNER_ALIASES)
+                self.assertFalse(vs._windows_dacl_is_restricted(
+                    1, ctx, self._allowed(), self.fail))
+
+    def test_canonical_aces_compare_principals_in_order(self):
+        ctx, _ = _mock_win_ctx(sid_aliases=self.RUNNER_ALIASES)
+        expected = f'D:P(A;;FA;;;{self.USER})(A;;FA;;;SY)'
+        canonical = vs._windows_canonical_aces
+        self.assertEqual(canonical(ctx, 'D:PAI(A;;FA;;;LA)(A;;FA;;;SY)'),
+                         canonical(ctx, expected))
+        self.assertEqual(canonical(ctx, expected),
+                         [('A', '', 'FA', '', '', self.USER),
+                          ('A', '', 'FA', '', '', 'S-1-5-18')])
+        for observed in ('D:P(A;;FA;;;SY)(A;;FA;;;LA)',
+                         'D:P(A;;FA;;;LA)',
+                         'D:P(A;;FA;;;LA)(A;;FA;;;SY)(A;;FA;;;BA)',
+                         'D:P(A;;FR;;;LA)(A;;FA;;;SY)'):
+            with self.subTest(observed=observed):
+                self.assertNotEqual(canonical(ctx, observed),
+                                    canonical(ctx, expected))
+        self.assertIsNone(canonical(ctx, 'D:P(A;;FA;;;??)'))
+
+    @unittest.skipUnless(os.name == 'nt', 'real Win32 SID round trip')
+    def test_real_private_directory_trustees_canonicalize(self):
+        ctx = vs._windows_api()
+        _, user_sid = vs._windows_user_sddl(ctx, self.fail)
+        self.assertEqual(vs._windows_canonical_sid(ctx, user_sid), user_sid)
+        self.assertEqual(vs._windows_canonical_sid(ctx, 'SY'), 'S-1-5-18')
+        self.assertIsNone(vs._windows_canonical_sid(ctx, 'not-a-sid'))
+        with tempfile.TemporaryDirectory() as temp:
+            path = private_directory(Path(temp) / 'vault')
+            assert_private_acl(path)
 
 
 class WindowsFileCreateMockTests(unittest.TestCase):
@@ -341,7 +467,7 @@ class WindowsFileCreateMockTests(unittest.TestCase):
         ctx, state = _mock_win_ctx(write_error=5)  # ERROR_ACCESS_DENIED
         with self.assertRaises(InvalidInput):
             self._create(ctx, state)
-        self.assertEqual(state.deleted, ['C:/x/seed'])
+        self.assertEqual(state.deleted, [str(Path('C:/x/seed'))])
 
 
 if __name__ == '__main__':

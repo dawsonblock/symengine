@@ -1,6 +1,5 @@
 """Independent targeted v2.2 replay/abstraction security and integration tests."""
 import copy
-import json
 import tempfile
 import unittest
 from pathlib import Path

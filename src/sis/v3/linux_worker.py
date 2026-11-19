@@ -32,7 +32,8 @@ import sys
 import tempfile
 import threading
 import time
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 try:
@@ -43,13 +44,23 @@ except ImportError:  # Windows: the backend is unavailable, not import-broken
 from .cgroups import CgroupUnavailable, CgroupV2Controller
 from .contracts import ContractError, ExecutionReceiptV1, canonical_digest
 from .runner import (
+    MARKER_SHARED_CUSTODY,
     CommandSpec,
     ResourceLimits,
     RunnerError,
     Workspace,
     command_spec_digest,
+    launcher_markers,
+    limit_launcher_argv,
+    limit_triples,
+    mark_private_material_modified,
+    private_command_spec,
+    private_material_modified,
+    read_launcher_status,
     scan_tree,
+    stage_private_material,
 )
+from .workspace_guard import ManagedWorkspaceRegistry, protected_overlap
 
 _DEFAULT_SYSTEM_BINDS = (
     "/usr", "/bin", "/sbin", "/lib", "/lib64",
@@ -148,7 +159,8 @@ class LinuxWorkerConfig:
 
 def build_bwrap_argv(config: LinuxWorkerConfig, workspace_path: Path,
                      spec: CommandSpec, *,
-                     seccomp_dir: Path | None = None) -> list[str]:
+                     seccomp_dir: Path | None = None,
+                     private_dir: Path | None = None) -> list[str]:
     """Build the exact bubblewrap invocation; no shell, no host env."""
     if not isinstance(config, LinuxWorkerConfig):
         raise ContractError("config must be a LinuxWorkerConfig")
@@ -159,10 +171,18 @@ def build_bwrap_argv(config: LinuxWorkerConfig, workspace_path: Path,
     if config.die_with_parent:
         argv.append("--die-with-parent")
     argv.append("--new-session")
-    # --unshare-all covers user, PID, network, IPC, UTS and cgroup.
-    argv.append("--unshare-all")
-    if config.share_network:
-        argv.append("--share-net")
+    if config.use_pid_namespace:
+        # --unshare-all covers user, PID, network, IPC, UTS and cgroup.
+        argv.append("--unshare-all")
+        if config.share_network:
+            argv.append("--share-net")
+    else:
+        # Every namespace of --unshare-all except PID, so the
+        # ``use_pid_namespace=False`` opt-out is honoured, not ignored.
+        argv += ["--unshare-user-try", "--unshare-ipc", "--unshare-uts",
+                 "--unshare-cgroup-try"]
+        if not config.share_network:
+            argv.append("--unshare-net")
     for path in config.system_binds:
         source = Path(path)
         if source.exists():
@@ -173,7 +193,10 @@ def build_bwrap_argv(config: LinuxWorkerConfig, workspace_path: Path,
                 "seccomp_dir is required when apply_seccomp is enabled")
         argv += ["--ro-bind", str(Path(seccomp_dir).resolve()),
                  "/opt/sis-seccomp"]
-        inner = [sys.executable, "/opt/sis-seccomp/seccomp_exec.py",
+        # -I: the wrapper starts in /workspace, and neither that
+        # directory nor a PYTHON* variable from the spec may put a
+        # submission module on its path before the filter is applied.
+        inner = [sys.executable, "-I", "/opt/sis-seccomp/seccomp_exec.py",
                  "--", *inner]
     if config.bind_etc_files and "/etc" not in config.system_binds:
         # A plain --dir /etc would leave the directory writable. Make it
@@ -186,6 +209,10 @@ def build_bwrap_argv(config: LinuxWorkerConfig, workspace_path: Path,
                 argv += ["--ro-bind", str(source.resolve()), path]
         argv += ["--remount-ro", "/etc"]
     argv += ["--proc", "/proc", "--dev", "/dev", "--tmpfs", "/tmp"]
+    if private_dir is not None:
+        # Evaluator-private material is bound outside the workspace and is
+        # never writable from, or copied into, the submission tree.
+        argv += ["--ro-bind", str(Path(private_dir).resolve()), "/private"]
     argv += ["--bind", str(Path(workspace_path).resolve()), "/workspace"]
     argv += ["--chdir", "/workspace"]
     argv.append("--clearenv")
@@ -212,30 +239,26 @@ def _seccomp_mode() -> str:
     return "unknown"
 
 
-def _apply_limits(limits: ResourceLimits):
-    """preexec hook: bound the child before exec (same model as runner)."""
+def _limit_triples(limits: ResourceLimits,
+                   security_errors: list[str]) -> list[tuple[str, int, int]]:
+    """Limits the launcher applies before exec (same model as the runner).
+
+    Applied by the evaluator-owned launcher, never by ``preexec_fn``:
+    Python code between fork and exec can deadlock when the evaluator
+    runs from worker threads.
+    """
     if resource is None:
         raise WorkerBackendUnavailable("resource_limits_unavailable")
-
-    def apply() -> None:
-        resource.setrlimit(
-            resource.RLIMIT_AS, (limits.memory_bytes, limits.memory_bytes))
-        resource.setrlimit(
-            resource.RLIMIT_CPU, (limits.cpu_seconds, limits.cpu_seconds + 1))
-        resource.setrlimit(
-            resource.RLIMIT_FSIZE, (limits.disk_bytes, limits.disk_bytes))
-        resource.setrlimit(resource.RLIMIT_NOFILE, (256, 256))
-        resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
-        if limits.process_count is not None:
-            resource.setrlimit(
-                resource.RLIMIT_NPROC,
-                (limits.process_count, limits.process_count))
-    return apply
+    return limit_triples(
+        limits, security_errors, cpu_grace_seconds=1,
+        extra=(("RLIMIT_NOFILE", 256, 256), ("RLIMIT_CORE", 0, 0)))
 
 
 def _kill_group(process: subprocess.Popen) -> None:
+    # The group id equals the leader's pid (start_new_session), which
+    # still names the group after the leader has been reaped.
     try:
-        os.killpg(os.getpgid(process.pid), signal.SIGKILL)
+        os.killpg(process.pid, signal.SIGKILL)
     except (ProcessLookupError, PermissionError, OSError):
         pass
 
@@ -249,6 +272,11 @@ def _read_capped(path: Path, limit: int) -> tuple[bytes, bool]:
 class LinuxRootlessWorker:
     """Bubblewrap-based rootless worker; Linux only, fails closed elsewhere."""
 
+    supports_private_material = True
+    #: Split custody needs a second OS principal; bwrap maps the caller's
+    #: UID into the namespace, so it cannot supply one.
+    supports_split_custody = False
+
     def __init__(self, root: str | Path, *,
                  config: LinuxWorkerConfig | None = None) -> None:
         if not sys.platform.startswith("linux"):
@@ -257,9 +285,12 @@ class LinuxRootlessWorker:
         self._bwrap = shutil.which(self.config.bwrap)
         if self._bwrap is None:
             raise WorkerBackendUnavailable("bwrap_required")
-        self.root = Path(root)
+        self.root = Path(os.path.abspath(root))
         self.root.mkdir(parents=True, exist_ok=True)
-        (self.root / "workspaces").mkdir(exist_ok=True)
+        self._registry = ManagedWorkspaceRegistry(
+            self.root, executor_identity=self.config.worker_identity,
+            error=RunnerError)
+        self._protected: set[Path] = set()
         self._seccomp_dir: Path | None = None
         if self.config.apply_seccomp:
             executable = Path(sys.executable).resolve()
@@ -278,8 +309,8 @@ class LinuxRootlessWorker:
             shutil.copyfile(source, target)
             os.chmod(target, 0o644)
             os.chmod(self._seccomp_dir, 0o755)
-        self._workspaces: dict[str, Workspace] = {}
         self._live: dict[str, subprocess.Popen] = {}
+        self._live_ws: dict[str, str] = {}
         self._outputs: dict[str, tuple[bytes, bytes]] = {}
         self._lock = threading.Lock()
 
@@ -287,35 +318,93 @@ class LinuxRootlessWorker:
     def worker_identity(self) -> str:
         return self.config.worker_identity
 
+    def protect(self, path: str | Path) -> None:
+        """Refuse to copy a key/authority/dataset path into a workspace."""
+        resolved = Path(path).resolve()
+        root = self.root.resolve()
+        if resolved.is_relative_to(root) or root.is_relative_to(resolved):
+            raise RunnerError(
+                "protected path must not overlap the executor root")
+        with self._lock:
+            self._protected.add(resolved)
+
+    @property
+    def protected_paths(self) -> tuple[Path, ...]:
+        with self._lock:
+            return tuple(sorted(self._protected, key=str))
+
     def prepare(self, base_dir: str | Path, *, label: str = "task") -> Workspace:
         base = Path(base_dir)
         if not base.is_dir():
             raise RunnerError("base_dir must be an existing directory")
+        if protected_overlap(base, self.protected_paths) is not None:
+            raise RunnerError("base_dir_overlaps_protected_material")
         for dirpath, dirnames, filenames in os.walk(base, followlinks=False):
             for name in list(dirnames) + filenames:
                 if (Path(dirpath) / name).is_symlink():
                     raise RunnerError("base tree must not contain symlinks")
-        workspace_id = "ws-" + secrets.token_hex(8)
-        path = self.root / "workspaces" / workspace_id
-        shutil.copytree(base, path, symlinks=False)
-        scan = scan_tree(path)
-        workspace = Workspace(
-            workspace_id, path, scan.digest, self.worker_identity)
-        with self._lock:
-            self._workspaces[workspace_id] = workspace
-        return workspace
+        workspace_id, path = self._registry.allocate()
+        try:
+            shutil.copytree(base, path, symlinks=False)
+            scan = scan_tree(path)
+            record = self._registry.register(
+                workspace_id, path, before_tree_digest=scan.digest)
+        except BaseException:
+            shutil.rmtree(path, ignore_errors=True)
+            raise
+        return Workspace(
+            record.workspace_id, record.path, record.before_tree_digest,
+            record.executor_identity)
 
-    def run(self, workspace: Workspace, spec: CommandSpec) -> ExecutionReceiptV1:
+    def run(
+        self, workspace: Workspace, spec: CommandSpec, *,
+        private_files: Mapping[str, bytes] | None = None,
+        split_custody: bool = False,
+    ) -> ExecutionReceiptV1:
         if not isinstance(spec, CommandSpec):
             raise ContractError("spec must be a CommandSpec")
-        before = scan_tree(workspace.path)
+        if split_custody:
+            # bwrap maps the caller's UID into the namespace, so this
+            # backend has no second principal to run the worker under.
+            raise RunnerError("split_custody_unavailable")
+        with self._registry.execution(
+                workspace.workspace_id, workspace.path,
+                executor_identity=workspace.executor_identity) as record:
+            material = None
+            try:
+                if private_files:
+                    material = stage_private_material(
+                        self.root, private_files, bootstrap=True)
+                    spec = private_command_spec(
+                        spec, names=private_files, prefix="/private",
+                        workspace="/workspace")
+                receipt = self._run_workspace(
+                    record, spec, private_dir=material)
+                if material is not None:
+                    receipt = replace(
+                        receipt, security_errors=receipt.security_errors
+                        + (MARKER_SHARED_CUSTODY,))
+                if material is not None and private_material_modified(
+                        material, private_files):
+                    receipt = mark_private_material_modified(receipt)
+                return receipt
+            finally:
+                if material is not None:
+                    shutil.rmtree(material, ignore_errors=True)
+
+    def _run_workspace(
+        self, record, spec: CommandSpec, *, private_dir: Path | None = None,
+    ) -> ExecutionReceiptV1:
+        before = scan_tree(record.path)
         if before.external_symlinks:
             raise RunnerError("workspace contains external symlinks")
         execution_id = "exec-" + secrets.token_hex(8)
         argv = build_bwrap_argv(
-            self.config, workspace.path, spec,
-            seccomp_dir=self._seccomp_dir)
+            self.config, record.path, spec,
+            seccomp_dir=self._seccomp_dir, private_dir=private_dir)
         security_errors = ["backend:linux-rootless-bwrap"]
+        if private_dir is not None:
+            security_errors.append("evaluation:private_material_separated")
         if self.config.share_network:
             security_errors.append("net:shared_by_configuration")
         else:
@@ -342,6 +431,11 @@ class LinuxRootlessWorker:
                 raise WorkerBackendUnavailable(str(exc)) from exc
             security_errors.append("cgroup:v2")
 
+        triples = _limit_triples(spec.limits, security_errors)
+        # RLIMIT_FSIZE bounds each file; the workspace total is audited
+        # after the run. Say so instead of implying a live disk quota.
+        security_errors.append("disk:per_file_limit_post_run_audit")
+        status_read = None
         try:
             with tempfile.TemporaryDirectory(
                     dir=self.root, prefix=".worker-") as temp:
@@ -350,30 +444,53 @@ class LinuxRootlessWorker:
                 started = time.monotonic()
                 timed_out = False
                 exit_status = -1
+                if self._registry.is_closing(record.workspace_id):
+                    raise RunnerError("workspace_is_closing")
+                status_read, status_write = os.pipe()
+                # The launcher joins the cgroup before it execs bwrap, so
+                # no process of the run can be forked outside it, and sets
+                # the limits without a preexec_fn.
+                launch = limit_launcher_argv(
+                    argv, triples, status_fd=status_write,
+                    cgroup_procs=(None if cgroup is None
+                                  else cgroup.path / "cgroup.procs"))
                 with open(stdout_path, "wb") as out, open(
                         stderr_path, "wb") as err:
                     try:
                         process = subprocess.Popen(
-                            argv,
+                            launch,
+                            cwd=os.path.abspath(os.sep),
                             stdin=subprocess.PIPE,
                             stdout=out,
                             stderr=err,
                             start_new_session=True,
-                            preexec_fn=_apply_limits(spec.limits),
+                            pass_fds=(status_write,),
                             env={},
                         )
                     except OSError as exc:
                         raise RunnerError("worker_launch_failed") from exc
+                    finally:
+                        os.close(status_write)
                     with self._lock:
                         self._live[execution_id] = process
-                    if cgroup is not None:
+                        self._live_ws[execution_id] = record.workspace_id
+                    if self._registry.is_closing(record.workspace_id):
+                        # Destruction began during launch; kill the group
+                        # before the workspace can be removed.
+                        _kill_group(process)
                         try:
-                            cgroup.attach(process.pid)
-                        except OSError as exc:
-                            _kill_group(process)
-                            process.wait()
-                            raise WorkerBackendUnavailable(
-                                f"cgroup_attach_failed:{exc}") from exc
+                            process.wait(timeout=10)
+                        except subprocess.TimeoutExpired:
+                            process.kill()
+                            process.wait(timeout=10)
+                        with self._lock:
+                            self._live.pop(execution_id, None)
+                            self._live_ws.pop(execution_id, None)
+                        try:
+                            process.stdin.close()
+                        except (OSError, ValueError):
+                            pass
+                        raise RunnerError("workspace_is_closing")
                     try:
                         process.communicate(
                             input=spec.stdin,
@@ -392,6 +509,13 @@ class LinuxRootlessWorker:
                         _kill_group(process)
                         with self._lock:
                             self._live.pop(execution_id, None)
+                            self._live_ws.pop(execution_id, None)
+                status = read_launcher_status(status_read)
+                status_read = None
+                if status.startswith("Fcgroup_join_failed"):
+                    raise WorkerBackendUnavailable(
+                        "cgroup_attach_failed:" + status[1:])
+                security_errors.extend(launcher_markers(status))
                 elapsed = time.monotonic() - started
                 output_cap = min(
                     self.config.max_output_bytes, spec.limits.output_bytes)
@@ -402,11 +526,13 @@ class LinuxRootlessWorker:
                 if stderr_cut:
                     security_errors.append("output:stderr_truncated")
         finally:
+            if status_read is not None:
+                read_launcher_status(status_read)
             if cgroup is not None:
                 cgroup.kill()
                 cgroup.remove()
 
-        after = scan_tree(workspace.path)
+        after = scan_tree(record.path)
         if after.external_symlinks:
             security_errors.append("fs:external_symlink")
         if after.total_bytes > spec.limits.disk_bytes:
@@ -437,13 +563,37 @@ class LinuxRootlessWorker:
             return self._outputs.get(execution_id, (b"", b""))
 
     def destroy(self, workspace: Workspace) -> None:
-        shutil.rmtree(workspace.path, ignore_errors=True)
+        if not self._registry.destroy(
+                workspace.workspace_id, workspace.path,
+                executor_identity=workspace.executor_identity,
+                terminate=self._terminate_workspace):
+            raise RunnerError("workspace_remove_failed")
+
+    def _terminate_workspace(self, workspace_id: str) -> None:
         with self._lock:
-            self._workspaces.pop(workspace.workspace_id, None)
+            processes = [
+                process for exec_id, process in self._live.items()
+                if self._live_ws.get(exec_id) == workspace_id
+            ]
+        for process in processes:
+            if process.poll() is None:
+                _kill_group(process)
+        for process in processes:
+            if process.poll() is None:
+                try:
+                    process.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    try:
+                        process.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        pass
 
     def terminate_all(self) -> None:
         with self._lock:
             live = list(self._live.values())
+            self._live.clear()
+            self._live_ws.clear()
         for process in live:
             _kill_group(process)
 

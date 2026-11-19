@@ -18,11 +18,15 @@ from __future__ import annotations
 import importlib.metadata
 import sys
 import tempfile
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 from .contracts import canonical_digest
-from .isolation import IsolationVerification
+from .isolation import (
+    IsolationVerification,
+    ProductionIsolationPolicy,
+    verify_production_isolation,
+)
 from .runner import CommandSpec, ResourceLimits, WorkspaceExecutor
 
 TASK_PASS = "TASK_PASS"
@@ -269,6 +273,98 @@ def _receipt_detail(executor, receipt) -> str:
     return tail.strip()
 
 
+REPORT_NONCE_ENV = "SIS_PYTEST_REPORT_NONCE"
+_REPORT_PREFIX = b"SIS_PYTEST_REPORT:"
+#: Exit status the trusted bootstrap uses when the test runner is missing.
+RUNNER_UNAVAILABLE_EXIT = 70
+
+
+@dataclass(frozen=True)
+class PytestReportCheck:
+    """Whether a run carried positive evidence of a complete pytest pass.
+
+    Produced by :func:`check_pytest_report` from the report the
+    evaluator bootstrap writes after pytest's session finished. ``ok``
+    is the only field classification reads; ``reason`` explains a
+    rejection.
+    """
+
+    ok: bool
+    reason: str
+    counts: tuple[tuple[str, int], ...] = ()
+
+
+def check_pytest_report(
+    stdout: bytes, nonce: str, *,
+    expected_files: tuple[str, ...] = (),
+) -> PytestReportCheck:
+    """Require a finished, all-passing pytest session report.
+
+    The report must appear exactly once with the run's nonce, describe a
+    finished session with exit status 0, at least one collected and
+    passed test, no failures, errors or collection errors, and a result
+    for every collected test. Every name in ``expected_files`` (the
+    evaluator-private test files named on the command line) must have
+    contributed at least one collected test, and no collected test may
+    come from outside the private directory.
+
+    Shared custody runs the submission in the same process as pytest, so
+    code that discovers the nonce can still forge this report. It stops
+    an exit-status-only pass (``os._exit(0)``) but is not a boundary;
+    only split custody is qualification-grade.
+    """
+    if not isinstance(nonce, str) or not nonce:
+        return PytestReportCheck(False, "report_nonce_missing")
+    marker = _REPORT_PREFIX + nonce.encode("ascii") + b":"
+    lines = [line for line in (stdout or b"").splitlines()
+             if line.startswith(marker)]
+    if not lines:
+        return PytestReportCheck(False, "report_missing")
+    if len(lines) != 1:
+        return PytestReportCheck(False, "report_duplicated")
+    try:
+        import json
+        payload = json.loads(lines[0][len(marker):].decode("utf-8"))
+    except (UnicodeDecodeError, ValueError):
+        return PytestReportCheck(False, "report_malformed")
+    if not isinstance(payload, dict):
+        return PytestReportCheck(False, "report_malformed")
+    names = ("collected", "passed", "failed", "errors", "skipped",
+             "xfailed", "xpassed", "collection_errors")
+    counts = {}
+    for name in names:
+        value = payload.get(name)
+        if type(value) is not int or value < 0:
+            return PytestReportCheck(False, "report_malformed")
+        counts[name] = value
+    summary = tuple(sorted(counts.items()))
+    files = payload.get("files")
+    if not isinstance(files, dict) or not all(
+            isinstance(key, str) and type(value) is int
+            for key, value in files.items()):
+        return PytestReportCheck(False, "report_malformed", summary)
+    if payload.get("finished") is not True:
+        return PytestReportCheck(False, "session_not_finished", summary)
+    if payload.get("exitstatus") != 0 or payload.get("returned") != 0:
+        return PytestReportCheck(False, "session_not_successful", summary)
+    if counts["collected"] < 1 or counts["passed"] < 1:
+        return PytestReportCheck(False, "no_passing_tests", summary)
+    if counts["failed"] or counts["errors"] or counts["collection_errors"]:
+        return PytestReportCheck(False, "failures_reported", summary)
+    resulted = (counts["passed"] + counts["skipped"] + counts["xfailed"]
+                + counts["xpassed"])
+    if resulted != counts["collected"]:
+        return PytestReportCheck(False, "tests_without_result", summary)
+    if expected_files:
+        if files.get("<outside>", 0):
+            return PytestReportCheck(False, "unexpected_tests", summary)
+        for name in expected_files:
+            if files.get(name, 0) < 1:
+                return PytestReportCheck(
+                    False, "expected_tests_not_collected", summary)
+    return PytestReportCheck(True, "ok", summary)
+
+
 def classify_execution(
     receipt,
     *,
@@ -276,33 +372,42 @@ def classify_execution(
     stderr_tail: str = "",
     require_verified_isolation: bool = False,
     production: bool = False,
-    isolation_verification: IsolationVerification | None = None,
     infrastructure_error: str | None = None,
+    report: PytestReportCheck | None = None,
 ) -> str:
-    """Map an execution receipt to exactly one outcome class.
+    """Map receipt facts to one outcome class; never grants production authority.
 
-    ``isolation_verification`` is the typed verdict of
-    :func:`sis.v3.isolation.verify_production_isolation`, computed by the
-    harness over a separately signed attestation and the exact execution
-    receipt. A boolean "attested" flag is not accepted: production
-    requires the verification object to name this receipt and to carry
-    every mandatory property. A receipt's own ``isolation:*`` markers are
-    self-reported facts and never qualify it.
+    ``production=True`` is retained only to fail closed. A caller cannot
+    obtain a production pass from a receipt, a self-reported marker, or a
+    typed verification object. The evaluator-owned route is
+    :func:`classify_production_execution`, which verifies a signed
+    attestation against the exact execution receipt and policy first.
+
+    Only trusted signals decide the class: the caller's own flags, the
+    executor's receipt markers and timeout, the exit status, and — when
+    supplied — the result ``report``. ``stderr_tail`` is accepted for
+    compatibility and ignored: it is submission-controlled text, so
+    matching it (``MemoryError``, ``Killed``, a runner-unavailable line)
+    would let a failing submission turn its verdict into an error. When
+    ``report`` is given, a pass also requires ``report.ok``; an exit
+    status of 0 without it is a task failure.
     """
+    del stderr_tail  # submission-controlled; never a classification input
     if infrastructure_error:
         return INFRASTRUCTURE_ERROR
     if not bootstrap_ok:
         return EVALUATOR_BOOTSTRAP_ERROR
     errors = set(getattr(receipt, "security_errors", ()) or ())
+    if ("evaluation:process_split" in errors
+            and getattr(receipt, "exit_status", None)
+            == RUNNER_UNAVAILABLE_EXIT):
+        # Under split custody the acceptance process never runs submitted
+        # code, so its bootstrap's runner-unavailable status is trusted.
+        return EVALUATOR_BOOTSTRAP_ERROR
     if production:
-        if "isolation:unverified_local" in errors:
-            return SANDBOX_FAILURE
-        if not isinstance(isolation_verification, IsolationVerification):
-            return SANDBOX_FAILURE
-        if not isolation_verification.ok:
-            return SANDBOX_FAILURE
-        if isolation_verification.receipt_digest != getattr(receipt, "digest", None):
-            return SANDBOX_FAILURE
+        # No public production authority: the real route is
+        # classify_production_execution with a signed attestation.
+        return SANDBOX_FAILURE
     if require_verified_isolation and "isolation:unverified_local" in errors:
         return SANDBOX_FAILURE
     if getattr(receipt, "timeout", False):
@@ -314,13 +419,51 @@ def classify_execution(
     if any(error.startswith(("fs:", "output:", "rlimit:"))
            for error in errors):
         return RESOURCE_LIMIT
-    if any(marker in stderr_tail for marker in (
-            "MemoryError", "Cannot allocate memory", "Killed",
-            "No space left on device", "Too many open files")):
-        return RESOURCE_LIMIT
-    if getattr(receipt, "exit_status", None) == 0:
+    if getattr(receipt, "exit_status", None) == 0 and (
+            report is None or report.ok):
         return TASK_PASS
     return TASK_FAIL
+
+
+@dataclass(frozen=True)
+class ProductionClassification:
+    """Evaluator-owned production verdict with the verified isolation report."""
+
+    outcome_class: str
+    verification: IsolationVerification
+
+
+def classify_production_execution(
+    receipt,
+    attestation,
+    policy: ProductionIsolationPolicy,
+    *,
+    bootstrap_ok: bool = True,
+    stderr_tail: str = "",
+    at_time: str | None = None,
+    infrastructure_error: str | None = None,
+    report: PytestReportCheck | None = None,
+) -> ProductionClassification:
+    """Verify signed isolation evidence, then classify the execution.
+
+    This is the only route that can return TASK_PASS under production
+    conditions. It requires the actual ``IsolationAttestationV1`` and a
+    :class:`ProductionIsolationPolicy`; a preconstructed positive
+    ``IsolationVerification`` is not an attestation and fails schema
+    parsing. A local ``isolation:unverified_local`` receipt is a sandbox
+    failure even when the attestation verifies.
+    """
+    verification = verify_production_isolation(
+        attestation, receipt, policy, at_time=at_time)
+    if not verification.ok:
+        return ProductionClassification(SANDBOX_FAILURE, verification)
+    errors = set(getattr(receipt, "security_errors", ()) or ())
+    if "isolation:unverified_local" in errors:
+        return ProductionClassification(SANDBOX_FAILURE, verification)
+    outcome = classify_execution(
+        receipt, bootstrap_ok=bootstrap_ok, stderr_tail=stderr_tail,
+        infrastructure_error=infrastructure_error, report=report)
+    return ProductionClassification(outcome, verification)
 
 
 def receipt_outcome_class(receipt, **kwargs) -> str:
@@ -333,8 +476,11 @@ __all__ = [
     "EVIDENCE_FAILURE",
     "EvaluationRuntimeProfile",
     "GIB",
+    "ProductionClassification",
     "INFRASTRUCTURE_ERROR",
     "OUTCOME_CLASSES",
+    "PytestReportCheck",
+    "REPORT_NONCE_ENV",
     "RESOURCE_LIMIT",
     "RuntimePinError",
     "SANDBOX_FAILURE",
@@ -343,6 +489,8 @@ __all__ = [
     "TASK_PASS",
     "TIMEOUT",
     "bootstrap_check",
+    "check_pytest_report",
     "classify_execution",
+    "classify_production_execution",
     "receipt_outcome_class",
 ]

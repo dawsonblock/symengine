@@ -9,8 +9,10 @@ from . import __version__
 from .errors import SISError, InvalidInput
 from .service import Service
 from .validation import canonical
+from .v3.serving_service import ServingServiceError
 
 MAX_BODY = 524288
+REQUEST_TIMEOUT_SECONDS = 30
 
 # Explicit POST route inventory. New routes must be classified before they can
 # be dispatched. Unclassified paths are denied; the role field in JSON is
@@ -61,6 +63,7 @@ POST_ROUTE_ACCESS = MappingProxyType({
 def _handler_class(*, key, admin_key, service, v3_only, v3_service):
     class Handler(BaseHTTPRequestHandler):
         server_version = f"SIS/{__version__}"
+        timeout = REQUEST_TIMEOUT_SECONDS
 
         def log_message(self, fmt, *args):
             # Avoid logging request bodies, examples, prediction inputs, or authentication tokens.
@@ -144,16 +147,23 @@ def _handler_class(*, key, admin_key, service, v3_only, v3_service):
                 if path.startswith("/v3/"):
                     if v3_service is None:
                         return self.respond(404, {"error": "not found"})
+                    try:
+                        requester = v3_service.authenticate(self.headers)
+                    except ServingServiceError as exc:
+                        self.close_connection = True
+                        return self.respond(
+                            exc.status, {"error": exc.reason})
                     length = self.headers.get("Content-Length")
                     if length is None or not length.isdecimal() or int(length) > MAX_BODY:
                         return self.respond(413, {"error": "Content-Length required; max 512 KiB"})
                     raw = self.rfile.read(int(length))
                     try:
                         data = json.loads(raw)
-                    except (ValueError, UnicodeDecodeError):
+                    except (ValueError, UnicodeDecodeError, RecursionError):
                         return self.respond(400, {"error": "invalid JSON"})
                     try:
-                        code, body = v3_service.handle(path, data, self.headers)
+                        code, body = v3_service.handle(
+                            path, data, self.headers, requester=requester)
                     except Exception:  # noqa: BLE001 - fail closed, no detail
                         # The v3 boundary must fail closed with a response,
                         # not a dropped connection. Never echo request data.
@@ -169,7 +179,7 @@ def _handler_class(*, key, admin_key, service, v3_only, v3_service):
                 raw = self.rfile.read(int(length))
                 try:
                     data = json.loads(raw)
-                except (ValueError, UnicodeDecodeError):
+                except (ValueError, UnicodeDecodeError, RecursionError):
                     return self.respond(400, {"error": "invalid JSON"})
                 if path not in POST_ROUTE_HANDLERS:
                     return self.respond(404, {"error": "not found"})

@@ -1,5 +1,4 @@
 import json
-import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -11,7 +10,6 @@ from sis.induction import induce, generated_probes
 from sis.model import CompatibleLLM
 from sis.registry import Registry
 from sis.service import Service
-from sis.smt import bounded_disagreement
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -63,10 +61,23 @@ class InductionTests(unittest.TestCase):
         result=induce(req['train'],req['validation'],namespace=req['namespace'])
         self.assertEqual(result['status'],'locally_validated')
         self.assertEqual(result['rule']['op'],'add')
-        self.assertEqual(result['validation_passed'],3)
+        # Legacy validation is split: one development row, two sealed
+        # holdout rows that never drive selection.
+        self.assertEqual(result['dev_count'],1)
+        self.assertEqual(result['validation_passed'],2)
+        self.assertTrue(result['holdout_sealed'])
 
     def test_sequence_copy_rule(self):
         req=fixture('sequence_study.json')
+        result=induce(req['train'],req['validation'],namespace=req['namespace'])
+        self.assertEqual(result['rule'], {'op':'item','name':'sequence','index':0})
+        # Grammar 2 has slice_prefix: every fixture string has at most
+        # three characters, so "first three characters of item 0" fits
+        # every labelled row too. The data cannot tell them apart.
+        self.assertEqual(result['status'],'ambiguous')
+        self.assertGreater(len(result['distinguishing_probe']['inputs']['sequence'][0]), 3)
+        # A longer labelled string refutes the slice rival.
+        req['train'].append({'inputs':{'sequence':['Longer','x']},'output':'Longer'})
         result=induce(req['train'],req['validation'],namespace=req['namespace'])
         self.assertEqual(result['status'],'locally_validated')
         self.assertEqual(result['rule'], {'op':'item','name':'sequence','index':0})
@@ -83,9 +94,14 @@ class InductionTests(unittest.TestCase):
 
     def test_failed_validation_is_not_promotion_evidence(self):
         req=fixture('arithmetic_study.json')
-        req['validation'][0]['output']=99
+        req['validation'][-1]['output']=99
         result=induce(req['train'],req['validation'])
         self.assertEqual(result['status'],'validation_failed')
+        # A corrupted development row is never promotion evidence either.
+        req=fixture('arithmetic_study.json')
+        req['validation'][0]['output']=99
+        result=induce(req['train'],req['validation'])
+        self.assertNotEqual(result['status'],'locally_validated')
 
     def test_validation_overlap_rejected(self):
         req=fixture('arithmetic_study.json')
@@ -115,11 +131,16 @@ class InductionTests(unittest.TestCase):
         self.assertLessEqual(len(samples),256)
 
     def test_search_budget_is_explicit(self):
-        # Four-field study: stage-1 enumeration exceeds a 100-candidate cap.
-        train=[{'inputs':{'a':x,'b':x+1,'c':x-1,'d':2*x},'output':x}
-               for x in (-2,-1,0,1,3,5)]
-        validation=[{'inputs':{'a':x,'b':x+1,'c':x-1,'d':2*x},'output':x}
-                    for x in (7,11)]
+        # Four-field study whose rule (a*b*c - d) is neither affine nor a
+        # one-step completion: the cost-ordered pool must grow past a
+        # 100-candidate cap before reaching it. (The old single-leaf study
+        # is solved by the first enumeration stage under any cap.)
+        rows=[(1,2,3,4),(2,3,1,5),(3,1,2,0),(4,2,2,7),(1,5,2,3),(2,2,3,1),
+              (5,1,1,2),(3,3,1,4)]
+        train=[{'inputs':{'a':a,'b':b,'c':c,'d':d},'output':a*b*c-d}
+               for a,b,c,d in rows[:6]]
+        validation=[{'inputs':{'a':a,'b':b,'c':c,'d':d},'output':a*b*c-d}
+                    for a,b,c,d in rows[6:]]
         result=induce(train,validation,max_candidates=100)
         self.assertEqual(result['status'],'search_incomplete')
         self.assertTrue(result['search_truncated'])
@@ -211,9 +232,8 @@ class ModelTests(unittest.TestCase):
         self.assertEqual(CompatibleLLM(base_url='https://example.com/v1/chat/completions',model='remote').model,'remote')
 
     def test_no_valid_z3_if_not_installed(self):
-        try:
-            import z3
-        except ImportError:
+        import importlib.util
+        if importlib.util.find_spec("z3") is None:
             req=fixture('arithmetic_study.json')
             with self.assertRaises(InvalidInput):
                 induce(req['train'],req['validation'],use_z3=True)

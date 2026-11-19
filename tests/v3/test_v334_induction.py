@@ -56,6 +56,27 @@ def _field_study(features, rows=9):
     return examples[:6], examples[6:]
 
 
+def _two_term_study(features, rows=9):
+    """``x[n-2] * x[n-1] * (x0 + 1)``: not affine, not a one-step completion.
+
+    Learner v2 fits ``x[n-2] * x[n-1] + x0`` exactly in its affine stage
+    (the product as an extra feature), so the study that must exhaust a
+    small budget now multiplies by the decoy instead of adding it.
+    """
+    names = [f"x{i}" for i in range(features)]
+    examples = []
+    for i in range(rows):
+        inputs = {name: (i * 7 + j * 3) % 11 for j, name in enumerate(names)}
+        inputs[names[-2]] = i % 9 + 1
+        inputs[names[-1]] = (i * 2) % 9 + 1
+        examples.append({
+            "inputs": inputs,
+            "output": (inputs[names[-2]] * inputs[names[-1]]
+                       * (inputs[names[0]] + 1)),
+        })
+    return examples[:6], examples[6:]
+
+
 class BudgetValidationTests(unittest.TestCase):
     """G4.2: every declared limit is validated before search starts."""
 
@@ -97,7 +118,10 @@ class EarlyStoppingTests(unittest.TestCase):
     def test_development_rejection_deepens_search(self):
         train, dev, holdout = _deepen_study()
         result = induce(train, dev=dev, holdout=holdout)
-        self.assertEqual(result["search_depth"], 2)
+        # Development rows reject ``a*b``, so the search goes past the
+        # first stage that fits training (search_depth reports the depth
+        # the selection pass covered, no longer a stage number).
+        self.assertGreater(result["search_depth"], 1)
         self.assertEqual(result["dev_passed"], len(dev))
         self.assertEqual(result["holdout_passed"], len(holdout))
         self.assertNotEqual(result["rule"]["op"], "mul")
@@ -119,11 +143,16 @@ class EarlyStoppingTests(unittest.TestCase):
         self.assertTrue(result["holdout_sealed"])
         self.assertLess(result["holdout_passed"], result["holdout_count"])
 
-    def test_legacy_validation_is_not_sealed(self):
+    def test_legacy_validation_is_split_into_sealed_holdout(self):
+        # Legacy validation is split into disjoint development and
+        # holdout rows; the holdout never drives selection.
         train, dev, _holdout = _deepen_study()
         result = induce(train, dev)
-        self.assertFalse(result["holdout_sealed"])
-        self.assertIn("not independent", result["verification_scope"])
+        self.assertTrue(result["holdout_sealed"])
+        self.assertEqual(result["partition_mode"], "legacy_split")
+        self.assertEqual(result["dev_count"] + result["holdout_count"],
+                         len(dev))
+        self.assertGreaterEqual(result["holdout_count"], 2)
 
     def test_partitions_must_be_disjoint(self):
         train, dev, _holdout = _deepen_study()
@@ -150,7 +179,7 @@ class BudgetEnforcementTests(unittest.TestCase):
         self.assertEqual(result["search_outcome"], "truncated")
         self.assertIn("max_signature_checks", result["limits_hit"])
         self.assertEqual(result["status"], "search_incomplete")
-        self.assertLessEqual(result["signature_checks"], 2)
+        self.assertLessEqual(result["signature_checks"], 1)
 
     def test_wall_clock_limit(self):
         result = induce(
@@ -161,7 +190,9 @@ class BudgetEnforcementTests(unittest.TestCase):
         self.assertEqual(result["status"], "search_incomplete")
 
     def test_memory_limit(self):
-        train, dev = _field_study(16)
+        # The field study's rule is found by the cheap affine stage within
+        # 1 MiB; the product study needs the full 16-field pool.
+        train, dev = _two_term_study(16)
         result = induce(
             train, dev=dev,
             budget=SearchBudget(max_memory_bytes=1 << 20))
@@ -241,10 +272,34 @@ class ScalabilityTests(unittest.TestCase):
                 evaluate(result["rule"], inputs),
                 (i + 1) * (i + 2) + 2)
 
-    def test_wide_budgets_truncate_instead_of_claiming_success(self):
+    def test_wide_field_search_recovers_the_rule_within_a_small_budget(self):
+        # Residual-variance ordering plus a constant-offset completion
+        # finds the relevant pair before the depth-1 space exhausts the
+        # budget, instead of stopping at a search_incomplete result.
         for features in (32, 64):
             with self.subTest(features=features):
                 train, dev = _field_study(features)
+                result = induce(
+                    train, dev=dev,
+                    budget=SearchBudget(
+                        max_candidates=500, max_signature_checks=5000))
+                self.assertIsNotNone(result["rule"], result["status"])
+                self.assertEqual(result["search_outcome"], "completed")
+                self.assertEqual(result["limits_hit"], [])
+                self.assertFalse(result["search_truncated"])
+                for i in range(6):
+                    inputs = {f"x{j}": (i + j) % 5
+                              for j in range(features)}
+                    inputs[f"x{features - 2}"] = i + 1
+                    inputs[f"x{features - 1}"] = i + 2
+                    self.assertEqual(
+                        evaluate(result["rule"], inputs),
+                        (i + 1) * (i + 2) + 2)
+
+    def test_a_truncated_search_never_claims_success(self):
+        for features in (32, 64):
+            with self.subTest(features=features):
+                train, dev = _two_term_study(features)
                 result = induce(
                     train, dev=dev,
                     budget=SearchBudget(
@@ -253,7 +308,7 @@ class ScalabilityTests(unittest.TestCase):
                 self.assertEqual(result["status"], "search_incomplete")
                 self.assertTrue(result["limits_hit"])
                 self.assertLessEqual(result["candidates_evaluated"], 500)
-                self.assertLessEqual(result["signature_checks"], 5001)
+                self.assertLessEqual(result["signature_checks"], 5000)
 
     def test_sixty_five_fields_rejected(self):
         inputs = {f"x{i}": 1 for i in range(65)}

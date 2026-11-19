@@ -1,0 +1,115 @@
+{
+  "agent": "codex-exec",
+  "baseline_holdout": {
+    "no_action": true,
+    "outcome": "fail",
+    "receipt_digest": "820bdb72058450dcbbc38b970cc6d417c13e524b73dae23b2694ec0d804e6751",
+    "report_digest": "5e2a7303e16800ff82a7408984dac21c17507ecafbec149b5cc441060f003492",
+    "tokens_used": 26621
+  },
+  "cross_class_control": {
+    "decision": "abstain",
+    "procedure_ids": [],
+    "reason_code": "precondition_failed",
+    "task_id": "task-slug2"
+  },
+  "dev": {
+    "outcome": "pass",
+    "receipt_digest": "10a69d29a1c40fcb848bd53d253d7818133d9caab97fa771a7e63333a73ef8b3",
+    "report_digest": "9457894cd467a92e92311d9985abcbc165228a0a6e860528e9980fe048939404",
+    "task_id": "task-money"
+  },
+  "evaluator_sandbox": {
+    "backend": "docker_sandbox",
+    "checks": [
+      {
+        "exit_status": 1,
+        "expected": "failure",
+        "name": "network_denied",
+        "ok": true,
+        "stderr": "Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\n  File \"/usr/local/lib/python3.12/socket.py\", line 865, in create_connection\n    raise exceptions[0]\n  File \"/usr/local/lib/py",
+        "stdout": ""
+      },
+      {
+        "exit_status": 1,
+        "expected": "failure",
+        "name": "root_write_denied",
+        "ok": true,
+        "stderr": "Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\nOSError: [Errno 30] Read-only file system: '/probe-escape'\n",
+        "stdout": ""
+      },
+      {
+        "exit_status": 0,
+        "expected": "success",
+        "name": "workspace_write_allowed",
+        "ok": true,
+        "stderr": "",
+        "stdout": ""
+      },
+      {
+        "exit_status": 0,
+        "expected": "success",
+        "name": "non_root_user",
+        "ok": true,
+        "stderr": "",
+        "stdout": ""
+      },
+      {
+        "exit_status": 137,
+        "expected": "failure",
+        "name": "memory_limit_enforced",
+        "ok": true,
+        "stderr": "",
+        "stdout": ""
+      },
+      {
+        "exit_status": 1,
+        "expected": "failure",
+        "name": "pids_limit_enforced",
+        "ok": true,
+        "stderr": "Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\n  File \"/usr/local/lib/python3.12/subprocess.py\", line 1026, in __init__\n    self._execute_child(args, executable, preexec_fn,",
+        "stdout": ""
+      }
+    ],
+    "docker_server_version": "29.9.3",
+    "image": "sis-evaluator:3.3.7",
+    "image_id": "76873b6813861866c2a90994f05d0d390a00cc911988e306862c3bb7659f1e50",
+    "ok": true,
+    "worker_identity": "docker-sandbox-v1"
+  },
+  "generated_at": "2026-11-11T09:22:19Z",
+  "kind": "learn_recommend_cycle",
+  "learned_procedure": {
+    "evidence_refs": [
+      "10a69d29a1c40fcb848bd53d253d7818133d9caab97fa771a7e63333a73ef8b3",
+      "c392b4c4ba9a3bebd349886e1f2aff7727243570301bc42ff97a0e974804283c"
+    ],
+    "failure_class": "convention_unknown:money",
+    "procedure_id": "exp-exp-money",
+    "status": "qualified",
+    "steps": [
+      "round_money must use ROUND_HALF_UP decimal rounding and return the cents string"
+    ]
+  },
+  "memory_chain_verified": true,
+  "same_class_holdout": {
+    "decision": "recommend",
+    "procedure_ids": [
+      "exp-exp-money"
+    ],
+    "reason_code": null,
+    "task_id": "task-money3"
+  },
+  "schema_version": 1,
+  "served_holdout": {
+    "no_action": false,
+    "outcome": "pass",
+    "receipt_digest": "7361ee2c3876ccc744a15500422d0fa7ecb867ad8ef01fefb618c9b939553dc0",
+    "report_digest": "2ebf84920e914f966603e3c786c80377f3f6b4ffb8a2a05c38593847b2bf3d07",
+    "tokens_used": 54472
+  },
+  "transfer_evidence": [
+    "10a69d29a1c40fcb848bd53d253d7818133d9caab97fa771a7e63333a73ef8b3",
+    "c392b4c4ba9a3bebd349886e1f2aff7727243570301bc42ff97a0e974804283c"
+  ]
+}

@@ -30,11 +30,11 @@ pages, broken hash links, unauthorized revisions or projection drift.
 """
 from __future__ import annotations
 
-import hashlib
 import re
 import sqlite3
 import threading
 import weakref
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -215,6 +215,28 @@ class AuthorityDB:
             raise AuthorityError("authority_db_closed")
         return self._con
 
+    @contextmanager
+    def _read(self):
+        """Committed-state read on the shared connection.
+
+        Writers run ``BEGIN IMMEDIATE ... COMMIT`` on this same connection
+        while holding ``self._lock``. A read that skipped the lock could
+        observe a revision inserted inside a transaction that is later
+        rolled back, so every read takes the lock and runs in its own
+        deferred transaction (one consistent snapshot per read; nested
+        reads join the outer one).
+        """
+        with self._lock:
+            con = self._conn()
+            if con.in_transaction:
+                yield con
+                return
+            con.execute("BEGIN")
+            try:
+                yield con
+            finally:
+                _safe_rollback(con)
+
     def backup(self, target: str | Path) -> Path:
         """Online consistent backup via the SQLite backup API."""
         target = Path(target)
@@ -340,7 +362,9 @@ class AuthorityDB:
                 if existing is not None:
                     con.execute("ROLLBACK")
                     raise AuthorityConflict("decision_already_committed")
-                self._step_verify_decision(con, decision, authority)
+                self._step_verify_decision(
+                    con, decision, authority,
+                    allow_legacy_token=provenance != "live")
                 self._step_insert_revision(con, record)
                 self._step_insert_decision(con, decision, expected_prior_decision_digest, provenance)
                 self._step_bind_receipts(con, decision, receipts)
@@ -390,8 +414,13 @@ class AuthorityDB:
         if revision + 1 != record.revision:
             raise AuthorityConflict("revision_not_successor")
 
-    def _step_verify_decision(self, con, decision, authority) -> None:
-        """Re-verify signatures and transition legality against committed state."""
+    def _step_verify_decision(self, con, decision, authority, *,
+                              allow_legacy_token: bool = True) -> None:
+        """Re-verify signatures and transition legality against committed state.
+
+        Live commits refuse the legacy constant token authorization, which
+        carries no per-decision proof; imported history may still hold it.
+        """
         from .promotion import verify_decision_v2  # deferred: promotion imports this module
 
         statuses, qualified = self._replayed_state(con)
@@ -402,6 +431,7 @@ class AuthorityDB:
             trusted=authority._trusted,
             operator_keys=authority._operator_keys,
             token_digest=authority._token_digest,
+            allow_legacy_token=allow_legacy_token,
         )
         if problems:
             raise AuthorityConflict(
@@ -652,25 +682,27 @@ class AuthorityDB:
         self, procedure_revision_digest: str | None = None
     ) -> list[ScopeGrantV1]:
         """Committed grants, optionally filtered to one procedure revision."""
-        if procedure_revision_digest is not None:
-            rows = self._conn().execute(
-                "SELECT grant_json FROM scope_grant"
-                " WHERE procedure_revision_digest=? ORDER BY grant_id",
-                (procedure_revision_digest,),
-            ).fetchall()
-        else:
-            rows = self._conn().execute(
-                "SELECT grant_json FROM scope_grant ORDER BY grant_id"
-            ).fetchall()
+        with self._read() as con:
+            if procedure_revision_digest is not None:
+                rows = con.execute(
+                    "SELECT grant_json FROM scope_grant"
+                    " WHERE procedure_revision_digest=? ORDER BY grant_id",
+                    (procedure_revision_digest,),
+                ).fetchall()
+            else:
+                rows = con.execute(
+                    "SELECT grant_json FROM scope_grant ORDER BY grant_id"
+                ).fetchall()
         return [ScopeGrantV1.from_dict(loads_json(r[0])) for r in rows]
 
     def receipts_for_grant(self, grant_id: str) -> list[OutcomeReceiptV1 | OutcomeReceiptV2]:
         """Evidence receipts bound to a committed grant (serve-time recheck)."""
-        rows = self._conn().execute(
-            "SELECT receipt_json FROM grant_receipt_binding WHERE grant_id=?"
-            " ORDER BY receipt_digest",
-            (grant_id,),
-        ).fetchall()
+        with self._read() as con:
+            rows = con.execute(
+                "SELECT receipt_json FROM grant_receipt_binding"
+                " WHERE grant_id=? ORDER BY receipt_digest",
+                (grant_id,),
+            ).fetchall()
         return [parse_outcome_receipt(loads_json(r[0])) for r in rows]
 
     def commit_revocation(
@@ -726,16 +758,17 @@ class AuthorityDB:
 
     def revocations(self, kind: str | None = None) -> list[RevocationV1]:
         """Committed signed revocations; undecodable rows fail closed."""
-        if kind is not None:
-            rows = self._conn().execute(
-                "SELECT revocation_json FROM revocation WHERE kind=?"
-                " ORDER BY digest",
-                (kind,),
-            ).fetchall()
-        else:
-            rows = self._conn().execute(
-                "SELECT revocation_json FROM revocation ORDER BY digest"
-            ).fetchall()
+        with self._read() as con:
+            if kind is not None:
+                rows = con.execute(
+                    "SELECT revocation_json FROM revocation WHERE kind=?"
+                    " ORDER BY digest",
+                    (kind,),
+                ).fetchall()
+            else:
+                rows = con.execute(
+                    "SELECT revocation_json FROM revocation ORDER BY digest"
+                ).fetchall()
         out = []
         for (body,) in rows:
             if not body:
@@ -744,10 +777,11 @@ class AuthorityDB:
         return out
 
     def quarantined(self) -> list[dict]:
-        rows = self._conn().execute(
-            "SELECT source, reason, record_json, quarantined_at"
-            " FROM quarantined_revision ORDER BY quarantine_id"
-        ).fetchall()
+        with self._read() as con:
+            rows = con.execute(
+                "SELECT source, reason, record_json, quarantined_at"
+                " FROM quarantined_revision ORDER BY quarantine_id"
+            ).fetchall()
         return [{"source": s, "reason": r, "record_json": j, "quarantined_at": t}
                 for s, r, j, t in rows]
 
@@ -755,14 +789,16 @@ class AuthorityDB:
     # read model — same contract as ProcedureStore
     # ------------------------------------------------------------------ #
     def _latest_rows(self):
-        return self._conn().execute(
-            "SELECT r.procedure_id, r.revision, r.record_digest, r.record_json"
-            " FROM procedure_revision r"
-            " JOIN (SELECT procedure_id, MAX(revision) AS rev"
-            "       FROM procedure_revision GROUP BY procedure_id) m"
-            " ON r.procedure_id = m.procedure_id AND r.revision = m.rev"
-            " ORDER BY r.procedure_id"
-        ).fetchall()
+        with self._read() as con:
+            return con.execute(
+                "SELECT r.procedure_id, r.revision, r.record_digest,"
+                " r.record_json"
+                " FROM procedure_revision r"
+                " JOIN (SELECT procedure_id, MAX(revision) AS rev"
+                "       FROM procedure_revision GROUP BY procedure_id) m"
+                " ON r.procedure_id = m.procedure_id AND r.revision = m.rev"
+                " ORDER BY r.procedure_id"
+            ).fetchall()
 
     @staticmethod
     def _parse(row) -> ProcedureRecordV1:
@@ -772,19 +808,21 @@ class AuthorityDB:
         return record
 
     def get(self, procedure_id: str, revision: int | None = None) -> ProcedureRecordV1:
-        if revision is None:
-            row = self._conn().execute(
-                "SELECT procedure_id, revision, record_digest, record_json"
-                " FROM procedure_revision WHERE procedure_id=?"
-                " ORDER BY revision DESC LIMIT 1",
-                (procedure_id,),
-            ).fetchone()
-        else:
-            row = self._conn().execute(
-                "SELECT procedure_id, revision, record_digest, record_json"
-                " FROM procedure_revision WHERE procedure_id=? AND revision=?",
-                (procedure_id, revision),
-            ).fetchone()
+        with self._read() as con:
+            if revision is None:
+                row = con.execute(
+                    "SELECT procedure_id, revision, record_digest, record_json"
+                    " FROM procedure_revision WHERE procedure_id=?"
+                    " ORDER BY revision DESC LIMIT 1",
+                    (procedure_id,),
+                ).fetchone()
+            else:
+                row = con.execute(
+                    "SELECT procedure_id, revision, record_digest, record_json"
+                    " FROM procedure_revision"
+                    " WHERE procedure_id=? AND revision=?",
+                    (procedure_id, revision),
+                ).fetchone()
         if row is None:
             raise AuthorityError("unknown_procedure" if revision is None else "unknown_revision")
         return self._parse(row)
@@ -814,12 +852,15 @@ class AuthorityDB:
         })
 
     def qualified_head_digest(self) -> str:
-        return self._qualified_head(self._conn())
+        with self._read() as con:
+            return self._qualified_head(con)
 
     def decisions(self) -> list:
-        rows = self._conn().execute(
-            "SELECT decision_json FROM signed_promotion_decision ORDER BY seq"
-        ).fetchall()
+        with self._read() as con:
+            rows = con.execute(
+                "SELECT decision_json FROM signed_promotion_decision"
+                " ORDER BY seq"
+            ).fetchall()
         out = []
         for (body,) in rows:
             parsed = loads_json(body)
@@ -830,9 +871,11 @@ class AuthorityDB:
         return out
 
     def decision_head(self) -> str | None:
-        row = self._conn().execute(
-            "SELECT decision_digest FROM signed_promotion_decision ORDER BY seq DESC LIMIT 1"
-        ).fetchone()
+        with self._read() as con:
+            row = con.execute(
+                "SELECT decision_digest FROM signed_promotion_decision"
+                " ORDER BY seq DESC LIMIT 1"
+            ).fetchone()
         return row[0] if row else None
 
     def _replayed_state(self, con):
@@ -854,9 +897,11 @@ class AuthorityDB:
         return statuses, qualified
 
     def audit_trail(self) -> list[dict]:
-        rows = self._conn().execute(
-            "SELECT seq, event_type, payload_json, committed_at FROM audit_event ORDER BY seq"
-        ).fetchall()
+        with self._read() as con:
+            rows = con.execute(
+                "SELECT seq, event_type, payload_json, committed_at"
+                " FROM audit_event ORDER BY seq"
+            ).fetchall()
         return [{"seq": s, "event_type": t, "payload": loads_json(p), "committed_at": c}
                 for s, t, p, c in rows]
 
@@ -865,6 +910,10 @@ class AuthorityDB:
     # ------------------------------------------------------------------ #
     def verify(self) -> dict:
         """Replay the database; every digest, link and authorization must hold."""
+        with self._lock:
+            return self._verify_locked()
+
+    def _verify_locked(self) -> dict:
         problems: list[str] = []
         try:
             con = self._conn()

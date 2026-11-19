@@ -1,6 +1,7 @@
 import os
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -121,6 +122,25 @@ class RunnerIsolationTests(RunnerFixture):
         self.assertEqual(self.executor._live, {})
         self.executor.destroy(workspace)
 
+    def test_pipe_holder_cannot_extend_the_wall_deadline(self):
+        workspace = self.executor.prepare(self.base)
+        code = (
+            "import subprocess, sys, time\n"
+            "subprocess.Popen(\n"
+            "    [sys.executable, '-c', 'import time; time.sleep(5)'],\n"
+            "    start_new_session=True, stdout=sys.stdout)\n"
+            "time.sleep(5)\n")
+        started = time.monotonic()
+        receipt = self.executor.run(
+            workspace,
+            self.spec(code, limits=fast_limits(
+                wall_seconds=1, process_count=4096)))
+        elapsed = time.monotonic() - started
+        self.assertTrue(receipt.timeout)
+        self.assertLess(elapsed, 4.0)
+        self.assertIn("process:wall_clock_killed", receipt.security_errors)
+        self.executor.destroy(workspace)
+
     def test_giant_stdout_is_capped_and_flagged(self):
         workspace = self.executor.prepare(self.base)
         receipt = self.executor.run(
@@ -148,6 +168,32 @@ class RunnerIsolationTests(RunnerFixture):
         )
         self.assertNotEqual(receipt.exit_status, 0)
         self.assertLessEqual((workspace.path / "big.bin").stat().st_size, 8 << 20)
+        self.executor.destroy(workspace)
+
+    def test_file_size_limit_is_enforced_from_a_worker_thread(self):
+        try:
+            import resource as _resource
+            if not hasattr(_resource, "RLIMIT_FSIZE"):
+                raise ImportError
+        except ImportError:
+            self.skipTest("RLIMIT_FSIZE is unavailable on this platform")
+        import threading
+        workspace = self.executor.prepare(self.base)
+        holder = {}
+
+        def run():
+            holder["r"] = self.executor.run(
+                workspace,
+                self.spec("open('big.bin','wb').write(b'0' * 64_000_000)",
+                          limits=fast_limits(disk_bytes=8 << 20)))
+
+        thread = threading.Thread(target=run)
+        thread.start()
+        thread.join(timeout=30)
+        self.assertFalse(thread.is_alive())
+        self.assertNotEqual(holder["r"].exit_status, 0)
+        self.assertLessEqual(
+            (workspace.path / "big.bin").stat().st_size, 8 << 20)
         self.executor.destroy(workspace)
 
     def test_aggregate_disk_budget_is_audited(self):

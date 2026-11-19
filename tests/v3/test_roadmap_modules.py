@@ -8,10 +8,10 @@ from pathlib import Path
 from sis.v3 import signatures
 from sis.v3.authority_db import AuthorityDB
 from sis.v3.benchmark import mcnemar_p, wilson_ci
-from sis.v3.catalog import Catalog, CatalogError
+from sis.v3.catalog import Catalog
 from sis.v3.compat.guidance_gateway import GuidanceGateway
 from sis.v3.contracts import (
-    ContractError, ObservationEventV1, OutcomeEnvelopeV2, canonical_digest,
+    ContractError, OutcomeEnvelopeV2,
 )
 from sis.v3.counterexamples import CounterexampleIndex
 from sis.v3.episode_projection import agent_view, project_episode
@@ -24,7 +24,7 @@ from sis.v3.policy import AuthorizationDenied
 from sis.v3.promotion import PromotionController, operator_token_digest
 from sis.v3.retrieval import AblationFlags, retrieve
 from sis.v3.semantic_checks import (
-    OpClass, metamorphic_violations, op_class, operator_changes,
+    OpClass, metamorphic_violations, operator_changes,
     requires_semantic_contract,
 )
 from sis.v3.verifier import EvaluatorKeyStore
@@ -260,7 +260,8 @@ class CatalogTests(unittest.TestCase):
         return [
             signed_receipt(self.eval_seed, self.eval_key_id,
                            task_id=f"transfer-{repo}",
-                           repo_digest=self.trees[repo])
+                           repo_digest=self.trees[repo],
+                           failure_class="sig-x")
             for repo in repos
         ]
 
@@ -303,7 +304,7 @@ class CatalogTests(unittest.TestCase):
             self._grant(self.db.get("p1"), target_family="fam-a",
                         evidence_receipts=receipts, actor_role="agent")
         # A grant for a procedure revision that was never committed cannot land.
-        from sis.v3.scope_grants import ScopeGrantV1, unsigned_grant, sign_grant
+        from sis.v3.scope_grants import unsigned_grant, sign_grant
         forged = sign_grant(self.grant_seed, unsigned_grant(
             grant_id="g-forged", procedure_revision_digest="f" * 64,
             source_registry_id="repo-a", source_family_id="fam-a",

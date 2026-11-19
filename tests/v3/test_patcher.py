@@ -1,10 +1,11 @@
 """SIS3-008: source-preserving, digest-locked patch proposals."""
+import dataclasses
 import hashlib
 import tempfile
 import unittest
 from pathlib import Path
 
-from sis.v3.contracts import ContractError
+from sis.v3.contracts import ContractError, PatchProposalV1
 from sis.v3.patcher import PatchError, propose_edit, verify_proposal
 
 
@@ -93,6 +94,100 @@ class PatcherTests(unittest.TestCase):
                                  result.patched_content, b"forged diff")
         self.assertFalse(report["ok"])
         self.assertIn("diff_mismatch", report["problems"])
+
+    def test_proposal_commits_to_span_and_output(self):
+        src = b"return a - b\n"
+        self._write("m.py", src)
+        result = propose_edit(self.root, "m.py", b"a - b", b"a * b",
+                              proposer_id="p", purpose="x")
+        self.assertEqual(result.proposal.source_span_offset,
+                         src.index(b"a - b"))
+        self.assertEqual(result.proposal.source_span_length, len(b"a - b"))
+        self.assertEqual(result.proposal.patched_content_digest,
+                         hashlib.sha256(result.patched_content).hexdigest())
+
+    def test_verify_detects_substituted_patched_content(self):
+        self._write("m.py", b"return a - b\n")
+        result = propose_edit(self.root, "m.py", b"a - b", b"a * b",
+                              proposer_id="p", purpose="x")
+        report = verify_proposal(self.root, result.proposal,
+                                 b"completely unrelated output\n",
+                                 result.unified_diff)
+        self.assertFalse(report["ok"])
+        self.assertIn("patched_content_mismatch", report["problems"])
+
+    def test_verify_detects_empty_source_digest_mismatch(self):
+        self._write("empty.py", b"")
+        proposal = PatchProposalV1(
+            schema_version=1,
+            source_blob_digest="0" * 64,
+            target_path="empty.py",
+            exact_span_fingerprint="0" * 64,
+            source_span_offset=0,
+            source_span_length=1,
+            patched_content_digest=hashlib.sha256(b"anything").hexdigest(),
+            generated_diff_digest=hashlib.sha256(b"d").hexdigest(),
+            purpose="x",
+            procedure_ids=(),
+            precondition_evidence_refs=(),
+            proposer_id="p",
+        )
+        report = verify_proposal(self.root, proposal, b"anything", b"d")
+        self.assertFalse(report["ok"])
+        self.assertIn("source_mismatch", report["problems"])
+
+    def test_binary_replacements_have_distinct_proposal_digests(self):
+        self._write("b.py", b"x = 1\n")
+        first = propose_edit(self.root, "b.py", b"x = 1", b"\xff\xfe",
+                             proposer_id="p", purpose="x")
+        second = propose_edit(self.root, "b.py", b"x = 1", b"\x80\x81",
+                              proposer_id="p", purpose="x")
+        self.assertNotEqual(first.patched_content, second.patched_content)
+        self.assertNotEqual(first.proposal.patched_content_digest,
+                            second.proposal.patched_content_digest)
+        self.assertNotEqual(first.proposal.digest, second.proposal.digest)
+        self.assertEqual(first.unified_diff, second.unified_diff)
+        for result in (first, second):
+            report = verify_proposal(self.root, result.proposal,
+                                     result.patched_content,
+                                     result.unified_diff)
+            self.assertTrue(report["ok"], report)
+
+    def test_verify_detects_diff_not_bound_to_content(self):
+        self._write("m.py", b"return a - b\n")
+        result = propose_edit(self.root, "m.py", b"a - b", b"a * b",
+                              proposer_id="p", purpose="x")
+        forged = b"forged diff"
+        proposal = dataclasses.replace(
+            result.proposal,
+            generated_diff_digest=hashlib.sha256(forged).hexdigest())
+        report = verify_proposal(self.root, proposal,
+                                 result.patched_content, forged)
+        self.assertFalse(report["ok"])
+        self.assertIn("diff_does_not_bind_content", report["problems"])
+
+    def test_verify_detects_path_substitution(self):
+        src = b"return a - b\n"
+        self._write("a.py", src)
+        self._write("b.py", src)
+        result = propose_edit(self.root, "a.py", b"a - b", b"a * b",
+                              proposer_id="p", purpose="x")
+        substituted = dataclasses.replace(result.proposal, target_path="b.py")
+        report = verify_proposal(self.root, substituted,
+                                 result.patched_content, result.unified_diff)
+        self.assertFalse(report["ok"])
+        self.assertIn("span_fingerprint_mismatch", report["problems"])
+
+    def test_verify_detects_span_out_of_bounds(self):
+        self._write("m.py", b"return a - b\n")
+        result = propose_edit(self.root, "m.py", b"a - b", b"a * b",
+                              proposer_id="p", purpose="x")
+        proposal = dataclasses.replace(result.proposal,
+                                       source_span_offset=10_000)
+        report = verify_proposal(self.root, proposal,
+                                 result.patched_content, result.unified_diff)
+        self.assertFalse(report["ok"])
+        self.assertIn("source_span_out_of_bounds", report["problems"])
 
 
 if __name__ == "__main__":

@@ -1,6 +1,5 @@
 """v1.1 regression, adversarial and model-independent integration tests."""
 import json
-import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
@@ -8,7 +7,6 @@ from unittest.mock import patch
 from sis.active import suggest_queries
 from sis.evaluation import benchmark
 from sis.errors import InvalidInput, RuleRejected
-from sis.expression import evaluate
 from sis.service import Service
 from sis.tooling import definitions
 

@@ -10,7 +10,7 @@ from pathlib import Path
 from sis.errors import InvalidInput
 from sis.v3 import signatures
 from sis.vault_storage import assert_private_acl, create_private_file
-from sis.v3.contracts import ContractError, OutcomeReceiptV1, TaskEnvelopeV1
+from sis.v3.contracts import ContractError, TaskEnvelopeV1
 from sis.v3.policy import AuthorizationDenied
 from sis.v3.runner import LocalSubprocessExecutor, ResourceLimits
 from sis.v3.verifier import (
@@ -58,6 +58,7 @@ class VerifierFixture(unittest.TestCase):
         self.key_dir = root / "evaluator-keys"
         self.registry_dir = root / "evaluator-registry"
         self.verifier = OutcomeVerifier(
+            allow_shared_custody=True,
             executor=self.eval_executor,
             key_dir=self.key_dir,
             registry_dir=self.registry_dir,
@@ -114,9 +115,7 @@ class SignaturePrimitiveTests(unittest.TestCase):
             )
             from cryptography.hazmat.primitives.serialization import (
                 Encoding,
-                PrivateFormat,
                 PublicFormat,
-                NoEncryption,
             )
         except ModuleNotFoundError:
             self.skipTest("cryptography package not installed")
@@ -137,10 +136,12 @@ class EvaluatorLimitsTests(unittest.TestCase):
             executor = LocalSubprocessExecutor(
                 root / "exec", use_seatbelt=False)
             default = OutcomeVerifier(
+                allow_shared_custody=True,
                 executor=executor, key_dir=root / "keys",
                 registry_dir=root / "registry")
             self.assertEqual(default.limits.process_count, 64)
             relaxed = OutcomeVerifier(
+                allow_shared_custody=True,
                 executor=executor, key_dir=root / "relaxed-keys",
                 registry_dir=root / "relaxed-registry",
                 limits=ResourceLimits(wall_seconds=90, process_count=None))
@@ -295,6 +296,7 @@ class VerifierCustodyTests(VerifierFixture):
     def test_wrong_key_and_unknown_signer_fail(self):
         receipt = self.evaluate()
         other_verifier = OutcomeVerifier(
+            allow_shared_custody=True,
             executor=self.eval_executor,
             key_dir=Path(self.temp.name) / "other-keys",
             registry_dir=Path(self.temp.name) / "other-registry",
@@ -314,6 +316,7 @@ class VerifierCustodyTests(VerifierFixture):
     def test_nonce_reuse_survives_verifier_restart(self):
         self.evaluate(nonce="attempt-9")
         restarted = OutcomeVerifier(
+            allow_shared_custody=True,
             executor=self.eval_executor,
             key_dir=self.key_dir,
             registry_dir=self.registry_dir,
@@ -384,6 +387,7 @@ class VerifierCustodyTests(VerifierFixture):
         with self.assertRaisesRegex(EvaluationRejected, "statement_mismatch"):
             self.evaluate(task=mismatched, nonce="nonce-2")
         restarted = OutcomeVerifier(
+            allow_shared_custody=True,
             executor=self.eval_executor,
             key_dir=self.key_dir,
             registry_dir=self.registry_dir,
@@ -410,6 +414,7 @@ class VerifierCustodyTests(VerifierFixture):
         journal.write_bytes(b"{corrupt\n")
         with self.assertRaises(JournalIntegrityError):
             OutcomeVerifier(
+                allow_shared_custody=True,
                 executor=self.eval_executor,
                 key_dir=self.key_dir,
                 registry_dir=self.registry_dir,
@@ -448,6 +453,7 @@ class BackendDispatchTests(unittest.TestCase):
                 loaded = self.verifier.load_receipt(receipt.digest)
                 self.assertEqual(loaded, receipt)
                 fresh = OutcomeVerifier(
+                    allow_shared_custody=True,
                     executor=self.eval_executor,
                     key_dir=self.key_dir,
                     registry_dir=self.registry_dir,
@@ -459,3 +465,67 @@ class BackendDispatchTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FailureClassRegistryTests(VerifierFixture):
+    def test_failure_class_is_registered_and_persisted(self):
+        self.assertIsNone(self.verifier.failure_class_for("task-scale"))
+        self.verifier.register_task(
+            actor_role="evaluator", task_id="task-money",
+            criterion_version="acceptance-v1", argv=(PY, "acceptance.py"),
+            files={"acceptance.py": ACCEPTANCE},
+            failure_class="convention_unknown:money")
+        self.assertEqual(self.verifier.failure_class_for("task-money"),
+                         "convention_unknown:money")
+        reloaded = OutcomeVerifier(
+            allow_shared_custody=True,
+            executor=self.eval_executor, key_dir=self.key_dir,
+            registry_dir=self.registry_dir)
+        self.assertEqual(reloaded.failure_class_for("task-money"),
+                         "convention_unknown:money")
+        self.assertIsNone(reloaded.failure_class_for("task-scale"))
+
+    def test_conflicting_failure_class_is_rejected(self):
+        kwargs = dict(
+            actor_role="evaluator", task_id="task-money",
+            criterion_version="acceptance-v1", argv=(PY, "acceptance.py"),
+            files={"acceptance.py": ACCEPTANCE})
+        self.verifier.register_task(**kwargs, failure_class="class-a")
+        with self.assertRaises(EvaluationRejected):
+            self.verifier.register_task(**kwargs, failure_class="class-b")
+
+    def test_malformed_failure_class_is_rejected(self):
+        with self.assertRaises(ContractError):
+            self.verifier.register_task(
+                actor_role="evaluator", task_id="task-bad",
+                criterion_version="acceptance-v1", argv=(PY, "acceptance.py"),
+                files={"acceptance.py": ACCEPTANCE},
+                failure_class="bad\x00class")
+
+
+class ReceiptFailureClassTests(VerifierFixture):
+    def test_failure_class_is_signed_and_persisted(self):
+        self.verifier.register_task(
+            actor_role="evaluator", task_id="task-money",
+            criterion_version="acceptance-v1", argv=(PY, "acceptance.py"),
+            files={"acceptance.py": ACCEPTANCE},
+            failure_class="convention_unknown:money")
+        receipt = self.evaluate(task=make_task("task-money"),
+                                nonce="nonce-failure-class")
+        self.assertEqual(receipt.failure_class, "convention_unknown:money")
+        self.assertTrue(verify_receipt_signature(
+            receipt, self.verifier.keystore.public.hex()))
+        reloaded = OutcomeVerifier(
+            allow_shared_custody=True,
+            executor=self.eval_executor, key_dir=self.key_dir,
+            registry_dir=self.registry_dir)
+        self.assertEqual(
+            reloaded.load_receipt(receipt.digest).failure_class,
+            "convention_unknown:money")
+
+    def test_receipt_without_failure_class_keeps_historical_form(self):
+        receipt = self.evaluate(nonce="nonce-legacy-form")
+        self.assertIsNone(receipt.failure_class)
+        self.assertNotIn("failure_class", receipt.to_dict())
+        self.assertTrue(verify_receipt_signature(
+            receipt, self.verifier.keystore.public.hex()))

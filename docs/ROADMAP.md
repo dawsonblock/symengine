@@ -7,7 +7,8 @@
 ## v1.5 implemented (but not externally qualified)
 
 - Read-only, manually schema-mapped source-rule transfer across task vocabularies.
-- Precommitted evaluator policy with minimum test sizes, uncertainty screening, and signed replayable local qualification.
+- Precommitted evaluator policy with minimum test sizes, uncertainty screening, and signed replayable local
+  qualification.
 
 ## P0 — Experimental validity (before claims of superior intelligence)
 
@@ -18,26 +19,32 @@
 
 ## P1 — Larger DSL, safer induction
 
-- Introduce explicit types, rewrite rules, full Boolean predicate search, quantified and recursive hypotheses under resource budgets.
-- Add ambiguity witness generation via Z3 plus domain-specific constraints, with an independent oracle for labeling witnesses.
-- Replace shallow enumeration with cost-guided, observationally deduplicated synthesis and counterexample-guided inductive synthesis (CEGIS).
+- Introduce explicit types, rewrite rules, full Boolean predicate search, quantified and recursive hypotheses under
+  resource budgets.
+- Add ambiguity witness generation via Z3 plus domain-specific constraints, with an independent oracle for labeling
+  witnesses.
+- Replace shallow enumeration with cost-guided, observationally deduplicated synthesis and counterexample-guided
+  inductive synthesis (CEGIS).
 
 ## P2 — Agent integration and governance
 
 - Standardized callable tool schema across model hosts, including native Anthropic/Gemini adapters only if required.
-- Durable workflow state machine, versioned rule scopes, human approval roles beyond the HTTP operator shared-secret gate, and replayable approvals.
+- Durable workflow state machine, versioned rule scopes, human approval roles beyond the HTTP operator shared-secret
+  gate, and replayable approvals.
 - Ground-truth feedback ingestion with provenance signatures and separated operator/reviewer privileges.
 - Signed external audit head anchored outside the database; production IAM and API security review.
 
 ## P3 — Demonstrated learned skill reuse
 
 - Track task families, transfer to held-out task templates, non-stationarity and drift.
-- Distill demonstrably useful verified rules as synthetic training signals, then compare a LoRA-trained small model against an equivalent context-retrieval baseline under matched budgets.
+- Distill demonstrably useful verified rules as synthetic training signals, then compare a LoRA-trained small model
+  against an equivalent context-retrieval baseline under matched budgets.
 - Do not promote an adaptive algorithm to autonomous authority until it passes independent holdouts and misuse tests.
 
 ## v1.6 follow-on verification gates
 
-- Independently preregister and execute a frozen same-model comparison on novel task families; no repeated holdout tuning.
+- Independently preregister and execute a frozen same-model comparison on novel task families; no repeated holdout
+  tuning.
 - Run an answer-length/prompt-token-matched placebo arm and a retrieval-only baseline; control for extra context.
 - Verify rule transfer on truly separate domains, including adversarial negative-transfer cases.
 - Test provider stability and input/schema hygiene across multiple real small language models.
@@ -67,7 +74,8 @@ reproducible out-of-family evaluation exists.
 
 ## After v2.3
 
-- External executor instrumentation for authorized file/coding tasks with a real sandbox and operator-controlled verifier.
+- External executor instrumentation for authorized file/coding tasks with a real sandbox and operator-controlled
+  verifier.
 - Program equivalence beyond commutative/idempotent filters, with soundness checks.
 - Separate evaluator-controlled task-family holdouts and paired small-LLM studies for tabular workflows.
 - Authenticated cross-process evidence and public qualification receipts.

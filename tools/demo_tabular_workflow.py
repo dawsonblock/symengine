@@ -4,7 +4,6 @@ Writes examples/v2_3 requests when --write-examples is supplied.
 """
 import argparse
 import json
-import sys
 import tempfile
 from pathlib import Path
 

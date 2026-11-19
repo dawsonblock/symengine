@@ -4,7 +4,7 @@ import unittest
 from dataclasses import replace
 from pathlib import Path
 
-from sis.v3.contracts import ContractError, OutcomeReceiptV1, ProcedureRecordV1
+from sis.v3.contracts import ContractError, ProcedureRecordV1
 from sis.v3.policy import AuthorizationDenied
 from sis.v3.procedures import (
     MiningContext,
@@ -120,6 +120,7 @@ class MinerTests(unittest.TestCase):
         (self.repo / "calc.py").write_text("def scale(a, b):\n    return a * b\n")
         self.eval_executor = LocalSubprocessExecutor(self.root / "eval", use_seatbelt=False)
         self.verifier = OutcomeVerifier(
+            allow_shared_custody=True,
             executor=self.eval_executor,
             key_dir=self.root / "keys",
             registry_dir=self.root / "registry",

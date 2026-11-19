@@ -15,18 +15,18 @@ from pathlib import Path
 from sis.v3 import signatures
 from sis.v3.authority_db import AuthorityConflict, AuthorityDB, AuthorityError
 from sis.v3.catalog import Catalog
-from sis.v3.contracts import ContractError, canonical_json
+from sis.v3.contracts import ProcedureRecordV1
 from sis.v3.promotion import PromotionController, operator_token_digest
 from sis.v3.repository_registry import (
     RegistryError, RepositoryRegistry, sign_identity, unsigned_identity,
 )
 from sis.v3.scope_grants import (
-    ScopeGrantAuthority, ScopeGrantError, sign_grant, unsigned_grant,
+    ScopeGrantError, sign_grant, unsigned_grant,
 )
 from sis.v3.secure_guidance import StrictGuidanceGateway
 
 from tests.v3.authority_testkit import (
-    GRANT_SIGNER_KEY_ID, TEST_TOKEN, drive, evaluator_keypair,
+    TEST_TOKEN, drive, evaluator_keypair,
     issue_and_commit_grant, make_grant_authority, make_registry,
     register_repo, seed as seed_record, signed_receipt,
 )
@@ -77,7 +77,8 @@ class ScopeGrantFixture(unittest.TestCase):
     def transfer_receipts(self, *repos):
         return [signed_receipt(self.eval_seed, self.eval_key,
                                task_id=f"transfer-{repo}-{i}",
-                               repo_digest=_tree(repo))
+                               repo_digest=_tree(repo),
+                               failure_class="sig-x")
                 for i, repo in enumerate(repos)]
 
     def commit_grant(self, *, source="repo-a", target_repo=None,
@@ -383,3 +384,73 @@ class GrantLifecycleTests(ScopeGrantFixture):
         bound = self.db.receipts_for_grant(grant.grant_id)
         self.assertEqual({r.digest for r in bound},
                          set(grant.evidence_receipt_refs))
+
+
+class CitedEvidenceBindingTests(ScopeGrantFixture):
+    """Opt-in strict mode: distinct identities are not enough; every
+    transfer witness must be cited by the qualified revision itself."""
+
+    def test_strict_grant_rejects_uncited_witness(self):
+        strict, seed, key = make_grant_authority(
+            self.registry, require_cited_evidence=True)
+        receipts = [signed_receipt(self.eval_seed, self.eval_key,
+                                   task_id=f"transfer-{repo}-{i}",
+                                   repo_digest=_tree(repo))
+                    for i, repo in enumerate(("repo-a", "repo-b"))]
+        with self.assertRaises(ScopeGrantError):
+            strict.issue(
+                actor_role="operator", seed=seed,
+                record=_proc(pid="p-strict"),
+                source_registry_id="repo-a", target_registry_id="repo-b",
+                evaluator_protocol_digest="e" * 64,
+                evidence_receipts=receipts, grant_nonce="n-strict",
+                signer_key_id=key)
+
+    def _class_receipts(self, failure_class):
+        return [signed_receipt(self.eval_seed, self.eval_key,
+                               task_id=f"transfer-{repo}-{i}",
+                               repo_digest=_tree(repo),
+                               failure_class=failure_class)
+                for i, repo in enumerate(("repo-a", "repo-b"))]
+
+    def test_strict_grant_accepts_matching_class_without_citation(self):
+        strict, seed, key = make_grant_authority(
+            self.registry, require_cited_evidence=True)
+        receipts = self._class_receipts("sig-x")
+        grant = strict.issue(
+            actor_role="operator", seed=seed, record=_proc(pid="p-class"),
+            source_registry_id="repo-a", target_registry_id="repo-b",
+            evaluator_protocol_digest="e" * 64,
+            evidence_receipts=receipts, grant_nonce="n-class",
+            signer_key_id=key)
+        self.assertEqual(grant.evidence_receipt_refs,
+                         tuple(r.digest for r in receipts))
+
+    def test_strict_grant_rejects_mismatched_class(self):
+        strict, seed, key = make_grant_authority(
+            self.registry, require_cited_evidence=True)
+        receipts = self._class_receipts("other-class")
+        with self.assertRaises(ScopeGrantError):
+            strict.issue(
+                actor_role="operator", seed=seed, record=_proc(pid="p-class2"),
+                source_registry_id="repo-a", target_registry_id="repo-b",
+                evaluator_protocol_digest="e" * 64,
+                evidence_receipts=receipts, grant_nonce="n-class2",
+                signer_key_id=key)
+
+    def test_strict_grant_accepts_cited_witness(self):
+        strict, seed, key = make_grant_authority(
+            self.registry, require_cited_evidence=True)
+        receipts = self.transfer_receipts("repo-a", "repo-b")
+        record = ProcedureRecordV1.from_dict({
+            **_proc(pid="p-cited").to_dict(),
+            "evidence_refs": [r.digest for r in receipts],
+        })
+        grant = strict.issue(
+            actor_role="operator", seed=seed, record=record,
+            source_registry_id="repo-a", target_registry_id="repo-b",
+            evaluator_protocol_digest="e" * 64,
+            evidence_receipts=receipts, grant_nonce="n-cited",
+            signer_key_id=key)
+        self.assertEqual(grant.evidence_receipt_refs,
+                         tuple(r.digest for r in receipts))

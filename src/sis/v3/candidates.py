@@ -174,6 +174,27 @@ class CandidateConflict(CandidateError):
     """A write conflicts with committed state or an illegal transition."""
 
 
+class CandidateBasisWithdrawn(CandidateError):
+    """One candidate's signed basis is no longer in force.
+
+    Raised for lifecycle conditions that are scoped to a single candidate
+    (custody revocation/supersession, expired or signer-revoked
+    decision/evidence/certificate). Catalog reads exclude such a candidate
+    individually; integrity failures (tampered rows, broken chain,
+    projection drift, missing custody objects) still fail the whole
+    catalog closed.
+    """
+
+
+_WITHDRAWN_AUTHORITY_REASONS = frozenset({
+    "decision_expired", "decision_signer_revoked",
+    "evidence_expired", "evidence_signer_revoked",
+})
+_WITHDRAWN_CERTIFICATE_FAILURES = frozenset({
+    "certificate_not_revoked", "certificate_not_expired",
+})
+
+
 class CandidatePublicationPending(CandidateError):
     """A committed transition has not reached the independent checkpoint.
 
@@ -1147,7 +1168,10 @@ class CandidateRegistry:
                 to_state=edge, receipt_refs=refs, evidence_refs=erefs,
                 actor_identity=actor)
         except CandidateAuthorityError as exc:
-            raise CandidateError(
+            cls = CandidateBasisWithdrawn \
+                if exc.reason in _WITHDRAWN_AUTHORITY_REASONS \
+                else CandidateError
+            raise cls(
                 f"decision_not_authenticated:{exc.reason}") from exc
         if edge != "qualified":
             return {"decision_digest": dd, "receipt_refs": refs,
@@ -1165,7 +1189,10 @@ class CandidateRegistry:
                     evidence, candidate=record, receipt_refs=refs,
                     partition=QUALIFICATION_PARTITION)
             except CandidateAuthorityError as exc:
-                raise CandidateError(
+                cls = CandidateBasisWithdrawn \
+                    if exc.reason in _WITHDRAWN_AUTHORITY_REASONS \
+                    else CandidateError
+                raise cls(
                     f"evidence_not_authenticated:{exc.reason}") from exc
             if evidence.evaluation_protocol_digest != self._expected_protocol:
                 raise CandidateError("evidence_protocol_mismatch")
@@ -1179,7 +1206,11 @@ class CandidateRegistry:
             validation = self._qualification_validator.validate(
                 certificate, record)
             if not validation.ok:
-                raise CandidateError(
+                cls = CandidateBasisWithdrawn \
+                    if set(validation.failures) \
+                    <= _WITHDRAWN_CERTIFICATE_FAILURES \
+                    else CandidateError
+                raise cls(
                     "certificate_rejected:"
                     + ",".join(validation.failures))
             certificate_receipts = {
@@ -1195,6 +1226,10 @@ class CandidateRegistry:
                 except EvidenceCustodyError as exc:
                     raise CandidateError(
                         f"evidence_custody_unavailable:{exc.reason}") from exc
+                if status in {"revoked", "superseded"}:
+                    # A signed custody withdrawal of this candidate's
+                    # evidence: exclude the candidate, not the catalog.
+                    raise CandidateBasisWithdrawn(f"evidence_{status}")
                 if status != "active":
                     raise CandidateError(f"evidence_{status}")
                 basis["evidence_custody"] = status
@@ -1294,12 +1329,19 @@ class CandidateRegistry:
     def qualified(self) -> list[CandidateV1]:
         return [cand for cand, _ in self.qualified_bases()]
 
-    def qualified_bases(self) -> list[tuple[CandidateV1, dict]]:
+    def qualified_bases(
+        self, rejections: list | None = None,
+    ) -> list[tuple[CandidateV1, dict]]:
         """Qualified records with their authenticated basis, in one fold.
 
         Serving needs both the record and the signed handles behind it
         (revocation checks). Folding once avoids re-verifying the whole
         catalog and every signature once per candidate.
+
+        A candidate whose basis has been withdrawn (custody revocation or
+        supersession, expiry, revoked signer) is excluded individually;
+        when ``rejections`` is a list, one ``{"candidate_id", "reason"}``
+        entry is appended per exclusion. Integrity failures still raise.
         """
         with self._read() as con:
             states, unbacked = self._project(con)
@@ -1312,10 +1354,37 @@ class CandidateRegistry:
             rows = con.execute(
                 "SELECT candidate_id, candidate_digest, candidate_json"
                 " FROM candidate ORDER BY candidate_id").fetchall()
-            return [
-                (self._row_to_record(r[1:]),
-                 self._verify_serving_basis(r[0], "qualified", con))
-                for r in rows if states.get(r[0]) == "qualified"]
+            out: list[tuple[CandidateV1, dict]] = []
+            for r in rows:
+                if states.get(r[0]) != "qualified":
+                    continue
+                record = self._row_to_record(r[1:])
+                try:
+                    basis = self._verify_serving_basis(
+                        r[0], "qualified", con)
+                except CandidateBasisWithdrawn as exc:
+                    if rejections is not None:
+                        rejections.append(
+                            {"candidate_id": r[0], "reason": str(exc)})
+                    continue
+                out.append((record, basis))
+            return out
+
+    def withdrawn_digests(self) -> frozenset[str]:
+        """Digests withdrawn by signed custody revocation/supersession.
+
+        Serving unions this server-side set with any caller-supplied
+        revocations so a custody revocation naming a candidate digest or
+        its operator decision digest takes effect without the client
+        having to repeat it. Empty when custody is unconfigured.
+        """
+        if self._evidence_custody is None:
+            return frozenset()
+        try:
+            return self._evidence_custody.withdrawn_digests()
+        except EvidenceCustodyError as exc:
+            raise CandidateError(
+                f"evidence_custody_unavailable:{exc.reason}") from exc
 
     def state_of(self, candidate_id: str) -> str:
         return self.get(candidate_id)[1]
@@ -1373,6 +1442,24 @@ class CandidateRegistry:
         except EvidenceCustodyError as exc:
             raise CandidateError(
                 f"evidence_custody_unavailable:{exc.reason}") from exc
+
+    def verify_custody_extends(self, *, revocation_head: str,
+                               supersession_head: str,
+                               custody_entry_count: int) -> dict:
+        """Check custody logs append-only extend a checkpointed snapshot."""
+        if self._evidence_custody is None:
+            if (revocation_head, supersession_head, custody_entry_count) \
+                    != (_GENESIS, _GENESIS, 0):
+                raise CandidateError("evidence_custody_unconfigured")
+            return {"revocation_count": 0, "supersession_count": 0}
+        try:
+            return self._evidence_custody.verify_extends(
+                revocation_head=revocation_head,
+                supersession_head=supersession_head,
+                custody_entry_count=custody_entry_count)
+        except EvidenceCustodyError as exc:
+            raise CandidateError(
+                f"evidence_custody_rejected:{exc.reason}") from exc
 
     def evidence_custody_status(self, digest: str) -> str:
         if self._evidence_custody is None:

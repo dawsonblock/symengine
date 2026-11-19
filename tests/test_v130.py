@@ -1,15 +1,11 @@
 """v1.3 attack-oriented regression tests for event replay and conflicting induction."""
 import hashlib
 import json
-import os
-import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
 from sis.errors import InvalidInput, RuleRejected
 from sis.service import Service
 from sis.validation import canonical
-from sis.registry import Registry
 
 ROOT = Path(__file__).resolve().parents[1]
 

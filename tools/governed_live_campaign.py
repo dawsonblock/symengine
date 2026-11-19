@@ -194,7 +194,8 @@ def build_task(name, root, statements, verifier, registry, reg_seed, wall):
         actor_role="evaluator", task_id=task_id, criterion_version="v1",
         argv=(sys.executable, "-m", "pytest", "-q", "eval_tests.py"),
         files={"eval_tests.py": test.encode()}, base_commit="a1b2c3d",
-        statement_digest=hashlib.sha256(statement.encode()).hexdigest())
+        statement_digest=hashlib.sha256(statement.encode()).hexdigest(),
+        custody="shared")
     env = TaskEnvelopeV1(
         schema_version=1, task_id=task_id,
         repo_snapshot_digest=repo_tree, base_commit="a1b2c3d",
@@ -212,7 +213,21 @@ def main() -> int:
     ap.add_argument("-o", "--output", type=Path, required=True)
     ap.add_argument("--wall", type=float, default=120,
                     help="per-arm wall budget seconds (codex exec cap)")
+    ap.add_argument("--allow-local-executor", action="store_true",
+                    help="local execution is development-only")
+    ap.add_argument("--allow-unqualified", action="store_true",
+                    help="development only: run hostile code on a platform"
+                         " that cannot qualify it (native macOS)")
     args = ap.parse_args()
+    if not args.allow_local_executor:
+        ap.error("local executor requires --allow-local-executor")
+    from sis.v3.runner import (RunnerError,
+                               refuse_unqualified_hostile_evaluation)
+    try:
+        refuse_unqualified_hostile_evaluation(
+            allow_unqualified=args.allow_unqualified)
+    except RunnerError as exc:
+        ap.error(str(exc))
     out_dir = args.output
     out_dir.mkdir(parents=True, exist_ok=True)
     wall = int(args.wall)
@@ -228,7 +243,8 @@ def main() -> int:
     executor = LocalSubprocessExecutor(root / "exec")
     verifier = OutcomeVerifier(executor=executor,
                                key_dir=root / "eval-keys",
-                               registry_dir=root / "eval-reg")
+                               registry_dir=root / "eval-reg",
+                               allow_shared_custody=True)
 
     def authenticated_receipt(digest):
         receipt = verifier.load_receipt(digest)
@@ -249,8 +265,8 @@ def main() -> int:
     protocol = preregister(
         primary_metric="paired solved_delta E vs A",
         method="mcnemar_exact", alpha=0.05, min_effect=1.0,
-        sample_size=required_sample_size(0.7, 0.3),
-        expected_baseline=0.7, expected_treatment=0.3,
+        sample_size=required_sample_size(0.3, 0.7),
+        expected_baseline=0.3, expected_treatment=0.7,
         budget={"wall_seconds": wall, "token_budget": 1_000_000,
                 "tool_budget": 10_000})
 
@@ -388,9 +404,11 @@ def main() -> int:
         status="candidate", expires_at=None)
     seed(db, proc)
     receipt_src = signed_receipt(eval_seed, eval_key, task_id="t-src",
-                                 repo_digest="f" * 64)
+                                 repo_digest="f" * 64,
+                                 failure_class="sig-money")
     receipt_money = signed_receipt(eval_seed, eval_key, task_id="r-money",
-                                   repo_digest=dev[0][2])
+                                   repo_digest=dev[0][2],
+                                   failure_class="sig-money")
     receipts = {receipt_src.digest: receipt_src,
                 receipt_money.digest: receipt_money}
     controller._resolve_receipt = receipts.__getitem__

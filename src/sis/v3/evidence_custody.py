@@ -17,7 +17,6 @@ maximum revocation staleness it accepts; the default is to deny.
 from __future__ import annotations
 
 import hashlib
-import json
 import os
 import re
 import secrets
@@ -196,6 +195,10 @@ class EvidenceCustodyStore:
         self._supersessions: list[dict] | None = None
         self._revocations_stamp = None
         self._supersessions_stamp = None
+        # Highest (count, head) this process has observed per log. An
+        # append onto a log that no longer contains that prefix would
+        # silently extend a truncated history, so appends refuse it.
+        self._high_water: dict[str, tuple[int, str]] = {}
         self._on_change = None
         self._link_signer = None
         self._require_signed_links = bool(require_signed_links)
@@ -481,6 +484,7 @@ class EvidenceCustodyStore:
             raise EvidenceCustodyError("revocation_kind_invalid")
         with self._lock, _exclusive_lock(self._lock_path):
             entries = self._load_revocations()
+            self._require_not_truncated("revocation", entries)
             previous = entries[-1]["entry_digest"] if entries else GENESIS
             fields = {
                 "schema_version": 1,
@@ -518,6 +522,7 @@ class EvidenceCustodyStore:
                 raise EvidenceCustodyError("supersession_target_invalid")
         with self._lock, _exclusive_lock(self._lock_path):
             entries = self._load_supersessions()
+            self._require_not_truncated("supersession", entries)
             previous = entries[-1]["entry_digest"] if entries else GENESIS
             fields = {
                 "schema_version": 1,
@@ -539,6 +544,26 @@ class EvidenceCustodyStore:
             self._supersessions_stamp = None
         self._notify_change()
         return entry
+
+    def _observe(self, kind: str, entries: list[dict]) -> None:
+        if not entries:
+            return
+        seen = self._high_water.get(kind)
+        if seen is None or len(entries) > seen[0]:
+            self._high_water[kind] = (len(entries),
+                                      entries[-1]["entry_digest"])
+
+    def _require_not_truncated(self, kind: str, entries: list[dict]) -> None:
+        """Refuse to append onto a log shorter than one already observed."""
+        seen = self._high_water.get(kind)
+        if seen is None:
+            return
+        count, head = seen
+        if len(entries) < count or \
+                entries[count - 1]["entry_digest"] != head:
+            raise EvidenceCustodyError(
+                f"{kind}_log_truncated",
+                f"observed={count} current={len(entries)}")
 
     @staticmethod
     def _append(path: Path, entry: dict) -> None:
@@ -615,6 +640,7 @@ class EvidenceCustodyStore:
             self._revocations = self._load_log(
                 self._revocations_path, REVOCATION_DOMAIN, "revocation")
             self._revocations_stamp = stamp
+            self._observe_safely("revocation", self._revocations)
         return list(self._revocations)
 
     def _load_supersessions(self) -> list[dict]:
@@ -625,7 +651,19 @@ class EvidenceCustodyStore:
                 self._supersessions_path, SUPERSESSION_DOMAIN,
                 "supersession")
             self._supersessions_stamp = stamp
+            self._observe_safely("supersession", self._supersessions)
         return list(self._supersessions)
+
+    def _observe_safely(self, kind: str, entries: list[dict]) -> None:
+        # Reads never fail on a shorter log (the checkpoint verifier owns
+        # rollback reporting); the high-water mark only advances, so the
+        # next append still detects the truncation.
+        seen = self._high_water.get(kind)
+        if seen is not None and (
+                len(entries) < seen[0]
+                or entries[seen[0] - 1]["entry_digest"] != seen[1]):
+            return
+        self._observe(kind, entries)
 
     def revocations(self) -> list[dict]:
         return self._load_revocations()
@@ -665,6 +703,43 @@ class EvidenceCustodyStore:
                     "custody_snapshot_mismatch", key)
         return current
 
+    def verify_extends(self, *, revocation_head: str,
+                       supersession_head: str,
+                       custody_entry_count: int) -> dict:
+        """Prove the current logs are append-only extensions of a snapshot.
+
+        Both logs are hash chains from genesis, so a previously witnessed
+        head that still occurs in the current chain fixes the whole prefix
+        before it. Its position is that log's count at the snapshot; the
+        two positions must add up to the witnessed combined count. A
+        truncated or rewritten log (even one later padded back to a larger
+        combined count) fails here.
+        """
+        def position(entries: list[dict], head: str) -> int | None:
+            if head == GENESIS:
+                return 0
+            for index, entry in enumerate(entries):
+                if entry["entry_digest"] == head:
+                    return index + 1
+            return None
+
+        revocations = self._load_revocations()
+        supersessions = self._load_supersessions()
+        revocation_count = position(revocations, revocation_head)
+        if revocation_count is None:
+            raise EvidenceCustodyError("revocation_history_not_extended")
+        supersession_count = position(supersessions, supersession_head)
+        if supersession_count is None:
+            raise EvidenceCustodyError("supersession_history_not_extended")
+        if revocation_count + supersession_count != custody_entry_count:
+            raise EvidenceCustodyError(
+                "custody_count_inconsistent",
+                f"revocations={revocation_count}"
+                f" supersessions={supersession_count}"
+                f" witnessed={custody_entry_count}")
+        return {"revocation_count": revocation_count,
+                "supersession_count": supersession_count}
+
     def revocation_head(self) -> str:
         entries = self._load_revocations()
         return entries[-1]["entry_digest"] if entries else GENESIS
@@ -679,6 +754,16 @@ class EvidenceCustodyStore:
     def _superseded_set(self) -> set[str]:
         return {entry["superseded_digest"]
                 for entry in self._load_supersessions()}
+
+    def withdrawn_digests(self) -> frozenset[str]:
+        """Every digest named by a signed revocation or supersession.
+
+        Serving consults this set directly for handles the certificate
+        dependency walk never reaches (the candidate digest and the
+        operator decision digest), so a custody revocation of either one
+        suppresses the candidate.
+        """
+        return frozenset(self._revoked_set() | self._superseded_set())
 
     # ------------------------------------------------------------------ #
     # status
@@ -826,7 +911,7 @@ class EvidenceCustodyStore:
             links += 1
             try:
                 manifest = loads_json(path.read_bytes())
-            except (OSError, ValueError) as exc:
+            except (OSError, ValueError):
                 problems.append(f"link:{path.stem[:12]}:unreadable")
                 continue
             if not self._verify_link(manifest):

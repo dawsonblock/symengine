@@ -116,7 +116,12 @@ key revocation, or task-admission service is deployed.
   commits every record digest in order, custodian-signed when `chain_key`
   is configured. Trusted-mode access re-verifies record signatures and
   chain integrity on every read and write; `repair_chain` is the migration
-  path for pre-chain databases.
+  path for pre-chain databases. A trusted read additionally requires the
+  exact record being returned to own a chain entry: one statement joins
+  the experience row to its chain entry, so a record that was never
+  ingested, or a row that appeared between the store-wide chain check and
+  the row read, is `experience_unchained` instead of trusted. Membership
+  is not provenance — the signature and lineage checks still decide trust.
 - `sis.v3.memory.MemoryTrustProfile.production()` requires signed V2
   records, a custodian chain key, an evaluator verifier, and a
   `sis.v3.memory_witness.MemoryWitness` stored outside the database

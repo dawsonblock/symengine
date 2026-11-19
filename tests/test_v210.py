@@ -1,5 +1,4 @@
 """v2.1 trace replay, train-only proposals, and existing authority gating."""
-import copy
 import json
 import os
 import subprocess

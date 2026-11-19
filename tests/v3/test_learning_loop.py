@@ -3,12 +3,15 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from sis.v3.contracts import ContractError, TaskEnvelopeV1
+from sis.v3.contracts import (ContractError, ExperienceRecordV1,
+                              GuidanceRequestV1, TaskEnvelopeV1)
 from sis.v3.evaluation import assert_repository_disjoint, paired_summary
 from sis.v3.learning.pipeline import (observe_strategy_proposals,
                                       observe_structural_proposal)
+from sis.v3.learning.records import experience_to_record
 from sis.v3.learning.strategies import EpisodeEvidence
 from sis.v3.procedures import ProcedureStore
+from sis.v3.retrieval import AblationFlags, retrieve
 from sis.v3.source_change import capture_change
 
 BEFORE = "def scale(a, b):\n    return a - b\n"
@@ -81,6 +84,71 @@ class LoopTests(unittest.TestCase):
                 episodes, language="python",
                 store=ProcedureStore(Path(self.temp.name) / "s2"),
                 receipt_resolver=lambda d: None)
+
+
+def _experience(outcome="pass", experience_id="exp-money"):
+    return ExperienceRecordV1(
+        schema_version=1, experience_id=experience_id,
+        episode_id="ep-" + experience_id,
+        repository_registry_id="eval-money", task_fingerprint="f" * 64,
+        task_category="money",
+        agent_config_digest="a" * 64, trace_digest="d" * 64,
+        outcome_receipt_digest="e" * 64, outcome=outcome,
+        failure_category="convention_unknown:money",
+        lesson="Money uses ROUND_HALF_UP decimal rounding.",
+        facts=("the verified arm passed",), hypotheses=(),
+        applicability=({"kind": "language_is", "value": "python"},),
+        counterexamples=(), provenance={"generator": "test"},
+        captured_at="2026-11-11T00:00:00Z")
+
+
+def _guidance_request(failure_signature):
+    return GuidanceRequestV1(
+        schema_version=1, task_id="task-holdout",
+        repo_snapshot_digest="b" * 64, base_commit="a1b2c3d",
+        namespace="ns", language="python", toolchain="pytest",
+        lockfile_digests={}, task_summary="holdout task",
+        failure_signatures=(failure_signature,), present_symbols=(),
+        semantic_contract_digest="c" * 64)
+
+
+class ExperienceRecordTests(unittest.TestCase):
+    def test_verified_experience_becomes_candidate_keyed_to_failure_class(self):
+        record = experience_to_record(
+            _experience(), failure_class="convention_unknown:money")
+        self.assertEqual(record.status, "candidate")
+        self.assertEqual(record.steps,
+                         ("Money uses ROUND_HALF_UP decimal rounding.",))
+        self.assertEqual(record.evidence_refs, ("e" * 64,))
+        self.assertIn({"kind": "failure_signature_is",
+                       "value": "convention_unknown:money"},
+                      record.preconditions)
+
+    def test_unverified_or_unscoped_experience_is_rejected(self):
+        with self.assertRaises(ValueError):
+            experience_to_record(_experience(outcome="fail"),
+                                 failure_class="convention_unknown:money")
+        with self.assertRaises(ValueError):
+            experience_to_record(_experience(), failure_class=" ")
+        with self.assertRaises(ValueError):
+            experience_to_record(_experience(),
+                                 failure_class="convention_unknown:slug")
+
+    def test_learned_procedure_serves_only_its_failure_class(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        store = ProcedureStore(Path(temp.name) / "store")
+        store.add(experience_to_record(
+            _experience(), failure_class="convention_unknown:money"))
+        flags = AblationFlags(include_unqualified=True)
+        same = retrieve(_guidance_request("convention_unknown:money"),
+                        store, ablations=flags)
+        other = retrieve(_guidance_request("convention_unknown:slug"),
+                         store, ablations=flags)
+        self.assertEqual(len(same.candidates), 1)
+        self.assertEqual(other.candidates, ())
+        self.assertEqual(other.rejections[0].reason_code,
+                         "precondition_failed")
 
 
 class DisjointEvalTests(unittest.TestCase):

@@ -5,7 +5,7 @@ from pathlib import Path
 
 from sis.v3.candidates import CandidateRegistry
 from sis.v3.composition import compose_guidance
-from sis.v3.contracts import ContractError, ProcedureRecordV1
+from sis.v3.contracts import ProcedureRecordV1
 from sis.v3.evolution import (DevEvalResult, EvolutionBudget, Frontier,
                               FrontierEntry, SkillOptimizer, append_step,
                               drop_step, fitness, reorder_step,

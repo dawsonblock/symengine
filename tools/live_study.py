@@ -195,7 +195,21 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("-o", "--output", type=Path, required=True)
     ap.add_argument("--wall", type=float, default=420)
+    ap.add_argument("--allow-local-executor", action="store_true",
+                    help="local execution is development-only")
+    ap.add_argument("--allow-unqualified", action="store_true",
+                    help="development only: run hostile code on a platform"
+                         " that cannot qualify it (native macOS)")
     args = ap.parse_args()
+    if not args.allow_local_executor:
+        ap.error("local executor requires --allow-local-executor")
+    from sis.v3.runner import (RunnerError,
+                               refuse_unqualified_hostile_evaluation)
+    try:
+        refuse_unqualified_hostile_evaluation(
+            allow_unqualified=args.allow_unqualified)
+    except RunnerError as exc:
+        ap.error(str(exc))
 
     root = Path(tempfile.mkdtemp(prefix="sis-live-study-"))
     registry, reg_seed = make_registry()
@@ -208,13 +222,12 @@ def main() -> int:
     controller = PromotionController(
         db, operator_token_digest=operator_token_digest(TEST_TOKEN),
         trusted_evaluator_keys={eval_key: eval_pub.hex()})
-    receipt_src = signed_receipt(eval_seed, eval_key, task_id="t-src",
-                                 repo_digest=src_tree)
-    receipt_table = {receipt_src.digest: receipt_src}
+    receipt_table = {}
     controller._resolve_receipt = receipt_table.__getitem__
     executor = LocalSubprocessExecutor(root / "exec")
     verifier = OutcomeVerifier(executor=executor, key_dir=root / "eval-keys",
-                               registry_dir=root / "eval-reg")
+                               registry_dir=root / "eval-reg",
+                               allow_shared_custody=True)
 
     statements, envelopes, repo_of = {}, [], {}
     for name, mod, src, statement, steps, test in TASKS:
@@ -231,6 +244,12 @@ def main() -> int:
 
         # Qualified procedure carrying the convention, granted to this repo.
         sig = "sig-" + name
+        # Each grant needs source evidence whose signed failure class
+        # matches this procedure; one shared source receipt cannot.
+        receipt_src = signed_receipt(
+            eval_seed, eval_key, task_id="t-src-" + name,
+            failure_class=sig, repo_digest=src_tree)
+        receipt_table[receipt_src.digest] = receipt_src
         proc = ProcedureRecordV1(
             schema_version=1, procedure_id="strat-" + name, revision=1,
             intent="Project convention for " + name,
@@ -247,6 +266,7 @@ def main() -> int:
             status="candidate", expires_at=None)
         seed(db, proc)
         receipt = signed_receipt(eval_seed, eval_key, task_id="r-" + name,
+                                 failure_class=sig,
                                  repo_digest=repo_tree)
         receipt_table[receipt.digest] = receipt
         drive(db, controller, proc.procedure_id, "qualified",
@@ -264,7 +284,7 @@ def main() -> int:
             criterion_version="v1",
             argv=(sys.executable, "-m", "pytest", "-q", "eval_tests.py"),
             files={"eval_tests.py": test.encode()}, base_commit="a1b2c3d",
-            statement_digest=stmt_digest)
+            statement_digest=stmt_digest, custody="shared")
         env = TaskEnvelopeV1(
             schema_version=1, task_id=task_id,
             repo_snapshot_digest=repo_tree, base_commit="a1b2c3d",

@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Any
 
 from .base import AgentTurn, SandboxChoice
-from ..contracts import ContractError, ObservationEventV1, canonical_digest
+from ..contracts import ObservationEventV1, canonical_digest
 
 
 _MAX_PROMPT_CHARS = 65_536
@@ -174,7 +174,6 @@ class CodexCliAdapter:
     ) -> Iterator[ObservationEventV1]:
         prior: str | None = None
         seq = 0
-        emitted: list[ObservationEventV1] = []
 
         def emit(method: str, summary: dict[str, Any], event_type: str,
                  *, actor: str = "agent", extra: Mapping[str, Any] | None = None) -> ObservationEventV1:
@@ -190,20 +189,39 @@ class CodexCliAdapter:
             event = self._make_event(thread_id, turn_id, seq, actor, event_type, payload, prior)
             prior = event.digest
             seq += 1
-            emitted.append(event)
             return event
 
         assert proc.stdout is not None and proc.stderr is not None
         stderr_tail = bytearray()
+
+        def drain_stderr() -> None:
+            # Drain continuously: a child that fills the stderr pipe
+            # would otherwise block before exit and look like a timeout.
+            assert proc.stderr is not None
+            while True:
+                try:
+                    chunk = proc.stderr.read(8192)
+                except (OSError, ValueError):
+                    return
+                if not chunk:
+                    return
+                room = _MAX_STDERR_BYTES - len(stderr_tail)
+                if room > 0:
+                    stderr_tail.extend(chunk[:room])
+
+        stderr_thread = threading.Thread(target=drain_stderr, daemon=True)
+        stderr_thread.start()
         try:
             lines = 0
             while lines < _MAX_EVENT_LINES:
-                raw = proc.stdout.readline()
-                if not raw:
+                raw, skipped = self._read_bounded_line(proc.stdout)
+                if raw is None and not skipped:
                     break
                 lines += 1
-                if len(raw) > _MAX_LINE_BYTES:
-                    yield emit("sis/oversized_line", {"skipped_bytes": len(raw)}, "agent_event", actor="system")
+                if raw is None:
+                    yield emit("sis/oversized_line",
+                               {"skipped_bytes": min(skipped, 2**63 - 1)},
+                               "agent_event", actor="system")
                     continue
                 try:
                     note = json.loads(raw)
@@ -214,14 +232,24 @@ class CodexCliAdapter:
                 method, summary, event_type, extra = self._normalize(note)
                 yield emit(method, summary, event_type, extra=extra)
 
-            proc.wait(timeout=60)
-            stderr_tail.extend(proc.stderr.read(_MAX_STDERR_BYTES + 1)[:_MAX_STDERR_BYTES])
+            try:
+                proc.wait(timeout=60)
+            except subprocess.TimeoutExpired:
+                # The child outlived its output stream; stop it rather than
+                # letting a stuck process hold the turn open.
+                self._kill_group(proc)
+                try:
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    pass
+            stderr_thread.join(timeout=5)
+            stderr_bytes = len(stderr_tail)
             exit_status = proc.returncode if proc.returncode is not None else -1
             summary = {"cli_exit_status": exit_status}
             if timed_out[0]:
                 summary["timed_out"] = True
-            if stderr_tail:
-                summary["stderr_bytes"] = len(stderr_tail)
+            if stderr_bytes:
+                summary["stderr_bytes"] = stderr_bytes
             yield emit(
                 "sis/process_exit", summary,
                 "completion" if exit_status == 0 and not timed_out[0] else "agent_event",
@@ -231,13 +259,40 @@ class CodexCliAdapter:
             watchdog.cancel()
             with self._lock:
                 self._active.pop(turn_id, None)
-            if proc.poll() is None:
-                self._kill_group(proc)
+            # Always kill the group, not only a live leader: the CLI can
+            # exit while commands it started keep running in its group.
+            # The group id is the leader's pid (start_new_session), which
+            # still names the group after the leader has been reaped.
+            self._kill_group(proc)
+            stderr_thread.join(timeout=5)
             for stream in (proc.stdout, proc.stderr):
                 try:
                     stream.close()
                 except OSError:
                     pass
+
+    @staticmethod
+    def _read_bounded_line(stream) -> tuple[bytes | None, int]:
+        """Read one JSONL line without allocating an unbounded buffer.
+
+        ``readline(size)`` never returns more than ``size`` bytes, so an
+        oversized line is drained in bounded chunks and reported by byte
+        count instead of being materialized first. Returns ``(line, 0)``
+        for a line within the limit, ``(None, skipped)`` for an oversized
+        line, and ``(None, 0)`` at end of stream.
+        """
+        raw = stream.readline(_MAX_LINE_BYTES + 1)
+        if not raw:
+            return None, 0
+        if len(raw) <= _MAX_LINE_BYTES:
+            return raw, 0
+        skipped = len(raw)
+        while not raw.endswith(b"\n"):
+            raw = stream.readline(_MAX_LINE_BYTES + 1)
+            if not raw:
+                break
+            skipped += len(raw)
+        return None, skipped
 
     def _normalize(self, note: dict[str, Any]) -> tuple[str, dict[str, Any], str, dict[str, Any]]:
         method = note.get("type")
@@ -343,13 +398,21 @@ class CodexCliAdapter:
 
     @staticmethod
     def _kill_group(proc: subprocess.Popen) -> None:
-        try:
-            os.killpg(proc.pid, signal.SIGKILL)
-        except (ProcessLookupError, PermissionError, OSError):
+        # os.killpg and signal.SIGKILL are POSIX-only. Windows has no
+        # process-group kill; proc.kill() is the available fallback.
+        killpg = getattr(os, "killpg", None)
+        if killpg is not None:
             try:
-                proc.kill()
-            except (ProcessLookupError, OSError):
+                killpg(proc.pid,
+                       getattr(signal, "SIGKILL", signal.SIGTERM))
+                return
+            except (ProcessLookupError, PermissionError, OSError,
+                    AttributeError):
                 pass
+        try:
+            proc.kill()
+        except (ProcessLookupError, OSError):
+            pass
 
     @staticmethod
     def _workspace(workspace: str | Path) -> Path:

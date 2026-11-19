@@ -92,8 +92,10 @@ class ClassificationTests(unittest.TestCase):
     def test_resource_limit_is_not_task_fail(self):
         self.assertEqual(classify_execution(receipt(
             security_errors=("fs:disk_budget_exceeded",))), RESOURCE_LIMIT)
+        # Submission-controlled stderr is never a classification input:
+        # printing "MemoryError" must not turn a failure into an error.
         self.assertEqual(classify_execution(receipt(
-            exit_status=1), stderr_tail="MemoryError"), RESOURCE_LIMIT)
+            exit_status=1), stderr_tail="MemoryError"), TASK_FAIL)
         self.assertEqual(classify_execution(receipt(
             security_errors=("output:stdout_truncated",))), RESOURCE_LIMIT)
 
@@ -114,6 +116,22 @@ class ClassificationTests(unittest.TestCase):
             receipt(), infrastructure_error="worker crashed"),
             INFRASTRUCTURE_ERROR)
 
+    def test_runner_unavailable_text_in_stderr_is_not_trusted(self):
+        # Under shared custody the submission writes to the same stderr
+        # as the bootstrap, so the text cannot reclassify a verdict.
+        self.assertEqual(classify_execution(
+            receipt(exit_status=1),
+            stderr_tail="evaluation_runner_unavailable: pytest\n"),
+            TASK_FAIL)
+
+    def test_split_runner_unavailable_exit_is_a_bootstrap_error(self):
+        # Split custody: the acceptance process never runs submitted code,
+        # so its bootstrap's runner-unavailable exit status is trusted.
+        self.assertEqual(classify_execution(receipt(
+            exit_status=70,
+            security_errors=("evaluation:process_split",))),
+            EVALUATOR_BOOTSTRAP_ERROR)
+
 
 class BootstrapTests(unittest.TestCase):
     def setUp(self):
@@ -123,6 +141,7 @@ class BootstrapTests(unittest.TestCase):
 
     def test_bootstrap_probe_succeeds_in_clean_environment(self):
         verifier = OutcomeVerifier(
+            allow_shared_custody=True,
             executor=LocalSubprocessExecutor(self.root / "exec"),
             key_dir=self.root / "keys",
             registry_dir=self.root / "registry")
@@ -133,6 +152,7 @@ class BootstrapTests(unittest.TestCase):
 
     def test_bootstrap_failure_is_not_a_task_receipt(self):
         verifier = OutcomeVerifier(
+            allow_shared_custody=True,
             executor=LocalSubprocessExecutor(self.root / "exec"),
             key_dir=self.root / "keys",
             registry_dir=self.root / "registry",
@@ -175,6 +195,7 @@ class ReceiptOutcomeTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
         self.verifier = OutcomeVerifier(
+            allow_shared_custody=True,
             executor=LocalSubprocessExecutor(self.root / "exec"),
             key_dir=self.root / "keys",
             registry_dir=self.root / "registry")
@@ -243,6 +264,22 @@ class ReceiptOutcomeTests(unittest.TestCase):
             submission_dir=self.submission, evaluation_nonce="n-timeout")
         self.assertEqual(receipt_obj.outcome, "error")
         self.assertEqual(self.verifier.last_outcome_class, TIMEOUT)
+
+    def test_cpu_limit_is_resource_limit_not_fail(self):
+        task_id = "t-cpu"
+        self.verifier.register_task(
+            actor_role="evaluator", task_id=task_id,
+            criterion_version="v1",
+            argv=(PY, "-c", "while True: pass"),
+            files={}, base_commit="abc1234")
+        self.verifier.limits = ResourceLimits(
+            wall_seconds=10, cpu_seconds=1, memory_bytes=2 * 1024 ** 3,
+            process_count=None)
+        receipt_obj = self.verifier.evaluate(
+            actor_role="evaluator", task=self._task(task_id),
+            submission_dir=self.submission, evaluation_nonce="n-cpu")
+        self.assertEqual(receipt_obj.outcome, "error")
+        self.assertEqual(self.verifier.last_outcome_class, RESOURCE_LIMIT)
 
 
 class SandboxTests(unittest.TestCase):

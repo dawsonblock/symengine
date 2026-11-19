@@ -260,8 +260,6 @@ def mine_candidates(
             raise ContractError("events do not belong to the stated episode")
 
     failures = failure_signatures(events)
-    edits = sum(1 for e in events if e.event_type == "edit")
-    tool_calls = sum(1 for e in events if e.event_type in {"tool_request", "tool_result"})
     evidence = tuple(sorted({e.digest for e in events}))[:16] + (receipt.digest,)
     seed = {
         "episode_id": episode_id,

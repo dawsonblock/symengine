@@ -7,7 +7,6 @@ certificate or delivery attestation prevents trusted serving.
 """
 from __future__ import annotations
 
-import hashlib
 import os
 import tempfile
 import unittest

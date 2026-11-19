@@ -8,10 +8,8 @@ answer "has this approach demonstrably hurt a similar context?" — not just
 """
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import dataclass
 
-from .contracts import ProcedureRecordV1
 from .procedures import ProcedureStore
 from .retrieval import RetrievalContext, precondition_holds
 

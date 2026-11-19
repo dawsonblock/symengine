@@ -202,7 +202,10 @@ class Registry:
             raise RuleRejected('promotion result must be a valid induction record')
         if train is None or validation is None:
             raise RuleRejected('promotion requires original train and validation records for independent recomputation')
-        from .induction import induce
+        from .induction import check_engine_version, induce
+        # A result stamped by another grammar or engine cannot be reproduced
+        # byte for byte; say so instead of reporting an opaque mismatch.
+        check_engine_version(result)
         try:
             recomputed = induce(train, validation, namespace=result['namespace'],
                                 max_candidates=max_candidates, proposals=proposals,
@@ -215,6 +218,10 @@ class Registry:
             raise RuleRejected('only unambiguous locally validated induction results can be promoted')
         if result.get('search_truncated') or result.get('distinguishing_probe'):
             raise RuleRejected('incomplete or ambiguous search cannot be promoted')
+        if result.get('holdout_sealed') is not True:
+            # The holdout must be disjoint from every row that drove
+            # selection or refinement; selection data is not evidence.
+            raise RuleRejected('promotion requires a sealed holdout disjoint from selection data')
         if (type(result.get('train_count')) is not int or result['train_count'] < 3 or
             type(result.get('validation_count')) is not int or result['validation_count'] < 2 or
             result.get('validation_passed') != result['validation_count']):

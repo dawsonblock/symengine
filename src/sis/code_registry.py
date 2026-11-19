@@ -5,7 +5,7 @@ Models receive only preview authority, never promotion or write authority.
 """
 import json
 import hashlib
-from .code_learning import capture_repair, replay_repair, check_cases, transform, preview_patch, _recipe, _source, _file
+from .code_learning import replay_repair, check_cases, transform, preview_patch, _recipe, _source, _file
 from .errors import InvalidInput, RuleRejected
 from .validation import canonical, digest, namespace_name
 

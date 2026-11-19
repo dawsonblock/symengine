@@ -116,14 +116,28 @@ class BwrapArgvTests(unittest.TestCase):
             (str(self.seccomp_dir.resolve()), "/opt/sis-seccomp"), pairs)
         inner = argv[argv.index("--") + 1:]
         self.assertEqual(inner[0], sys.executable)
-        self.assertEqual(inner[1], "/opt/sis-seccomp/seccomp_exec.py")
-        self.assertEqual(inner[2], "--")
-        self.assertEqual(inner[3:], list(self.spec.argv))
+        # Isolated mode: /workspace and PYTHON* never reach its sys.path.
+        self.assertEqual(inner[1], "-I")
+        self.assertEqual(inner[2], "/opt/sis-seccomp/seccomp_exec.py")
+        self.assertEqual(inner[3], "--")
+        self.assertEqual(inner[4:], list(self.spec.argv))
 
     def test_seccomp_can_be_disabled(self):
         argv = self._argv(LinuxWorkerConfig(apply_seccomp=False))
         self.assertNotIn("/opt/sis-seccomp", argv)
         self.assertEqual(argv[argv.index("--") + 1:], list(self.spec.argv))
+
+    def test_private_material_is_bound_outside_the_workspace(self):
+        private = Path(self.temp.name) / "private"
+        private.mkdir()
+        argv = build_bwrap_argv(
+            LinuxWorkerConfig(), self.workspace, self.spec,
+            seccomp_dir=self.seccomp_dir, private_dir=private)
+        pairs = [
+            (argv[i + 1], argv[i + 2])
+            for i, item in enumerate(argv) if item == "--ro-bind"
+        ]
+        self.assertIn((str(private.resolve()), "/private"), pairs)
 
     def test_network_share_is_explicit(self):
         argv = self._argv(LinuxWorkerConfig(share_network=True))

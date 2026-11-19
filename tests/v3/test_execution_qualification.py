@@ -1,13 +1,15 @@
 """PR-05: execution qualification — hard budgets, usage metering, auth gate."""
+import subprocess
 import sys
 import tempfile
 import time
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest import mock
 
 from sis.v3.adapters import CodexAdapter, CodexAdapterError
-from sis.v3.benchmark import BenchmarkHarness, BudgetCaps, UsageMeter
+from sis.v3.benchmark import BenchmarkHarness, BudgetCaps
 from sis.v3.contracts import TaskEnvelopeV1
 from sis.v3.runner import LocalSubprocessExecutor, tree_digest
 from sis.v3.verifier import OutcomeVerifier
@@ -23,6 +25,7 @@ class BudgetEnforcementTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
         self.verifier = OutcomeVerifier(
+            allow_shared_custody=True,
             executor=LocalSubprocessExecutor(self.root / "eval", use_seatbelt=False),
             key_dir=self.root / "keys", registry_dir=self.root / "registry")
         self.verifier.register_task(
@@ -42,23 +45,65 @@ class BudgetEnforcementTests(unittest.TestCase):
         self.harness = BenchmarkHarness(
             verifier=self.verifier, work_root=self.root / "work")
 
-    def test_runaway_agent_abandoned_at_wall_budget(self):
+    def test_runaway_agent_is_quarantined_at_wall_budget(self):
         def agent(ctx):
             time.sleep(30)
 
         start = time.monotonic()
-        report = self.harness.run(
-            [(self.task, self.repo)], agent,
-            budget=BudgetCaps(wall_seconds=1, token_budget=1000, tool_budget=10),
-            arms=("A",))
+        with mock.patch("sis.v3.benchmark._TERMINATION_GRACE_SECONDS", 0.2):
+            report = self.harness.run(
+                [(self.task, self.repo)], agent,
+                budget=BudgetCaps(wall_seconds=1, token_budget=1000,
+                                  tool_budget=10),
+                arms=("A",))
         elapsed = time.monotonic() - start
         arm = report["per_task"][0]["arms"]["A"]
-        # Suite does NOT wait for the runaway: ~1s + eval, not 30s.
+        # Suite does NOT wait for the runaway: ~1s + grace, not 30s.
         self.assertLess(elapsed, 20)
         self.assertTrue(arm["budget_exceeded"])
         self.assertEqual(arm["outcome"], "error")
-        self.assertEqual(arm["error"], "agent_timeout")
+        # An in-process callable that ignores cancellation cannot be
+        # terminated; its workspace stays quarantined, never reused.
+        self.assertEqual(arm["error"], "agent_timeout_unterminated")
+        self.assertTrue(arm["workspace_retained"])
         self.assertEqual(report["solved_counts"]["A"], 0)
+
+    def test_cancellable_agent_is_terminated_at_wall_budget(self):
+        child = {}
+
+        def agent(ctx):
+            child["proc"] = subprocess.Popen(
+                [sys.executable, "-c", "import time; time.sleep(30)"])
+            ctx.supervisor.register_terminator(child["proc"].kill)
+            child["proc"].wait(timeout=25)
+
+        report = self.harness.run(
+            [(self.task, self.repo)], agent,
+            budget=BudgetCaps(wall_seconds=1, token_budget=1000,
+                              tool_budget=10),
+            arms=("A",))
+        arm = report["per_task"][0]["arms"]["A"]
+        self.assertEqual(arm["error"], "agent_timeout")
+        self.assertFalse(arm.get("workspace_retained", False))
+        self.assertIsNotNone(child["proc"].poll())
+
+    def test_arm_order_is_randomized_and_recorded(self):
+        def agent(ctx):
+            (ctx.workspace / "calc.py").write_text(
+                "def scale(a, b):\n    return a * b\n")
+
+        report = self.harness.run(
+            [(self.task, self.repo)], agent,
+            budget=self.budget_or_default(),
+            arms=("A", "B", "C", "D", "E"), arm_order_seed="seed-1")
+        order = report["per_task"][0]["arm_order"]
+        self.assertEqual(sorted(order), ["A", "B", "C", "D", "E"])
+        self.assertNotEqual(order, ["A", "B", "C", "D", "E"])
+        repeat = self.harness.run(
+            [(self.task, self.repo)], agent,
+            budget=self.budget_or_default(),
+            arms=("A", "B", "C", "D", "E"), arm_order_seed="seed-1")
+        self.assertEqual(order, repeat["per_task"][0]["arm_order"])
 
     def test_usage_meter_verified_accounting(self):
         def agent(ctx):

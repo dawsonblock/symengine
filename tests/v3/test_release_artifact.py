@@ -82,9 +82,12 @@ class SqliteLifecycleTests(unittest.TestCase):
     """Every SQLite owner supports close() and context management."""
 
     def setUp(self):
+        from sis.vault_storage import private_directory
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name)
+        # Vaults require a private parent; a temp dir is not one on
+        # Windows (its DACL also grants OWNER RIGHTS / inherited ACEs).
+        self.root = private_directory(Path(self.temp.name) / "vaults")
 
     def test_registry_close_and_cm(self):
         from sis.registry import Registry
@@ -196,6 +199,51 @@ class CanonicalArchiveBindingTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "out-of-band"):
             verify_release.verify(self.target)
 
+    def test_duplicate_archive_member_is_rejected(self):
+        import hashlib
+        import verify_release
+        digest = hashlib.sha256(b"print(1)\n").hexdigest()
+        manifest = {"schema": 1, "files": {"src/pkg/a.py": digest}}
+        self.target.parent.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(self.target, "w") as z:
+            z.writestr("proj/RELEASE_SHA256.json", json.dumps(manifest))
+            z.writestr("proj/src/pkg/a.py", b"print(1)\n")
+            z.writestr("proj/src/pkg/a.py", b"print(1)\n")
+        with self.assertRaisesRegex(ValueError, "duplicate"):
+            verify_release.verify(self.target)
+
+    def test_unexpected_archive_member_is_rejected(self):
+        import hashlib
+        import verify_release
+        digest = hashlib.sha256(b"print(1)\n").hexdigest()
+        manifest = {"schema": 1, "files": {"src/pkg/a.py": digest}}
+        self.target.parent.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(self.target, "w") as z:
+            z.writestr("proj/RELEASE_SHA256.json", json.dumps(manifest))
+            z.writestr("proj/src/pkg/a.py", b"print(1)\n")
+            z.writestr("proj/src/pkg/evil.py", b"import os\n")
+        with self.assertRaisesRegex(ValueError, "mismatch"):
+            verify_release.verify(self.target)
+
+    def test_modified_archive_member_is_rejected(self):
+        import verify_release
+        self._build()
+        original = self.target.read_bytes()
+        manifest = json.loads(
+            (self.root / "RELEASE_SHA256.json").read_text())
+        with zipfile.ZipFile(self.target, "w") as z:
+            z.writestr("proj/RELEASE_SHA256.json",
+                       json.dumps(manifest))
+            for relative in manifest["files"]:
+                body = (b"print('pwned')\n" if relative == "src/pkg/a.py"
+                        else (self.root / relative).read_bytes())
+                z.writestr("proj/" + relative, body)
+        self.assertNotEqual(self.target.read_bytes(), original)
+        with self.assertRaisesRegex(ValueError, "mismatch"):
+            verify_release.verify(self.target)
+
+    @unittest.skipUnless(shutil.which("git"),
+                         "git is required for the dirty-source gate")
     def test_build_refuses_dirty_source(self):
         import subprocess
         import build_canonical_zip
@@ -207,6 +255,22 @@ class CanonicalArchiveBindingTests(unittest.TestCase):
         (repo / "src/pkg/a.py").write_bytes(b"print(2)\n")
         with self.assertRaisesRegex(ValueError, "uncommitted changes"):
             build_canonical_zip.build(repo, self.target)
+
+    @unittest.skipUnless(shutil.which("git"),
+                         "git is required for the source binding")
+    def test_source_binding_keeps_the_porcelain_leading_space(self):
+        import subprocess
+        import build_canonical_zip
+        repo = self.root
+        subprocess.run(["git", "-C", str(repo), "init", "-q"], check=True)
+        subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
+        subprocess.run(["git", "-C", str(repo), "-c", "user.name=t",
+                        "-c", "user.email=t@e", "commit", "-qm", "init"],
+                       check=True)
+        (repo / "src/pkg/a.py").write_bytes(b"print(2)\n")
+        binding = build_canonical_zip.source_binding(repo)
+        self.assertTrue(binding["dirty"])
+        self.assertEqual(binding["dirty_paths"], ["src/pkg/a.py"])
 
 
 class FreshExtractionGateTests(unittest.TestCase):

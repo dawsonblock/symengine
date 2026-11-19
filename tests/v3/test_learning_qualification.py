@@ -17,9 +17,11 @@ from sis.v3.learning_qualification import (
     FiveArmCampaign,
     analyze_report,
     build_context_provider,
+    campaign_digest,
     codex_agent_status,
     mcnemar_exact,
     newcombe_difference_interval,
+    newcombe_paired_difference_interval,
     paired_contrast,
     wilson_interval,
 )
@@ -40,7 +42,7 @@ def guidance(text="WRITE_OK"):
 
 
 def synthetic_report(n, *, a_pass, e_pass, b_pass=None, c_pass=None,
-                     d_pass=None, conformance=True):
+                     d_pass=None, conformance=True, repositories=None):
     b_pass = a_pass if b_pass is None else b_pass
     c_pass = a_pass if c_pass is None else c_pass
     d_pass = a_pass if d_pass is None else d_pass
@@ -49,13 +51,16 @@ def synthetic_report(n, *, a_pass, e_pass, b_pass=None, c_pass=None,
         def arm(ok):
             return {"outcome": "pass" if ok else "fail",
                     "budget_exceeded": False, "error": None,
-                    "wall_seconds": 1, "tokens_used": 10, "tools_used": 2}
+                    "wall_seconds": 1, "tokens_used": 10, "tools_used": 2,
+                    "budget_accounting": "verified"}
         per_task.append({
             "task_id": f"t{index}",
             "arms": {"A": arm(a_pass), "B": arm(b_pass),
                      "C": arm(c_pass), "D": arm(d_pass),
                      "E": arm(e_pass)},
         })
+        if repositories:
+            per_task[-1]["repository_id"] = f"repo-{index % repositories}"
     report = {"per_task": per_task, "tasks": n,
               "budget": {"wall_seconds": 60, "token_budget": 1000,
                          "tool_budget": 100}}
@@ -102,16 +107,188 @@ class StatisticsTests(unittest.TestCase):
         self.assertLess(contrast["mcnemar_exact_p"], 0.05)
         self.assertGreater(contrast["difference_interval_95"][0], 0)
 
+    def test_paired_interval_uses_the_pairing(self):
+        # 100 paired tasks: 8 treatment-only solves, 0 baseline-only,
+        # 48 both solved, 44 neither. Exact McNemar rejects the null
+        # (p=0.0078125), so the interval must exclude zero. The
+        # independent-sample interval over the same marginals does not.
+        low, high = newcombe_paired_difference_interval(8, 0, 48, 44)
+        self.assertGreater(low, 0.0)
+        self.assertLess(high, 0.2)
+        independent_low, independent_high = newcombe_difference_interval(
+            56, 100, 48, 100)
+        self.assertLess(independent_low, 0.0)
+        self.assertGreater(independent_high, high)
+
+        report = synthetic_report(100, a_pass=False, e_pass=False)
+        for index, row in enumerate(report["per_task"]):
+            row["arms"]["A"] = {
+                "outcome": "pass" if index < 48 else "fail"}
+            row["arms"]["E"] = {
+                "outcome": "pass" if index < 48 or index >= 92 else "fail"}
+        contrast = paired_contrast(report, baseline="A", treatment="E")
+        self.assertEqual(contrast["both_solved"], 48)
+        self.assertEqual(contrast["neither_solved"], 44)
+        self.assertEqual(contrast["difference_interval_method"],
+                         "newcombe_paired")
+        self.assertGreater(contrast["difference_interval_95"][0], 0)
+        self.assertTrue(contrast["significant"])
+
+    def test_paired_interval_of_all_ties_stays_near_zero(self):
+        low, high = newcombe_paired_difference_interval(0, 0, 50, 50)
+        self.assertLess(abs(low), 0.05)
+        self.assertLess(abs(high), 0.05)
+
+
+def eligible_provenance(**overrides):
+    provenance = {
+        "agent": "codex-cli",
+        "cli_version": "1.2.3",
+        "expected_cli_version": "1.2.3",
+        "cli_version_matches": True,
+        "custody": "split",
+        "guidance_source": "learned",
+        "guidance_routing": "governed_serving",
+        "preregistration_anchored": True,
+    }
+    provenance.update(overrides)
+    return provenance
+
+
+def powered_protocol(sample_size=103):
+    return preregister(
+        primary_metric="paired solved_delta E vs A", method="mcnemar_exact",
+        alpha=0.05, min_effect=0.2, sample_size=sample_size,
+        budget={"wall_seconds": 60, "token_budget": 1000,
+                "tool_budget": 100},
+        arms=GOVERNED_ARMS)
+
 
 class AnalysisTests(unittest.TestCase):
     def test_confirmatory_requires_real_agent_hidden_and_conforming(self):
-        report = synthetic_report(103, a_pass=False, e_pass=True)
+        report = synthetic_report(103, a_pass=False, e_pass=True,
+                                  repositories=20)
         analysis = analyze_report(
-            report, protocol={"sample_size": 103, "alpha": 0.05},
-            real_agent=True, hidden_holdout=True)
+            report, protocol=powered_protocol(),
+            real_agent=True, hidden_holdout=True,
+            provenance=eligible_provenance())
         self.assertEqual(analysis["evidence_class"], CONFIRMATORY)
         self.assertEqual(analysis["efficacy_claim"], "supported")
         self.assertEqual(analysis["release_gate"], "EFFICACY_SUPPORTED")
+        self.assertTrue(analysis["confirmatory_eligible"])
+
+    def test_an_unpowered_protocol_is_never_confirmatory(self):
+        report = synthetic_report(103, a_pass=False, e_pass=True)
+        protocol = preregister(
+            primary_metric="paired solved_delta E vs A",
+            method="mcnemar_exact", alpha=0.05, min_effect=0.2,
+            sample_size=103, budget={"wall_seconds": 60,
+                                     "token_budget": 1000,
+                                     "tool_budget": 100},
+            arms=GOVERNED_ARMS, powered=False)
+        protocol["powered"] = False
+        analysis = analyze_report(
+            report, protocol=protocol, real_agent=True,
+            hidden_holdout=True, provenance=eligible_provenance())
+        self.assertEqual(analysis["evidence_class"], EXPLORATORY)
+        self.assertFalse(analysis["confirmatory_eligible"])
+        self.assertEqual(analysis["release_gate"],
+                         "IMPLEMENTED_NOT_EFFICACY_QUALIFIED")
+        self.assertFalse(analysis["power_analysis"]["powered"])
+        self.assertTrue(any("powered" in item
+                            for item in analysis["limitations"]))
+
+    def test_a_forged_power_floor_is_recomputed(self):
+        report = synthetic_report(103, a_pass=False, e_pass=True)
+        protocol = powered_protocol()
+        protocol["power_analysis"]["required_n"] = 4
+        analysis = analyze_report(
+            report, protocol=protocol, real_agent=True,
+            hidden_holdout=True, provenance=eligible_provenance())
+        self.assertEqual(analysis["evidence_class"], EXPLORATORY)
+        self.assertFalse(analysis["confirmatory_eligible"])
+        self.assertIn("power_analysis_required_n_mismatch",
+                      analysis["power_analysis"]["problems"])
+        self.assertIsNone(analysis["power_analysis"]["required_n"])
+
+    def test_a_malformed_power_block_is_exploratory_not_a_crash(self):
+        report = synthetic_report(103, a_pass=False, e_pass=True)
+        for malformed in ("opaque", [], 1):
+            with self.subTest(power_analysis=malformed):
+                analysis = analyze_report(
+                    report,
+                    protocol={"sample_size": 103, "alpha": 0.05,
+                              "powered": True,
+                              "power_analysis": malformed},
+                    real_agent=True, hidden_holdout=True,
+                    provenance=eligible_provenance())
+                self.assertEqual(analysis["evidence_class"], EXPLORATORY)
+                self.assertFalse(analysis["confirmatory_eligible"])
+                self.assertIn("power_analysis_missing",
+                              analysis["power_analysis"]["problems"])
+
+    def test_a_protocol_without_a_valid_sample_size_is_not_confirmatory(self):
+        report = synthetic_report(103, a_pass=False, e_pass=True)
+        protocol = powered_protocol()
+        protocol["sample_size"] = "many"
+        analysis = analyze_report(
+            report, protocol=protocol, real_agent=True,
+            hidden_holdout=True, provenance=eligible_provenance())
+        self.assertEqual(analysis["evidence_class"], EXPLORATORY)
+        self.assertFalse(analysis["confirmatory_eligible"])
+        self.assertTrue(any("sample_size" in item
+                            for item in analysis["limitations"]))
+
+    def test_provenance_gaps_prevent_confirmatory(self):
+        cases = {
+            "shared custody": {"custody": "shared"},
+            "fixed guidance": {"guidance_source": "fixed_control"},
+            "version mismatch": {"cli_version_matches": False},
+            "unanchored manifest": {"preregistration_anchored": False},
+        }
+        for label, override in cases.items():
+            with self.subTest(label=label):
+                report = synthetic_report(103, a_pass=False, e_pass=True)
+                analysis = analyze_report(
+                    report, protocol={"sample_size": 103, "alpha": 0.05},
+                    real_agent=True, hidden_holdout=True,
+                    provenance=eligible_provenance(**override))
+                self.assertEqual(analysis["evidence_class"], EXPLORATORY)
+                self.assertFalse(analysis["confirmatory_eligible"])
+                self.assertTrue(analysis["limitations"])
+
+    def test_injected_agent_is_invalid_not_confirmatory(self):
+        report = synthetic_report(103, a_pass=False, e_pass=True)
+        analysis = analyze_report(
+            report, protocol={"sample_size": 103, "alpha": 0.05},
+            real_agent=True, hidden_holdout=True,
+            provenance=eligible_provenance(agent="injected"))
+        self.assertEqual(analysis["evidence_class"], "invalid")
+        self.assertFalse(analysis["confirmatory_eligible"])
+
+    def test_unverified_token_accounting_prevents_confirmatory(self):
+        report = synthetic_report(103, a_pass=False, e_pass=True)
+        for task in report["per_task"]:
+            for row in task["arms"].values():
+                row["budget_accounting"] = "unverified"
+        analysis = analyze_report(
+            report, protocol={"sample_size": 103, "alpha": 0.05},
+            real_agent=True, hidden_holdout=True,
+            provenance=eligible_provenance())
+        self.assertEqual(analysis["evidence_class"], EXPLORATORY)
+        self.assertEqual(
+            analysis["provenance"]["token_accounting"], "unverified")
+
+    def test_campaign_digest_accepts_float_analysis(self):
+        report = synthetic_report(3, a_pass=False, e_pass=True)
+        analysis = analyze_report(
+            report, protocol={"sample_size": 3, "alpha": 0.05},
+            real_agent=False, hidden_holdout=True)
+        document = {"protocol_digest": "0" * 64,
+                    "learning_qualification": analysis}
+        digest = campaign_digest(document)
+        self.assertEqual(len(digest), 64)
+        self.assertEqual(digest, campaign_digest(document))
 
     def test_scripted_run_is_demonstration_not_efficacy(self):
         report = synthetic_report(29, a_pass=False, e_pass=True)
@@ -137,10 +314,12 @@ class AnalysisTests(unittest.TestCase):
                             for item in analysis["limitations"]))
 
     def test_regression_is_preserved(self):
-        report = synthetic_report(103, a_pass=True, e_pass=False)
+        report = synthetic_report(103, a_pass=True, e_pass=False,
+                                  repositories=20)
         analysis = analyze_report(
-            report, protocol={"sample_size": 103, "alpha": 0.05},
-            real_agent=True, hidden_holdout=True)
+            report, protocol=powered_protocol(),
+            real_agent=True, hidden_holdout=True,
+            provenance=eligible_provenance())
         self.assertEqual(analysis["efficacy_claim"], "regressed")
         self.assertEqual(analysis["release_gate"], "NO_EFFICACY_CLAIM")
         self.assertLess(analysis["decisive_contrast"]["delta"], 0)
@@ -155,6 +334,20 @@ class AnalysisTests(unittest.TestCase):
         self.assertEqual(analysis["release_gate"],
                          "IMPLEMENTED_NOT_EFFICACY_QUALIFIED")
 
+    def test_e_vs_a_contrast_uses_e_as_treatment(self):
+        report = synthetic_report(10, a_pass=False, e_pass=True)
+        analysis = analyze_report(
+            report, protocol={"sample_size": 10, "alpha": 0.05},
+            real_agent=True, hidden_holdout=True)
+        contrast = analysis["contrasts"]["E_vs_A"]
+        self.assertEqual(contrast["baseline"], "A")
+        self.assertEqual(contrast["treatment"], "E")
+        self.assertEqual(contrast["baseline_solved"], 0)
+        self.assertEqual(contrast["treatment_solved"], 10)
+        self.assertEqual(contrast["delta"], 1.0)
+        self.assertEqual(contrast["wins"], 10)
+        self.assertEqual(contrast, analysis["decisive_contrast"])
+
     def test_integration_vs_components_reported(self):
         report = synthetic_report(
             10, a_pass=False, e_pass=True, b_pass=True, c_pass=False,
@@ -168,6 +361,32 @@ class AnalysisTests(unittest.TestCase):
         self.assertEqual(
             analysis["integration_vs_components"]["C"]["wins"], 10)
 
+    def test_per_repository_reporting_and_cluster_uncertainty(self):
+        report = synthetic_report(10, a_pass=False, e_pass=True)
+        for index, row in enumerate(report["per_task"]):
+            row["repository_id"] = f"repo-{index % 2}"
+        analysis = analyze_report(
+            report, protocol={"sample_size": 10, "alpha": 0.05},
+            real_agent=False, hidden_holdout=True)
+        self.assertEqual(analysis["per_repository"]["repo-0"]["tasks"], 5)
+        self.assertEqual(
+            analysis["per_repository"]["repo-0"]["solved"]["E"], 5)
+        self.assertEqual(
+            analysis["per_repository"]["repo-0"]["solved"]["A"], 0)
+        interval = analysis["repository_clustered_uncertainty"]
+        self.assertEqual(interval["method"],
+                         "repository_cluster_bootstrap")
+        self.assertEqual(interval["repositories"], 2)
+        self.assertIsNotNone(interval["interval_95"])
+
+    def test_no_repository_ids_means_no_cluster_estimate(self):
+        report = synthetic_report(10, a_pass=False, e_pass=True)
+        analysis = analyze_report(
+            report, protocol={"sample_size": 10, "alpha": 0.05},
+            real_agent=False, hidden_holdout=True)
+        self.assertEqual(analysis["per_repository"], {})
+        self.assertIsNone(analysis["repository_clustered_uncertainty"])
+
 
 class CampaignTests(unittest.TestCase):
     def setUp(self):
@@ -178,6 +397,7 @@ class CampaignTests(unittest.TestCase):
         self.repo.mkdir()
         (self.repo / "solution.py").write_text("NO = 1\n")
         self.verifier = OutcomeVerifier(
+            allow_shared_custody=True,
             executor=LocalSubprocessExecutor(self.root / "exec"),
             key_dir=self.root / "keys",
             registry_dir=self.root / "registry")
@@ -243,9 +463,12 @@ class CampaignTests(unittest.TestCase):
         self.assertEqual(analysis["decisive_contrast"]["losses"], 0)
         self.assertEqual(analysis["metrics"]["A"]["solved_task_rate"], 0.0)
         self.assertEqual(analysis["metrics"]["E"]["solved_task_rate"], 1.0)
-        # No misleading tasks were declared, so negative transfer is
-        # unmeasured (None), never fabricated as zero.
-        self.assertIsNone(analysis["negative_transfer"]["integrated_rate"])
+        # Negative transfer is measured from paired losses; with no
+        # misleading tasks declared the misleading-task rate stays None.
+        self.assertTrue(analysis["negative_transfer"]["measured"])
+        self.assertEqual(analysis["negative_transfer"]["integrated_rate"], 0.0)
+        self.assertIsNone(
+            analysis["negative_transfer"]["misleading_task_rate"])
         self.assertEqual(served[("task-0", "A")], False)
         self.assertEqual(served[("task-0", "E")], True)
 

@@ -1,9 +1,13 @@
 """Evaluator-in-subprocess: signing custody separated from the caller."""
+import contextlib
+import io
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
+from sis.v3 import evaluator_worker
 from sis.v3.contracts import TaskEnvelopeV1
 from sis.v3.evaluator_worker import EvaluatorWorkerError, evaluate_via_subprocess
 from sis.v3.runner import LocalSubprocessExecutor, tree_digest
@@ -25,6 +29,7 @@ class EvaluatorWorkerTests(unittest.TestCase):
         # Register the task through a normal verifier; the worker reuses the
         # same registry and key dirs in its own process.
         self.registrar = OutcomeVerifier(
+            allow_shared_custody=True,
             executor=LocalSubprocessExecutor(self.root / "reg-exec", use_seatbelt=False),
             key_dir=self.key_dir,
             registry_dir=self.registry_dir,
@@ -49,6 +54,9 @@ class EvaluatorWorkerTests(unittest.TestCase):
             task=self.task, submission_dir=self.repo,
             evaluation_nonce="sub-nonce-1",
             executor_root=self.root / "work-exec",
+            executor="local", allow_local_executor=True,
+            allow_unqualified=True,
+            allow_shared_custody=True,
         )
         self.assertEqual(result.exit_status, 0)
         self.assertEqual(result.receipt.outcome, "pass")
@@ -68,14 +76,83 @@ class EvaluatorWorkerTests(unittest.TestCase):
                 key_dir=self.key_dir, registry_dir=self.registry_dir,
                 task=bad, submission_dir=self.repo,
                 evaluation_nonce="sub-nonce-2",
+                executor="local", allow_local_executor=True,
+            allow_unqualified=True,
+                allow_shared_custody=True,
             )
 
+    def test_shared_private_task_is_refused_without_the_opt_out(self):
+        with self.assertRaisesRegex(EvaluatorWorkerError, "rejected"):
+            evaluate_via_subprocess(
+                key_dir=self.key_dir, registry_dir=self.registry_dir,
+                task=self.task, submission_dir=self.repo,
+                evaluation_nonce="sub-nonce-shared",
+                executor="local", allow_local_executor=True,
+            allow_unqualified=True,
+            )
+
+    def test_worker_refuses_a_split_registry_without_a_second_principal(self):
+        split_registry = self.root / "split-registry"
+        registrar = OutcomeVerifier(
+            allow_shared_custody=True,
+            executor=LocalSubprocessExecutor(
+                self.root / "split-reg-exec", use_seatbelt=False),
+            key_dir=self.key_dir, registry_dir=split_registry)
+        registrar.register_task(
+            actor_role="evaluator", task_id="split-task",
+            criterion_version="v1", argv=(PY, "acc.py"),
+            files={"acc.py": b"import calc\n"},
+            custody="split")
+        task = TaskEnvelopeV1.from_dict({
+            **self.task.to_dict(),
+            "task_id": "split-task",
+            "evaluator_task_ref": "split-task",
+        })
+        task_path = self.root / "split-task.json"
+        task_path.write_bytes(task.canonical_bytes())
+        plain = LocalSubprocessExecutor(
+            self.root / "plain-exec", use_seatbelt=False)
+        self.addCleanup(plain.terminate_all)
+        argv = [
+            "sis.v3.evaluator_worker",
+            "--key-dir", str(self.key_dir),
+            "--registry-dir", str(split_registry),
+            "--submission", str(self.repo),
+            "--nonce", "sub-nonce-split-preflight",
+            "--receipt-out", str(self.root / "split-receipt.json"),
+            "--task-json", str(task_path),
+            "--executor", "local", "--allow-local-executor",
+        ]
+        stderr = io.StringIO()
+        with mock.patch.object(sys, "argv", argv), \
+                mock.patch.object(
+                    evaluator_worker, "build_worker_executor",
+                    return_value=plain), \
+                contextlib.redirect_stderr(stderr):
+            code = evaluator_worker._main()
+        self.assertEqual(code, 2)
+        self.assertIn("executor_unavailable", stderr.getvalue())
+
+    def test_allow_shared_custody_conflicts_with_split_custody(self):
+        with self.assertRaisesRegex(
+                EvaluatorWorkerError,
+                "allow_shared_custody_conflicts_with_split_custody"):
+            evaluate_via_subprocess(
+                key_dir=self.key_dir, registry_dir=self.registry_dir,
+                task=self.task, submission_dir=self.repo,
+                evaluation_nonce="sub-nonce-conflict",
+                executor="local", allow_local_executor=True,
+            allow_unqualified=True,
+                require_split_custody=True, allow_shared_custody=True)
+
     def test_missing_dirs_fail_fast(self):
-        with self.assertRaises(EvaluatorWorkerError):
+        with self.assertRaisesRegex(
+                EvaluatorWorkerError, "key_dir must be an existing directory"):
             evaluate_via_subprocess(
                 key_dir=self.root / "absent", registry_dir=self.registry_dir,
                 task=self.task, submission_dir=self.repo,
-                evaluation_nonce="n",
+                evaluation_nonce="n", executor="docker",
+                sandbox_image="example.invalid/img@sha256:" + "0" * 64,
             )
 
 

@@ -81,17 +81,17 @@ def capture_change(
         if old == new:
             continue
         if old is None:
-            kind, entry = "added", {"path": path, "kind": "added",
-                                    "after_digest": new[0]}
+            entry = {"path": path, "kind": "added",
+                     "after_digest": new[0]}
             old_bytes, new_bytes = b"", _read(after, path)
         elif new is None:
-            kind, entry = "removed", {"path": path, "kind": "removed",
-                                      "before_digest": old[0]}
+            entry = {"path": path, "kind": "removed",
+                     "before_digest": old[0]}
             old_bytes, new_bytes = _read(before, path), b""
         else:
-            kind, entry = "modified", {"path": path, "kind": "modified",
-                                       "before_digest": old[0],
-                                       "after_digest": new[0]}
+            entry = {"path": path, "kind": "modified",
+                     "before_digest": old[0],
+                     "after_digest": new[0]}
             old_bytes, new_bytes = _read(before, path), _read(after, path)
         changes.append(entry)
         try:

@@ -12,7 +12,6 @@ from sis.v3.contracts import (
     ProcedureRecordV1,
     PromotionDecisionV1,
     TaskEnvelopeV1,
-    canonical_json,
 )
 
 SCHEMA_DIR = Path(__file__).resolve().parents[2] / "src" / "sis" / "v3" / "schemas"

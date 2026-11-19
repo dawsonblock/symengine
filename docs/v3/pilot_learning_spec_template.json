@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "kind": "guidance_learning_spec",
+  "notes": "Input to tools/build_guidance_bundle.py for the pilot. Repositories and tasks are added by tools/import_study_tasks.py --partition induction --learning-split training|qualification --merge-into <this file>. Training and qualification repositories must be different codebases (snapshot and Git lineage), and none may be a holdout repository of the study spec (--exclude-spec).",
+  "agent": {
+    "kind": "claude-code",
+    "model": "<same pinned model as the study spec>",
+    "cli_version": "<same CLI version as the study spec>"
+  },
+  "budget": {
+    "wall_seconds": 900,
+    "token_budget": 150000,
+    "tool_budget": 100
+  },
+  "repositories": [],
+  "tasks": []
+}

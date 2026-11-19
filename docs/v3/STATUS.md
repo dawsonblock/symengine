@@ -3,7 +3,8 @@
 > **Historical build ledger.** This file records the M0/M1 implementation
 > sequence and is retained for provenance. It does not describe the
 > current release. For the current status see
-> `docs/v3/QUALIFICATION_REPORT.md` and `docs/v3/RELEASE_NOTES_V3_3.md`.
+> `docs/v3/QUALIFICATION_REPORT_V3_3_8.md` and
+> `docs/v3/RELEASE_NOTES_V3_3.md`.
 
 Historical classification: **M0 contracts/policy plus SIS3-003 executor,
 SIS3-005 episode store, SIS3-006 signed receipts, SIS3-004 CLI adapter (real
@@ -234,7 +235,7 @@ tests_added: 60
 commands_run:
   - "PYTHONPATH=src python3 -m unittest discover -s tests -q"
   - "PYTHONPATH=src python3 -W error::ResourceWarning -m unittest discover -s tests -q"
-  - "PYTHONPATH=src python3 scripts/v3/run_codex_episode.py --work-root /tmp/sis-live-ws --evidence-root /tmp/sis-live-evidence"
+  - "PYTHONPATH=src python3 scripts/v3/run_codex_episode.py --allow-local-executor --work-root /tmp/sis-live-ws --evidence-root /tmp/sis-live-evidence"
   - "codex exec --json --ephemeral -s workspace-write -C /tmp/codex-dbg (direct capability probe)"
 observed_outcomes:
   - "Full suite: 479 tests, 0 failures, 2 skips; no ResourceWarnings under -W error"
@@ -506,28 +507,6 @@ remaining_unknowns:
   - "thread-based preemption cannot kill arbitrary in-process code; subprocess agents should run via WorkspaceExecutor"
   - "token accounting depends on SDK token_usage events; SDKs that do not report remain unverified"
 next_gate: "PR-06+: trustworthy source-change capture + learning loop"
-```
-
-## v3.1-alpha — trustworthy source-change capture (PR-06)
-
-```yaml
-phase_id: v31-source-change-capture
-tickets: [PR-06]
-status: implemented_and_tested
-changed_files:
-  - src/sis/v3/contracts.py           # SourceChangeV1 record + validation
-  - src/sis/v3/source_change.py       # NEW: capture_change + verify_capture
-  - tests/v3/test_source_change.py    # NEW: 7 tests
-observed_outcomes:
-  - "Full suite: 642 passed, 2 skipped"
-  - "all digests are computed by the capture path (scan_tree + per-file sha256 + self-generated unified diff); agent-reported digests can never enter the record"
-  - "expected_before_digest anchors capture to the attested workspace base; mismatch refuses"
-  - "added/removed/modified classification; binary files marked, text files unified-diffed"
-  - "identical trees refuse; tampered diff bytes detected by verify_capture; captures are deterministic under fixed now"
-remaining_unknowns:
-  - "capture binds filesystem trees only — mapping a change to a specific agent turn requires the episode/attempt correlation (adapter side)"
-  - "no semantic judgment: a captured change is evidence, not correctness"
-next_gate: "PR-07+: observe-learn-verify-reuse wiring + strategic/structural induction"
 ```
 
 ## v3.1-alpha — trustworthy source-change capture (PR-06)

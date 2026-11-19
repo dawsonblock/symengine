@@ -42,6 +42,9 @@ the v3.3.2 changes and evidence are in `docs/V332_AUTHORITY_CONSISTENCY.md`.
 | Replay one signed session across replicas | shared `session_nonce` uniqueness constraint; nonce and receipt committed in one transaction |
 | Revocation committed during guidance composition | witnessed snapshot revalidated before commit; the decision aborts on change |
 | Restored pre-revocation custody directory | signed revocation/supersession heads and custody entry count compared on every production serve |
+| Truncated revocation log re-padded to the same/larger count | publisher proves both logs extend the checkpointed heads before signing; appends refuse a shorter-than-observed log |
+| Client omits a revocation from its request | server-side custody revocations/supersessions (candidate, decision, certificate, receipt, evidence digests) are always applied |
+| One receipt attached to many served authorizations | unique `receipt_digest` in the control plane |
 | Stale snapshot committed after a revocation | control-plane `authority_head` compare-and-commit |
 | Interrupted checkpoint publication | local-ahead detection; `recover()` republishes only if the checkpointed head is still an ancestor |
 | Unavailable checkpoint service | fail closed (`checkpoint_unavailable`) |

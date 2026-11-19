@@ -25,6 +25,12 @@ satisfy a production qualification.
 - A complete real-agent run with all five arms and no quota block.
 - Verified solve-rate, negative-transfer, latency and cost estimates
   with uncertainty intervals.
+- A holdout spanning at least 20 repositories: the efficacy decision is
+  now a repository-level test, and the analysis labels fewer holdout
+  repositories exploratory. The manifest validator enforces the same
+  floor: a confirmatory manifest with fewer than 20 contributing holdout
+  repositories is refused, and a smaller study must declare
+  `"study_tier": "exploratory"` (docs/v3/EFFICACY_STUDY_PROTOCOL.md).
 
 ## Consequence
 

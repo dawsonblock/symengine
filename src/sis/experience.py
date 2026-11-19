@@ -5,7 +5,7 @@ output is required to learn from a failed episode. Traces are bounded metadata,
 NOT interpreted as program semantics or independent evidence.
 """
 from .errors import InvalidInput
-from .validation import check_inputs, check_scalar, canonical, digest
+from .validation import check_inputs, check_scalar, digest
 
 
 def transform_episodes(request):

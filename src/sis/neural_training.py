@@ -123,7 +123,7 @@ def validate_export(jsonl_bytes, manifest, *, hmac_key=None, allow_unverified=Fa
         name = namespace_name(user['namespace'])
         check_task_description(user['task_description'])
         inputs = check_inputs(user['inputs'])
-        output = check_scalar(response['output'])
+        check_scalar(response['output'])
         current_schema = input_schema(inputs)
         if namespace is None: namespace = name
         if schema is None: schema = current_schema

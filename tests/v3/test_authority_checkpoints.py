@@ -15,8 +15,7 @@ import unittest
 from pathlib import Path
 
 from sis.v3 import signatures
-from sis.v3.candidates import (CandidateError, CandidatePublicationPending,
-                               CandidateRegistry)
+from sis.v3.candidates import (CandidateError, CandidatePublicationPending)
 from sis.v3.checkpoints import (
     AuthorityJournal,
     AuthorityStateVerifier,
@@ -496,6 +495,7 @@ class InterruptedPublicationTests(_Fixture):
         finally:
             con.close()
         registry = self._reopen()
+        self.assertIsNotNone(registry)
         report = self.journal.recover()
         self.assertEqual(report["action"], "rollback_detected")
         with self.assertRaises(RollbackDetected):

@@ -8,31 +8,60 @@ This is a **local-first research prototype**, not an audited hardened multi-tena
 
 ## Enforced
 
-1. Rules are JSON expressions with a whitelisted interpreter, not Python source. All AST nodes and arguments are checked before evaluation. Numeric overflow and oversized inputs reject.
+1. Rules are JSON expressions with a whitelisted interpreter, not Python source. All AST nodes and arguments are checked
+   before evaluation. Numeric overflow and oversized inputs reject.
 2. Training and validation have strict bounds; web request size is capped to 512 KiB.
-3. The HTTP server binds to `127.0.0.1` unless changed. Non-loopback binds require `SIS_API_KEY`; any configured API key must be at least 24 UTF-8 bytes. Authentication uses constant-time comparison of `X-SIS-Key`. With an API key configured, train/feedback/retire/chat routes additionally require independent `SIS_ADMIN_KEY` via `X-SIS-Admin-Key` (otherwise HTTP 403). Without either key, loopback development mode allows mutation to anyone able to connect to the port.
-4. Both `Service.study()` and the registry promotion boundary independently recompute induction from supplied examples and configuration. A direct Python caller cannot promote a fabricated induction result without reproducing the matching study. This still does not authenticate the origin or truth of the examples.
-5. Model calls are off by default. An enabled LLM sees only explicit opt-in training input or chat context; API-provided LLM endpoints are not accepted (endpoint is controlled by environment). Outbound HTTP redirects are refused to avoid forwarding examples or bearer credentials to another URL.
+3. The HTTP server binds to `127.0.0.1` unless changed. Non-loopback binds require `SIS_API_KEY`; any configured API key
+   must be at least 24 UTF-8 bytes. Authentication uses constant-time comparison of `X-SIS-Key`. With an API key
+   configured, train/feedback/retire/chat routes additionally require independent `SIS_ADMIN_KEY` via `X-SIS-Admin-Key`
+   (otherwise HTTP 403). Without either key, loopback development mode allows mutation to anyone able to connect to the
+   port.
+4. Both `Service.study()` and the registry promotion boundary independently recompute induction from supplied examples
+   and configuration. A direct Python caller cannot promote a fabricated induction result without reproducing the
+   matching study. This still does not authenticate the origin or truth of the examples.
+5. Model calls are off by default. An enabled LLM sees only explicit opt-in training input or chat context; API-provided
+   LLM endpoints are not accepted (endpoint is controlled by environment). Outbound HTTP redirects are refused to avoid
+   forwarding examples or bearer credentials to another URL.
 6. Users cannot choose which SQL to run. SQL parameterization is used throughout.
-7. The audit chain checks hash continuity, final DB projection, and now semantic event replay (promotion/feedback/retirement transitions). It does *not* stop a sufficiently privileged attacker from recomputing coherent history or truncating it.
-8. The admission firewall rejects bounded counterexample disagreements with active rules using the same namespace and schema. It does not prove semantic equivalence or prevent malicious labels.
+7. The audit chain checks hash continuity, final DB projection, and now semantic event replay
+   (promotion/feedback/retirement transitions). It does *not* stop a sufficiently privileged attacker from recomputing
+   coherent history or truncating it.
+8. The admission firewall rejects bounded counterexample disagreements with active rules using the same namespace and
+   schema. It does not prove semantic equivalence or prevent malicious labels.
+9. A workspace handle is a capability, not a path. Every executor records the workspaces it creates in a private
+   registry; execution and deletion resolve the handle through that registry and accept a caller-supplied path only
+   when it is exactly the registered canonical path. A forged handle, a handle from another executor, a symlinked
+   workspace directory, or a deleted workspace is rejected before the backend mounts, executes within, or deletes
+   anything. Destruction refuses new runs, terminates executions still in flight, and removes the directory only after
+   every execution that already started has left its critical section.
 
 ## Not implemented; do not assume
 
-- Independent signing authority, external timestamping, or automatically externally anchored Merkle proofs. Manual checkpoints with optional HMAC now exist, but the operator must separately safeguard the checkpoint and signing key.
-- Internet-facing TLS, API rate limiting, fine-grained IAM, comprehensive roles, tenant isolation, per-user quotas, or endpoint allowlists for operator-configured HTTPS model URL. The operator key is just a second shared secret, not per-user IAM.
-- Container-level isolation or sandboxing of third-party Python packages; the bundled AST interpreter never executes user Python.
+- Independent signing authority, external timestamping, or automatically externally anchored Merkle proofs. Manual
+  checkpoints with optional HMAC now exist, but the operator must separately safeguard the checkpoint and signing key.
+- Internet-facing TLS, API rate limiting, fine-grained IAM, comprehensive roles, tenant isolation, per-user quotas, or
+  endpoint allowlists for operator-configured HTTPS model URL. The operator key is just a second shared secret, not
+  per-user IAM.
+- Container-level isolation or sandboxing of third-party Python packages; the bundled AST interpreter never executes
+  user Python.
 - A trusted ground-truth oracle for feedback or for validation data; user-supplied labels may be false.
-- Formal mathematical proof of a task hypothesis. Z3 is used only for **bounded disagreements between formulas** when enabled.
-- Untrusted public hosting. For a future network service deploy behind TLS, identity-aware proxy, workload isolation, and independently monitored audit storage, and perform an external security assessment.
+- Formal mathematical proof of a task hypothesis. Z3 is used only for **bounded disagreements between formulas** when
+  enabled.
+- Untrusted public hosting. For a future network service deploy behind TLS, identity-aware proxy, workload isolation,
+  and independently monitored audit storage, and perform an external security assessment.
 
 ## Privacy
 
-The local registry stores rule expressions and schema identifiers, counts, hashes of training/validation sets, and feedback digests; it does not store raw training examples by default. Logs omit request bodies. A human who already knows the small set of likely labels may infer sensitive values from digests; do not treat hashes as anonymization. LLM-enabled sessions transfer examples or prompt context to the configured model endpoint. Review data sharing agreements and do not put secrets in examples.
+The local registry stores rule expressions and schema identifiers, counts, hashes of training/validation sets, and
+feedback digests; it does not store raw training examples by default. Logs omit request bodies. A human who already
+knows the small set of likely labels may infer sensitive values from digests; do not treat hashes as anonymization.
+LLM-enabled sessions transfer examples or prompt context to the configured model endpoint. Review data sharing
+agreements and do not put secrets in examples.
 
 ## Safe default
 
-Prefer local model inference, loopback API, synthetic/proprietary test fixtures with consent, and independent reviewed qualification before granting a rule authority over workflows.
+Prefer local model inference, loopback API, synthetic/proprietary test fixtures with consent, and independent reviewed
+qualification before granting a rule authority over workflows.
 
 ## v1.1 stronger projection consistency and remaining limits
 
@@ -87,7 +116,9 @@ plausible new full history. Export externally controlled HMAC checkpoints.
 
 ## v1.7 procedural-skill subsystem
 
-See [V1_7_PROCEDURAL_SKILLS.md](V1_7_PROCEDURAL_SKILLS.md) for architecture, verification boundary, threat model and explicit limitations. The procedural skill chain is local integrity evidence, not a separately anchored cryptographic attestation.
+See [V1_7_PROCEDURAL_SKILLS.md](V1_7_PROCEDURAL_SKILLS.md) for architecture, verification boundary, threat model and
+explicit limitations. The procedural skill chain is local integrity evidence, not a separately anchored cryptographic
+attestation.
 
 
 ## v1.8 procedural skill evaluator and distillation trust boundaries

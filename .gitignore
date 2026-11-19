@@ -22,3 +22,4 @@ dist/
 .env.*
 !.env.example
 release/*.zip
+release/history/

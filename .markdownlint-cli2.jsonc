@@ -1,0 +1,24 @@
+{
+  "config": {
+    "MD013": {
+      "line_length": 120,
+      "code_blocks": false,
+      "tables": false,
+      "headings": false
+    },
+    "MD025": false
+  },
+  "ignores": [
+    "AUTHORITY_RECOVERY_RELEASE_NOTES.md",
+    "CHANGELOG.md",
+    "UPGRADE_README.md",
+    "UPGRADE_RELEASE_NOTES_2026-10-24.md",
+    "build/**",
+    "evidence/**",
+    "docs/EVALUATOR_V1_4.md",
+    "docs/LEGACY_README.md",
+    "docs/TEST_REPORT_*.md",
+    "docs/V1_*.md",
+    "docs/V2_*.md"
+  ]
+}
