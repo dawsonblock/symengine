@@ -165,8 +165,12 @@ class PolicyRoundTripTests(unittest.TestCase):
             if parts[0] == "docker" and len(parts) >= 3:
                 markers[parts[1]] = ":".join(parts[2:])
         uid, gid = markers["user"].split(":")
+        # The container gets the workload limit plus the runtime's signed
+        # memory allowance (gVisor's sentry and tmpfs live inside it).
+        container_memory = (int(markers["memory_bytes"])
+                            + int(markers.get("runtime_memory_overhead", 0)))
         return {
-            "memory_bytes": markers["memory_bytes"],
+            "memory_bytes": container_memory,
             "pids_limit": markers["pids_limit"],
             "disk_bytes": markers["disk_bytes"],
             "cpu_seconds": markers["ulimit_cpu"],
@@ -218,8 +222,34 @@ class PolicyRoundTripTests(unittest.TestCase):
         ceilings = executor.launch_policy()["ceilings"]
         values = self.values_from_receipt(receipt, executor)
         self.assertLessEqual(int(values["pids_limit"]), ceilings["pids_limit"])
-        self.assertLessEqual(int(values["memory_bytes"]),
-                             ceilings["memory_bytes"])
+        self.assertLessEqual(
+            int(values["memory_bytes"]) - ceilings["runtime_memory_overhead_bytes"],
+            ceilings["memory_bytes"])
+
+    def test_gvisor_memory_allowance_is_signed_and_reported(self):
+        from sis.v3.docker_sandbox import RUNSC_MEMORY_OVERHEAD_BYTES
+        executor = _executor(self.root, docker_binary=str(self.fake))
+        workload = 128 * 1024 * 1024
+        receipt = self.run_once(executor, ResourceLimits(
+            wall_seconds=60, process_count=64, memory_bytes=workload))
+        flags = self.launched_flags(executor)
+        container = int(flags[flags.index("--memory") + 1])
+        self.assertEqual(container, workload + RUNSC_MEMORY_OVERHEAD_BYTES)
+        self.assertEqual(flags[flags.index("--memory-swap") + 1], str(container))
+        # The receipt reports the workload limit and, separately, the
+        # allowance; the policy carries the same allowance.
+        self.assertIn(f"docker:memory_bytes:{workload}", receipt.security_errors)
+        self.assertIn("docker:runtime_memory_overhead:"
+                      f"{RUNSC_MEMORY_OVERHEAD_BYTES}", receipt.security_errors)
+        self.assertEqual(
+            executor.launch_policy()["ceilings"]["runtime_memory_overhead_bytes"],
+            RUNSC_MEMORY_OVERHEAD_BYTES)
+
+    def test_default_runtime_has_no_memory_allowance(self):
+        executor = _executor(self.root, docker_binary=str(self.fake),
+                             runtime=None, production=False)
+        self.assertEqual(
+            executor.launch_policy()["ceilings"]["runtime_memory_overhead_bytes"], 0)
 
     def test_the_policy_template_has_no_host_specific_values(self):
         first = _executor(self.root / "a", user="1000:1000").launch_policy()

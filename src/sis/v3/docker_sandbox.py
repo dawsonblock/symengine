@@ -76,6 +76,12 @@ _COPY_OUT_STREAM_FLOOR = 1 << 20
 #: daemon default (normally runc); production requires gVisor.
 RUNTIMES = (None, "runc", "runsc")
 PRODUCTION_RUNTIME = "runsc"
+#: Memory the container cgroup gets on top of the workload limit under
+#: gVisor. The sentry and its memory-backed /workspace and /tmp count
+#: against the container limit, so a 128 MiB workload limit left no room
+#: to copy the workspace in. The workload limit itself is unchanged and is
+#: what receipts report; the allowance is part of the signed policy.
+RUNSC_MEMORY_OVERHEAD_BYTES = 256 * 1024 * 1024
 BACKEND = "docker_sandbox"
 POLICY_SCHEMA_VERSION = 2
 #: Containment properties a production attestation for this backend must
@@ -479,6 +485,8 @@ class DockerSandboxExecutor:
                 "pids_limit": self._pids,
                 "output_bytes": self._output_bytes,
                 "tmpfs_bytes": self._tmpfs,
+                "runtime_memory_overhead_bytes":
+                    self._runtime_memory_overhead(),
                 "nofile_limit": self._nofile,
                 "cpus": f"{self._cpus:g}",
             },
@@ -629,6 +637,9 @@ class DockerSandboxExecutor:
             f"docker:output_bytes:{output_cap}",
             f"docker:runtime:{self._runtime or 'default'}",
         ]
+        if self._runtime_memory_overhead():
+            security_errors.append("docker:runtime_memory_overhead:"
+                           f"{self._runtime_memory_overhead()}")
         if self._seccomp_sha256 is not None:
             security_errors.append(
                 f"docker:seccomp_profile:{self._seccomp_sha256}")
@@ -967,6 +978,11 @@ class DockerSandboxExecutor:
                 "docker_start_failed:"
                 + (result.stderr or result.stdout).strip()[:200])
 
+    def _runtime_memory_overhead(self) -> int:
+        """Container memory added to the workload limit for the runtime."""
+        return (RUNSC_MEMORY_OVERHEAD_BYTES
+                if self._runtime == PRODUCTION_RUNTIME else 0)
+
     def _launch_values(
         self, *, memory: int, pids: int, disk: int, cpu_seconds: int,
         split: bool,
@@ -976,7 +992,7 @@ class DockerSandboxExecutor:
         # able to read the copied-in workspace; the evaluator UID keeps
         # write access. Only the two run principals can reach this tmpfs.
         return {
-            "memory_bytes": memory,
+            "memory_bytes": memory + self._runtime_memory_overhead(),
             "pids_limit": pids,
             "disk_bytes": disk,
             "cpu_seconds": cpu_seconds,
