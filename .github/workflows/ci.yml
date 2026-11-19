@@ -228,3 +228,108 @@ jobs:
           SIS_POSTGRES_DSN: postgresql://sis_test:sis_test@127.0.0.1:5432/sis_control
           PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
           PYTHONNOUSERSITE: "1"
+
+  sandbox-qualification:
+    # Keeps the Docker sandbox evidence fresh: gVisor (runsc) from a pinned
+    # release with a verified checksum, the pinned evaluator image, then
+    # the containment probe, the red-team suite and the Gate 2
+    # qualification. The attestation is signed with a key generated in
+    # this job (trust root `qualification-only`) and never stored. This is
+    # self-signed evidence that catches executor regressions; it is not
+    # independent sign-off (docs/v3/SANDBOX_QUALIFICATION_GATE2.md).
+    runs-on: ubuntu-latest
+    env:
+      # https://storage.googleapis.com/gvisor/releases/release/<version>/x86_64/
+      GVISOR_RELEASE: "20261026.0"
+      GVISOR_SHA512: "26e4a327565f5da0f73261a6387e2c20f4695a232e330095a3111b70efd604fdf09d734e8cc8f714dbb5c5607ce8c87ea80b26df549d83a146f2efd5a1af448a"
+      EVIDENCE_DIR: ${{ github.workspace }}/sandbox-evidence
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r requirements-lock.txt
+      - run: python -m pip install -e . --no-deps
+      - name: Install gVisor (pinned release, verified SHA-512)
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="https://storage.googleapis.com/gvisor/releases/release/${GVISOR_RELEASE}/x86_64/gvisor.tar.bz2"
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/gvisor.tar.bz2" "$url"
+          echo "${GVISOR_SHA512}  $RUNNER_TEMP/gvisor.tar.bz2" | sha512sum -c -
+          # runsc looks for its sidecar binaries in gvisor-bin/ beside it.
+          sudo mkdir -p /opt/gvisor
+          sudo tar -xjf "$RUNNER_TEMP/gvisor.tar.bz2" -C /opt/gvisor
+          /opt/gvisor/runsc --version
+      - name: Register runsc with Docker
+        # --oci-seccomp makes gVisor apply the container's seccomp profile
+        # inside the sandbox; without it runsc ignores the profile. The
+        # containerd image store lets a local build be pinned by digest.
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo python3 tools/configure_docker_runsc.py \
+            --runsc /opt/gvisor/runsc --config /etc/docker/daemon.json
+          sudo systemctl restart docker
+          docker info --format '{{json .Runtimes}}' | grep -q '"runsc"'
+      - name: Build the pinned evaluator image
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build -t sis-evaluator:3.3.9 docker/sandbox
+          id="$(docker image inspect --format '{{.Id}}' sis-evaluator:3.3.9)"
+          image="sis-evaluator:3.3.9@${id}"
+          docker image inspect "$image" >/dev/null
+          echo "SIS_SANDBOX_IMAGE=$image" >> "$GITHUB_ENV"
+          echo "evaluator image: $image"
+      - name: Smoke-test the gVisor runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm --runtime runsc --network none \
+            --security-opt seccomp=docker/sandbox/seccomp.json \
+            --entrypoint python3 "$SIS_SANDBOX_IMAGE" \
+            -c "v = open('/proc/version').read(); print(v); assert 'Jan 10 15:06:54 PST 2016' in v"
+      - name: Probe, red team and qualify under gVisor
+        # Each tool runs even when an earlier one fails, so the uploaded
+        # evidence is complete; the next step fails the job on any
+        # non-zero result.
+        shell: bash
+        env:
+          PYTHONNOUSERSITE: "1"
+        run: |
+          set -uo pipefail
+          mkdir -p "$EVIDENCE_DIR"
+          status="$EVIDENCE_DIR/status.txt"
+          : > "$status"
+          python tools/derive_sandbox_seccomp.py
+          echo "seccomp_invariants=$?" >> "$status"
+          python tools/probe_docker_sandbox.py --image "$SIS_SANDBOX_IMAGE" \
+            --output "$EVIDENCE_DIR/docker_sandbox_probe.json"
+          echo "probe=$?" >> "$status"
+          python tools/redteam_sandbox.py --image "$SIS_SANDBOX_IMAGE" \
+            --output "$EVIDENCE_DIR/redteam_report.json"
+          echo "redteam=$?" >> "$status"
+          python tools/qualify_docker_isolation.py --image "$SIS_SANDBOX_IMAGE" \
+            --trust-root qualification-only \
+            --probe-report "$EVIDENCE_DIR/docker_sandbox_probe.json" \
+            --redteam-report "$EVIDENCE_DIR/redteam_report.json" \
+            --output "$EVIDENCE_DIR/gate2_isolation"
+          echo "qualify=$?" >> "$status"
+          cat "$status"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sandbox-qualification-evidence
+          path: ${{ env.EVIDENCE_DIR }}
+      - name: Fail on any containment regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat "$EVIDENCE_DIR/status.txt"
+          if grep -qv '=0$' "$EVIDENCE_DIR/status.txt"; then
+            echo "::error::Sandbox qualification regressed; see the sandbox-qualification-evidence artifact."
+            exit 1
+          fi

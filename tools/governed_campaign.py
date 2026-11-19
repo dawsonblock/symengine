@@ -181,9 +181,19 @@ def main() -> int:
     ap.add_argument("-o", "--output", type=Path, required=True)
     ap.add_argument("--allow-local-executor", action="store_true",
                     help="local execution is development-only")
+    ap.add_argument("--allow-unqualified", action="store_true",
+                    help="development only: run hostile code on a platform"
+                         " that cannot qualify it (native macOS)")
     args = ap.parse_args()
     if not args.allow_local_executor:
         ap.error("local executor requires --allow-local-executor")
+    from sis.v3.runner import (RunnerError,
+                               refuse_unqualified_hostile_evaluation)
+    try:
+        refuse_unqualified_hostile_evaluation(
+            allow_unqualified=args.allow_unqualified)
+    except RunnerError as exc:
+        ap.error(str(exc))
     out_dir = args.output
     out_dir.mkdir(parents=True, exist_ok=True)
 

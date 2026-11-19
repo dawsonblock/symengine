@@ -250,6 +250,9 @@ def main() -> int:
                          "(local is development-only)")
     ap.add_argument("--allow-local-executor", action="store_true",
                     help="explicitly authorize development-only local execution")
+    ap.add_argument("--allow-unqualified", action="store_true",
+                    help="development only: run hostile code on a platform"
+                         " that cannot qualify it (native macOS)")
     ap.add_argument("--sandbox-image", default="sis-evaluator:3.3.9")
     ap.add_argument("--require-sandbox-digest", action="store_true",
                     help="refuse a sandbox image that is not digest-pinned")
@@ -291,6 +294,13 @@ def main() -> int:
             raise SystemExit(
                 "local execution is development-only and not a containment "
                 "boundary; pass --allow-local-executor to authorize it")
+        from sis.v3.runner import (RunnerError,
+                                   refuse_unqualified_hostile_evaluation)
+        try:
+            refuse_unqualified_hostile_evaluation(
+                allow_unqualified=args.allow_unqualified)
+        except RunnerError as exc:
+            raise SystemExit(str(exc)) from exc
         executor = LocalSubprocessExecutor(root / "exec")
         if custody == "split" and not executor.supports_split_custody:
             raise SystemExit(

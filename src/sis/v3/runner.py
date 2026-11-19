@@ -536,6 +536,142 @@ def launcher_markers(status: str) -> list[str]:
 #: never qualification-grade: submitted code shares the test runner's
 #: process and principal and can forge whatever that process reports.
 MARKER_SHARED_CUSTODY = "custody:shared_unqualified"
+#: Informational: the RSS watchdog polled this run. It is best effort, not a
+#: limit; ``memory:not_enforced`` stays on the receipt beside it.
+MARKER_MEMORY_WATCHDOG = "memory:watchdog"
+#: The watchdog killed the run over ``limits.memory_bytes``. The ``rlimit:``
+#: prefix classifies the run as RESOURCE_LIMIT, never a task verdict.
+MARKER_MEMORY_WATCHDOG_KILLED = "rlimit:memory_watchdog_exceeded"
+MARKER_MEMORY_WATCHDOG_UNAVAILABLE = "memory:watchdog_unavailable"
+#: Platforms whose native local backend can never qualify hostile
+#: evaluation: macOS has no enforceable memory limit and no qualified
+#: containment, so it stays development-only.
+UNQUALIFIED_HOSTILE_PLATFORMS = frozenset({"darwin"})
+_PS_CANDIDATES = ("/bin/ps", "/usr/bin/ps")
+
+
+def refuse_unqualified_hostile_evaluation(
+    *, allow_unqualified: bool, platform_name: str | None = None,
+) -> None:
+    """Refuse hostile evaluation on a development-only platform.
+
+    Native macOS execution has no qualified containment (seatbelt, an RSS
+    watchdog and rlimits are not a sandbox). Entry points that run
+    submitted code with the local backend call this; only an explicit
+    ``allow_unqualified=True`` (``--allow-unqualified``) proceeds.
+    """
+    name = sys.platform if platform_name is None else platform_name
+    if name in UNQUALIFIED_HOSTILE_PLATFORMS and allow_unqualified is not True:
+        raise RunnerError(
+            f"hostile_evaluation_unqualified_platform:{name}: native"
+            " execution on this platform is development-only; pass"
+            " --allow-unqualified (allow_unqualified=True) to run it anyway")
+
+
+def _ps_binary() -> str | None:
+    for candidate in _PS_CANDIDATES:
+        if os.path.exists(candidate):
+            return candidate
+    return shutil.which("ps")
+
+
+def parse_process_table(text: str) -> dict[int, tuple[int, int, int]]:
+    """Parse ``ps -A -o pid=,ppid=,pgid=,rss=`` into ``{pid: (ppid, pgid, rss_kib)}``."""
+    table: dict[int, tuple[int, int, int]] = {}
+    for line in text.splitlines():
+        fields = line.split()
+        if len(fields) != 4:
+            continue
+        try:
+            pid, ppid, pgid, rss = (int(value) for value in fields)
+        except ValueError:
+            continue
+        table[pid] = (ppid, pgid, max(0, rss))
+    return table
+
+
+def process_tree_rss(root_pid: int, table: Mapping[int, tuple[int, int, int]]) -> int:
+    """Resident bytes of ``root_pid``, its process group and descendants.
+
+    Launches use ``start_new_session``, so the group id equals the root
+    pid; descendants that left the group with ``setsid`` are still found
+    through their parent links while the parent lives.
+    """
+    members = {pid for pid, (_ppid, pgid, _rss) in table.items()
+               if pid == root_pid or pgid == root_pid}
+    frontier = list(members)
+    children: dict[int, list[int]] = {}
+    for pid, (ppid, _pgid, _rss) in table.items():
+        children.setdefault(ppid, []).append(pid)
+    while frontier:
+        for child in children.get(frontier.pop(), ()):
+            if child not in members:
+                members.add(child)
+                frontier.append(child)
+    return sum(table[pid][2] for pid in members) * 1024
+
+
+def sample_process_tree_rss(root_pid: int) -> int | None:
+    """One ``ps`` sample of a launched tree's RSS, or None if unavailable."""
+    ps = _ps_binary()
+    if ps is None:
+        return None
+    try:
+        result = subprocess.run(
+            [ps, "-A", "-o", "pid=,ppid=,pgid=,rss="],
+            capture_output=True, text=True, timeout=5)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if result.returncode != 0:
+        return None
+    return process_tree_rss(root_pid, parse_process_table(result.stdout))
+
+
+class RssWatchdog:
+    """Poll a launched tree's RSS and kill it once over a byte limit.
+
+    Best effort only: a fast allocation can exceed the limit between two
+    samples, and a process that escapes the tree is not counted. It is
+    the development-platform substitute for a memory limit, never a
+    containment claim.
+    """
+
+    def __init__(self, pid: int, limit_bytes: int, on_exceed, *,
+                 interval: float = 0.2, sampler=None) -> None:
+        self.pid = pid
+        self.limit_bytes = limit_bytes
+        self.interval = interval
+        self.triggered = False
+        self.peak_bytes = 0
+        self.samples = 0
+        self._on_exceed = on_exceed
+        self._sampler = sampler or sample_process_tree_rss
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._loop, daemon=True)
+
+    def start(self) -> RssWatchdog:
+        self._thread.start()
+        return self
+
+    def stop(self) -> None:
+        self._stop.set()
+        if self._thread.is_alive() and threading.current_thread() is not self._thread:
+            self._thread.join(timeout=self.interval + 6)
+
+    def _loop(self) -> None:
+        while not self._stop.is_set():
+            rss = self._sampler(self.pid)
+            if rss is not None:
+                self.samples += 1
+                self.peak_bytes = max(self.peak_bytes, rss)
+                if rss > self.limit_bytes:
+                    self.triggered = True
+                    try:
+                        self._on_exceed()
+                    finally:
+                        self._stop.set()
+                    return
+            self._stop.wait(self.interval)
 
 
 class RunnerError(RuntimeError):
@@ -1315,7 +1451,10 @@ class LocalSubprocessExecutor:
         protected_paths=(),
         production: bool = False,
         verified_isolation: bool = False,
+        memory_watchdog: bool | None = None,
     ) -> None:
+        if memory_watchdog is not None and type(memory_watchdog) is not bool:
+            raise ContractError("memory_watchdog must be a bool or None")
         if verified_isolation:
             # This backend is an ordinary local subprocess: it can never
             # be a validated containment boundary, so it must never mint
@@ -1332,6 +1471,11 @@ class LocalSubprocessExecutor:
             self.root, executor_identity=worker_identity, error=RunnerError)
         self.worker_identity = worker_identity
         self._production = bool(production)
+        # macOS cannot bound memory with RLIMIT_AS, so the watchdog is on
+        # by default there; elsewhere the kernel limit applies.
+        self._memory_watchdog = (sys.platform == "darwin"
+                                 if memory_watchdog is None
+                                 else memory_watchdog)
         self._seatbelt = None if use_seatbelt is False else _seatbelt_binary()
         self._protected: set[Path] = set()
         self._live: dict[str, subprocess.Popen] = {}
@@ -1626,7 +1770,18 @@ class LocalSubprocessExecutor:
         with self._lock:
             self._live[execution_id] = proc
             self._live_ws[execution_id] = record.workspace_id
+        watchdog = None
+        if self._memory_watchdog:
+            if _ps_binary() is None:
+                security_errors.append(MARKER_MEMORY_WATCHDOG_UNAVAILABLE)
+            else:
+                security_errors.append(MARKER_MEMORY_WATCHDOG)
+                watchdog = RssWatchdog(
+                    proc.pid, limits.memory_bytes,
+                    lambda: self._kill_group(proc)).start()
         if self._registry.is_closing(record.workspace_id):
+            if watchdog is not None:
+                watchdog.stop()
             # Destruction began between the pre-launch check and the
             # registration above; never leave a process running against
             # a workspace that is about to be removed.
@@ -1720,6 +1875,11 @@ class LocalSubprocessExecutor:
             except subprocess.TimeoutExpired:
                 proc.kill()
                 proc.wait(timeout=10)
+        finally:
+            if watchdog is not None:
+                watchdog.stop()
+        if watchdog is not None and watchdog.triggered:
+            security_errors.append(MARKER_MEMORY_WATCHDOG_KILLED)
         # Nothing the command started may outlive the run: the launcher
         # reaps descendants as a child subreaper where the platform allows
         # it, and the process group is killed even after a normal exit, so

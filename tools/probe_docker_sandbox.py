@@ -6,6 +6,11 @@ image and writes the factual containment observations. This is launch
 evidence, not a signed attestation; ``tools/qualify_docker_isolation.py``
 issues the receipt-bound ``IsolationAttestationV1``.
 
+The default is the production configuration: gVisor (``--runtime
+runsc``) with the allowlist seccomp profile, which adds the
+``kernel_gvisor`` and ``seccomp_filter_active`` checks. ``--runtime runc``
+probes a development configuration and is never production evidence.
+
 Usage:
     PYTHONPATH=src python3 tools/probe_docker_sandbox.py \
       --image sis-evaluator:3.3.9@sha256:<64 hex>
@@ -18,7 +23,10 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
-from sis.v3.docker_sandbox import DockerSandboxExecutor
+from sis.v3.docker_sandbox import PRODUCTION_RUNTIME, DockerSandboxExecutor
+
+ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_SECCOMP = ROOT / "docker" / "sandbox" / "seccomp.json"
 
 NOTE = (
     "Factual containment probe, not a signed isolation attestation. "
@@ -38,11 +46,19 @@ def main(argv=None) -> int:
                         help="digest-pinned evaluator image")
     parser.add_argument("--output", type=Path,
                         default=Path("evidence/sandbox/docker_sandbox_probe.json"))
+    parser.add_argument("--runtime", choices=("runsc", "runc"),
+                        default=PRODUCTION_RUNTIME,
+                        help="container runtime (production: runsc)")
+    parser.add_argument("--seccomp-profile", type=Path,
+                        default=DEFAULT_SECCOMP,
+                        help="allowlist seccomp profile")
     args = parser.parse_args(argv)
+    production = args.runtime == PRODUCTION_RUNTIME
 
     with tempfile.TemporaryDirectory(prefix="sis-probe-root-") as root:
         executor = DockerSandboxExecutor(
-            root, image=args.image, production=True)
+            root, image=args.image, production=production,
+            runtime=args.runtime, seccomp_profile=args.seccomp_profile)
         try:
             report = executor.probe()
         finally:
@@ -53,6 +69,7 @@ def main(argv=None) -> int:
         "kind": "docker_sandbox_probe",
         "backend": "docker_sandbox",
         "generated_at": _utcnow(),
+        "production_configuration": production,
         "note": NOTE,
         **report,
     }

@@ -23,6 +23,7 @@ import verify_external_attestation  # noqa: E402
 from build_release import manifest_document  # noqa: E402
 from check_source_manifest import _valid_manifest  # noqa: E402
 from sis.v3.contracts import ContractError, ExecutionReceiptV1  # noqa: E402
+from sis.v3.docker_sandbox import PRODUCTION_PROPERTIES  # noqa: E402
 from verify_release import verify, verify_against_tree, verify_tree  # noqa: E402
 
 RELEASE_MANIFEST = Path("release") / "release_manifest.json"
@@ -250,6 +251,14 @@ def _check_isolation(root: Path, release_doc: dict, *,
             "external isolation policy pins are incomplete: supply"
             " --isolation-image-digest, --isolation-policy-digest and"
             " --isolation-property")
+    # The Docker backend's production contract includes gVisor and the
+    # allowlist seccomp profile. A release gate configured with a weaker
+    # property set would accept an attestation for a runc launch.
+    omitted = sorted(set(PRODUCTION_PROPERTIES) - set(required))
+    if omitted:
+        raise ValueError(
+            "external isolation policy omits required production"
+            " properties: " + ", ".join(omitted))
     try:
         result = verify_external_attestation.verify(
             receipt, attestation,

@@ -1,8 +1,8 @@
 # Release process
 
-Status date: 2026-11-11. This document records how SIS versions are cut,
-sealed, tagged and verified. It describes the existing practice; it does
-not introduce a new policy.
+Status date: 2026-11-19. This document records how SIS versions are cut,
+sealed, tagged and verified. It describes the existing practice, plus
+the isolation re-attestation policy added on 2026-11-19 (SIS-FEAT-16).
 
 ## Branches and versions
 
@@ -53,21 +53,28 @@ itself is out-of-band (`release/*.zip` is git-ignored).
    refuses a pytest version other than the pin in
    `requirements-lock.txt`, and the evidence names the commit, command,
    exit status, output digest and parsed counts.
-3. Produce the raw isolation evidence. The evaluator image must be
-   digest-pinned; the receipt and signed attestation must describe the
-   exact image and policy:
+3. Produce the raw isolation evidence on a Linux host with gVisor
+   (`runsc`) registered with Docker (see the `sandbox-qualification` CI
+   job). The evaluator image must be digest-pinned; the receipt and
+   signed attestation must describe the exact image and policy:
 
    ```bash
    PYTHONPATH=src python3 tools/probe_docker_sandbox.py \
      --image sis-evaluator:3.3.9@sha256:<digest>
+   PYTHONPATH=src python3 tools/redteam_sandbox.py \
+     --image sis-evaluator:3.3.9@sha256:<digest> \
+     --output evidence/sandbox/redteam_report.json
    PYTHONPATH=src python3 tools/qualify_docker_isolation.py \
      --image sis-evaluator:3.3.9@sha256:<digest> \
+     --probe-report evidence/sandbox/docker_sandbox_probe.json \
+     --redteam-report evidence/sandbox/redteam_report.json \
      --output evidence/sandbox/gate2_isolation
    ```
 
    The stored `gate2-local-isolator` key is qualification-only. For a
-   production seal, hand `receipt.json` to an independent isolator and
-   use the attestation it returns.
+   production seal, hand `receipt.json` and `policy.json` to the
+   independent isolator and use the attestation it returns (see
+   "Isolation re-attestation policy" below).
 4. Build the archive and provenance from that commit:
 
    ```bash
@@ -87,6 +94,17 @@ itself is out-of-band (`release/*.zip` is git-ignored).
      --isolation-policy-digest <digest> \
      --isolation-property net:denied \
      --isolation-property fs:root_read_only \
+     --isolation-property fs:workspace_confined \
+     --isolation-property user:non_root \
+     --isolation-property caps:dropped \
+     --isolation-property proc:no_new_privileges \
+     --isolation-property limits:memory \
+     --isolation-property limits:pids \
+     --isolation-property limits:disk \
+     --isolation-property limits:cpu_time \
+     --isolation-property output:capped \
+     --isolation-property kernel:gvisor \
+     --isolation-property syscalls:seccomp_allowlist \
      --require-external-attestation
    ```
 
@@ -116,8 +134,24 @@ itself is out-of-band (`release/*.zip` is git-ignored).
      --isolation-image-digest <digest> \
      --isolation-policy-digest <digest> \
      --isolation-property net:denied \
-     --isolation-property fs:root_read_only
+     --isolation-property fs:root_read_only \
+     --isolation-property fs:workspace_confined \
+     --isolation-property user:non_root \
+     --isolation-property caps:dropped \
+     --isolation-property proc:no_new_privileges \
+     --isolation-property limits:memory \
+     --isolation-property limits:pids \
+     --isolation-property limits:disk \
+     --isolation-property limits:cpu_time \
+     --isolation-property output:capped \
+     --isolation-property kernel:gvisor \
+     --isolation-property syscalls:seccomp_allowlist
    ```
+
+   The release gate refuses a property set that omits any entry of
+   `sis.v3.docker_sandbox.PRODUCTION_PROPERTIES`, including
+   `kernel:gvisor` and `syscalls:seccomp_allowlist`; in CI the set comes
+   from the `SIS_ISOLATION_PROPERTIES` variable (comma-separated).
 
    Release mode refuses a missing release manifest or ZIP, a stale
    source binding, a duplicate/unexpected/modified archive member, an
@@ -126,6 +160,41 @@ itself is out-of-band (`release/*.zip` is git-ignored).
    a receipt from another execution, or an image/policy mismatch. The
    public keys come from the relying party; a key shipped beside the
    artifact is not its own trust anchor.
+
+## Isolation re-attestation policy
+
+An isolation attestation describes one execution receipt, and the
+production policy accepts it for at most one hour after issue
+(`ProductionIsolationPolicy.max_attestation_age_seconds = 3600`, also the
+default of `--isolation-max-age-seconds`). Its `expires_at` must be set
+and must not have passed. An attestation is therefore never carried from
+one release to the next:
+
+- **Re-attest per release.** Every seal, and every re-seal of the same
+  version, needs a fresh receipt from the pinned image and a fresh
+  attestation from the independent isolator, issued within the hour
+  before `package_release.py` and `check_release_ci.py --mode release`
+  run.
+- **Re-attest on any change to the launch.** A new image digest, a change
+  to `docker/sandbox/seccomp.json`, the runtime or any executor launch
+  flag changes the policy digest (`DockerSandboxExecutor.policy_digest()`)
+  and invalidates every earlier attestation. Update
+  `SIS_ISOLATION_IMAGE_DIGEST` and `SIS_ISOLATION_POLICY_DIGEST` to the
+  new values first; the isolator signs only a policy it has seen
+  (`policy.json`).
+- **Maximum age.** Do not raise `--isolation-max-age-seconds` above 3600
+  for a release. A longer window only helps a stale attestation pass.
+- **Key rotation.** A new isolator key is accepted only after the
+  fingerprint ritual in
+  [SANDBOX_QUALIFICATION_GATE2.md](SANDBOX_QUALIFICATION_GATE2.md#isolator-key-custody-and-fingerprint-check).
+  A key that may have been exposed is revoked (removed from
+  `SIS_ISOLATOR_PUBLIC_KEY`) before the next release, and attestations it
+  signed are not reused.
+- **CI evidence is not attestation.** The `sandbox-qualification` job
+  re-runs the probe, red-team suite and qualification on every push with
+  a generated, qualification-only key. It shows whether the executor
+  still behaves as qualified; it is never a substitute for the isolator's
+  signature.
 
 ## Why a doc change forces a re-seal
 

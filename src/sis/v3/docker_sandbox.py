@@ -17,11 +17,23 @@ not a signed isolation attestation: production qualification still
 requires an ``IsolationAttestationV1`` from a separately trusted
 isolator. A receipt carrying ``isolation:docker_sandbox`` is a claim about
 how the command was launched, not a proof that the kernel enforced it.
+
+The security-relevant ``docker run`` flags and the sandbox policy whose
+digest an isolator signs are produced by one method
+(:meth:`DockerSandboxExecutor.launch_flags`): the policy holds the flag
+template with placeholders for the per-run values, the launch substitutes
+them, and :func:`render_launch_flags` performs the same substitution so a
+test can check that the signed policy is exactly what ``docker run``
+received.
+
+A production executor runs under gVisor (``runtime="runsc"``) with an
+allowlist seccomp profile (``docker/sandbox/seccomp.json``).
 """
 from __future__ import annotations
 
 import hashlib
 import io
+import json
 import os
 import re
 import secrets
@@ -37,6 +49,7 @@ from dataclasses import replace
 from pathlib import Path, PurePosixPath
 
 from .contracts import ContractError, ExecutionReceiptV1, canonical_digest
+from .isolation import ProductionIsolationPolicy
 from .runner import (MARKER_SHARED_CUSTODY, MAX_WORKSPACE_FILES,
                      CommandSpec, ResourceLimits,
                      RunnerError, Workspace, command_spec_digest,
@@ -59,6 +72,61 @@ _READ_CHUNK = 65_536
 _COPY_OUT_SECONDS = 300.0
 _COPY_OUT_MAX_MEMBERS = MAX_WORKSPACE_FILES * 2
 _COPY_OUT_STREAM_FLOOR = 1 << 20
+#: Container runtimes the executor may request. ``None`` keeps the
+#: daemon default (normally runc); production requires gVisor.
+RUNTIMES = (None, "runc", "runsc")
+PRODUCTION_RUNTIME = "runsc"
+#: Memory the container cgroup gets on top of the workload limit under
+#: gVisor. The sentry and its memory-backed /workspace and /tmp count
+#: against the container limit, so a 128 MiB workload limit left no room
+#: to copy the workspace in. The workload limit itself is unchanged and is
+#: what receipts report; the allowance is part of the signed policy.
+RUNSC_MEMORY_OVERHEAD_BYTES = 256 * 1024 * 1024
+#: Host pids the container cgroup gets on top of the workload limit under
+#: gVisor: the sentry and gofer threads live in that cgroup, so a 16-pid
+#: workload limit used as the container limit left runsc unable to start.
+#: The workload limit is enforced inside the sandbox with RLIMIT_NPROC
+#: (``--ulimit nproc``), which gVisor accounts per sandbox.
+RUNSC_PIDS_OVERHEAD = 256
+BACKEND = "docker_sandbox"
+POLICY_SCHEMA_VERSION = 2
+#: Containment properties a production attestation for this backend must
+#: carry. The release gate and ``tools/qualify_docker_isolation.py`` use
+#: this set; ``kernel:gvisor`` and ``syscalls:seccomp_allowlist`` are only
+#: claimable for a receipt that ran under runsc with the allowlist profile.
+PRODUCTION_PROPERTIES = (
+    "net:denied",
+    "fs:root_read_only",
+    "fs:workspace_confined",
+    "user:non_root",
+    "caps:dropped",
+    "proc:no_new_privileges",
+    "limits:memory",
+    "limits:pids",
+    "limits:disk",
+    "limits:cpu_time",
+    "output:capped",
+    "kernel:gvisor",
+    "syscalls:seccomp_allowlist",
+)
+#: gVisor's sentry reports this fixed kernel build string in
+#: ``/proc/version``; a container on the host kernel reports the host's.
+GVISOR_KERNEL_SIGNATURE = "#1 SMP Sun Jan 10 15:06:54 PST 2016"
+#: Placeholders for the per-run values in the policy's flag template.
+LAUNCH_PLACEHOLDERS = {
+    "memory_bytes": "{memory_bytes}",
+    "pids_limit": "{pids_limit}",
+    "workload_pids_limit": "{workload_pids_limit}",
+    "disk_bytes": "{disk_bytes}",
+    "cpu_seconds": "{cpu_seconds}",
+    "uid": "{uid}",
+    "gid": "{gid}",
+    "workspace_mode": "{workspace_mode}",
+    "seccomp_profile": "{seccomp_profile}",
+}
+_WORKSPACE_MODES = ("0770", "0777")
+_DENY_BY_DEFAULT = ("SCMP_ACT_ERRNO", "SCMP_ACT_KILL", "SCMP_ACT_KILL_PROCESS",
+                    "SCMP_ACT_KILL_THREAD", "SCMP_ACT_TRAP")
 _BUDGET_MARKERS = {
     "disk_budget_exceeded": "fs:disk_budget_exceeded",
     "archive_budget_exceeded": "fs:disk_budget_exceeded",
@@ -132,6 +200,74 @@ def _reject_symlinks(root: Path) -> None:
             raise RunnerError("workspace symlinks are not allowed")
 
 
+def load_seccomp_profile(path: str | Path) -> bytes:
+    """Read an allowlist seccomp profile and refuse a denylist."""
+    try:
+        raw = Path(path).read_bytes()
+    except OSError as exc:
+        raise ContractError(f"seccomp_profile_unreadable:{exc}") from exc
+    try:
+        document = json.loads(raw)
+    except ValueError as exc:
+        raise ContractError("seccomp_profile_not_json") from exc
+    if not isinstance(document, dict):
+        raise ContractError("seccomp_profile_not_an_object")
+    # An allowlist denies by default. A profile whose default action
+    # allows every unlisted syscall is a denylist and is refused.
+    if document.get("defaultAction") not in _DENY_BY_DEFAULT:
+        raise ContractError("seccomp_profile_must_deny_by_default")
+    if not isinstance(document.get("syscalls"), list) or not document["syscalls"]:
+        raise ContractError("seccomp_profile_has_no_syscall_rules")
+    return raw
+
+
+def render_launch_flags(policy: Mapping, values: Mapping[str, object]) -> list[str]:
+    """Substitute one run's ``values`` into a policy's flag template.
+
+    The result is the exact security-relevant argv a launch under
+    ``policy`` passes to ``docker run``. Every placeholder the template
+    uses must be supplied; an unknown value name is refused.
+    """
+    unknown = set(values) - set(LAUNCH_PLACEHOLDERS)
+    if unknown:
+        raise ContractError(f"unknown_launch_values:{sorted(unknown)}")
+    rendered = []
+    for token in policy["launch_flags"]:
+        for key, value in values.items():
+            token = token.replace(LAUNCH_PLACEHOLDERS[key], str(value))
+        if any(marker in token for marker in LAUNCH_PLACEHOLDERS.values()):
+            raise ContractError(f"unrendered_launch_placeholder:{token}")
+        rendered.append(token)
+    return rendered
+
+
+def policy_document_digest(policy: Mapping) -> str:
+    """The ``policy_digest`` an isolator signs for a launch policy."""
+    return canonical_digest(
+        "docker_sandbox_policy", POLICY_SCHEMA_VERSION, dict(policy))
+
+
+def production_isolation_policy(
+    *, trusted_keys: Mapping[str, str], image_digest: str,
+    policy_digest: str, revoked_keys: frozenset[str] = frozenset(),
+    max_attestation_age_seconds: int | None = 3600,
+) -> ProductionIsolationPolicy:
+    """The production isolation contract for the Docker + gVisor backend.
+
+    It allows only this backend and requires every property in
+    :data:`PRODUCTION_PROPERTIES`, including ``kernel:gvisor``.
+    """
+    return ProductionIsolationPolicy(
+        allowed_backends=frozenset({BACKEND}),
+        trusted_keys=dict(trusted_keys),
+        required_policy_digest=policy_digest,
+        required_image_digest=image_digest,
+        required_properties=frozenset(PRODUCTION_PROPERTIES),
+        revoked_keys=revoked_keys,
+        max_attestation_age_seconds=max_attestation_age_seconds,
+    )
+
+
 class DockerSandboxExecutor:
     """Run evaluator commands in a bounded Docker container."""
 
@@ -155,9 +291,21 @@ class DockerSandboxExecutor:
         user: str | None = None,
         split_user: str | None = None,
         image_id: str | None = None,
+        runtime: str | None = None,
+        seccomp_profile: str | Path | None = None,
     ) -> None:
         if not isinstance(image, str) or not image:
             raise ContractError("image must be a non-empty string")
+        if runtime not in RUNTIMES:
+            raise ContractError("runtime must be None, 'runc' or 'runsc'")
+        if production and runtime != PRODUCTION_RUNTIME:
+            # The production boundary is gVisor's user-space kernel, not
+            # the host kernel that runc exposes to the container.
+            raise ContractError("production_requires_gvisor_runtime")
+        if production and seccomp_profile is None:
+            raise ContractError("production_requires_seccomp_profile")
+        seccomp_raw = (load_seccomp_profile(seccomp_profile)
+                       if seccomp_profile is not None else None)
         if require_image_digest or production:
             if not _IMAGE_DIGEST.fullmatch(image):
                 raise ContractError(
@@ -176,6 +324,10 @@ class DockerSandboxExecutor:
             raise ContractError("cpus must be in (0,64]")
         self._user = user or _default_user()
         self._uid, self._gid = _parse_user(self._user)
+        # One spelling everywhere: ``--user 1000`` would leave Docker to
+        # pick the group (root's, for an unknown uid), while the
+        # workspace tmpfs is owned by the parsed gid.
+        self._user = f"{self._uid}:{self._gid}"
         self._split_user = None
         if split_user is not None:
             split_uid, split_gid = _parse_user(split_user)
@@ -187,6 +339,12 @@ class DockerSandboxExecutor:
             root if root is not None
             else tempfile.mkdtemp(prefix="sis-v3-docker-")))
         self.root.mkdir(parents=True, exist_ok=True)
+        self._runtime = runtime
+        self._seccomp_sha256: str | None = None
+        self._seccomp_path: Path | None = None
+        if seccomp_raw is not None:
+            self._seccomp_sha256 = hashlib.sha256(seccomp_raw).hexdigest()
+            self._seccomp_path = self._install_seccomp_profile(seccomp_raw)
         self._registry = ManagedWorkspaceRegistry(
             self.root, executor_identity=worker_identity, error=RunnerError)
         self._image = image
@@ -244,6 +402,115 @@ class DockerSandboxExecutor:
     @property
     def server_version(self) -> str:
         return self._server_version
+
+    @property
+    def runtime(self) -> str | None:
+        return self._runtime
+
+    @property
+    def seccomp_profile_sha256(self) -> str | None:
+        return self._seccomp_sha256
+
+    def _install_seccomp_profile(self, raw: bytes) -> Path:
+        """Keep an executor-owned, read-only copy of the profile.
+
+        The Docker CLI reads the profile file on every launch; launching
+        from a private copy means the bytes named by the policy digest
+        cannot be swapped underneath the executor.
+        """
+        private = self.root / ".seccomp"
+        private.mkdir(mode=0o700, exist_ok=True)
+        target = private / f"profile-{self._seccomp_sha256}.json"
+        if target.is_file() and target.read_bytes() == raw:
+            return target
+        temp = private / (".tmp-" + secrets.token_hex(4))
+        temp.write_bytes(raw)
+        os.chmod(temp, 0o400)
+        os.replace(temp, target)
+        return target
+
+    # ---- launch policy -------------------------------------------------- #
+    def launch_flags(
+        self, *, memory_bytes, pids_limit, disk_bytes, cpu_seconds,
+        uid, gid, workspace_mode, seccomp_profile, workload_pids_limit,
+    ) -> list[str]:
+        """The security-relevant ``docker run`` flags, in launch order.
+
+        This is the single source of both the real launch argv (called
+        with the run's values by ``_start_container``) and the signed
+        policy (called with :data:`LAUNCH_PLACEHOLDERS` by
+        :meth:`launch_policy`), so the two cannot drift.
+        """
+        flags: list[str] = []
+        if self._runtime is not None:
+            flags += ["--runtime", self._runtime]
+        flags += [
+            "--network", "none",
+            "--read-only",
+            "--tmpfs", f"/tmp:rw,noexec,nosuid,size={self._tmpfs}",
+            "--tmpfs",
+            (f"/workspace:rw,nosuid,nodev,size={disk_bytes},"
+             f"uid={uid},gid={gid},mode={workspace_mode}"),
+            "--user", f"{uid}:{gid}",
+            "--cap-drop", "ALL",
+            "--security-opt", "no-new-privileges",
+        ]
+        if self._seccomp_path is not None:
+            flags += ["--security-opt", f"seccomp={seccomp_profile}"]
+        flags += [
+            "--memory", str(memory_bytes),
+            "--memory-swap", str(memory_bytes),
+            "--pids-limit", str(pids_limit),
+            "--cpus", str(self._cpus),
+            # RLIMIT_CPU is inherited by the exec'd command, so CPU time
+            # is a kernel-enforced budget, not only a scheduling share.
+            "--ulimit", f"cpu={cpu_seconds}",
+            "--ulimit", f"nofile={self._nofile}:{self._nofile}",
+            "--ipc", "none",
+        ]
+        if self._runtime == PRODUCTION_RUNTIME:
+            # Inside gVisor RLIMIT_NPROC is counted per sandbox, so it bounds
+            # the workload; under runc it would count the host UID instead.
+            flags += ["--ulimit",
+                      f"nproc={workload_pids_limit}:{workload_pids_limit}"]
+        return flags
+
+    def launch_policy(self) -> dict:
+        """The sandbox policy document whose digest an isolator signs.
+
+        It holds the flag template (per-run values as placeholders), the
+        ceilings those values never exceed, the runtime, and the seccomp
+        profile by content digest. Host-specific values (paths, numeric
+        principals) are placeholders, so one image and executor
+        configuration has one policy digest on every host.
+        """
+        image_digest = (self._image.rsplit("@sha256:", 1)[1]
+                        if _IMAGE_DIGEST.fullmatch(self._image) else None)
+        return {
+            "backend": BACKEND,
+            "image_digest": image_digest,
+            "runtime": self._runtime or "default",
+            "seccomp_profile_sha256": self._seccomp_sha256,
+            "launch_flags": self.launch_flags(**LAUNCH_PLACEHOLDERS),
+            "ceilings": {
+                "memory_bytes": self._memory,
+                "pids_limit": self._pids,
+                "output_bytes": self._output_bytes,
+                "tmpfs_bytes": self._tmpfs,
+                "runtime_memory_overhead_bytes":
+                    self._runtime_memory_overhead(),
+                "runtime_pids_overhead": self._runtime_pids_overhead(),
+                "nofile_limit": self._nofile,
+                "cpus": f"{self._cpus:g}",
+            },
+            "principals": "non_root",
+            "workspace_modes": list(_WORKSPACE_MODES),
+            "split_principal": self._split_user is not None,
+        }
+
+    def policy_digest(self) -> str:
+        """Digest of :meth:`launch_policy`: the value ``policy_digest`` pins."""
+        return policy_document_digest(self.launch_policy())
 
     def prepare(self, base_dir: str | Path, *, label: str = "task") -> Workspace:
         base = Path(base_dir)
@@ -381,7 +648,18 @@ class DockerSandboxExecutor:
             f"docker:ulimit_cpu:{limits.cpu_seconds}",
             f"docker:ulimit_nofile:{self._nofile}",
             f"docker:output_bytes:{output_cap}",
+            f"docker:runtime:{self._runtime or 'default'}",
         ]
+        if self._runtime_memory_overhead():
+            security_errors.append("docker:runtime_memory_overhead:"
+                           f"{self._runtime_memory_overhead()}")
+        if self._runtime_pids_overhead():
+            security_errors.append("docker:runtime_pids_overhead:"
+                                   f"{self._runtime_pids_overhead()}")
+        if self._seccomp_sha256 is not None:
+            security_errors.append(
+                f"docker:seccomp_profile:{self._seccomp_sha256}")
+        security_errors.append(f"docker:policy:{self.policy_digest()}")
         if not _IMAGE_DIGEST.fullmatch(self._image):
             security_errors.append("docker:image_tag_only")
         if private_host is not None or split:
@@ -442,6 +720,25 @@ class DockerSandboxExecutor:
                             truncated[name] = True
                 return True
 
+            def discard(pipe) -> None:
+                # After the cap the container is killed, but the docker
+                # client can still hold buffered output. Keep draining (and
+                # dropping) it: a pipe nobody reads blocks the client, which
+                # then never exits and the run is reported as a wall-clock
+                # timeout instead of an output cap.
+                while not stop.is_set():
+                    if os.name == "posix":
+                        import select
+                        ready, _, _ = select.select(
+                            [pipe.fileno()], [], [], 0.1)
+                        if not ready:
+                            continue
+                        chunk = os.read(pipe.fileno(), _READ_CHUNK)
+                    else:
+                        chunk = pipe.read(_READ_CHUNK)
+                    if not chunk:
+                        return
+
             def pump(pipe, sink: bytearray, name: str) -> None:
                 try:
                     if os.name == "posix":
@@ -455,6 +752,7 @@ class DockerSandboxExecutor:
                                 return
                             if over:
                                 self._kill(container)
+                                discard(pipe)
                                 return
                         return
                     while not stop.is_set():
@@ -462,6 +760,7 @@ class DockerSandboxExecutor:
                             return
                         if over:
                             self._kill(container)
+                            discard(pipe)
                             return
                 except (OSError, ValueError):
                     return
@@ -593,8 +892,11 @@ class DockerSandboxExecutor:
             schema_version=1,
             execution_id=execution_id,
             worker_identity=self.worker_identity,
-            environment_digest=canonical_digest("docker_environment", 2, {
+            environment_digest=canonical_digest("docker_environment", 3, {
                 "image": self._image,
+                "policy_digest": self.policy_digest(),
+                "runtime": self._runtime or "default",
+                "seccomp_profile_sha256": self._seccomp_sha256,
                 "image_id": self.image_id(),
                 "user": self._user,
                 "network": "none",
@@ -663,10 +965,6 @@ class DockerSandboxExecutor:
         limits: ResourceLimits, memory: int, pids: int, disk: int,
         private_host: Path | None = None, *, split: bool = False,
     ) -> None:
-        # Split custody runs the worker as a second UID, which must be
-        # able to read the copied-in workspace; the evaluator UID keeps
-        # write access. Only the two run principals can reach this tmpfs.
-        workspace_mode = "0777" if split else "0770"
         # Docker's --mount grammar has no escaping for commas, so a path
         # that cannot be represented fails closed instead of being
         # mounted somewhere unintended.
@@ -679,24 +977,9 @@ class DockerSandboxExecutor:
             # can be found with ``docker ps --filter label=...``.
             self._docker, "run", "-d", "--rm", "--name", container,
             "--label", f"{CONTAINER_LABEL}={self.worker_identity}",
-            "--network", "none",
-            "--read-only",
-            "--tmpfs", f"/tmp:rw,noexec,nosuid,size={self._tmpfs}",
-            "--tmpfs",
-            (f"/workspace:rw,nosuid,nodev,size={disk},"
-             f"uid={self._uid},gid={self._gid},mode={workspace_mode}"),
-            "--user", self._user,
-            "--cap-drop", "ALL",
-            "--security-opt", "no-new-privileges",
-            "--memory", str(memory),
-            "--memory-swap", str(memory),
-            "--pids-limit", str(pids),
-            "--cpus", str(self._cpus),
-            # RLIMIT_CPU is inherited by the exec'd command, so CPU time
-            # is a kernel-enforced budget, not only a scheduling share.
-            "--ulimit", f"cpu={limits.cpu_seconds}",
-            "--ulimit", f"nofile={self._nofile}:{self._nofile}",
-            "--ipc", "none",
+            *self.launch_flags(**self._launch_values(
+                memory=memory, pids=pids, disk=disk,
+                cpu_seconds=limits.cpu_seconds, split=split)),
             "--mount",
             f"type=bind,source={submission},target=/submission,readonly",
             "--workdir", "/workspace",
@@ -731,6 +1014,36 @@ class DockerSandboxExecutor:
             raise RunnerError(
                 "docker_start_failed:"
                 + (result.stderr or result.stdout).strip()[:200])
+
+    def _runtime_pids_overhead(self) -> int:
+        """Container pids added to the workload limit for the runtime."""
+        return RUNSC_PIDS_OVERHEAD if self._runtime == PRODUCTION_RUNTIME else 0
+
+    def _runtime_memory_overhead(self) -> int:
+        """Container memory added to the workload limit for the runtime."""
+        return (RUNSC_MEMORY_OVERHEAD_BYTES
+                if self._runtime == PRODUCTION_RUNTIME else 0)
+
+    def _launch_values(
+        self, *, memory: int, pids: int, disk: int, cpu_seconds: int,
+        split: bool,
+    ) -> dict:
+        """The per-run values substituted into the launch template."""
+        # Split custody runs the worker as a second UID, which must be
+        # able to read the copied-in workspace; the evaluator UID keeps
+        # write access. Only the two run principals can reach this tmpfs.
+        return {
+            "memory_bytes": memory + self._runtime_memory_overhead(),
+            "pids_limit": pids + self._runtime_pids_overhead(),
+            "workload_pids_limit": pids,
+            "disk_bytes": disk,
+            "cpu_seconds": cpu_seconds,
+            "uid": self._uid,
+            "gid": self._gid,
+            "workspace_mode": _WORKSPACE_MODES[1 if split else 0],
+            "seccomp_profile": (str(self._seccomp_path)
+                                if self._seccomp_path is not None else None),
+        }
 
     def _copy_in(self, container: str) -> None:
         """Populate the quota-limited workspace from the read-only bind."""
@@ -1198,6 +1511,25 @@ class DockerSandboxExecutor:
             check("cpu_time_enforced", (
                 "python3", "-c", "while True: pass"),
                 expect_success=False, limits=cpu)
+            if self._runtime == PRODUCTION_RUNTIME:
+                # gVisor's sentry answers /proc/version itself with a fixed
+                # build string; under runc the host kernel's appears.
+                check("kernel_gvisor", (
+                    "python3", "-c",
+                    "import sys; "
+                    f"sys.exit(0 if {GVISOR_KERNEL_SIGNATURE!r} in "
+                    "open('/proc/version').read() else 1)"),
+                    expect_success=True)
+            if self._seccomp_path is not None:
+                # Seccomp mode 2 is a filter; the allowlist profile denies
+                # unshare(2) even before the missing capability does.
+                check("seccomp_filter_active", (
+                    "python3", "-c",
+                    "import sys; "
+                    "status = dict(line.split(':', 1) for line in "
+                    "open('/proc/self/status') if ':' in line); "
+                    "sys.exit(0 if status.get('Seccomp', '').strip() == '2' else 1)"),
+                    expect_success=True)
 
             workspace = self.prepare(temp, label="output_limit")
             try:
@@ -1258,6 +1590,9 @@ class DockerSandboxExecutor:
             "image_id": self.image_id(),
             "docker_server_version": self._server_version,
             "worker_identity": self.worker_identity,
+            "runtime": self._runtime or "default",
+            "seccomp_profile_sha256": self._seccomp_sha256,
+            "policy_digest": self.policy_digest(),
             "checks": checks,
         }
 

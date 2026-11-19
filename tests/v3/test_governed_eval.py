@@ -508,7 +508,8 @@ class CampaignCLITests(unittest.TestCase):
             proc = subprocess.run(
                 [sys.executable,
                  str(REPO / "tools" / "governed_campaign.py"),
-                 "-o", str(out), "--allow-local-executor"],
+                 "-o", str(out), "--allow-local-executor",
+                 "--allow-unqualified"],
                 capture_output=True, text=True, env=_env(), cwd=REPO,
                 timeout=300)
             self.assertEqual(proc.returncode, 0, proc.stderr[-2000:])
