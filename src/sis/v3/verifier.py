@@ -1141,7 +1141,14 @@ class OutcomeVerifier:
                 for task in sorted(self._tasks.values(), key=lambda t: t.task_id)
             ],
         }
-        payload = canonical_json(document)
+        # The registry is the evaluator's private store, not a protocol
+        # message: canonical_json's message bounds (4,096-character strings,
+        # 128-entry arrays) would refuse ordinary acceptance files (stored as
+        # hex) and any study with more than 128 tasks. File sizes are already
+        # bounded by normalize_private_files at registration, and each row is
+        # re-checked against its suite_commitment when the registry loads.
+        payload = json.dumps(document, sort_keys=True, separators=(",", ":"),
+                             ensure_ascii=True).encode("ascii")
         fd, tmp = tempfile.mkstemp(dir=self.registry_dir, prefix=".tmp-")
         try:
             with os.fdopen(fd, "wb") as handle:
