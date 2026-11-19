@@ -271,7 +271,7 @@ docs/             design, operations, security and qualification reports
 | [docs/V332_OPERATIONS.md](docs/V332_OPERATIONS.md) | Deployment, recovery and key rotation |
 | [docs/V332_EFFICACY_STATUS.md](docs/V332_EFFICACY_STATUS.md) | What is and is not demonstrated |
 | [CHANGELOG.md](CHANGELOG.md) | Release history |
-| [docs/LEGACY_README.md](docs/LEGACY_README.md) | Pre-3.3.3 README and v2.x CLI reference |
+| [docs/history/](docs/history/README.md) | Historical record: milestone and test reports, the pre-3.3.3 README and v2.x CLI reference |
 
 ## Security
 

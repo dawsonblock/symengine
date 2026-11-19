@@ -2,7 +2,7 @@
 
 > **Superseded.** This report describes the v3.3.2 development snapshot.
 > It is retained for provenance and is not the current release status.
-> See [QUALIFICATION_REPORT_V3_3_8.md](QUALIFICATION_REPORT_V3_3_8.md)
+> See [QUALIFICATION_REPORT_V3_3_8.md](../../v3/QUALIFICATION_REPORT_V3_3_8.md)
 > for v3.3.8 and the post-seal repairs.
 
 Updated: 2026-11-07. Base revision: `e644d81e7f96c571c49af7f9ca29429de435686b`

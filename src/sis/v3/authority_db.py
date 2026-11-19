@@ -257,7 +257,7 @@ class AuthorityDB:
 
         In-process hygiene only: the real isolation boundary is that candidate
         writers run under a different process/service identity that never
-        receives this object (see docs/v3/V2_BASELINE.md, invariant I-1).
+        receives this object (see docs/history/v3/V2_BASELINE.md, invariant I-1).
         """
         self._authorities.add(controller)
 

@@ -10,7 +10,7 @@ dependencies** (Python 3.10+).
 **Status: `IMPLEMENTED_NOT_EFFICACY_QUALIFIED`.** The M0–M5 authority controls
 are implemented and covered by adversarial tests. Evaluator isolation (M6) and
 real-agent efficacy (M9) are **not** qualified, and no improvement in real LLM
-performance is claimed. See [the efficacy status](V332_EFFICACY_STATUS.md).
+performance is claimed. See [the efficacy status](../V332_EFFICACY_STATUS.md).
 
 ## What v3.3.2 adds
 
@@ -48,20 +48,20 @@ sis --db ./knowledge.sqlite3 audit
 
 The v3 serving boundary is constructed in application code
 (`create_server(..., v3_service=...)`); the `sis serve` CLI command exposes only
-the legacy `/v1` surface. See [operations](V332_OPERATIONS.md) for the
+the legacy `/v1` surface. See [operations](../V332_OPERATIONS.md) for the
 wiring and deployment profiles.
 
 ## Documentation map
 
 | Document | Contents |
 | --- | --- |
-| [CHANGELOG.md](../CHANGELOG.md) | Release-by-release change history |
-| [docs/V332_AUTHORITY_CONSISTENCY.md](V332_AUTHORITY_CONSISTENCY.md) | v3.3.2 defects, fixes and evidence |
-| [docs/V332_OPERATIONS.md](V332_OPERATIONS.md) | Deployment, recovery and key rotation |
-| [docs/V332_ACCEPTANCE_MATRIX.md](V332_ACCEPTANCE_MATRIX.md) | Executed acceptance scenarios |
-| [docs/V332_EFFICACY_STATUS.md](V332_EFFICACY_STATUS.md) | What is and is not demonstrated |
-| [docs/v3/ARCHITECTURE_V3_3.md](v3/ARCHITECTURE_V3_3.md) | v3 subsystem design |
-| [docs/SECURITY_THREAT_MODEL.md](SECURITY_THREAT_MODEL.md) | Adversaries, mitigations and residual risk |
+| [CHANGELOG.md](../../CHANGELOG.md) | Release-by-release change history |
+| [docs/V332_AUTHORITY_CONSISTENCY.md](../V332_AUTHORITY_CONSISTENCY.md) | v3.3.2 defects, fixes and evidence |
+| [docs/V332_OPERATIONS.md](../V332_OPERATIONS.md) | Deployment, recovery and key rotation |
+| [docs/V332_ACCEPTANCE_MATRIX.md](../V332_ACCEPTANCE_MATRIX.md) | Executed acceptance scenarios |
+| [docs/V332_EFFICACY_STATUS.md](../V332_EFFICACY_STATUS.md) | What is and is not demonstrated |
+| [docs/v3/ARCHITECTURE_V3_3.md](../v3/ARCHITECTURE_V3_3.md) | v3 subsystem design |
+| [docs/SECURITY_THREAT_MODEL.md](../SECURITY_THREAT_MODEL.md) | Adversaries, mitigations and residual risk |
 
 ---
 
@@ -78,7 +78,7 @@ execution, repository-write capability, real unit-test subprocess sandbox, or
 proven improvement in real LLM performance**. See
 [the v2.4 guide](V2_4_CODE_REPAIR.md).
 
-For repository updates after the v2.4.0 review, see the [upgrade guide](../UPGRADE_README.md).
+For repository updates after the v2.4.0 review, see the [upgrade guide](../../UPGRADE_README.md).
 
 Run locally: `PYTHONPATH=src python3 tools/demo_code_learning.py`.
 
@@ -149,7 +149,7 @@ sis --db ./skills.sqlite3 skill-benchmark examples/skill_sum_benchmark.json
 
 **v1.5:** read-only schema transfer of previously validated source rules, opt-in cross-task predictions labeled unverified, signed precommitted holdout qualification thresholds, Wilson uncertainty bounds, and evaluator-side qualification replay. **A policy pass is not independent task provenance.** See [v1.5 guide](V1_5_TRANSFER_AND_QUALIFICATION.md).
 
-**v1.4 foundation:** a *separate evaluator-owned* one-use sealed holdout harness, HMAC-bound public train/validation manifests, secret test/shifted-test labels held only in an evaluator vault, signed aggregate scoring receipts, and independent score replay by the vault custodian. This mitigates accidental adaptive test reuse **only when the secret, vault and test labels are actually isolated from the candidate developer**. This is **not** a guarantee of independent evaluation by itself. See [v1.4 evaluator guide](EVALUATOR_V1_4.md).
+**v1.4 foundation:** a *separate evaluator-owned* one-use sealed holdout harness, HMAC-bound public train/validation manifests, secret test/shifted-test labels held only in an evaluator vault, signed aggregate scoring receipts, and independent score replay by the vault custodian. This mitigates accidental adaptive test reuse **only when the secret, vault and test labels are actually isolated from the candidate developer**. This is **not** a guarantee of independent evaluation by itself. See [v1.4 evaluator guide](../EVALUATOR_V1_4.md).
 
 **New in v1.3:** the hash-linked audit verifier now checks rule event transition
 semantics, rather than just the final database projection. A bounded admission

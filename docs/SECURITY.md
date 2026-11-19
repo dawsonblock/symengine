@@ -116,7 +116,7 @@ plausible new full history. Export externally controlled HMAC checkpoints.
 
 ## v1.7 procedural-skill subsystem
 
-See [V1_7_PROCEDURAL_SKILLS.md](V1_7_PROCEDURAL_SKILLS.md) for architecture, verification boundary, threat model and
+See [V1_7_PROCEDURAL_SKILLS.md](history/V1_7_PROCEDURAL_SKILLS.md) for architecture, verification boundary, threat model and
 explicit limitations. The procedural skill chain is local integrity evidence, not a separately anchored cryptographic
 attestation.
 
