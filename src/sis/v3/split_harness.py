@@ -1637,8 +1637,8 @@ WORKSPACE_SEARCH = [workspace] + [
     entry for entry in (source_root(workspace),) if entry is not None]
 # The workspace directory a proxied top-level module was found in.
 WORKSPACE_ROOTS = {}
-_untrusted = {os.path.abspath(entry) for entry in WORKSPACE_SEARCH}
-_workspace_prefix = os.path.join(os.path.abspath(workspace), "")
+_workspace_real = os.path.realpath(workspace)
+_workspace_prefix = os.path.join(_workspace_real, "")
 STDLIB = frozenset(getattr(sys, "stdlib_module_names", ())) | frozenset(
     sys.builtin_module_names)
 
@@ -1656,8 +1656,9 @@ def trusted_path():
     for entry in sys.path:
         if not isinstance(entry, str) or not entry:
             continue
-        path = os.path.abspath(entry)
-        if path in _untrusted or path.startswith(_workspace_prefix):
+        # Resolved, so no link (or ``.``, the workspace cwd) leads in.
+        path = os.path.realpath(entry)
+        if path == _workspace_real or path.startswith(_workspace_prefix):
             continue
         trusted.append(entry)
     return trusted

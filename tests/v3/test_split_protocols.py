@@ -1102,6 +1102,22 @@ class SplitSupportFileTests(SplitHarness):
         })
         self.assertFalse(self.marker.exists())
 
+    def test_the_workspace_on_the_evaluator_path_is_still_not_trusted(self):
+        # Trust follows sys.path as it changes, so an entry naming the
+        # workspace (directly, through ``.``, or through a link) must
+        # never make a workspace module evaluator material.
+        link = self.root / "link"
+        link.symlink_to(self.workspace)
+        self.assertPasses({"test_path.py": (
+            "import sys\n"
+            f"sys.path[:0] = [{str(link)!r}, {str(self.workspace)!r}, '.']\n"
+            "import helpers\n"
+            "def test_proxied():\n"
+            # The worker imports it (and so writes the marker); the
+            # evaluator only holds the proxy.
+            "    assert type(helpers).__name__ == 'ProxyModule'\n"
+            "    assert helpers.WHO == 'workspace'\n")})
+
     def test_without_support_files_the_workspace_package_stays_proxied(self):
         # A test package the evaluator did not register is the
         # submission's: it is reached through the proxy, in the worker.
