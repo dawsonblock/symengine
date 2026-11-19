@@ -16,9 +16,9 @@ from dataclasses import dataclass
 from typing import Callable
 
 from .errors import InvalidInput
-from .validation import canonical, check_scalar, check_inputs, safe_result, NAME
+from .validation import canonical, check_scalar, check_inputs, safe_result, NAME, MAX_TEXT
 
-GRAMMAR_VERSION = "sis-grammar-1"
+GRAMMAR_VERSION = "sis-grammar-2"
 
 #: Integer results beyond this magnitude are an evaluation error.
 INT_BOUND = 1_000_000_000
@@ -41,7 +41,10 @@ class OpSpec:
     ``cond`` it returns whether the ``then`` branch is taken. ``cost`` is
     the node's own cost; an AST's cost adds its children's. ``z3`` maps the
     z3 module and translated operands to a z3 term, or is ``None`` when the
-    op has no SMT translation. ``tag`` names the node in structural forms.
+    op has no SMT translation; ``z3_guard`` returns the condition under
+    which the op is defined (a nonzero divisor). ``tag`` names the node in
+    structural forms. ``const_arg`` is the index of an operand that must be
+    a literal integer constant in ``[0, MAX_TEXT]`` (slice lengths).
     """
 
     name: str
@@ -53,6 +56,8 @@ class OpSpec:
     commutative: bool = False
     z3: Callable | None = None
     tag: str = ""
+    z3_guard: Callable | None = None
+    const_arg: int | None = None
 
     @property
     def form_tag(self):
@@ -101,6 +106,89 @@ def _z3_if(z3, cond, then, other):
     return z3.If(cond, then, other)
 
 
+def _floordiv(a, b):
+    _require_int(a)
+    _require_int(b)
+    if b == 0:
+        # A zero divisor makes the expression undefined on this record; it
+        # is an evaluation error, never a fitted value.
+        raise InvalidInput("division by zero")
+    return _bounded(a // b)
+
+
+def _mod(a, b):
+    _require_int(a)
+    _require_int(b)
+    if b == 0:
+        raise InvalidInput("modulo by zero")
+    return a % b
+
+
+def _z3_floordiv(z3, x, y):
+    # Python floors toward negative infinity; z3 integer division is
+    # Euclidean, which agrees with flooring for a positive divisor.
+    return z3.If(y > 0, x / y, (-x) / (-y))
+
+
+def _z3_mod(z3, x, y):
+    return x - y * _z3_floordiv(z3, x, y)
+
+
+def _cmp(compute):
+    def apply(a, b):
+        _require_int(a)
+        _require_int(b)
+        return compute(a, b)
+    return apply
+
+
+def _concat(a, b):
+    _require_str(a)
+    _require_str(b)
+    if len(a) + len(b) > MAX_TEXT:
+        raise InvalidInput("string expression exceeded safe length")
+    return a + b
+
+
+def _slice_length(n):
+    if type(n) is not int or not 0 <= n <= MAX_TEXT:
+        raise InvalidInput("slice length must be an integer in [0, 128]")
+    return n
+
+
+def _slice_prefix(s, n):
+    _require_str(s)
+    return s[:_slice_length(n)]
+
+
+def _slice_suffix(s, n):
+    _require_str(s)
+    n = _slice_length(n)
+    return s[len(s) - n:] if n < len(s) else s
+
+
+def _contains(a, b):
+    _require_str(a)
+    _require_str(b)
+    return b in a
+
+
+def _len(s):
+    _require_str(s)
+    return len(s)
+
+
+def _str_of_int(v):
+    _require_int(v)
+    return str(v)
+
+
+def _lt(a, b):
+    _require_int(a)
+    _require_int(b)
+    return a < b
+
+
 _SPECS = (
     OpSpec("field", "leaf", (), "any", None, 1),
     OpSpec("item", "leaf", (), "any", None, 1),
@@ -129,6 +217,27 @@ _SPECS = (
     OpSpec("reverse", "unary", ("str",), "str", _str1(lambda v: v[::-1]), 2),
     OpSpec("if_eq", "cond", ("any", "any"), "branch", lambda a, b: a == b, 4,
            False, lambda z3, x, y: x == y),
+    # --- grammar 2 -------------------------------------------------------
+    OpSpec("floordiv", "binary", ("int", "int"), "int", _floordiv, 2, False,
+           _z3_floordiv, z3_guard=lambda z3, x, y: y != 0),
+    OpSpec("mod", "binary", ("int", "int"), "int", _mod, 2, False, _z3_mod,
+           z3_guard=lambda z3, x, y: y != 0),
+    OpSpec("lt", "binary", ("int", "int"), "bool", _cmp(lambda a, b: a < b), 2,
+           False, lambda z3, x, y: x < y),
+    OpSpec("le", "binary", ("int", "int"), "bool", _cmp(lambda a, b: a <= b), 2,
+           False, lambda z3, x, y: x <= y),
+    OpSpec("gt", "binary", ("int", "int"), "bool", _cmp(lambda a, b: a > b), 2,
+           False, lambda z3, x, y: x > y),
+    OpSpec("concat", "binary", ("str", "str"), "str", _concat, 2),
+    OpSpec("slice_prefix", "binary", ("str", "int"), "str", _slice_prefix, 2,
+           const_arg=1),
+    OpSpec("slice_suffix", "binary", ("str", "int"), "str", _slice_suffix, 2,
+           const_arg=1),
+    OpSpec("contains", "binary", ("str", "str"), "bool", _contains, 2),
+    OpSpec("len", "unary", ("str",), "int", _len, 2),
+    OpSpec("str_of_int", "unary", ("int",), "str", _str_of_int, 2),
+    OpSpec("if_lt", "cond", ("int", "int"), "branch", _lt, 4, False,
+           lambda z3, x, y: x < y),
 )
 
 #: Ordered op registry: name -> OpSpec. Insertion order is significant
@@ -199,6 +308,12 @@ def validate_ast(ast, *, depth=1, budget=None):
     elif spec.shape == "binary":
         if set(ast) != {"op", "args"} or not isinstance(ast["args"], list) or len(ast["args"]) != 2:
             raise InvalidInput("binary ops require exactly two args")
+        if spec.const_arg is not None:
+            fixed = ast["args"][spec.const_arg]
+            if (not isinstance(fixed, dict) or fixed.get("op") != "const"
+                    or type(fixed.get("value")) is not int
+                    or not 0 <= fixed["value"] <= MAX_TEXT):
+                raise InvalidInput(f"{op} length must be a constant integer in [0, {MAX_TEXT}]")
         for child in ast["args"]:
             validate_ast(child, depth=depth+1, budget=budget)
     elif spec.shape == "unary":
@@ -280,11 +395,15 @@ def structural_form(ast):
     return (spec.form_tag,) + forms
 
 
-def z3_translate(ast, variables, z3):
+def z3_translate(ast, variables, z3, guards=None):
     """Translate an AST to a z3 term over ``variables``.
 
     Raises ``ValueError`` for an op without a translation or a non-integer
-    constant, so callers can report the expression as unsupported.
+    constant, so callers can report the expression as unsupported. When
+    ``guards`` is a list, the definedness condition of every partial op
+    (a nonzero divisor) is appended to it; requiring all of them is
+    conservative inside untaken branches, never unsound, because every
+    witness is re-checked by the runtime evaluator.
     """
     op = ast["op"]
     if op == "field":
@@ -300,10 +419,13 @@ def z3_translate(ast, variables, z3):
         raise ValueError("unsupported op for Z3")
     if spec.shape == "cond":
         left, right, then, other = (
-            z3_translate(ast[key], variables, z3) for key in COND_KEYS)
+            z3_translate(ast[key], variables, z3, guards) for key in COND_KEYS)
         return _z3_if(z3, spec.z3(z3, left, right), then, other)
-    return spec.z3(z3, *(z3_translate(child, variables, z3)
-                         for child in children(ast)))
+    operands = [z3_translate(child, variables, z3, guards)
+                for child in children(ast)]
+    if spec.z3_guard is not None and guards is not None:
+        guards.append(spec.z3_guard(z3, *operands))
+    return spec.z3(z3, *operands)
 
 
 def prompt_grammar():
@@ -311,7 +433,10 @@ def prompt_grammar():
     binary = "/".join(s.name for s in OPS.values() if s.shape == "binary")
     unary = "/".join(s.name for s in OPS.values() if s.shape == "unary")
     cond = "/".join(s.name for s in OPS.values() if s.shape == "cond")
+    fixed = "/".join(s.name for s in OPS.values() if s.const_arg is not None)
+    note = (f" The second arg of {fixed} must be const(non-negative integer)."
+            if fixed else "")
     return ("Allowed AST: field(name), item(name,index), const(value), "
             f"binary {binary}(args:[AST,AST]), "
             f"unary {unary}(arg:AST), "
-            f"{cond}(left,right,then,else).")
+            f"{cond}(left,right,then,else).{note}")

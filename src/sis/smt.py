@@ -34,11 +34,15 @@ def bounded_disagreement(a, b, schema, low=-20, high=20, timeout_ms=150):
         else:
             return None, "unsupported_noninteger_schema"
 
+    guards = []
+
     def translate(ast):
-        return z3_translate(ast, vars, z3)
+        return z3_translate(ast, vars, z3, guards)
 
     try:
         solver.add(translate(a) != translate(b))
+        for guard in guards:
+            solver.add(guard)
     except (KeyError, ValueError, IndexError, TypeError):
         return None, "unsupported_expression"
     verdict = solver.check()

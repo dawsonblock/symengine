@@ -1,12 +1,19 @@
 """Bounded enumeration + falsification probes; never confuse fit with proof.
 
-Search is a two-stage, budget-bounded enumeration. Stage 1 visits shallow
-expressions; stage 2 is signature-directed and only emits combinations
-guaranteed to fit the training outputs. A shallow rule stops the search
-only when it also fits the *development* examples — fitting training data
-alone is not a reason to stop deepening. Development data is model
-selection; a sealed holdout, when supplied, is the only set used for the
-final generalization status.
+Search is a typed, cost-ordered, budget-bounded enumeration
+(:mod:`sis.synthesis`): leaves and small constants first, then exact
+small-integer affine fits, then pool programs of increasing cost with
+goal-directed completions, and finally one-level conditionals when no
+unconditional rule fits. A rule stops the search only when it also fits
+the *development* examples; fitting training data alone is not a reason
+to stop. Development data is model selection; a sealed holdout, when
+supplied, is the only set used for the final generalization status.
+
+After selection, a rival scan resumes the same enumerator to the end of
+its declared space and reports the rule ``ambiguous`` when another rule
+fits every labelled row but disagrees on an unlabeled probe. A
+conditional rule is ``provisional`` unless the holdout exercises both of
+its branches.
 
 Every limit is explicit and reported: candidate count, signature checks,
 wall time, traced memory, and expression depth. The result says whether
@@ -19,13 +26,14 @@ from itertools import product
 
 from .errors import InvalidInput
 from .validation import check_examples, input_schema, namespace_name, canonical, digest
-from .expression import (GRAMMAR_VERSION, OPS, apply_op, cost, depth, evaluate,
-                         fingerprint, ops_of, validate_ast)
+from .expression import (CONDITIONAL, GRAMMAR_VERSION, OPS, cost, depth, evaluate,
+                         fingerprint, validate_ast)
+from . import synthesis
 
 #: Version of the search procedure. With ``GRAMMAR_VERSION`` it is stamped
 #: on every induction result; promotion and sealed evaluation re-run the
 #: search and refuse a result produced under another engine or grammar.
-ENGINE_VERSION = "sis-induce-1"
+ENGINE_VERSION = "sis-induce-2"
 
 
 def leaf_expressions(inputs):
@@ -36,44 +44,6 @@ def leaf_expressions(inputs):
         else:
             values.append(({"op": "field", "name": name}, value))
     return values
-
-
-_EVAL_ERR = ("__sis_eval_error__",)
-
-
-def _signature(ast, all_inputs):
-    """Observational fingerprint: per-input (type, value) evaluation tuple."""
-    sig = []
-    for inputs in all_inputs:
-        try:
-            v = evaluate(ast, inputs)
-            sig.append((type(v).__name__, v))
-        except (InvalidInput, KeyError, IndexError, TypeError, ValueError, OverflowError):
-            sig.append(_EVAL_ERR)
-    return tuple(sig)
-
-
-def _combine(op, a, b):
-    """Evaluate an integer binary op over two signature vectors; None on any error."""
-    out = []
-    for x, y in zip(a, b):
-        if x is _EVAL_ERR or y is _EVAL_ERR:
-            return None
-        x, y = x[1], y[1]
-        if type(x) is not int or type(y) is not int:
-            return None
-        try:
-            out.append(apply_op(op, x, y))
-        except (InvalidInput, TypeError, ValueError, OverflowError):
-            return None
-    return tuple(out)
-
-
-# Stage-1/stage-2 op lists, read from the grammar registry.
-_INT_UNARY = tuple(s.name for s in ops_of("unary", arg_types=("int",), result_type="int"))
-_STR_UNARY = tuple(s.name for s in ops_of("unary", arg_types=("str",), result_type="str"))
-_INT_BINARY = tuple(s.name for s in ops_of("binary", arg_types=("int", "int"), result_type="int"))
-_INT_RESULT = frozenset(_INT_UNARY + _INT_BINARY)
 
 
 @dataclass(frozen=True)
@@ -240,267 +210,30 @@ class SearchState:
 
 
 def candidates(train, max_candidates=12000, observed_inputs=(), stats=None,
-               *, dev=None, state=None, rival_scan=False):
-    """Yield shallow first; deepen only when development data rejects shallow.
+               *, dev=None, state=None):
+    """Yield ``(ast, depth, candidates_examined, exhausted)`` for training fits.
 
-    Stage 2 is signature-directed: instead of enumerating every
-    (mid, terminal, op) combination and evaluating each, it compares
-    evaluation signatures over the training inputs and only emits the
-    combinations guaranteed to fit, plus constant completions for
-    constant offsets/quotients. Relevant mids are visited first by
-    residual-variance then complexity ranking. With more than twelve
-    numeric features the depth-1 binary space exceeds the candidate
-    budget, so binary candidates are ranked the same way and a
-    top-ranked mid with a constant residual is offered as its depth-2
-    completion before the raw enumeration. The completion must fit
-    training and development to stop the search; otherwise enumeration
-    continues. Dedup only removes observational equivalents and AST
-    duplicates; an early stop means a rule already fit training and
-    development, not that the space was exhausted.
-
-    ``dev`` is the development partition that decides whether a shallow
-    rule is suitable. Passing it is what makes early stopping sound: a
-    rule that fits only the training rows is not a reason to stop.
-    ``rival_scan=True`` deepens even when a shallow rule fits, so a caller
-    can look for deeper rivals before declaring a rule unambiguous.
+    Runs the typed enumerator over its whole unconditional space (no early
+    stop) and yields every distinct program that fits ``train``, cheapest
+    first. When the budget stops the enumeration, a final ``(None, ...,
+    True)`` marks the hypothesis set as incomplete. ``observed_inputs``
+    are unlabeled probes that keep observationally distinct fits apart.
     """
     if state is None:
         state = SearchState(SearchBudget(max_candidates=max_candidates))
-    dev = list(dev or [])
-    leaves = leaf_expressions(train[0]["inputs"])
-    numeric = [expr for expr, v in leaves if type(v) is int]
-    string = [expr for expr, v in leaves if type(v) is str]
-    train_inputs = [e["inputs"] for e in train]
-    dev_inputs = [e["inputs"] for e in dev]
-    cheap_inputs = train_inputs + dev_inputs
-    all_inputs = train_inputs + list(observed_inputs)
-    n_train = len(train_inputs)
-    outputs = tuple(e["output"] for e in train)
-    seen_fp = set()
-    seen_cheap = set()
-    seen_full = set()
-    cheap_sigs = {}
-    full_sigs = {}
+    engine = synthesis.Engine(
+        train, list(dev or []), list(observed_inputs), state,
+        depth_budget=state.budget.max_expression_depth)
+    while engine.step():
+        pass
     if stats is not None:
-        stats["signature_checks"] = 0
-        stats["limits_hit"] = []
-
-    def spend():
-        ok = state.spend_signature()
-        if stats is not None:
-            stats["signature_checks"] = state.signature_checks
-            stats["limits_hit"] = list(state.limits_hit)
-        return ok
-
-    def cheap_signature(ast):
-        key = fingerprint(ast)
-        if key not in cheap_sigs:
-            cheap_sigs[key] = _signature(ast, cheap_inputs)
-        return cheap_sigs[key]
-
-    def full_signature(ast):
-        key = fingerprint(ast)
-        if key not in full_sigs:
-            full_sigs[key] = _signature(ast, all_inputs)
-        return full_sigs[key]
-
-    def fits_training(sig):
-        for (kind, value), out in zip(sig, outputs):
-            if kind != type(out).__name__ or value != out:
-                return False
-        return True
-
-    def unique(stream):
-        for ast in stream:
-            if not state.check_resources():
-                yield None
-                return
-            fp = fingerprint(ast)
-            if fp in seen_fp:
-                continue
-            seen_fp.add(fp)
-            if depth(ast) > state.budget.max_expression_depth:
-                state.depth_excluded += 1
-                state.hit("max_expression_depth")
-                continue
-            if not spend():
-                yield None
-                return
-            # Enumeration only needs the labeled inputs. Probe inputs are
-            # used to keep genuinely distinct fits as ambiguity rivals,
-            # not to price every non-fitting candidate.
-            cheap = cheap_signature(ast)
-            fit = fits_training(cheap[:n_train])
-            if cheap in seen_cheap:
-                if not fit:
-                    continue
-                full = full_signature(ast)
-                if full in seen_full:
-                    continue
-                seen_full.add(full)
-                if state.candidates >= state.budget.max_candidates:
-                    state.hit("max_candidates")
-                    yield None
-                    return
-                state.candidates += 1
-                yield ast
-                continue
-            seen_cheap.add(cheap)
-            if fit:
-                seen_full.add(full_signature(ast))
-            if state.candidates >= state.budget.max_candidates:
-                state.hit("max_candidates")
-                yield None
-                return
-            state.candidates += 1
-            yield ast
-
-    def first():
-        for ast, _ in leaves:
-            yield ast
-        if len({canonical(e["output"]) for e in train}) == 1:
-            yield {"op": "const", "value": train[0]["output"]}
-        for leaf in numeric:
-            for op in _INT_UNARY:
-                yield {"op": op, "arg": leaf}
-        for leaf in string:
-            for op in _STR_UNARY:
-                yield {"op": op, "arg": leaf}
-        terminals = numeric + [{"op": "const", "value": v} for v in (-2, -1, 0, 1, 2, 3)]
-        binary = []
-        for op in _INT_BINARY:
-            for a in range(len(terminals)):
-                for b in range(len(terminals)):
-                    if a >= len(numeric) and b >= len(numeric):
-                        continue
-                    if OPS[op].commutative and a > b:
-                        continue
-                    binary.append({"op": op, "args": [terminals[a], terminals[b]]})
-        if len(numeric) > 12 and all(type(o) is int for o in outputs):
-            # With many features the binary space exceeds the candidate
-            # budget, so enumeration order decides what is reached at all.
-            # Residual variance is a cheap relevance signal: the pair that
-            # explains most of the output is visited first. Coverage is
-            # unchanged; only the order changes.
-            def binary_score(ast):
-                sig = cheap_signature(ast)[:n_train]
-                if any(s is _EVAL_ERR or s[0] != "int" for s in sig):
-                    return float("inf")
-                res = [o - s[1] for o, s in zip(outputs, sig)]
-                mean = sum(res) / len(res)
-                return sum((v - mean) ** 2 for v in res) / len(res)
-
-            binary.sort(key=lambda ast: (
-                binary_score(ast), cost(ast), fingerprint(ast)))
-            # A top-ranked mid whose residual is constant is one constant
-            # away from a depth-2 rule. Offer that completion before the
-            # raw enumeration so a large feature space does not spend the
-            # whole candidate budget before stage 2 can reach it. The
-            # acceptance test is the same one the search already applies:
-            # the completed rule must fit training and development.
-            for ast in binary[:8]:
-                sig = cheap_signature(ast)[:n_train]
-                if any(s is _EVAL_ERR or s[0] != "int" for s in sig):
-                    continue
-                res = tuple(o - s[1] for o, s in zip(outputs, sig))
-                if (len(set(res)) == 1 and res[0] != 0
-                        and abs(res[0]) <= 1_000_000_000):
-                    completed = {"op": "add", "args": [
-                        ast, {"op": "const", "value": res[0]}]}
-                    yield completed
-                    if (_matches(completed, train, outputs)
-                            and _matches(completed, dev)):
-                        return
-        for ast in binary:
-            yield ast
-        for a in range(len(leaves)):
-            for b in range(a + 1, len(leaves)):
-                if type(leaves[a][1]) == type(leaves[b][1]):
-                    yield {"op": "eq", "args": [leaves[a][0], leaves[b][0]]}
-
-    first_results = list(unique(first()))
-    exceeded = bool(first_results and first_results[-1] is None)
-    for ast in first_results:
-        yield ast, 1, state.candidates, exceeded
-    if exceeded:
-        return
-    # Deepening is bounded and only requested when no shallow rule fits
-    # both the training rows and the development partition.
-    if not rival_scan and any(_matches(ast, train, outputs) and _matches(ast, dev)
-                              for ast in first_results):
-        return
-    if not all(type(o) is int for o in outputs):
-        # Stage 2 only covers numeric operators.
-        return
-    shallow = [x for x in first_results if x["op"] in _INT_RESULT]
-
-    def resid_var(ast):
-        sig = cheap_signature(ast)
-        if any(s is _EVAL_ERR for s in sig[:n_train]):
-            return None
-        res = []
-        for o, s in zip(outputs, sig[:n_train]):
-            if s[0] != "int":
-                return None
-            res.append(o - s[1])
-        mean = sum(res) / len(res)
-        return sum((v - mean) ** 2 for v in res) / len(res)
-
-    # Deterministic relevance ordering: residual over the training
-    # outputs first, then expression complexity, then fingerprint. Every
-    # mid is still covered; the ordering only decides what the budget
-    # reaches first.
-    shallow.sort(key=lambda m: (
-        (lambda v: (v is None, v or 0.0))(resid_var(m)),
-        cost(m),
-        fingerprint(m)))
-
-    terminals = numeric + [{"op": "const", "value": v} for v in (-2, -1, 0, 1, 2, 3)]
-    term_sigs = []
-    seen_term = set()
-    for tast in terminals:
-        ts = cheap_signature(tast)
-        if ts in seen_term:
-            continue
-        seen_term.add(ts)
-        term_sigs.append((tast, ts))
-
-    def const_completions(ms):
-        res = tuple(o - s[1] for o, s in zip(outputs, ms))
-        if len(set(res)) == 1 and res[0] != 0 and abs(res[0]) <= 1_000_000_000:
-            yield {"op": "add", "args": [None, {"op": "const", "value": res[0]}]}
-        back = tuple(s[1] - o for s, o in zip(ms, outputs))
-        if len(set(back)) == 1 and back[0] != 0 and abs(back[0]) <= 1_000_000_000:
-            yield {"op": "sub", "args": [None, {"op": "const", "value": back[0]}]}
-        if all(s[1] != 0 for s in ms) and all(o % s[1] == 0 for o, s in zip(outputs, ms)):
-            quot = tuple(o // s[1] for o, s in zip(outputs, ms))
-            if len(set(quot)) == 1 and quot[0] not in (0, 1) and abs(quot[0]) <= 1_000_000_000:
-                yield {"op": "mul", "args": [None, {"op": "const", "value": quot[0]}]}
-
-    def second():
-        for mid in shallow:
-            if not state.check_resources():
-                return
-            ms = cheap_signature(mid)
-            if any(s is _EVAL_ERR for s in ms[:n_train]):
-                continue
-            ms = ms[:n_train]
-            if not all(s[0] == "int" for s in ms):
-                continue
-            for ast in const_completions(ms):
-                ast["args"][0] = mid
-                yield ast
-            for tast, ts in term_sigs:
-                ts = ts[:n_train]
-                for op in _INT_BINARY:
-                    if not spend():
-                        return
-                    if _combine(op, ms, ts) == outputs:
-                        yield {"op": op, "args": [mid, tast]}
-                    if op == "sub" and _combine(op, ts, ms) == outputs:
-                        yield {"op": op, "args": [tast, mid]}
-    for ast in unique(second()):
-        yield ast, 2, state.candidates, ast is None
+        stats["signature_checks"] = state.signature_checks
+        stats["limits_hit"] = list(state.limits_hit)
+    fits = sorted(engine.fit_order, key=lambda p: (p.cost, fingerprint(p.ast)))
+    for prog in fits:
+        yield prog.ast, prog.depth, state.candidates, False
+    if engine.exhausted:
+        yield None, engine.level_reached, state.candidates, True
 
 
 def _matches(ast, examples, outputs=None):
@@ -566,6 +299,92 @@ def generated_probes(inputs, limit=256):
                 if n >= limit: return
 
 
+_EXTRA_INT_PROBES = (3, 4, 7, 10, -7, 25, -12, 100)
+_EXTRA_STR_PROBES = ("abc", "hello", "aB", "zz", "abcd", "xyzzy", "a1")
+
+
+def extended_probes(train_inputs, limit=160):
+    """Deterministic unlabeled probes for the grammar-2 ops.
+
+    ``generated_probes`` varies each leaf over a small fixed set. These add
+    values that separate the new operations (divisors and remainders,
+    longer strings for slices and containment) and data-derived boundary
+    values: every observed integer and its neighbours, and records where
+    two integer leaves are equal, so ``lt``/``le`` and threshold rivals are
+    told apart. They are never labels.
+    """
+    rows = [dict(x) for x in train_inputs[:2]]
+    if not rows:
+        return []
+    leaves = []
+    for name, value in sorted(rows[0].items()):
+        if isinstance(value, list):
+            leaves.extend((name, i, x) for i, x in enumerate(value))
+        else:
+            leaves.append((name, None, value))
+    observed = {}
+    for inputs in train_inputs:
+        for name, idx, _ in leaves:
+            value = inputs[name] if idx is None else inputs[name][idx]
+            bucket = observed.setdefault((name, idx), [])
+            if value not in bucket:
+                bucket.append(value)
+    seen = {canonical(x) for x in train_inputs}
+    out = []
+
+    def make(base, changes):
+        record = {k: list(v) if isinstance(v, list) else v for k, v in base.items()}
+        for name, idx, value in changes:
+            if idx is None:
+                record[name] = value
+            else:
+                record[name][idx] = value
+        return record
+
+    def feed(record):
+        key = canonical(record)
+        if key in seen:
+            return False
+        seen.add(key)
+        out.append(record)
+        return len(out) >= limit
+
+    for base in rows:
+        for name, idx, value in leaves:
+            if type(value) is int:
+                values = list(_EXTRA_INT_PROBES)
+                for v in sorted(x for x in observed[(name, idx)] if type(x) is int):
+                    values.extend((v - 1, v + 1))
+            elif type(value) is str:
+                values = list(_EXTRA_STR_PROBES)
+                values.extend(x + x for x in observed[(name, idx)][:3]
+                              if type(x) is str and len(x) <= 32)
+            else:
+                values = [False, True]
+            for v in values:
+                if type(v) is int and abs(v) > 1_000_000_000:
+                    continue
+                if feed(make(base, [(name, idx, v)])):
+                    return out
+        ints = [(n, i, v) for n, i, v in leaves if type(v) is int]
+        for (an, ai, _av), (bn, bi, _bv) in product(ints, ints):
+            if (an, ai) == (bn, bi):
+                continue
+            source = base[an] if ai is None else base[an][ai]
+            if feed(make(base, [(bn, bi, source)])):
+                return out
+    return out
+
+
+def _interleave(first, second):
+    out = []
+    for a, b in zip(first, second):
+        out.extend((a, b))
+    longer = first if len(first) > len(second) else second
+    out.extend(longer[min(len(first), len(second)):])
+    return out
+
+
 def _witness(best, rival, probes):
     for inputs in probes:
         try:
@@ -601,20 +420,71 @@ def _check_partition(train, dev, holdout):
                 raise InvalidInput(f"{label} output type differs from training")
 
 
+def _sig_witness(engine, best, rival):
+    """First probe where two engine programs both evaluate and differ."""
+    left, right = engine.full_sig(best), engine.full_sig(rival)
+    for inputs, a, b in zip(engine.probes, left, right):
+        if a is synthesis.ERR or b is synthesis.ERR:
+            continue
+        if type(a) is not type(b) or a != b:
+            return {"inputs": inputs, "candidate_output": a, "alternative_output": b}
+    return None
+
+
+def _rival_witness(engine, best, rival, use_z3, schema):
+    """Witness that ``rival`` differs from ``best``; probes first, then z3."""
+    progs = engine.prog_by_fp
+    bp, rp = progs.get(fingerprint(best)), progs.get(fingerprint(rival))
+    if bp is not None and rp is not None:
+        witness = _sig_witness(engine, bp, rp)
+    else:
+        witness = _witness(best, rival, engine.probes)
+    if not witness and use_z3:
+        from .smt import bounded_disagreement
+        witness, _ = bounded_disagreement(best, rival, schema)
+    return witness
+
+
+def _search_depth(engine):
+    """Expression depth the primary search covered (for reporting)."""
+    if engine.conditionals_run:
+        return synthesis.TEMPLATE_DEPTH
+    if engine.level_reached >= 4:
+        return synthesis.SEARCH_DEPTH
+    return 1 if engine.level_reached <= 2 else 2
+
+
 def _search_once(train, dev, observed, probes, state, proposals, use_z3):
-    fits = []
-    stage = 1
-    outputs = tuple(e["output"] for e in train)
-    for ast, stage, examined, exceeds in candidates(
-            train, observed_inputs=observed, dev=dev, state=state):
-        if exceeds or ast is None:
+    """One selection pass over ``train`` with ``dev`` as selection data.
+
+    Runs the enumerator until a program fits training and development
+    data (finishing that stage), or to the end of its unconditional space
+    and then the conditional stage. Only training and development rows are
+    ever seen here; holdout rows never are.
+    """
+    engine = synthesis.Engine(
+        train, dev, probes, state,
+        depth_budget=state.budget.max_expression_depth)
+    while engine.step():
+        if engine.has_dev_fit():
             break
-        if _matches(ast, train, outputs):
-            fits.append(ast)
+    if (not engine.exhausted and engine.horizon_reached
+            and not engine.has_dev_fit()):
+        engine.run_conditionals()
+    outputs = tuple(e["output"] for e in train)
+    fits = []
+    seen = set()
+    for prog in engine.fit_order:
+        fp = fingerprint(prog.ast)
+        if fp in seen or not _matches(prog.ast, train, outputs):
+            continue
+        seen.add(fp)
+        fits.append(prog.ast)
     for ast in proposals or []:
         try:
             validate_ast(ast)
-            if _matches(ast, train) and fingerprint(ast) not in {fingerprint(x) for x in fits}:
+            if _matches(ast, train) and fingerprint(ast) not in seen:
+                seen.add(fingerprint(ast))
                 fits.append(ast)
         except (InvalidInput, KeyError, TypeError):
             continue
@@ -624,41 +494,48 @@ def _search_once(train, dev, observed, probes, state, proposals, use_z3):
 
     # Development data decides selection: a cheaper rule that fails the
     # development partition never outranks a rule that fits it.
-    fits.sort(key=lambda x: (dev_failures(x), cost(x), fingerprint(x)))
+    failures = {fingerprint(x): dev_failures(x) for x in fits}
+    fits.sort(key=lambda x: (failures[fingerprint(x)], cost(x), fingerprint(x)))
     best = fits[0] if fits else None
     ambiguous = None
     if best is not None:
+        schema = input_schema(train[0]["inputs"])
+        limit = failures[fingerprint(best)]
+        ceiling = cost(best) + RIVAL_COST_MARGIN
         for rival in fits[1:]:
-            witness = _witness(best, rival, probes)
-            if not witness and use_z3:
-                from .smt import bounded_disagreement
-                witness, _ = bounded_disagreement(
-                    best, rival, input_schema(train[0]["inputs"]))
+            if cost(rival) > ceiling:
+                continue
+            # A rival refuted by more development rows than the selected
+            # rule is not a competing explanation of the same evidence.
+            if failures[fingerprint(rival)] > limit:
+                continue
+            witness = _rival_witness(engine, best, rival, use_z3, schema)
             if witness:
                 ambiguous = witness
                 break
-    return {"best": best, "fits": fits, "ambiguous": ambiguous, "stage": stage}
+    return {"best": best, "fits": fits, "ambiguous": ambiguous,
+            "stage": _search_depth(engine), "engine": engine}
 
 
 MAX_POST_SELECTION_ORACLE_CALLS = 4
-RIVAL_SCAN_CANDIDATES = 4000
-RIVAL_SCAN_SIGNATURE_CHECKS = 100_000
-RIVAL_SCAN_WALL_SECONDS = 5.0
+RIVAL_SCAN_CANDIDATES = 12000
+RIVAL_SCAN_SIGNATURE_CHECKS = 300_000
+RIVAL_SCAN_WALL_SECONDS = 10.0
 
 
-def _deep_rival_scan(train, labelled, observed, probes, best, budget):
-    """Bounded depth-2 search for a rival consistent with all labels.
+def _rival_scan(engine, budget):
+    """Resume the selection enumerator to the end of its space.
 
-    Stage 1 stops as soon as a shallow rule fits training and development
-    data, so deeper rules are never compared with it. This scan runs only
-    after selection is final: it enumerates the depth-2 space and looks
-    for a rule that fits ``train`` and every ``labelled`` row yet
-    disagrees with ``best`` on a probe. It changes only the final status
-    label, never which rule is selected. Returns
-    ``((rival, witness) | None, report)``; it has its own budget so it
-    never truncates the primary search, and ``complete`` says whether the
-    bounded depth-2 space was exhausted.
+    The primary search stops as soon as a rule fits training and
+    development data, so costlier rules were never compared with it. This
+    scan continues the same enumeration under its own budget, so it never
+    truncates the primary search; it changes only the final status, never
+    which rule is selected. Returns a report whose ``complete`` says
+    whether the declared space was exhausted.
     """
+    if engine.horizon_reached and engine.conditionals_run:
+        return {"performed": True, "complete": not engine.exhausted,
+                "candidates": 0}
     sub = SearchState(SearchBudget(
         max_candidates=min(RIVAL_SCAN_CANDIDATES, budget.max_candidates),
         max_signature_checks=min(RIVAL_SCAN_SIGNATURE_CHECKS,
@@ -667,34 +544,103 @@ def _deep_rival_scan(train, labelled, observed, probes, best, budget):
         max_memory_bytes=budget.max_memory_bytes,
         max_expression_depth=budget.max_expression_depth))
     sub.start()
-    outputs = tuple(e["output"] for e in train)
-    best_fp = fingerprint(best)
-    complete = True
-    found = None
+    primary = engine.state
+    engine.state = sub
     try:
-        for ast, stage, _, exceeds in candidates(
-                train, observed_inputs=observed, dev=labelled, state=sub,
-                rival_scan=True):
-            if exceeds or ast is None:
-                complete = False
-                break
-            if stage != 2 or fingerprint(ast) == best_fp:
-                continue
-            if not (_matches(ast, train, outputs) and _matches(ast, labelled)):
-                continue
-            witness = _witness(best, ast, probes)
-            if witness:
-                found = (ast, witness)
-                break
-        if sub.limits_hit:
-            complete = False
+        while engine.step():
+            pass
+        if engine.horizon_reached and not engine.conditionals_run:
+            # Conditionals are rivals too: a clamp such as max(1, min(a, 2))
+            # and if_lt(a, k, 1, 2) for every unpinned threshold k fit the
+            # same rows but disagree between the observed values.
+            engine.run_conditionals()
     finally:
+        engine.state = primary
         sub.close()
-    return found, {"performed": True, "complete": complete if found is None else True,
-                   "candidates": sub.candidates}
+    complete = (engine.horizon_reached and engine.conditionals_run
+                and not engine.exhausted and not sub.limits_hit)
+    return {"performed": True, "complete": complete, "candidates": sub.candidates}
+
+
+#: A rival counts against the selected rule only when it is at most this
+#: much costlier. Far costlier programs that happen to fit every labelled
+#: row (``(a + b) - 1 // abs(b)`` against ``a + b``) are always available in
+#: a rich grammar; the margin keeps the ambiguity check to alternatives of
+#: comparable simplicity, as the old depth-2 rival scan did.
+RIVAL_COST_MARGIN = 4
+
+
+def _deep_rivals(engine, best, selected_fits, labelled, use_z3, schema):
+    """Fits consistent with every labelled row that differ from ``best``.
+
+    Candidates are the selection pass's fits (proposals included) and every
+    fit the engine has found, including those of the rival scan.
+    """
+    best_fp = fingerprint(best)
+    ceiling = cost(best) + RIVAL_COST_MARGIN
+    pool = {fingerprint(x): x for x in selected_fits}
+    for prog in engine.fit_order:
+        pool.setdefault(fingerprint(prog.ast), prog.ast)
+    for fp, ast in sorted(pool.items(), key=lambda kv: (cost(kv[1]), kv[0])):
+        if cost(ast) > ceiling:
+            break
+        if fp == best_fp or not _matches(ast, labelled):
+            continue
+        witness = _rival_witness(engine, best, ast, use_z3, schema)
+        if witness:
+            yield ast, witness
+
+
+def _selection_rival(search, selection_rows, budget, use_z3):
+    """Resume the selection engine and return a rival's witness, if any."""
+    engine = search.get("engine")
+    best = search["best"]
+    if engine is None or best is None:
+        return None
+    _rival_scan(engine, budget)
+    schema = input_schema(selection_rows[0]["inputs"])
+    for _rival, witness in _deep_rivals(
+            engine, best, search["fits"], selection_rows, use_z3, schema):
+        return witness
+    return None
+
+
+def branch_coverage(rule, examples):
+    """Count ``examples`` taking each branch of a top-level conditional."""
+    from .expression import _eval
+    spec = OPS[rule["op"]]
+    counts = {"then": 0, "else": 0}
+    for ex in examples:
+        try:
+            left = _eval(rule["left"], ex["inputs"])
+            right = _eval(rule["right"], ex["inputs"])
+            counts["then" if spec.fn(left, right) else "else"] += 1
+        except (InvalidInput, KeyError, IndexError, TypeError):
+            continue
+    return counts
 
 
 MIN_HOLDOUT_EXAMPLES = 2
+
+#: The sealed holdout must carry at least this much evidence before a rule
+#: is locally validated. A holdout row whose label is common among the
+#: labelled outputs is weak evidence: under the label distribution a wrong
+#: rule matches it by chance with probability equal to that label's
+#: frequency. Three binary holdout rows carry about 3 bits, so a coin-flip
+#: rule would pass them one time in eight; such results stay provisional.
+HOLDOUT_EVIDENCE_BITS = 4.0
+
+
+def holdout_evidence_bits(holdout, labelled):
+    """Bits of evidence the holdout carries under the labelled-output marginal."""
+    from collections import Counter
+    from math import log2
+    counts = Counter(canonical(e["output"]) for e in labelled)
+    total = sum(counts.values())
+    if not total:
+        return 0.0
+    return sum(-log2(counts[canonical(e["output"])] / total)
+               for e in holdout if counts[canonical(e["output"])])
 
 
 def check_engine_version(result):
@@ -849,7 +795,9 @@ def induce(train, validation=None, *, namespace="default", max_candidates=12000,
     if proposals is not None and (not isinstance(proposals, list) or len(proposals) > 10):
         raise InvalidInput("proposals must be a list of at most 10 AST objects")
 
-    probe_list = list(generated_probes(original_train[0]["inputs"]))
+    probe_list = _interleave(
+        list(generated_probes(original_train[0]["inputs"])),
+        extended_probes([x["inputs"] for x in original_train]))
     observed = [x["inputs"] for x in dev_examples] + probe_list
     state = SearchState(budget)
     state.start()
@@ -906,6 +854,16 @@ def induce(train, validation=None, *, namespace="default", max_candidates=12000,
                 # counterexample set.
                 break
             witness = search["ambiguous"]
+            if (witness is None and counterexample_oracle is not None
+                    and rounds < max_refinement_rounds
+                    and state.outcome == "completed"):
+                # The selection pass stopped at the first stage with a fit,
+                # so costlier rivals were never compared. With an oracle,
+                # look for one consistent with the selection data (never
+                # the holdout) so its distinguishing input can be labelled.
+                witness = _selection_rival(
+                    search, examples + dev_examples, budget, use_z3)
+                search["ambiguous"] = witness
             if (witness is not None and counterexample_oracle is not None
                     and rounds < max_refinement_rounds):
                 try:
@@ -944,30 +902,43 @@ def induce(train, validation=None, *, namespace="default", max_candidates=12000,
     dev_passes = sum(_matches(best, [ex]) for ex in dev_examples) if best else 0
     outcome = state.outcome
     rival_scan = {"performed": False, "complete": None, "candidates": 0}
-    labelled = dev_examples + holdout_examples
-    if (best is not None and ambiguous is None and stage == 1
-            and outcome == "completed"
-            and len(holdout_examples) >= MIN_HOLDOUT_EXAMPLES
-            and dev_passes == len(dev_examples)
-            and holdout_passes == len(holdout_examples)
-            and all(type(e["output"]) is int for e in examples)):
-        # Only a result that would otherwise be locally validated is
-        # checked against deeper rivals. Selection is already final; an
-        # authoritative oracle may label a distinguishing input, which
-        # can refute the rival but never changes the selected rule.
+    labelled = examples + dev_examples + holdout_examples
+    schema = input_schema(original_train[0]["inputs"])
+    engine = reported.get("engine")
+    if best is not None and engine is not None:
+        # Ambiguity is decided against every labelled row: a rival counts
+        # when it fits training, development and holdout rows alike and
+        # disagrees with the selected rule on an unlabeled probe. The
+        # holdout can refute a rival here but never changes which rule was
+        # selected. A result that would otherwise be locally validated is
+        # first checked against the rest of the declared space.
+        searched_ambiguity = ambiguous
+        if (outcome == "completed"
+                and len(holdout_examples) >= MIN_HOLDOUT_EXAMPLES
+                and dev_passes == len(dev_examples)
+                and holdout_passes == len(holdout_examples)):
+            rival_scan = _rival_scan(engine, budget)
+        # An authoritative oracle may label a distinguishing input after
+        # selection only when the selection pass itself was unambiguous
+        # (otherwise the refinement loop above already consulted it).
+        consult_oracle = (searched_ambiguity is None
+                          and counterexample_oracle is not None)
         out_type = type(original_train[0]["output"])
-        for _ in range(MAX_POST_SELECTION_ORACLE_CALLS + 1):
-            rival, scan = _deep_rival_scan(
-                examples, labelled, observed, probe_list, best, budget)
-            rival_scan = {**scan, "candidates": rival_scan["candidates"]
-                          + scan["candidates"]}
-            if rival is None:
+        ambiguous = None
+        refuted = set()
+        while True:
+            found = None
+            for rival, witness in _deep_rivals(
+                    engine, best, reported["fits"], labelled, use_z3, schema):
+                if fingerprint(rival) not in refuted:
+                    found = (rival, witness)
+                    break
+            if found is None:
                 break
-            ambiguous = rival[1]
-            if (counterexample_oracle is None
+            ambiguous = found[1]
+            if (not consult_oracle
                     or oracle_calls >= MAX_POST_SELECTION_ORACLE_CALLS
                     + max_refinement_rounds):
-                fitting += 1
                 break
             try:
                 label = counterexample_oracle(ambiguous["inputs"])
@@ -976,19 +947,24 @@ def induce(train, validation=None, *, namespace="default", max_candidates=12000,
             oracle_calls += 1
             if (type(label) is not out_type
                     or label != ambiguous["candidate_output"]):
-                fitting += 1
                 break
             labelled = labelled + [
                 {"inputs": ambiguous["inputs"], "output": label}]
+            refuted.add(fingerprint(found[0]))
             ambiguous = None
-    if stage == 1 and rival_scan["performed"] and rival_scan["complete"]:
-        ambiguity_scope = "depth_1_and_depth_2"
-    elif stage == 1 and rival_scan["performed"]:
-        ambiguity_scope = "depth_1_and_bounded_depth_2_scan"
-    elif stage == 1:
-        ambiguity_scope = "depth_1_only"
+        fitting = len({fingerprint(x) for x in reported["fits"]}
+                      | {fingerprint(p.ast) for p in engine.fit_order})
+    if rival_scan["performed"] and rival_scan["complete"]:
+        ambiguity_scope = "full_search_space"
+    elif rival_scan["performed"]:
+        ambiguity_scope = "bounded_rival_scan"
     else:
-        ambiguity_scope = "depth_1_and_depth_2"
+        ambiguity_scope = "selection_pool_only"
+    evidence_bits = holdout_evidence_bits(
+        holdout_examples, original_train + dev_examples + holdout_examples)
+    coverage = None
+    if best is not None and best["op"] in CONDITIONAL:
+        coverage = branch_coverage(best, holdout_examples)
     truncated = outcome != "completed"
     if not best:
         status = "search_incomplete" if truncated else "no_rule"
@@ -998,9 +974,20 @@ def induce(train, validation=None, *, namespace="default", max_candidates=12000,
         # A rule that fails the holdout is not promotion evidence even if
         # several train-fitting rivals also disagree off-sample.
         status = "validation_failed"
+    elif dev_passes != len(dev_examples):
+        # Nor is a rule that still fails development rows after refinement.
+        status = "validation_failed"
     elif ambiguous:
         status = "ambiguous"
     elif len(holdout_examples) < MIN_HOLDOUT_EXAMPLES:
+        status = "provisional"
+    elif evidence_bits < HOLDOUT_EVIDENCE_BITS:
+        # Too little independent evidence: a chance agreement with the
+        # holdout labels is not unlikely enough to call this validated.
+        status = "provisional"
+    elif coverage is not None and min(coverage.values()) < 1:
+        # A conditional whose holdout never exercises one branch has no
+        # independent evidence for that branch.
         status = "provisional"
     else:
         status = "locally_validated"
@@ -1044,5 +1031,8 @@ def induce(train, validation=None, *, namespace="default", max_candidates=12000,
         "distinguishing_probe": ambiguous,
         "ambiguity_scope": ambiguity_scope,
         "rival_scan": rival_scan,
+        "branch_holdout_coverage": coverage,
+        "holdout_evidence_bits": round(evidence_bits, 3),
+        "rule_depth": depth(best) if best is not None else None,
         "verification_scope": scope,
     }
