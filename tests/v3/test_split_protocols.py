@@ -713,6 +713,49 @@ class SplitExceptionTests(SplitHarness):
             "    assert not isinstance(claimed, type)\n"
         )})
 
+    SKIPPING = (
+        "import unittest\n"
+        "class Mine(unittest.SkipTest):\n"
+        "    pass\n"
+        "def plain():\n"
+        "    raise unittest.SkipTest('not graded')\n"
+        "def derived():\n"
+        "    raise Mine('not graded')\n"
+        "SkipAlias = unittest.SkipTest\n")
+
+    def test_a_submission_cannot_turn_a_failure_into_a_skip(self):
+        # pytest reports unittest.SkipTest raised anywhere in a test as a
+        # skip, and an all-skipped run exits 0. Neither SkipTest nor a
+        # subclass may cross as the evaluator's own class.
+        self.write("skipper.py", self.SKIPPING)
+        result = self.run_split({"test_hidden.py": (
+            "import unittest\n"
+            "import pytest\n"
+            "import skipper\n"
+            "@pytest.mark.parametrize('name', ['plain', 'derived'])\n"
+            "def test_answer(name):\n"
+            "    assert getattr(skipper, name)() == 42\n"
+        )})
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertIn("2 failed", result.stdout)
+        self.assertNotIn("skipped", result.stdout)
+
+    def test_skip_exceptions_cross_as_ordinary_errors(self):
+        self.write("skipper.py", self.SKIPPING)
+        self.assertPasses({"test_hidden.py": (
+            "import unittest\n"
+            "import pytest\n"
+            "import skipper\n"
+            "@pytest.mark.parametrize('name', ['plain', 'derived'])\n"
+            "def test_raises_but_not_as_skip(name):\n"
+            "    with pytest.raises(Exception) as info:\n"
+            "        getattr(skipper, name)()\n"
+            "    assert not isinstance(info.value, unittest.SkipTest)\n"
+            "    assert 'not graded' in str(info.value)\n"
+            "def test_alias_is_not_the_evaluator_class():\n"
+            "    assert skipper.SkipAlias is not unittest.SkipTest\n"
+        )})
+
 
 @unittest.skipUnless(os.name == "posix", "socketpair transport")
 class SplitSourceLayoutTests(SplitHarness):

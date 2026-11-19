@@ -32,7 +32,11 @@ release.
   pkg.Base`, `match=` on the worker's message and `excinfo.value.attr`
   (read through a handle) work. Stand-ins always derive from
   `Exception`; a forged report cannot raise `BaseException`,
-  `SystemExit` or `KeyboardInterrupt` in the evaluator. Worker messages
+  `SystemExit` or `KeyboardInterrupt` in the evaluator, and no name
+  resolves to a class of the runner's own modules (`unittest`, `pytest`,
+  `pluggy`, `doctest`): a `unittest.SkipTest` raised by the submission
+  crosses as an ordinary error, not as a skip that would let a failing
+  hidden test exit 0. Worker messages
   carry up to 8 KiB instead of 400 characters.
 - **src/ layout.** A workspace with a `src/` directory that is not a
   package is searched at its root and then under `src/`, in the same

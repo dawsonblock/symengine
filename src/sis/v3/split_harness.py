@@ -63,7 +63,12 @@ handle.
   ``pytest.raises(pkg.Error)`` and ``except pkg.Base`` match what the
   worker raises. Every stand-in derives from ``Exception``: the
   evaluator never raises ``BaseException``, ``SystemExit`` or
-  ``KeyboardInterrupt`` for the worker, whatever the worker reports. The
+  ``KeyboardInterrupt`` for the worker, whatever the worker reports.
+  Nor does a name resolve to a class of the test runner's own modules
+  (``unittest``, ``pytest``, ``pluggy``, ``doctest``), and no
+  ``unittest.SkipTest`` (or subclass) crosses: pytest reads that as a
+  skip wherever it is raised, so a submission could otherwise turn a
+  failing hidden test into an all-skipped run that exits 0. The
   raised object stays in the worker; the local exception carries its
   message and reads further attributes through its handle.
 
@@ -924,6 +929,10 @@ READABLE_DUNDERS = frozenset({"__name__", "__qualname__", "__version__",
                               "__all__"})
 MAX_CLASSES = 64
 MAX_STAND_INS = 4096
+# The test runner's own modules. Their exception classes steer the run
+# itself (unittest.SkipTest becomes a skip wherever it is raised, and an
+# all-skipped run exits 0), so a worker name never resolves to one.
+RUNNER_MODULES = ("unittest", "pytest", "_pytest", "pluggy", "doctest")
 # Local stand-ins for worker exception classes, by (module, qualname).
 STAND_INS = {}
 
@@ -1095,6 +1104,8 @@ def trusted_class(module, qualname):
     a proxied workspace module). The lookup is static: nothing is
     imported and no attribute hook runs.
     """
+    if module.split(".")[0] in RUNNER_MODULES:
+        return None
     if module == "builtins":
         candidate = vars(builtins).get(qualname)
     else:
@@ -1171,7 +1182,18 @@ def exception_class(classes, path=None):
         built[position] = stand_in(
             module, qualname, tuple(local) or (Exception,),
             path if position == 0 else None)
+    if controls_the_run(built[0]):
+        return None
     return built[0]
+
+
+def controls_the_run(cls):
+    """True for a class the test runner treats as a verdict, not an error."""
+    if not isinstance(cls, type):
+        return False
+    unittest_module = sys.modules.get("unittest")
+    skip = getattr(unittest_module, "SkipTest", None)
+    return isinstance(skip, type) and issubclass(cls, skip)
 
 
 def instantiate(cls, args, message):
@@ -1216,8 +1238,10 @@ def raise_remote(error):
         if isinstance(candidate, type) and issubclass(candidate, Exception):
             cls = candidate
     # Only ordinary exceptions cross the boundary: a worker must not be
-    # able to raise SystemExit or KeyboardInterrupt in the evaluator.
-    if cls is None or not issubclass(cls, Exception):
+    # able to raise SystemExit or KeyboardInterrupt in the evaluator, nor
+    # an exception the runner reads as a skip.
+    if (cls is None or not issubclass(cls, Exception)
+            or controls_the_run(cls)):
         raise RuntimeError("%s: %s" % (name, message))
     args = (message,)
     payload = error.get("args")
