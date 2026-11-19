@@ -127,7 +127,11 @@ class SplitCodecTests(SplitHarness):
             "    pairs = [(w,) for w in words.UNCOUNTABLES]\n"
             "    assert sorted(pairs) == [('equipment',), ('information',),"
             " ('rice',)]\n"
-            "    assert isinstance(words.UNCOUNTABLES, set)\n"
+            # A module-level set is submission state: it stays in the
+            # worker (see SplitStateTests) and is no local set.
+            "    assert not isinstance(words.UNCOUNTABLES, set)\n"
+            "    assert words.UNCOUNTABLES == {'equipment', 'information',"
+            " 'rice'}\n"
             "    assert words.FROZEN == frozenset({1, 2, (3, 4)})\n"
             "    assert isinstance(words.FROZEN, frozenset)\n"
             "    assert frozenset({2, 3}) in words.NESTED\n"
@@ -192,6 +196,184 @@ class SplitCodecTests(SplitHarness):
         payload = {"t": "set", "v": [{"t": "none"}] * (MAX_ITEMS + 1)}
         with self.assertRaisesRegex(SplitProtocolError, "out of bounds"):
             _decode(payload)
+
+
+STATE_MODULE = """
+import collections
+
+UNCOUNTABLES = {'equipment', 'rice'}
+PLURALS = [('ox', 'oxen')]
+TABLE = {'a': [1], 'b': {'c': 2}}
+QUEUE = collections.deque([1])
+BUFFER = bytearray(b'ab')
+NAME = 'fixed'
+PAIR = ([1], 2)
+FROZEN = frozenset({1})
+
+
+def singularize(word):
+    return word if word in UNCOUNTABLES else word.rstrip('s')
+
+
+def plural_count():
+    return len(PLURALS)
+
+
+def fresh():
+    return [1, 2]
+
+
+def internal():
+    return PLURALS
+
+
+def reset():
+    global PLURALS
+    PLURALS = []
+
+
+class Box:
+    def __init__(self):
+        self.items = []
+    def size(self):
+        return len(self.items)
+"""
+
+
+@unittest.skipUnless(os.name == "posix", "socketpair transport")
+class SplitStateTests(SplitHarness):
+    """Module and object state read by a test is the worker's own object."""
+
+    def setUp(self):
+        super().setUp()
+        self.write("state.py", STATE_MODULE)
+
+    def test_mutating_a_module_set_reaches_the_submission(self):
+        # inflection's hidden test, verbatim in shape.
+        self.assertPasses({"test_hidden.py": (
+            "import state\n"
+            "from state import UNCOUNTABLES\n"
+            "def test_uncountable():\n"
+            "    assert state.singularize('ors') == 'or'\n"
+            "    state.UNCOUNTABLES.add('ors')\n"
+            "    try:\n"
+            "        assert 'ors' == state.singularize('ors')\n"
+            "        assert 'ors' in UNCOUNTABLES\n"
+            "    finally:\n"
+            "        state.UNCOUNTABLES.remove('ors')\n"
+            "    assert state.singularize('ors') == 'or'\n"
+            "    assert 'ors' not in state.UNCOUNTABLES\n"
+        )})
+
+    def test_container_handles_behave_like_the_container(self):
+        self.assertPasses({"test_hidden.py": (
+            "import state\n"
+            "def test_protocols():\n"
+            "    words = state.UNCOUNTABLES\n"
+            "    assert words == {'equipment', 'rice'}\n"
+            "    assert {'equipment', 'rice'} == words\n"
+            "    assert words != {'rice'} and {'rice'} != words\n"
+            "    assert sorted(words) == ['equipment', 'rice']\n"
+            "    assert len(words) == 2 and 'rice' in words\n"
+            "    assert sorted(x for x in words) == ['equipment', 'rice']\n"
+            "    assert words | {'z'} == {'equipment', 'rice', 'z'}\n"
+            "    assert {'z'} | words == {'equipment', 'rice', 'z'}\n"
+            "    assert list(state.PLURALS) == [('ox', 'oxen')]\n"
+            "    assert state.PLURALS[0] == ('ox', 'oxen')\n"
+            "    assert state.PLURALS[:1] == [('ox', 'oxen')]\n"
+            "    table = state.TABLE\n"
+            "    assert table['a'] == [1] and table == {'a': [1],"
+            " 'b': {'c': 2}}\n"
+            "    assert sorted(table) == ['a', 'b']\n"
+            "    assert dict(table.items()) == {'a': [1], 'b': {'c': 2}}\n"
+            "    table['z'] = 0\n"
+            "    del table['z']\n"
+            "    assert 'z' not in state.TABLE\n"
+            "    assert state.QUEUE == state.QUEUE and len(state.QUEUE) == 1\n"
+            "    assert bytes(state.BUFFER) == b'ab'\n"
+        )})
+
+    def test_mutations_through_any_read_reach_the_worker(self):
+        self.assertPasses({"test_hidden.py": (
+            "import copy\n"
+            "import state\n"
+            "def test_mutations():\n"
+            "    state.PLURALS.append(('mouse', 'mice'))\n"
+            "    assert state.plural_count() == 2\n"
+            "    state.PLURALS.extend([('a', 'b')])\n"
+            "    state.PLURALS[2] = ('c', 'd')\n"
+            "    assert state.PLURALS[-1] == ('c', 'd')\n"
+            "    del state.PLURALS[2]\n"
+            "    plurals = state.PLURALS\n"
+            "    plurals += [('e', 'f')]\n"
+            "    assert state.plural_count() == 3\n"
+            "    plurals.pop()\n"
+            "    assert state.plural_count() == 2\n"
+            # An item read is state too: nested containers stay remote.
+            "    state.TABLE['a'].append(2)\n"
+            "    state.TABLE['b']['d'] = 3\n"
+            "    assert state.TABLE == {'a': [1, 2], 'b': {'c': 2, 'd': 3}}\n"
+            "    state.TABLE.update({'x': 1})\n"
+            "    assert state.TABLE.pop('x') == 1\n"
+            "    state.QUEUE.appendleft(0)\n"
+            "    assert list(state.QUEUE) == [0, 1]\n"
+            "    state.BUFFER.extend(b'c')\n"
+            "    assert bytes(state.BUFFER) == b'abc'\n"
+            # Object attributes are state as well.
+            "    box = state.Box()\n"
+            "    box.items.append(1)\n"
+            "    assert box.size() == 1\n"
+            # copy() is a snapshot the worker makes and sends as data.
+            "    snapshot = copy.copy(state.PLURALS)\n"
+            "    deep = copy.deepcopy(state.TABLE)\n"
+            "    assert isinstance(snapshot, list) and isinstance(deep, dict)\n"
+            "    state.PLURALS.clear()\n"
+            "    assert len(snapshot) == 2 and state.plural_count() == 0\n"
+            "    assert deep['a'] == [1, 2]\n"
+        )})
+
+    def test_a_handle_is_the_object_not_the_name(self):
+        # Rebinding the module name leaves an earlier read on the old
+        # object, as in one process.
+        self.assertPasses({"test_hidden.py": (
+            "import state\n"
+            "def test_identity():\n"
+            "    old = state.PLURALS\n"
+            "    state.reset()\n"
+            "    assert old == [('ox', 'oxen')] and state.PLURALS == []\n"
+            "    assert state.plural_count() == 0\n"
+        )})
+
+    def test_immutable_values_and_call_results_cross_as_data(self):
+        self.assertPasses({"test_hidden.py": (
+            "import state\n"
+            "def test_data():\n"
+            "    assert type(state.NAME) is str\n"
+            "    assert type(state.FROZEN) is frozenset\n"
+            # A tuple is immutable: it and what it holds are copies.
+            "    assert type(state.PAIR) is tuple\n"
+            "    assert type(state.PAIR[0]) is list\n"
+            # Call results are copies, including internal state a function
+            # returns: a fresh list is by far the common case.
+            "    assert type(state.fresh()) is list\n"
+            "    leaked = state.internal()\n"
+            "    assert type(leaked) is list\n"
+            "    leaked.append('local')\n"
+            "    assert state.plural_count() == 1\n"
+        )})
+
+    def test_repeated_reads_share_one_handle(self):
+        client = self.host_client()
+        first = client.get(["state", "PLURALS"])
+        self.assertIsInstance(first, SplitRef)
+        for _ in range(50):
+            again = client.get(["state", "PLURALS"])
+            self.assertEqual(again._path, first._path)
+        first.append(("a", "b"))
+        self.assertEqual(client.call(["state", "plural_count"], (), {}), 2)
+        self.assertEqual(client.get(["state", "NAME"]), "fixed")
+        self.assertEqual(client.call(["state", "fresh"], (), {}), [1, 2])
+        self.assertIsInstance(client.call(["state", "fresh"], (), {}), list)
 
 
 PROTOCOL_MODULE = """

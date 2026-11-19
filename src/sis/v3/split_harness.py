@@ -41,11 +41,29 @@ handle.
   ``MAX_FRAME_BYTES`` per frame. Call arguments may also be slices.
 * Anything else stays in the worker. An attribute read refers to it by
   path, a call or protocol result by handle (``Ref``/``SplitRef``).
+* Submission state stays in the worker. A read of a *mutable* container
+  (``list``, ``dict``, ``set``, ``bytearray``, ``deque`` and their
+  subclasses) is a handle to the worker's own object, never a copy:
+  an attribute read of a module or object (``pkg.REGISTRY``,
+  ``obj.items``), an item read with a non-slice key (``pkg.TABLE["a"]``)
+  and an in-place operator that returns its operand (``ref += [x]``).
+  ``pkg.UNCOUNTABLES.add(x)`` therefore changes the set the submission
+  reads, and ``len``/``in``/iteration/``==``/indexing on the handle go
+  through the ``dunder`` op. One handle per object, so ``old =
+  pkg.LIST; pkg.reset()`` keeps ``old`` on the old list, as in one
+  process. Immutable values (``str``, numbers, ``bytes``, ``tuple``,
+  ``frozenset``, ``None``) still cross as data, and so do call results,
+  slices and iteration items: a function returning a fresh list is the
+  common case, and a test expects ``type(f()) is list``. A function
+  that returns its module's internal list hands back a copy.
+  ``copy.copy``/``copy.deepcopy`` of a handle copy in the worker, so a
+  copied container arrives as data.
 * Protocols on a handle go through one ``dunder`` op whose names come
   from a fixed table in the worker: ``len``, ``in``, item get/set/delete,
   iteration, ``reversed``, ``bool``/``str``/``repr``/``hash``/``format``,
   ``int``/``float``/``index``/``round``, comparisons, arithmetic
   (plain, reflected and in-place), unary operators, ``with`` blocks,
+  ``copy.copy``/``copy.deepcopy``,
   ``isinstance``/``issubclass`` against a worker class, and attribute
   assignment and deletion. The worker refuses every other name, and no
   attribute path may name a dunder outside ``__name__``,
@@ -80,8 +98,12 @@ Known limits, each because it would need code or class objects to cross:
   worker class is a handle, not a type (``isinstance`` still works).
 * Local callables, classes and arbitrary objects cannot be passed to the
   submission (callbacks, ``key=`` functions, test-defined subclasses).
-* Data is copied: mutating a returned list does not change the worker's,
-  and ``monkeypatch.setattr(pkg, ...)`` changes only the local proxy.
+* Call results are copied: mutating a list a function returned does not
+  change the worker's, even when the function returned its internal
+  state. A handle to a container is not an instance of it
+  (``isinstance(pkg.REGISTRY, set)`` is false), and a mutable container
+  nested in an immutable one (``pkg.PAIR[0]`` of a tuple) is a copy.
+  ``monkeypatch.setattr(pkg, ...)`` changes only the local proxy.
 * Stand-ins collapse worker classes with the same module and qualified
   name. An exception the test constructs itself is local: it is not a
   call argument, and reaches a worker ``__exit__`` only as a builtin
@@ -316,6 +338,12 @@ class SplitRef:
                 payload = (name, (str(exc),))
         return bool(self._client.dunder(self._path, "__exit__", (payload,)))
 
+    def __copy__(self) -> Any:
+        return self._client.dunder(self._path, "__copy__", ())
+
+    def __deepcopy__(self, memo: Any) -> Any:
+        return self._client.dunder(self._path, "__deepcopy__", ())
+
 
 def _is_dunder(name: str) -> bool:
     return name.startswith("__") and name.endswith("__")
@@ -408,6 +436,9 @@ class SplitClient:
             _raise_remote(response.get("error"))
         value = response.get("value")
         if isinstance(value, dict) and value.get("t") == "ref":
+            if value.get("handle") is not None:
+                # A mutable container: the worker's own object.
+                return SplitRef(self, [_handle(value)])
             return SplitRef(self, path)
         return _decode(value)
 
@@ -424,7 +455,7 @@ class SplitClient:
         """Apply one allow-listed protocol to a worker object."""
         if name not in FORWARDED_PROTOCOLS | FORWARDED_OPERATORS | {
                 "__iter__", "__setitem__", "__round__", "__instancecheck__",
-                "__subclasscheck__", "__exit__"}:
+                "__subclasscheck__", "__exit__", "__copy__", "__deepcopy__"}:
             raise SplitProtocolError(f"protocol is not forwarded: {name}")
         response = self.request({
             "op": "dunder", "path": list(path), "name": name,
@@ -506,6 +537,8 @@ def _host_encode(value: Any, depth: int = 0) -> dict:
 #: never hold the private material directory on its readable path.
 WORKER_SOURCE = r'''"""SIS split-custody worker (restricted principal)."""
 import base64
+import collections
+import copy
 import importlib
 import json
 import operator
@@ -521,6 +554,12 @@ MAX_MESSAGE = 8192
 # Call results that cannot cross the socket stay here; the evaluator
 # refers to them by handle ("#<n>"), never by the callable's path.
 HANDLES = {}
+# Mutable containers. Read as an attribute or an item they stay here and
+# the evaluator gets a handle, so ``pkg.REGISTRY.add(x)`` changes the
+# submission's own set instead of a copy. One handle per object, by id
+# (HANDLES keeps the object alive, so its id is never reused).
+MUTABLE = (list, dict, set, bytearray, collections.deque)
+SHARED = {}
 # Dunder attributes the evaluator may read: plain metadata, never a way to
 # reach the object model (no __class__, __dict__, __reduce__, ...).
 READABLE_DUNDERS = frozenset({"__name__", "__qualname__", "__version__",
@@ -654,6 +693,22 @@ def keep(value):
     return {"t": "ref", "handle": handle}
 
 
+def share(value):
+    handle = SHARED.get(id(value))
+    if handle is not None and HANDLES.get(handle) is value:
+        return {"t": "ref", "handle": handle}
+    ref = keep(value)
+    SHARED[id(value)] = ref["handle"]
+    return ref
+
+
+def state(value):
+    """A read of submission state: a mutable container stays here."""
+    if isinstance(value, MUTABLE):
+        return {"ok": True, "value": share(value)}
+    return result(value)
+
+
 def describe(cls):
     """The class chain of an exception class, for evaluator stand-ins.
 
@@ -707,6 +762,7 @@ UNARY = {
     "__reversed__": reversed, "__neg__": operator.neg,
     "__pos__": operator.pos, "__abs__": abs, "__invert__": operator.invert,
     "__enter__": lambda obj: type(obj).__enter__(obj),
+    "__copy__": copy.copy, "__deepcopy__": copy.deepcopy,
 }
 BINARY = {
     "__contains__": lambda obj, item: item in obj,
@@ -733,6 +789,7 @@ BINARY["__rdivmod__"] = reflected(divmod)
 SPECIAL = frozenset({"__setitem__", "__setattr__", "__delattr__",
                      "__exit__", "__round__"})
 DUNDERS = frozenset(UNARY) | frozenset(BINARY) | SPECIAL
+INPLACE = frozenset("__i%s__" % _name for _name in ARITHMETIC)
 
 
 def exit_value(arg):
@@ -755,7 +812,16 @@ def dunder(obj, name, args):
     if name in UNARY and not args:
         return result(UNARY[name](obj), force_ref=name == "__iter__")
     if name in BINARY and len(args) == 1:
-        return result(BINARY[name](obj, args[0]))
+        value = BINARY[name](obj, args[0])
+        if name in INPLACE and value is obj:
+            # ``ref += [x]`` rebinds the evaluator's name to the result:
+            # it must stay the worker's object, not become a copy.
+            return state(value)
+        if name == "__getitem__" and not isinstance(args[0], slice):
+            # An item read is state, like an attribute read; a slice is a
+            # new object and crosses as data.
+            return state(value)
+        return result(value)
     if name == "__setitem__" and len(args) == 2:
         obj[args[0]] = args[1]
         return result(None)
@@ -794,6 +860,8 @@ def handle(request):
                           "message": "invalid path"}}
     if op == "get":
         obj = resolve(path)
+        if isinstance(obj, MUTABLE):
+            return state(obj)
         try:
             return {"ok": True, "value": encode(obj)}
         except NotEncodable:
@@ -1280,7 +1348,9 @@ def result_value(value, path=None):
     """
     if value.get("t") != "ref":
         return decode(value)
-    if path is None:
+    if path is None or value.get("handle") is not None:
+        # A mutable container read as an attribute comes back by handle:
+        # the worker's own object, whatever the path names later.
         handle = value.get("handle")
         if (not isinstance(handle, str) or not handle.startswith("#")
                 or not handle[1:].isdigit() or len(handle) > 10):
@@ -1383,6 +1453,14 @@ class Ref:
 
     def __exit__(self, exc_type, exc, traceback):
         return bool(forward(self._path, "__exit__", [exit_payload(exc)]))
+
+    def __copy__(self):
+        # The worker copies its object: a container comes back as data,
+        # anything else as a handle to the worker-side copy.
+        return forward(self._path, "__copy__", [])
+
+    def __deepcopy__(self, memo):
+        return forward(self._path, "__deepcopy__", [])
 
 
 def exit_payload(exc):
