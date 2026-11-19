@@ -459,9 +459,17 @@ def main(argv=None, *, executor_factory=build_executor) -> int:
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(document, indent=2, sort_keys=True) + "\n")
+    # The CI log must say what happened, not only which payload surprised:
+    # print the observed facts for every unexpected payload.
+    details = [
+        {key: item.get(key) for key in (
+            "name", "expected", "observed", "exit_status", "timeout",
+            "markers", "error")}
+        for item in document["results"] if not item["ok"]]
     print(json.dumps({"ok": document["ok"],
                       "payloads": document["payloads"],
-                      "unexpected": document["unexpected"]}, indent=2))
+                      "unexpected": document["unexpected"],
+                      "unexpected_details": details}, indent=2))
     return 0 if document["ok"] else 1
 
 
