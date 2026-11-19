@@ -42,12 +42,65 @@ release.
   package is searched at its root and then under `src/`, in the same
   order by the worker and the evaluator's finder (cachetools). Trusted
   modules still cannot be shadowed from either place.
-- **Still open: test helper files.** Only the registered test file is
-  staged, so a test importing a sibling helper, `conftest.py` or
-  package `__init__.py` fails (jmespath). The design is in
-  `docs/v3/SECURITY_BOUNDARIES_V3_3.md`; it needs the task spec to carry
-  several hidden files. The remaining proxy limits are listed in the
-  `sis.v3.split_harness` module docstring.
+- **Submission state stays in the worker.** A read of a mutable
+  container (`list`, `dict`, `set`, `bytearray`, `deque`, and
+  subclasses) is a handle to the worker's own object instead of a
+  decoded copy: an attribute read of a module or object, an item read
+  with a non-slice key, and an in-place operator that returns its
+  operand. inflection's `inflection.UNCOUNTABLES.add("ors")` now
+  reaches the submission. Method calls run in the worker; `len`, `in`,
+  iteration, `==` both ways, indexing and item assignment go through
+  the `dunder` op, which also forwards `copy.copy`/`copy.deepcopy`.
+  Immutable values, call results, slices and iteration items still
+  cross as data, so a function returning a fresh list still returns a
+  `list`; one returning its module's internal list returns a copy.
+  `isinstance(pkg.UNCOUNTABLES, set)` is now false (a test asserted it
+  and was changed deliberately: mutation decides whether a correct fix
+  passes, `isinstance` of a module-level container is rare in tests).
+- **Test helper files are registered with the test.** The importer
+  captures from the fix commit, never from a submission, the test's
+  `conftest.py` files (its directory and every directory above), the
+  `__init__.py` of each test package up to its test root, and the
+  helper modules it imports from its own test package (`from . import
+  CacheTestMixin`, `from tests import unittest`). Only paths in a
+  `test`/`tests` directory count as packages or helpers, so a source
+  package is never captured. They are registered as further private
+  files at their repository paths (the verifier already took several)
+  and recorded as an optional `acceptance.support_files` list of
+  `{target, path, digest}` beside `hidden_tests_path`, stored inside the
+  hidden-tests directory. The manifest builder, the manifest validator
+  and the five-arm campaign (and so the guidance-bundle builder) check
+  each file and digest wherever the primary test's are checked. In the
+  bootstrap, "beside the tests" follows `sys.path` as pytest changes it
+  (links resolved, nothing in the workspace trusted), so a helper is
+  imported from the private directory and the workspace's file of the
+  same name stays proxied.
+- **Threads.** Requests from several test threads are serialized on the
+  socket; they used to read each other's answers. The worker serves one
+  request at a time, so a race a test provokes with threads does not
+  happen in the submission.
+- **Real repositories.** Re-grading the 22 correct upstream fix commits
+  that were rejected before (6 inflection, 8 cachetools, 8 jmespath)
+  under Docker split custody accepts 4 (inflection), up from 0; each
+  accepted task's base still fails, and deliberately wrong fixes fail.
+  The rest are rejected for reasons outside the harness or at the
+  boundary: two inflection commits change no behaviour (import order,
+  flake8) and their base passes; all 8 cachetools test files apply
+  cachetools decorators to test-defined functions, pass test-defined
+  callables (`getsizeof=`), subclass or pickle a worker class; 5
+  jmespath tests need `nose`/`hypothesis`, absent from the evaluator
+  image; 2 subclass a worker class with test-defined methods; and one
+  (2020) fails on Python 3.12 itself (`assertRaisesRegexp`,
+  `random.sample` of dict keys) and, with 32 threads × 4096 parses,
+  exhausts the worker's 100,000 never-released handles.
+- **Still out of scope**, each because it would need code, class or
+  pickled objects to cross, or the worker to drive evaluator objects:
+  test-defined callables or objects passed to the submission
+  (decorators applied to test functions, `getsizeof=`/`key=`
+  callbacks), subclassing a worker class, pickling a worker object,
+  thread-level concurrency inside the submission, and data files a test
+  reads from beside itself. The remaining proxy limits are listed in
+  the `sis.v3.split_harness` module docstring.
 
 ## 2026-11-19 — Repository cleanup (SIS-CHORE-17)
 

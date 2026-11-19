@@ -301,21 +301,38 @@
   class, mutation through returned data). A test that deliberately
   shells out to run the submission under the evaluator principal
   re-opens the shared path.
-- Split custody stages only the registered test file. A test that
-  imports a sibling helper (`from .helpers import ...`, `from tests
-  import unittest`) or relies on a `conftest.py` or package
-  `__init__.py` beside it fails to collect, and the task is rejected at
-  import time (`fix_does_not_pass`). The intended repair: the importer
-  registers, as further private files at their repository-relative
-  paths, the test's sibling `conftest.py` files and package
-  `__init__.py` files up to the test root, and the modules the test
-  imports from its own test package, all read from the fix commit by the
-  evaluator at registration time (never from the submission), so they
-  are as trusted as the test itself. Pytest's rootdir and package
-  resolution then work in the private directory. It needs the task spec
-  to carry several hidden files (paths and digests) where
-  `hidden_tests_path`/`hidden_tests_digest` carry one today, and the
-  manifest builder and the five-arm campaign to verify each.
+- Split custody stages only files the evaluator registered. For an
+  imported task these are the test and its support files: the
+  `conftest.py` of the test's directory and of every directory above
+  it, the `__init__.py` of each test package up to its test root, and
+  the modules the test (or a captured helper) imports from its own test
+  package. The importer reads them from the fix commit at registration
+  time, never from a submission, so they are as trusted as the test,
+  and like the test they run in the evaluator process. Only paths in a
+  `test`/`tests` directory count as packages or helpers: a source
+  package above a test package, or a module beside a root-level test,
+  is the submission's and stays proxied. The task records them in
+  `acceptance.support_files` (repository-relative target, stored path,
+  SHA-256), stored in the repository's hidden-tests directory so its
+  directory digest binds them too; the manifest builder and the
+  five-arm campaign read each back and check its digest before
+  registration, as they do for the primary test, and the test plus its
+  support files stay within the private-material bounds
+  (`normalize_private_files`). Pytest's rootdir is the private
+  directory, so the test is collected inside its package
+  (`tests.test_x`). The bootstrap trusts a module found on the current
+  `sys.path` with every entry in the workspace removed (compared after
+  resolving links), so a helper pytest made importable is evaluator
+  material while a same-named workspace module stays proxied. Data
+  files a test reads from beside itself (jmespath's compliance JSON) are
+  not registered.
+- Reads of mutable submission state (a module or object attribute, or an
+  item, that is a `list`, `dict`, `set`, `bytearray` or `deque`) return
+  a handle to the worker's object, so a test's mutation reaches the
+  submission. This adds no capability to the worker: it already chose
+  whether to answer with data or a handle, and every use of a handle is
+  a request the worker answers with data or another handle. Call
+  results stay copies.
 - Resource limits are applied by an evaluator-owned launcher run as
   `python -I` from a neutral directory, so no workspace module can run
   before the limits or outside seatbelt. It fails closed: a limit it
