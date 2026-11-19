@@ -776,9 +776,27 @@ def describe_error(exc):
     return error
 
 
+def source_root(workspace):
+    """``<workspace>/src`` for a src-layout project, else None.
+
+    A directory named ``src`` that is itself a package (``src/__init__.py``)
+    is imported as ``src``, not searched. The workspace root stays first on
+    the path, so a top-level module there shadows one of the same name
+    under ``src``; the evaluator's finder applies the same order.
+    """
+    candidate = os.path.join(workspace, "src")
+    if (os.path.isdir(candidate)
+            and not os.path.exists(os.path.join(candidate, "__init__.py"))):
+        return candidate
+    return None
+
+
 def main():
     mode, target, workspace = sys.argv[1], sys.argv[2], sys.argv[3]
     sys.path.insert(0, workspace)
+    source = source_root(workspace)
+    if source is not None:
+        sys.path.insert(1, source)
     listener = None
     if mode == "--fd":
         sock = socket.socket(fileno=int(target))
@@ -1412,8 +1430,25 @@ class WorkspaceLoader(importlib.abc.Loader):
         return self._is_package
 
 
+def source_root(workspace):
+    # Mirrors the worker: ``<workspace>/src`` for a src-layout project,
+    # unless ``src`` is itself a package.
+    candidate = os.path.join(workspace, "src")
+    if (os.path.isdir(candidate)
+            and not os.path.exists(os.path.join(candidate, "__init__.py"))):
+        return candidate
+    return None
+
+
+# Where workspace top-level modules are looked up, in the worker's order:
+# the workspace root first, so it shadows a same-named module under src/.
+WORKSPACE_SEARCH = [workspace] + [
+    entry for entry in (source_root(workspace),) if entry is not None]
+# The workspace directory a proxied top-level module was found in.
+WORKSPACE_ROOTS = {}
+_untrusted = {os.path.abspath(entry) for entry in WORKSPACE_SEARCH}
 TRUSTED_PATH = [entry for entry in sys.path
-                if entry and os.path.abspath(entry) != os.path.abspath(workspace)]
+                if entry and os.path.abspath(entry) not in _untrusted]
 STDLIB = frozenset(getattr(sys, "stdlib_module_names", ())) | frozenset(
     sys.builtin_module_names)
 
@@ -1450,14 +1485,27 @@ class WorkspaceFinder(importlib.abc.MetaPathFinder):
             return None
         elif trusted_module(root):
             return None
-        search = [workspace] if len(parts) == 1 else [
-            os.path.join(workspace, *parts[:-1])]
-        try:
-            spec = importlib.machinery.PathFinder.find_spec(fullname, search)
-        except Exception:
+        if len(parts) == 1:
+            bases = WORKSPACE_SEARCH
+        else:
+            bases = [WORKSPACE_ROOTS.get(root, workspace)]
+        found = []
+        for base in bases:
+            search = [os.path.join(base, *parts[:-1])]
+            try:
+                candidate = importlib.machinery.PathFinder.find_spec(
+                    fullname, search)
+            except Exception:
+                return None
+            if candidate is not None:
+                found.append((candidate.origin is None, base, candidate))
+        if not found:
             return None
-        if spec is None:
-            return None
+        # As the worker's import system does: a regular module or package
+        # anywhere on the path wins over a namespace-package directory.
+        _namespace, base, spec = min(found, key=lambda item: item[0])
+        if len(parts) == 1:
+            WORKSPACE_ROOTS[root] = base
         # Workspace packages are proxied too, so a submission laid out as
         # a package keeps its submodules; the proxy never holds their code.
         is_package = spec.submodule_search_locations is not None

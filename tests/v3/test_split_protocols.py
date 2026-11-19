@@ -70,10 +70,16 @@ class SplitHarness(unittest.TestCase):
                 argv, bootstrap_path=str(material / SPLIT_BOOTSTRAP_NAME),
                 transport=("--fd", str(parent.fileno())),
                 workspace=str(self.workspace))
+            # A relative PYTHONPATH (``src``) would resolve against the
+            # workspace cwd and put submitted code on the evaluator's path.
+            env = {**os.environ, "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1"}
+            if env.get("PYTHONPATH"):
+                env["PYTHONPATH"] = os.pathsep.join(
+                    os.path.abspath(entry)
+                    for entry in env["PYTHONPATH"].split(os.pathsep) if entry)
             return subprocess.run(
                 argv, cwd=str(self.workspace), pass_fds=(parent.fileno(),),
-                capture_output=True, text=True, timeout=120,
-                env={**os.environ, "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1"})
+                capture_output=True, text=True, timeout=120, env=env)
         finally:
             parent.close()
             worker.kill()
@@ -706,6 +712,72 @@ class SplitExceptionTests(SplitHarness):
             "    claimed = evil.Claimed\n"
             "    assert not isinstance(claimed, type)\n"
         )})
+
+
+@unittest.skipUnless(os.name == "posix", "socketpair transport")
+class SplitSourceLayoutTests(SplitHarness):
+    def test_src_layout_packages_are_importable(self):
+        # cachetools keeps its package under src/; every task failed with
+        # "No module named 'cachetools'".
+        self.write("src/cachekit/__init__.py", (
+            "from .keys import hashkey\n"
+            "class Cache(dict):\n"
+            "    pass\n"))
+        self.write("src/cachekit/keys.py",
+                   "def hashkey(*args):\n    return tuple(args)\n")
+        self.write("setup.py", "raise SystemExit('never imported')\n")
+        self.assertPasses({"test_hidden.py": (
+            "import cachekit\n"
+            "from cachekit.keys import hashkey\n"
+            "def test_src():\n"
+            "    assert cachekit.hashkey(1, 2) == (1, 2)\n"
+            "    assert hashkey('a') == ('a',)\n"
+            "    assert len(cachekit.Cache(a=1)) == 1\n"
+        )})
+
+    def test_the_workspace_root_shadows_src_as_in_the_worker(self):
+        self.write("where.py", "WHERE = 'root'\n")
+        self.write("src/where.py", "WHERE = 'src'\n")
+        self.write("data/README", "not a package\n")
+        self.write("src/data/__init__.py", "WHERE = 'src package'\n")
+        self.assertPasses({"test_hidden.py": (
+            "import where, data\n"
+            "def test_order():\n"
+            "    assert where.WHERE == 'root'\n"
+            # A namespace directory at the root does not hide a regular
+            # package under src/, as in the worker's import system.
+            "    assert data.WHERE == 'src package'\n"
+        )})
+
+    def test_a_src_package_is_not_a_source_root(self):
+        self.write("src/__init__.py", "")
+        self.write("src/thing.py", "VALUE = 3\n")
+        self.assertPasses({"test_hidden.py": (
+            "import pytest\n"
+            "from src import thing\n"
+            "def test_package():\n"
+            "    assert thing.VALUE == 3\n"
+            "    with pytest.raises(ImportError):\n"
+            "        import thing as missing  # noqa: F401\n"
+        )})
+
+    def test_src_cannot_shadow_trusted_modules(self):
+        marker = self.root / "SHADOWED"
+        for name in ("decimal", "helper", "pytest", "sitecustomize"):
+            self.write(f"src/{name}.py", (
+                f"open({str(marker)!r}, 'a').write({name!r})\n"
+                "WHO = 'workspace'\n"))
+        self.assertPasses({
+            "helper.py": "WHO = 'private'\n",
+            "test_hidden.py": (
+                "import decimal\n"
+                "import helper\n"
+                "def test_trusted():\n"
+                "    assert helper.WHO == 'private'\n"
+                "    assert type(decimal.Decimal(1)).__module__ == 'decimal'\n"
+            ),
+        })
+        self.assertFalse(marker.exists())
 
 
 if __name__ == "__main__":
