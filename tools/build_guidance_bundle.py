@@ -86,7 +86,7 @@ from sis.v3.candidate_authority import (  # noqa: E402
     CandidateDecisionAuthority, CandidateEvidenceAuthority)
 from sis.v3.candidates import CandidateRegistry, content_digest  # noqa: E402
 from sis.v3.contracts import (CandidateV1, GuidanceV1,  # noqa: E402
-                              TaskEnvelopeV1)
+                              TaskEnvelopeV1, canonical_digest)
 from sis.v3.efficacy_manifest import _git_lineage  # noqa: E402
 from sis.v3.evaluation_runtime import EvaluationRuntimeProfile  # noqa: E402
 from sis.v3.learning import (CandidateTrial, EpisodeEvidence,  # noqa: E402
@@ -269,6 +269,23 @@ def _excluded(exclude: Mapping | None) -> tuple[set[str], set[str], set[str]]:
 # --------------------------------------------------------------------- #
 # execution
 # --------------------------------------------------------------------- #
+def _hidden_digest(acceptance: Mapping, material: Mapping[str, bytes]) -> str:
+    """The task's acceptance contract: its test, and any support files.
+
+    A task without support files keeps its test file's own SHA-256, as
+    before; support files (verified by ``_acceptance_material``) change
+    what the test does, so a task with them binds every file by path.
+    """
+    if not acceptance.get("support_files") and acceptance.get(
+            "hidden_tests_digest"):
+        return acceptance["hidden_tests_digest"]
+    if acceptance.get("support_files"):
+        return canonical_digest("acceptance_material", 1, {
+            name: hashlib.sha256(data).hexdigest()
+            for name, data in sorted(material.items())})
+    return hashlib.sha256(b"".join(material.values())).hexdigest()
+
+
 class LearningRun:
     """Verifier, task trees and harness for the learning and qualification runs."""
 
@@ -347,8 +364,7 @@ class LearningRun:
             "task": dict(task), "tree": tree,
             "repository_id": task["repository_id"],
             "repository_digest": repository["repo_snapshot_digest"],
-            "hidden_digest": task["acceptance"].get("hidden_tests_digest")
-            or hashlib.sha256(b"".join(material.values())).hexdigest(),
+            "hidden_digest": _hidden_digest(task["acceptance"], material),
             "execution": repository_execution_digest(tree),
         }
         return envelope, tree

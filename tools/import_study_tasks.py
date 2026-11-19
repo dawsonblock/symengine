@@ -9,6 +9,14 @@ Python test file ``T``:
 - ``F``'s version of ``T`` is moved out of the tree into the hidden-test
   directory and becomes the task's evaluator-owned acceptance file
   (``hidden_tests_target`` keeps its original path);
+- the files that test needs beside it are captured from ``F`` too and
+  registered with it as further private files at their repository paths
+  (``acceptance.support_files``: target, stored path and SHA-256 each):
+  ``conftest.py`` of its directory and every directory above, the
+  ``__init__.py`` of each test package up to its test root, and the
+  helper modules it imports from its own test package. Only paths in a
+  ``test``/``tests`` directory qualify as packages or helpers, so a
+  source package is never captured;
 - the prompt is ``F``'s commit message (subject and body), or the issue
   text supplied with ``--prompt-file``;
 - with ``--verify`` the task is graded exactly as the study runner grades
@@ -39,6 +47,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import ast
 import hashlib
 import json
 import os
@@ -53,11 +62,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from sis.v3 import gitquery  # noqa: E402
 from sis.v3.contracts import TaskEnvelopeV1  # noqa: E402
 from sis.v3.evaluation_runtime import EvaluationRuntimeProfile  # noqa: E402
-from sis.v3.runner import (ResourceLimits, repository_execution_digest,  # noqa: E402
+from sis.v3.runner import (MAX_PRIVATE_FILE_BYTES,  # noqa: E402
+                           MAX_PRIVATE_FILES, MAX_PRIVATE_TOTAL_BYTES,
+                           ResourceLimits, repository_execution_digest,
                            tree_digest)
 from sis.v3.study_runtime import (DEFAULT_SPLIT_USER,  # noqa: E402
-                                  StudyRuntimeError, build_study_executor,
-                                  materialize_commit)
+                                  MAX_SUPPORT_FILES, StudyRuntimeError,
+                                  build_study_executor, materialize_commit)
 from sis.v3.verifier import OutcomeVerifier  # noqa: E402
 
 HEX = re.compile(r"^[0-9a-f]{40}$|^[0-9a-f]{64}$")
@@ -155,7 +166,150 @@ def describe_commit(root: Path, commit: str, *, fix_pattern: re.Pattern
         raise ImportError_("test_blob_unreadable")
     return {"commit": commit, "parent": parent, "message": message,
             "test_path": test_path, "test_bytes": payload,
+            "support": support_files(root, commit, test_path, payload),
             "source_files": sorted(path for _, path in sources)}
+
+
+def _blob(root: Path, commit: str, path: str) -> bytes:
+    payload = gitquery.raw_bytes(root, "cat-file", "blob", f"{commit}:{path}")
+    if payload is None:
+        raise ImportError_("support_blob_unreadable:" + path)
+    return payload
+
+
+def _imported_modules(source: bytes) -> list[tuple[int, list[str]]]:
+    """``(level, dotted parts)`` of every module an import statement names.
+
+    ``from .a import b`` names ``a`` and ``a.b`` (``b`` may be a
+    submodule); ``from . import b`` names ``b``. Nothing is executed.
+    """
+    try:
+        tree = ast.parse(source)
+    except (SyntaxError, ValueError):
+        return []
+    names = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            names.extend((0, alias.name.split(".")) for alias in node.names)
+        elif isinstance(node, ast.ImportFrom):
+            base = node.module.split(".") if node.module else []
+            if base:
+                names.append((node.level, base))
+            names.extend((node.level, base + [alias.name])
+                         for alias in node.names if alias.name != "*")
+    return names
+
+
+def support_files(root: Path, commit: str, test_path: str,
+                  test_bytes: bytes) -> dict[str, bytes]:
+    """Files the hidden test needs beside it, read from the fix commit.
+
+    The evaluator captures them at registration exactly like the test
+    itself, never from a submission: the ``conftest.py`` of the test's
+    directory and of every directory above it, the ``__init__.py`` of
+    each package from the test's directory up to its test root, and the
+    modules the test (or a helper it pulls in) imports from its own test
+    package, by relative import (``from . import Mixin``) or by the
+    package's name (``from tests import helpers``). A test directory that
+    is not a package contributes the sibling modules it imports by bare
+    name. Only paths under a test directory (``test``/``tests``) qualify
+    as packages or helpers, so a source package (``src/pkg/__init__.py``,
+    or ``pkg.py`` beside a root-level test) is never captured: the
+    submission's code is always the submission's.
+    """
+    listing = gitquery.raw_bytes(root, "ls-tree", "-r", "-z", "--name-only",
+                                 commit)
+    if listing is None:
+        raise ImportError_("tree_unreadable")
+    paths = {item.decode("utf-8", "replace")
+             for item in listing.split(b"\0") if item}
+    test = PurePosixPath(test_path)
+
+    def in_test_dir(path: str) -> bool:
+        pure = PurePosixPath(path)
+        return any(part in ("test", "tests") for part in pure.parts[:-1])
+
+    found: dict[str, bytes] = {}
+
+    def add(path: str) -> bool:
+        if path == test_path or path not in paths:
+            return False
+        if path not in found:
+            if len(found) >= MAX_SUPPORT_FILES:
+                raise ImportError_("support_files_exceed_the_bound")
+            if not SAFE_REL.fullmatch(path):
+                raise ImportError_("support_path_unsafe")
+            found[path] = _blob(root, commit, path)
+        return True
+
+    directory = test.parent
+    packages = []
+    while (directory.parts
+           and f"{directory.as_posix()}/__init__.py" in paths
+           and in_test_dir(f"{directory.as_posix()}/__init__.py")):
+        packages.append(directory)
+        add(f"{directory.as_posix()}/__init__.py")
+        directory = directory.parent
+    # Where pytest's rootdir-relative import puts the test root on
+    # sys.path: the first directory above the package chain.
+    basedir = directory if packages else test.parent
+    top = packages[-1].name if packages else None
+    for ancestor in [*reversed(test.parents)]:
+        prefix = "" if not ancestor.parts else ancestor.as_posix() + "/"
+        add(prefix + "conftest.py")
+
+    def module_file(base: PurePosixPath, parts: list[str]) -> str | None:
+        """The module or package file ``parts`` names under ``base``."""
+        if not parts or not all(part.isidentifier() for part in parts):
+            return None
+        stem = base.joinpath(*parts).as_posix()
+        for candidate in (stem + ".py", stem + "/__init__.py"):
+            if candidate in paths and in_test_dir(candidate):
+                return candidate
+        return None
+
+    def resolve(origin: str, level: int, parts: list[str]) -> None:
+        if level:
+            package = PurePosixPath(origin).parent
+            for _ in range(level - 1):
+                package = package.parent
+            if package not in packages:
+                return
+            base, names = package, parts
+        elif top is not None and parts[0] == top:
+            base, names = basedir, parts
+        elif top is None and len(parts) >= 1:
+            base, names = test.parent, parts
+        else:
+            return
+        # Every package on the way is needed too (``tests.sub.helpers``).
+        for depth in range(1, len(names) + 1):
+            path = module_file(base, names[:depth])
+            if path is None:
+                return
+            if add(path) and path not in seen:
+                seen.add(path)
+                queue.append(path)
+
+    # The test, its package __init__ files and conftest files can each
+    # import helpers; so can every helper found.
+    queue = [test_path, *found]
+    seen: set[str] = set(queue)
+    while queue:
+        origin = queue.pop()
+        source = test_bytes if origin == test_path else found[origin]
+        for level, parts in _imported_modules(source):
+            resolve(origin, level, parts)
+    sizes = [len(test_bytes), *(len(data) for data in found.values())]
+    if (len(sizes) > MAX_PRIVATE_FILES or max(sizes) > MAX_PRIVATE_FILE_BYTES
+            or sum(sizes) > MAX_PRIVATE_TOTAL_BYTES):
+        raise ImportError_("support_files_exceed_the_bound")
+    return dict(sorted(found.items()))
+
+
+def private_files(info: dict) -> dict[str, bytes]:
+    """The evaluator-private material of one task: test and support files."""
+    return {info["test_path"]: info["test_bytes"], **info["support"]}
 
 
 def make_prompt(message: str, prompt_text: str | None = None) -> str:
@@ -276,7 +430,7 @@ def import_repository(args, *, executor_factory=None) -> dict:
                 target = info["test_path"]
                 argv = [python, "-m", "pytest", "-q", "-p", "no:cacheprovider",
                         target]
-                files = {target: info["test_bytes"]}
+                files = private_files(info)
                 verification = None
                 if grader is not None:
                     base_outcome = grader.grade(
@@ -293,6 +447,16 @@ def import_repository(args, *, executor_factory=None) -> dict:
                 hidden_file = hidden_dir / task_id / PurePosixPath(target).name
                 hidden_file.parent.mkdir(parents=True, exist_ok=True)
                 hidden_file.write_bytes(info["test_bytes"])
+                support = []
+                for relative, data in info["support"].items():
+                    # Kept at its repository path under support/, inside
+                    # the hidden-tests directory and so inside its digest.
+                    stored = hidden_dir / task_id / "support" / relative
+                    stored.parent.mkdir(parents=True, exist_ok=True)
+                    stored.write_bytes(data)
+                    support.append({
+                        "target": relative, "path": str(stored),
+                        "digest": hashlib.sha256(data).hexdigest()})
                 task = {
                     "task_id": task_id,
                     "repository_id": args.repository_id,
@@ -306,6 +470,7 @@ def import_repository(args, *, executor_factory=None) -> dict:
                         "hidden_tests_digest": hashlib.sha256(
                             info["test_bytes"]).hexdigest(),
                         "hidden_tests_target": target,
+                        **({"support_files": support} if support else {}),
                     },
                     "source": {
                         "fix_commit": commit,

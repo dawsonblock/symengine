@@ -24,7 +24,11 @@ The boundary is factual, and the receipt says which one held:
 
 Only top-level modules are proxied, and never one the evaluator's own
 environment provides (standard library, installed packages, modules
-beside the tests): a workspace cannot shadow a library the tests import.
+beside the tests): a workspace cannot shadow a library the tests import,
+nor the test's own package (``from tests import helpers``). "Beside the
+tests" is read from ``sys.path`` at each import, without any entry in
+the workspace, because pytest adds the test's root directory in the
+private material only while it collects.
 They are found in the workspace root and, for a src-layout project, in
 ``<workspace>/src`` (unless ``src`` is itself a package), in that order
 in both processes.
@@ -118,9 +122,13 @@ Known limits, each because it would need code or class objects to cross:
   threads are serialized and the worker serves one at a time, so a race
   a test provokes with threads (jmespath's cache-eviction test) is not
   reproduced in the submission.
-* Only the registered test file is private material: helper modules,
-  ``conftest.py`` and package ``__init__.py`` files beside it in the
-  repository are not staged (see docs/v3/SECURITY_BOUNDARIES_V3_3.md).
+* Only files the evaluator registered are private material. The study
+  importer registers, beside the test and at their repository paths, its
+  ``conftest.py`` files, the ``__init__.py`` of each package up to its
+  test root and the helper modules it imports from its own test package,
+  all from the fix commit (see docs/v3/SECURITY_BOUNDARIES_V3_3.md).
+  They run in the evaluator like the test. Data files a test reads from
+  beside itself (JSON fixtures) are not registered.
 
 The host-side :class:`SplitClient` forwards the same data and protocols
 but maps worker exceptions only to builtins (else :class:`RemoteError`).
@@ -1630,26 +1638,47 @@ WORKSPACE_SEARCH = [workspace] + [
 # The workspace directory a proxied top-level module was found in.
 WORKSPACE_ROOTS = {}
 _untrusted = {os.path.abspath(entry) for entry in WORKSPACE_SEARCH}
-TRUSTED_PATH = [entry for entry in sys.path
-                if entry and os.path.abspath(entry) not in _untrusted]
+_workspace_prefix = os.path.join(os.path.abspath(workspace), "")
 STDLIB = frozenset(getattr(sys, "stdlib_module_names", ())) | frozenset(
     sys.builtin_module_names)
+
+
+def trusted_path():
+    """The evaluator's own import path: ``sys.path`` without the workspace.
+
+    Read at each lookup, not once: pytest puts the test's root directory
+    in the private material on ``sys.path`` while it collects (a test
+    package's parent, or the directory of a test that is not in a
+    package), and a helper module there is evaluator material. Nothing
+    in or under the workspace is ever trusted.
+    """
+    trusted = []
+    for entry in sys.path:
+        if not isinstance(entry, str) or not entry:
+            continue
+        path = os.path.abspath(entry)
+        if path in _untrusted or path.startswith(_workspace_prefix):
+            continue
+        trusted.append(entry)
+    return trusted
 
 
 def trusted_module(name):
     """True when the evaluator's own environment provides ``name``.
 
     The standard library, builtins, installed packages and modules beside
-    the acceptance tests always resolve from the evaluator's environment.
-    A workspace must never shadow a library the tests import later
-    (``numpy``, ``decimal``, ``hypothesis``): the test would then compare
-    against values the submission computed in its own process.
+    the acceptance tests (the registered test, its ``conftest.py``,
+    package ``__init__.py`` and helper modules) always resolve from the
+    evaluator's environment. A workspace must never shadow a library the
+    tests import later (``numpy``, ``decimal``, ``hypothesis``) or the
+    test's own package (``from tests import helpers``): the test would
+    then run code or compare against values the submission controls.
     """
     if name in STDLIB:
         return True
     try:
         return importlib.machinery.PathFinder.find_spec(
-            name, TRUSTED_PATH) is not None
+            name, trusted_path()) is not None
     except Exception:
         return True
 
@@ -1788,6 +1817,10 @@ def split_pytest_argv(
     ``addopts = -p submission_plugin`` and have that plugin imported into
     the process that holds the tests. ``-c`` and ``--confcutdir`` keep
     configuration and conftest discovery inside the private directory.
+    ``-c`` also makes it pytest's rootdir: support files staged at their
+    repository paths (``tests/__init__.py``, ``tests/conftest.py``) put
+    the test in its package (``tests.test_x``), with the private
+    directory, never the workspace, on ``sys.path``.
     """
     items = tuple(argv)
     if len(items) >= 3 and items[1] == "-m" and items[2] == "pytest":

@@ -18,6 +18,7 @@ import hashlib
 import inspect
 import json
 import os
+import re
 import stat
 import subprocess
 import threading
@@ -275,6 +276,91 @@ def hidden_test_belongs(task_file: str | Path, hidden_root: str | Path) -> bool:
     return task_file == hidden_root
 
 
+#: At most this many support files beside one task's hidden test. The
+#: executor's own bounds on private material (file count, per-file and
+#: total bytes) still apply to the test and its support files together.
+MAX_SUPPORT_FILES = 32
+_SUPPORT_TARGET = re.compile(
+    r"^(?!/)(?![A-Za-z]:)(?!.*(?:^|/)\.\.?(?:/|$))[A-Za-z0-9_.@/-]{1,512}$")
+
+
+def support_file_problems(acceptance: Mapping) -> list[str]:
+    """Shape problems of ``acceptance.support_files``; empty when sound.
+
+    The field is optional. When present it is a list of at most
+    :data:`MAX_SUPPORT_FILES` objects ``{"target", "path", "digest"}``:
+    a normalized relative ``.py`` target, distinct from the primary
+    ``hidden_tests_target`` and from every other entry; an evaluator-side
+    path; and the file's lowercase SHA-256.
+    """
+    entries = acceptance.get("support_files")
+    if entries is None:
+        return []
+    if not isinstance(entries, list) or len(entries) > MAX_SUPPORT_FILES:
+        return ["support_files must be a list of at most"
+                f" {MAX_SUPPORT_FILES} entries"]
+    if acceptance.get("hidden_tests_path") is None:
+        return ["support_files need a hidden_tests_path"]
+    problems = []
+    seen = {acceptance.get("hidden_tests_target")}
+    for entry in entries:
+        if not isinstance(entry, Mapping):
+            problems.append("support_files entries must be objects")
+            continue
+        target = entry.get("target")
+        if (not isinstance(target, str) or not _SUPPORT_TARGET.fullmatch(target)
+                or not target.endswith(".py")):
+            problems.append(f"support file target is unsafe: {target!r}")
+        elif target in seen:
+            problems.append(f"support file target is repeated: {target}")
+        else:
+            seen.add(target)
+        path = entry.get("path")
+        if not isinstance(path, str) or not path:
+            problems.append(f"support file {target!r} has no path")
+        digest = entry.get("digest")
+        if (not isinstance(digest, str) or len(digest) != 64
+                or not set(digest) <= _HEX):
+            problems.append(f"support file {target!r} has no SHA-256 digest")
+    return problems
+
+
+def load_support_files(acceptance: Mapping,
+                       hidden_root: str | Path | None) -> dict[str, bytes]:
+    """Read a task's support files, each checked against its digest.
+
+    Support files (``conftest.py``, package ``__init__.py`` files and
+    helper modules of the test's own package) are captured from the fix
+    commit by the importer, like the hidden test itself; the submission
+    never supplies them. Each must be a regular file inside the
+    repository's hidden-tests directory whose SHA-256 matches the
+    recorded digest. Returns ``{target: bytes}``, empty when the task has
+    none.
+    """
+    problems = support_file_problems(acceptance)
+    if problems:
+        raise StudyRuntimeError("support_files_invalid:" + problems[0])
+    entries = acceptance.get("support_files") or []
+    if entries and (hidden_root is None or not Path(hidden_root).is_dir()):
+        raise StudyRuntimeError(
+            "support_files_need_a_hidden_tests_directory")
+    files: dict[str, bytes] = {}
+    for entry in entries:
+        path = Path(entry["path"])
+        if path.is_symlink() or not path.is_file():
+            raise StudyRuntimeError(
+                "support_file_not_a_regular_file:" + entry["target"])
+        if not hidden_test_belongs(path, hidden_root):
+            raise StudyRuntimeError(
+                "support_file_outside_hidden_tests:" + entry["target"])
+        payload = path.read_bytes()
+        if hashlib.sha256(payload).hexdigest() != entry["digest"]:
+            raise StudyRuntimeError(
+                "support_file_digest_mismatch:" + entry["target"])
+        files[entry["target"]] = payload
+    return files
+
+
 # --------------------------------------------------------------------- #
 # run journal
 # --------------------------------------------------------------------- #
@@ -422,4 +508,5 @@ class RunJournal:
 __all__ = ["DEFAULT_SPLIT_USER", "DEFAULT_STUDY_IMAGE", "EXECUTOR_KINDS",
            "RunJournal", "StudyRuntimeError", "build_study_executor",
            "commit_exists", "commit_is_ancestor", "executor_description",
-           "hidden_test_belongs", "hidden_tests_digest", "materialize_commit"]
+           "MAX_SUPPORT_FILES", "hidden_test_belongs", "hidden_tests_digest",
+           "load_support_files", "materialize_commit", "support_file_problems"]

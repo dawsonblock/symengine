@@ -1024,5 +1024,94 @@ class SplitSourceLayoutTests(SplitHarness):
         self.assertFalse(marker.exists())
 
 
+@unittest.skipUnless(os.name == "posix", "socketpair transport")
+class SplitSupportFileTests(SplitHarness):
+    """conftest.py, package __init__.py and helpers beside the test.
+
+    cachetools' tests do ``from . import CacheTestMixin`` and jmespath's
+    ``from tests import unittest``. The importer registers those files as
+    further private material at their repository paths; the evaluator
+    must import them from there, never the workspace's copies.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.marker = self.root / "WORKSPACE_TEST_CODE_RAN"
+        self.write("cachekit.py", (
+            "class Cache:\n"
+            "    def __init__(self, maxsize):\n"
+            "        self.maxsize = maxsize\n"))
+        # The submission's own copies of the test package: never run by
+        # the evaluator, whatever they contain.
+        poison = (f"open({str(self.marker)!r}, 'a').write(__name__)\n"
+                  "WHO = 'workspace'\n"
+                  "class CacheTestMixin:\n"
+                  "    pass\n")
+        for name in ("tests/__init__.py", "tests/helpers.py",
+                     "tests/conftest.py", "conftest.py", "helpers.py",
+                     "sibling.py"):
+            self.write(name, poison)
+
+    def test_a_test_package_imports_its_private_helpers(self):
+        self.assertPasses({
+            "conftest.py": (
+                "import pytest\n"
+                "@pytest.fixture\n"
+                "def root_value():\n"
+                "    return 'root conftest'\n"),
+            "tests/__init__.py": (
+                "import cachekit\n"
+                "WHO = 'private'\n"
+                "class CacheTestMixin:\n"
+                "    def test_maxsize(self):\n"
+                "        assert self.Cache(maxsize=3).maxsize == 3\n"),
+            "tests/conftest.py": (
+                "import pytest\n"
+                "@pytest.fixture\n"
+                "def private_value():\n"
+                "    return 'tests conftest'\n"),
+            "tests/helpers.py": "WHO = 'private helper'\n",
+            "tests/test_cache.py": (
+                "import unittest\n"
+                "import cachekit\n"
+                "from . import CacheTestMixin, WHO\n"
+                "from .helpers import WHO as HELPER\n"
+                "from tests import helpers\n"
+                "class CacheTest(unittest.TestCase, CacheTestMixin):\n"
+                "    Cache = cachekit.Cache\n"
+                "def test_sources(root_value, private_value):\n"
+                "    assert WHO == 'private' and HELPER == 'private helper'\n"
+                "    assert helpers.WHO == 'private helper'\n"
+                "    assert root_value == 'root conftest'\n"
+                "    assert private_value == 'tests conftest'\n"
+                "    assert __name__ == 'tests.test_cache'\n"),
+        })
+        self.assertFalse(self.marker.exists())
+
+    def test_a_plain_test_directory_imports_its_private_siblings(self):
+        # Not a package: pytest puts the test's own directory on sys.path
+        # while it collects, after the bootstrap started.
+        self.assertPasses({
+            "tests/sibling.py": "WHO = 'private sibling'\n",
+            "tests/test_plain.py": (
+                "import sibling\n"
+                "import cachekit\n"
+                "def test_sibling():\n"
+                "    assert sibling.WHO == 'private sibling'\n"
+                "    assert cachekit.Cache(2).maxsize == 2\n"),
+        })
+        self.assertFalse(self.marker.exists())
+
+    def test_without_support_files_the_workspace_package_stays_proxied(self):
+        # A test package the evaluator did not register is the
+        # submission's: it is reached through the proxy, in the worker.
+        result = self.run_split({"test_alone.py": (
+            "import tests\n"
+            "def test_proxied():\n"
+            "    assert type(tests).__name__ == 'ProxyModule'\n"
+            "    assert tests.WHO == 'workspace'\n")})
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+
 if __name__ == "__main__":
     unittest.main()

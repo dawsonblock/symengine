@@ -112,7 +112,7 @@ from sis.v3.study_runtime import (DEFAULT_SPLIT_USER,  # noqa: E402
                                   RunJournal, StudyRuntimeError,
                                   build_study_executor, executor_description,
                                   hidden_test_belongs, hidden_tests_digest,
-                                  materialize_commit)
+                                  load_support_files, materialize_commit)
 from sis.v3.verifier import OutcomeVerifier  # noqa: E402
 
 PY = sys.executable
@@ -841,7 +841,14 @@ def _acceptance_material(task: Mapping,
     target = acceptance.get("hidden_tests_target") or hidden.name
     if target not in acceptance["argv"]:
         raise ValueError("hidden test file is not named by acceptance.argv")
-    return {target: payload}
+    # conftest.py, package __init__.py and helper modules the importer
+    # captured from the fix commit, each checked against its digest.
+    try:
+        support = load_support_files(
+            acceptance, root if isinstance(root, str) and root else None)
+    except StudyRuntimeError as exc:
+        raise ValueError(str(exc)) from exc
+    return {target: payload, **support}
 
 
 def _task_tree(task: Mapping, repository: Mapping,

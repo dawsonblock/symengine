@@ -9,7 +9,7 @@ import unittest
 from pathlib import Path
 
 from sis.v3.efficacy_manifest import validate_manifest
-from tests.v3.study_fixtures import (commit, import_repository,
+from tests.v3.study_fixtures import (commit, git, import_repository,
                                      imported_study, load_tool,
                                      make_bugfix_repository)
 
@@ -180,6 +180,56 @@ class PerTaskBaseCommitTests(unittest.TestCase):
         self.assertTrue(any("is not a commit of its repository" in problem
                             for problem in report["problems"]))
 
+    def test_support_files_are_checked_with_the_task(self):
+        import hashlib
+        document = copy.deepcopy(self.document)
+        task = document["tasks"][0]
+        repository = next(item for item in document["repositories"]
+                          if item["repository_id"] == task["repository_id"])
+        hidden = Path(repository["hidden_tests"]["path"])
+        outside = self.root / "outside_init.py"
+        outside.write_text("x = 1\n")
+        digest = hashlib.sha256(b"x = 1\n").hexdigest()
+        task["acceptance"]["support_files"] = [
+            {"target": "tests/__init__.py", "path": str(outside),
+             "digest": digest},
+            {"target": task["acceptance"]["hidden_tests_target"],
+             "path": str(outside), "digest": "nope"}]
+        report = validate_manifest(document, check_paths=True)
+        problems = "\n".join(report["problems"])
+        self.assertIn("support file target is repeated", problems)
+        # Shape problems are reported first; a sound list is then checked
+        # against the hidden-tests directory.
+        task["acceptance"]["support_files"].pop()
+        report = validate_manifest(document, check_paths=True)
+        self.assertTrue(any("tests/__init__.py is not in the repository's"
+                            " hidden_tests" in problem
+                            for problem in report["problems"]))
+        # The builder reads each file back and checks its digest.
+        with self.assertRaisesRegex(builder.StudySpecError,
+                                    "support_file_outside_hidden_tests"):
+            builder._acceptance(task, repository, "task")
+        inside = Path(task["acceptance"]["hidden_tests_path"]).parent / \
+            "support" / "tests" / "__init__.py"
+        inside.parent.mkdir(parents=True)
+        self.addCleanup(shutil.rmtree, inside.parent.parent)
+        inside.write_text("x = 1\n")
+        task["acceptance"]["support_files"][0]["path"] = str(inside)
+        self.assertIn(hidden.resolve(), inside.resolve().parents)
+        repository = dict(repository, hidden_tests=dict(
+            repository["hidden_tests"],
+            digest=__import__("sis.v3.study_runtime", fromlist=["x"])
+            .hidden_tests_digest(hidden)))
+        result = builder._acceptance(task, repository, "task")
+        self.assertEqual(result["support_files"][0]["target"],
+                         "tests/__init__.py")
+        inside.write_text("x = 2\n")
+        repository["hidden_tests"]["digest"] = __import__(
+            "sis.v3.study_runtime", fromlist=["x"]).hidden_tests_digest(hidden)
+        with self.assertRaisesRegex(builder.StudySpecError,
+                                    "support_file_digest_mismatch"):
+            builder._acceptance(task, repository, "task")
+
     def test_a_changed_hidden_tests_directory_is_refused(self):
         document = copy.deepcopy(self.document)
         hidden = Path(document["repositories"][-1]["hidden_tests"]["path"])
@@ -191,6 +241,204 @@ class PerTaskBaseCommitTests(unittest.TestCase):
             extra.unlink()
         self.assertTrue(any("hidden tests directory does not match" in p
                             for p in report["problems"]))
+
+
+def make_package_test_repository(path: Path) -> dict:
+    """A fix whose test needs files beside it, as cachetools' and jmespath's.
+
+    ``tests/`` is a package: ``tests/__init__.py`` defines a mixin the
+    test imports with ``from . import``; ``tests/helpers.py`` is imported
+    as ``from tests.helpers import``; ``tests/conftest.py`` and the root
+    ``conftest.py`` provide fixtures. ``src/calc/tests/`` is a test
+    package inside a source package, whose ``__init__.py`` must never be
+    captured.
+    """
+    path.mkdir(parents=True)
+    git(path, "init", "-q")
+    (path / "calc.py").write_text("def add(x, y):\n    return x - y\n")
+    tests = path / "tests"
+    tests.mkdir()
+    (tests / "__init__.py").write_text(
+        "import calc\n"
+        "class AddMixin:\n"
+        "    def test_add_zero(self):\n"
+        "        assert calc.add(1, 0) == 1\n")
+    (tests / "helpers.py").write_text(
+        "from .data import PAIRS\n"
+        "def expected(x, y):\n    return x + y\n")
+    (tests / "data.py").write_text("PAIRS = [(1, 2), (3, 4)]\n")
+    (tests / "unused.py").write_text("UNUSED = 1\n")
+    (tests / "conftest.py").write_text(
+        "import pytest\n"
+        "@pytest.fixture\n"
+        "def pairs():\n"
+        "    from tests.helpers import PAIRS\n"
+        "    return PAIRS\n")
+    (path / "conftest.py").write_text("ROOT = True\n")
+    (tests / "test_public.py").write_text(
+        "def test_public():\n    assert True\n")
+    package = path / "src" / "calc2" / "tests"
+    package.mkdir(parents=True)
+    (path / "src" / "calc2" / "__init__.py").write_text("VALUE = 1\n")
+    (package / "__init__.py").write_text("")
+    (package / "helper.py").write_text("HELP = 1\n")
+    (package / "test_calc2.py").write_text(
+        "def test_value():\n    assert True\n")
+    base = commit(path, "Initial layout")
+    (path / "calc.py").write_text("def add(x, y):\n    return x + y\n")
+    (tests / "test_add.py").write_text(
+        "import unittest\n"
+        "import calc\n"
+        "from . import AddMixin\n"
+        "from tests.helpers import expected\n"
+        "class AddTest(unittest.TestCase, AddMixin):\n"
+        "    pass\n"
+        "def test_pairs(pairs):\n"
+        "    for x, y in pairs:\n"
+        "        assert calc.add(x, y) == expected(x, y)\n")
+    fix = commit(path, "Fix add subtracting instead of adding")
+    (path / "src" / "calc2" / "__init__.py").write_text("VALUE = 2\n")
+    (package / "test_calc2.py").write_text(
+        "from . import helper\n"
+        "from .. import VALUE\n"
+        "import calc2\n"
+        "def test_value():\n    assert helper.HELP == 1\n")
+    nested = commit(path, "Fix calc2 value")
+    git(path, "remote", "add", "origin", "https://example.invalid/calc.git")
+    head = git(path, "rev-parse", "HEAD")
+    git(path, "update-ref", "refs/remotes/origin/main", head)
+    return {"path": path, "base": base, "fix": fix, "nested": nested}
+
+
+@unittest.skipUnless(GIT and POSIX, "git and POSIX key custody are required")
+class SupportFileTests(unittest.TestCase):
+    """Files the hidden test imports are registered with it."""
+
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.root = Path(temp.name)
+        self.importer = load_tool("import_study_tasks")
+        self.repo = make_package_test_repository(self.root / "repo")
+
+    def describe(self, commit_id):
+        import re
+        return self.importer.describe_commit(
+            self.repo["path"], commit_id, fix_pattern=re.compile("Fix"))
+
+    def test_the_test_package_conftests_and_helpers_are_captured(self):
+        info = self.describe(self.repo["fix"])
+        self.assertEqual(info["test_path"], "tests/test_add.py")
+        self.assertEqual(sorted(info["support"]), [
+            "conftest.py", "tests/__init__.py", "tests/conftest.py",
+            "tests/data.py", "tests/helpers.py"])
+        # Bytes come from the fix commit.
+        self.assertIn(b"def expected", info["support"]["tests/helpers.py"])
+        self.assertEqual(
+            sorted(self.importer.private_files(info)),
+            sorted([*info["support"], "tests/test_add.py"]))
+
+    def test_a_source_package_above_the_tests_is_never_captured(self):
+        info = self.describe(self.repo["nested"])
+        self.assertEqual(info["test_path"], "src/calc2/tests/test_calc2.py")
+        # ``from .. import VALUE`` names the source package: the
+        # submission's, not evaluator material.
+        self.assertEqual(sorted(info["support"]), [
+            "conftest.py", "src/calc2/tests/__init__.py",
+            "src/calc2/tests/helper.py"])
+
+    def test_support_files_are_bounded(self):
+        original = self.importer.MAX_SUPPORT_FILES
+        self.importer.MAX_SUPPORT_FILES = 2
+        self.addCleanup(setattr, self.importer, "MAX_SUPPORT_FILES",
+                        original)
+        with self.assertRaisesRegex(self.importer.ImportError_,
+                                    "support_files_exceed_the_bound"):
+            self.describe(self.repo["fix"])
+
+    def test_imported_tasks_record_and_verify_support_files(self):
+        output = self.root / "fragment.json"
+        hidden_dir = self.root / "private"
+        code = import_repository(
+            self.importer, self.repo["path"], "calc", partition="holdout",
+            hidden_dir=hidden_dir, output=output)
+        fragment = json.loads(output.read_text())
+        self.assertEqual(code, 0, fragment["rejected"])
+        task = next(item for item in fragment["tasks"]
+                    if item["source"]["fix_commit"] == self.repo["fix"])
+        self.assertEqual(task["source"]["verification"],
+                         {"base": "fail", "fix": "pass"})
+        acceptance = task["acceptance"]
+        support = {entry["target"]: entry
+                   for entry in acceptance["support_files"]}
+        self.assertEqual(sorted(support), [
+            "conftest.py", "tests/__init__.py", "tests/conftest.py",
+            "tests/data.py", "tests/helpers.py"])
+        for target, entry in support.items():
+            stored = Path(entry["path"])
+            self.assertIn(hidden_dir.resolve(), stored.resolve().parents)
+            self.assertEqual(stored.read_bytes(), (
+                self.repo["path"] / target).read_bytes())
+        campaign = load_tool("five_arm_campaign")
+        repository = {"hidden_tests": {
+            "path": str(hidden_dir.resolve()),
+            "digest": __import__("sis.v3.study_runtime", fromlist=["x"])
+            .hidden_tests_digest(hidden_dir)}}
+        material = campaign._acceptance_material(task, repository)
+        self.assertEqual(sorted(material),
+                         sorted([*support, "tests/test_add.py"]))
+        # A support file changed after import is refused, as the primary
+        # test file is.
+        stored = Path(support["tests/helpers.py"]["path"])
+        stored.write_text("def expected(x, y):\n    return x - y\n")
+        repository["hidden_tests"]["digest"] = __import__(
+            "sis.v3.study_runtime", fromlist=["x"]).hidden_tests_digest(
+                hidden_dir)
+        with self.assertRaisesRegex(ValueError, "support_file_digest"):
+            campaign._acceptance_material(task, repository)
+
+    def test_support_file_entries_are_validated(self):
+        from sis.v3.study_runtime import (StudyRuntimeError,
+                                          load_support_files,
+                                          support_file_problems)
+        hidden = self.root / "hidden"
+        hidden.mkdir()
+        good = hidden / "init.py"
+        good.write_text("x = 1\n")
+        outside = self.root / "outside.py"
+        outside.write_text("x = 1\n")
+        import hashlib
+        digest = hashlib.sha256(b"x = 1\n").hexdigest()
+        base = {"hidden_tests_path": "t.py",
+                "hidden_tests_target": "tests/test_x.py"}
+
+        def entry(**changes):
+            item = {"target": "tests/__init__.py", "path": str(good),
+                    "digest": digest}
+            item.update(changes)
+            return dict(base, support_files=[item])
+
+        self.assertEqual(support_file_problems(entry()), [])
+        self.assertEqual(load_support_files(entry(), hidden),
+                         {"tests/__init__.py": b"x = 1\n"})
+        for bad in (entry(target="../x.py"), entry(target="/etc/x.py"),
+                    entry(target="tests/test_x.py"), entry(target="a.txt"),
+                    entry(target="./a.py"), entry(digest="0" * 63),
+                    dict(base, support_files="x"),
+                    {"support_files": []}):
+            self.assertTrue(support_file_problems(bad), bad)
+            with self.assertRaises(StudyRuntimeError):
+                load_support_files(bad, hidden)
+        with self.assertRaisesRegex(StudyRuntimeError, "outside_hidden"):
+            load_support_files(entry(path=str(outside)), hidden)
+        with self.assertRaisesRegex(StudyRuntimeError, "digest_mismatch"):
+            load_support_files(entry(digest="0" * 64), hidden)
+        link = hidden / "link.py"
+        link.symlink_to(good)
+        with self.assertRaisesRegex(StudyRuntimeError, "regular_file"):
+            load_support_files(entry(path=str(link)), hidden)
+        with self.assertRaisesRegex(StudyRuntimeError, "hidden_tests_dir"):
+            load_support_files(entry(), None)
 
 
 if __name__ == "__main__":
