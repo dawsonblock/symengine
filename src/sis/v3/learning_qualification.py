@@ -689,9 +689,10 @@ def analyze_report(
         if power_gap is not None:
             provenance_gaps.append(power_gap)
         provenance_gaps.extend(design_gaps)
-        if provenance.get("agent") != "codex-cli":
+        if provenance.get("agent") not in AGENT_KINDS:
             provenance_gaps.append(
-                "agent provenance is not a real codex-cli run")
+                "agent provenance is not a real codex-cli or claude-code"
+                " run")
         if provenance.get("cli_version_matches") is not True:
             provenance_gaps.append(
                 "installed CLI version does not match the manifest")
@@ -719,7 +720,7 @@ def analyze_report(
         if token_accounting != "verified":
             provenance_gaps.append(
                 "token and tool usage were not fully metered")
-    injected = provenance.get("agent") not in (None, "codex-cli")
+    injected = provenance.get("agent") not in (None, *AGENT_KINDS)
     if not real_agent:
         evidence_class = DEMONSTRATION
     elif injected:
@@ -901,6 +902,8 @@ class FiveArmCampaign:
     provenance: Mapping | None = None
     arm_order_seed: int | str | None = None
     repository_ids: Mapping[str, str] | None = None
+    journal: object | None = None
+    workers: int = 1
 
     def validate(self) -> None:
         if tuple(self.arms) not in (tuple(GOVERNED_ARMS),
@@ -929,7 +932,8 @@ class FiveArmCampaign:
             learned_repo_digests=self.learned_repo_digests,
             misleading_tasks=self.misleading_tasks,
             served_map=self.served_map, arms=self.arms,
-            arm_order_seed=self.arm_order_seed)
+            arm_order_seed=self.arm_order_seed, journal=self.journal,
+            workers=self.workers)
         if self.repository_ids:
             for row in report.get("per_task", []):
                 repository_id = self.repository_ids.get(row.get("task_id"))
@@ -1011,10 +1015,7 @@ class CodexCliAgent:
             raise ValueError(
                 "missing task prompt for real-agent task "
                 + ctx.task.task_id)
-        guidance = ctx.guidance
-        if guidance is not None and guidance.helpful_next_checks:
-            prompt += "\n\nGoverned SIS guidance (advisory, untrusted):\n" + \
-                "\n".join(f"- {step}" for step in guidance.helpful_next_checks)
+        prompt = _guided_prompt(prompt, ctx.guidance)
         before = tree_digest(ctx.workspace)
         turn = self._adapter.start_task(
             prompt, ctx.workspace, model=self._model,
@@ -1114,6 +1115,224 @@ class CodexCliAgent:
         self._adapter.close()
 
 
+#: Agent kinds a real-agent manifest may pin.
+AGENT_KINDS = ("codex-cli", "claude-code")
+_GUIDANCE_HEADER = "\n\nGoverned SIS guidance (advisory, untrusted):\n"
+
+
+def _guided_prompt(prompt: str, guidance) -> str:
+    """Append governed guidance with the same framing for every agent."""
+    if guidance is not None and guidance.helpful_next_checks:
+        prompt += _GUIDANCE_HEADER + "\n".join(
+            f"- {step}" for step in guidance.helpful_next_checks)
+    return prompt
+
+
+def claude_code_agent_status() -> dict:
+    """Report whether a real Claude Code agent can be used, without calling it.
+
+    Authentication is detected from an API key or OAuth token in the
+    environment, or from the CLI's stored credentials
+    (``~/.claude/.credentials.json``, or ``~/.claude.json`` naming an
+    ``oauthAccount`` when the secret lives in the macOS keychain). A false
+    negative only blocks the run; it never substitutes a scripted agent.
+    """
+    binary = shutil.which("claude")
+    home = Path.home()
+    config_dir = Path(os.environ.get("CLAUDE_CONFIG_DIR") or home / ".claude")
+    authenticated = any(os.environ.get(name) for name in (
+        "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN",
+        "CLAUDE_CODE_OAUTH_TOKEN"))
+    if not authenticated:
+        authenticated = (config_dir / ".credentials.json").is_file()
+    if not authenticated:
+        try:
+            document = json.loads(
+                (home / ".claude.json").read_text(encoding="utf-8"))
+            authenticated = isinstance(document, dict) and bool(
+                document.get("oauthAccount"))
+        except (OSError, ValueError):
+            authenticated = False
+    reason = "ok"
+    if binary is None:
+        reason = "claude_cli_not_found"
+    elif not authenticated:
+        reason = "claude_not_authenticated"
+    return {
+        "agent": "claude-code",
+        "available": binary is not None,
+        "authenticated": authenticated,
+        "binary": binary,
+        "reason": reason,
+    }
+
+
+def agent_status(kind: str) -> dict:
+    """Availability of the pinned agent kind (``codex-cli``/``claude-code``)."""
+    if kind == "claude-code":
+        return claude_code_agent_status()
+    if kind == "codex-cli":
+        return codex_agent_status()
+    return {"agent": kind, "available": False, "authenticated": False,
+            "binary": None, "reason": "unknown_agent_kind"}
+
+
+class ClaudeCodeAgent:
+    """Real coding-agent callable backed by ``claude -p`` stream-json.
+
+    The contract matches :class:`CodexCliAgent`: guidance is appended as
+    advisory, untrusted text; tokens and tool calls are metered from the
+    adapter's stream (``input_tokens + output_tokens``; cache reads and
+    writes and the reported cost are recorded as usage detail, never as
+    budget tokens); every failure is an ordinary ``real_agent_*`` failure
+    metered with whatever usage the stream reported.
+
+    The token and tool budgets are enforced while the run streams: once
+    the de-duplicated running total exceeds the arm's budget the process
+    group is killed and the arm fails with
+    ``real_agent_budget_exceeded:<tokens|tools>``. The metered total then
+    exceeds the budget, so the harness marks the row budget-exceeded and
+    the analysis scores it as an attested failure, exactly like an
+    overrun detected after the run.
+    """
+
+    def __init__(self, *, model: str | None = None,
+                 wall_seconds: int = 600,
+                 prompts: Mapping[str, str] | None = None,
+                 adapter=None,
+                 enforce_budget: bool = True) -> None:
+        if adapter is None:
+            status = claude_code_agent_status()
+            if not status["available"] or not status["authenticated"]:
+                raise RuntimeError(
+                    "real_agent_unavailable:" + status["reason"])
+            from .adapters.claude_code import ClaudeCodeAdapter
+            adapter = ClaudeCodeAdapter(wall_seconds=wall_seconds)
+        self._adapter = adapter
+        self._model = model
+        self._prompts = dict(prompts or {})
+        self._enforce = bool(enforce_budget)
+
+    def __call__(self, ctx):
+        prompt = self._prompts.get(ctx.task.task_id)
+        if not prompt:
+            raise ValueError(
+                "missing task prompt for real-agent task " + ctx.task.task_id)
+        prompt = _guided_prompt(prompt, ctx.guidance)
+        before = tree_digest(ctx.workspace)
+        turn = self._adapter.start_task(
+            prompt, ctx.workspace, model=self._model,
+            sandbox="workspace_write")
+        supervisor = getattr(ctx, "supervisor", None)
+        if supervisor is not None:
+            supervisor.register_terminator(
+                lambda: self._cancel(turn.turn_id))
+        budget = getattr(ctx, "budget", None)
+        token_cap = getattr(budget, "token_budget", None)
+        tool_cap = getattr(budget, "tool_budget", None)
+        meter = ctx.usage_meter
+        streamed: dict[str, int] = {}
+        terminal: dict[str, int] = {}
+        tools: list[str] = []
+        result_method = None
+        is_error = False
+        exit_status = None
+        timed_out = False
+        cost = None
+
+        def total(counts: Mapping[str, int]) -> int:
+            return counts.get("input_tokens", 0) + counts.get(
+                "output_tokens", 0)
+
+        def running_tokens() -> int:
+            return max(total(streamed), total(terminal))
+
+        def settle() -> int:
+            tokens = running_tokens()
+            if meter is not None:
+                meter.record_tokens(tokens)
+                record = getattr(meter, "record_detail", None)
+                if callable(record):
+                    for name in ("cache_read_input_tokens",
+                                 "cache_creation_input_tokens"):
+                        if name in streamed or name in terminal:
+                            record(name, max(streamed.get(name, 0),
+                                             terminal.get(name, 0)))
+                    if cost is not None:
+                        record("cost_usd_micros", cost)
+            return tokens
+
+        def fail(reason: str) -> RuntimeError:
+            settle()
+            return RuntimeError(reason)
+
+        for event in turn:
+            if supervisor is not None and supervisor.aborted:
+                raise fail("real_agent_aborted")
+            payload = getattr(event, "payload", None)
+            if not isinstance(payload, Mapping):
+                continue
+            summary = payload.get("summary")
+            summary = summary if isinstance(summary, Mapping) else {}
+            method = payload.get("sdk_method")
+            delta = summary.get("token_usage_delta")
+            if isinstance(delta, Mapping):
+                for name, value in delta.items():
+                    if type(value) is int and value >= 0:
+                        streamed[name] = streamed.get(name, 0) + value
+            if isinstance(method, str) and (
+                    method == "result" or method.startswith("result.")):
+                usage = summary.get("token_usage")
+                if isinstance(usage, Mapping):
+                    terminal = {name: value for name, value in usage.items()
+                                if type(value) is int and value >= 0}
+                result_method = method
+                is_error = bool(summary.get("is_error"))
+                reported = summary.get("cost_usd_micros")
+                if type(reported) is int and reported >= 0:
+                    cost = reported
+            elif method == "sis/process_exit":
+                exit_status = summary.get("cli_exit_status")
+                timed_out = bool(summary.get("timed_out"))
+            for name in summary.get("new_tool_uses") or ():
+                tools.append(str(name)[:128])
+                if meter is not None:
+                    meter.record_tool_call()
+            if self._enforce:
+                if type(token_cap) is int and running_tokens() > token_cap:
+                    self._cancel(turn.turn_id)
+                    raise fail("real_agent_budget_exceeded:tokens")
+                if type(tool_cap) is int and len(tools) > tool_cap:
+                    self._cancel(turn.turn_id)
+                    raise fail("real_agent_budget_exceeded:tools")
+        if timed_out:
+            raise fail("real_agent_timeout")
+        if result_method is None:
+            raise fail("real_agent_turn_incomplete")
+        if is_error or result_method != "result.success":
+            raise fail("real_agent_error_event")
+        if exit_status is None:
+            raise fail("real_agent_missing_exit_status")
+        if exit_status != 0:
+            raise fail(f"real_agent_cli_exit:{exit_status}")
+        if not tools or tree_digest(ctx.workspace) == before:
+            raise fail("real_agent_no_action")
+        tokens = settle()
+        return {"tokens_used": tokens, "tools_used": len(tools),
+                "actions": tools[:256]}
+
+    def _cancel(self, turn_id: str) -> None:
+        """Terminate the active CLI turn (harness abort or budget stop)."""
+        try:
+            self._adapter.cancel(turn_id)
+        except Exception:
+            # The turn already exited; nothing left to terminate.
+            pass
+
+    def close(self) -> None:
+        self._adapter.close()
+
+
 def write_report(report: Mapping, path: str | Path) -> Path:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -1136,8 +1355,10 @@ def campaign_digest(report: Mapping) -> str:
 
 
 __all__ = [
+    "AGENT_KINDS",
     "ARM_LABELS",
     "CONFIRMATORY",
+    "ClaudeCodeAgent",
     "CodexCliAgent",
     "DEMONSTRATION",
     "EXPLORATORY",
@@ -1145,7 +1366,9 @@ __all__ = [
     "INVALID",
     "analyze_report",
     "build_context_provider",
+    "agent_status",
     "campaign_digest",
+    "claude_code_agent_status",
     "codex_agent_status",
     "failure_categories",
     "holm_adjust",

@@ -420,6 +420,8 @@ def run_governed_evaluation(
     served_map: dict | None = None,
     arms: tuple[str, ...] = GOVERNED_ARMS,
     arm_order_seed: int | str | None = None,
+    journal=None,
+    workers: int = 1,
 ) -> dict:
     """Run the paired governed evaluation and attach analysis metadata.
 
@@ -428,13 +430,20 @@ def run_governed_evaluation(
     optionally records (task_id, arm) -> bool where guidance was actually
     served (non-abstain) so abstention and negative transfer are measured
     rather than inferred. ``arm_order_seed`` randomizes arm order per task
-    and records the executed order.
+    and records the executed order. ``journal`` and ``workers`` are passed
+    to :meth:`BenchmarkHarness.run` (resume and task parallelism); a
+    journal-restored arm's ``served`` flag must already be in
+    ``served_map``.
     """
     assert_repository_disjoint(
         learned_repo_digests, [t for t, _ in tasks])
     served: dict = served_map if served_map is not None else {}
     run_kwargs = ({} if arm_order_seed is None
                   else {"arm_order_seed": arm_order_seed})
+    if journal is not None:
+        run_kwargs["journal"] = journal
+    if workers != 1:
+        run_kwargs["workers"] = workers
     report = harness.run(tasks, agent, budget=budget,
                          context_provider=context_provider, arms=arms,
                          **run_kwargs)
