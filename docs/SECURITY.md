@@ -116,7 +116,7 @@ plausible new full history. Export externally controlled HMAC checkpoints.
 
 ## v1.7 procedural-skill subsystem
 
-See [V1_7_PROCEDURAL_SKILLS.md](V1_7_PROCEDURAL_SKILLS.md) for architecture, verification boundary, threat model and
+See [V1_7_PROCEDURAL_SKILLS.md](history/V1_7_PROCEDURAL_SKILLS.md) for architecture, verification boundary, threat model and
 explicit limitations. The procedural skill chain is local integrity evidence, not a separately anchored cryptographic
 attestation.
 
@@ -144,4 +144,4 @@ suspended live skill or automatically promote other skills. See
 Typed execution traces are replayed locally and converted into untrusted
 procedural hypotheses; they are never an independent correctness oracle.
 Validation traces are not accepted, and the tool bridge cannot invoke
-trace studies or promote skills. See `docs/V2_1_TYPED_TRACE_LEARNING.md`.
+trace studies or promote skills. See `docs/history/V2_1_TYPED_TRACE_LEARNING.md`.

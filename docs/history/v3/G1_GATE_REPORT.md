@@ -15,7 +15,7 @@ No efficacy, production-hardening, or cross-repository claims are made.
 | SHA-256 (re-verified) | `f62ef2a500fe487cf17fb1b7d19862ab0eb686c411663b89d02011f310a7d077` |
 | Baseline commit | `d79a813` — `git archive d79a813` diffed byte-identical to extracted archive |
 | Focused baseline | `42 passed` (authority_recovery, upgrade_integrity_learning, benchmark, codex_adapter, retrieval) |
-| Full-suite baseline | `562 passed, 2 skipped` — recorded in `docs/v3/V2_BASELINE.md` |
+| Full-suite baseline | `562 passed, 2 skipped` — recorded in `docs/history/v3/V2_BASELINE.md` |
 
 ## G1 — one authority, transactional promotion, legacy deprecation — PASS
 

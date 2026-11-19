@@ -4,7 +4,7 @@
 > sequence and is retained for provenance. It does not describe the
 > current release. For the current status see
 > `docs/v3/QUALIFICATION_REPORT_V3_3_8.md` and
-> `docs/v3/RELEASE_NOTES_V3_3.md`.
+> `docs/history/v3/RELEASE_NOTES_V3_3.md`.
 
 Historical classification: **M0 contracts/policy plus SIS3-003 executor,
 SIS3-005 episode store, SIS3-006 signed receipts, SIS3-004 CLI adapter (real

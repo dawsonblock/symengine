@@ -2,7 +2,7 @@
 
 > These limits describe the v1/v2 rule grammar. For v3 limits — evaluator
 > isolation, real-agent efficacy and multi-host PostgreSQL — see
-> `docs/V332_EFFICACY_STATUS.md` and `docs/v3/V33_LIMITATIONS.md`.
+> `docs/V332_EFFICACY_STATUS.md` and `docs/history/v3/V33_LIMITATIONS.md`.
 
 - The deterministic enumerator (learner v2) covers a declared space: typed pool programs up to cost 7 and depth 3,
   goal-directed completions up to depth 4, exact small-integer affine fits over at most three features, and

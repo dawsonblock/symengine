@@ -27,4 +27,4 @@ python3 tools/build_release.py
 python3 tools/verify_release.py ../symbolic-induction-engine-v1.5.0.zip
 ```
 
-For evaluator qualification examples see `docs/V1_5_TRANSFER_AND_QUALIFICATION.md`.
+For evaluator qualification examples see `docs/history/V1_5_TRANSFER_AND_QUALIFICATION.md`.

@@ -214,6 +214,13 @@
 
 ## What is NOT enforced here (honest limits)
 
+- **Platform support.** Linux and macOS run the whole system and test
+  suite. Windows is supported for the core learner and CLI only: the v3
+  evaluator, sandbox, authority and study layer relies on POSIX process
+  groups, permissions and file semantics, and qualified evaluation needs
+  Docker + gVisor on Linux. On Windows, CI runs the core suite and
+  `tests/v3` is not collected; `tests/conftest.py` says so in the run
+  header and in the terminal summary, which `pytest -q` still shows.
 - **Native macOS is development-only.** It is refused for production
   (`LocalSubprocessExecutor(production=True)` raises
   `local_backend_not_production_qualified`), and qualified runs go

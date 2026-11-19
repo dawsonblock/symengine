@@ -18,7 +18,69 @@ def load(path):
         return json.load(f)
 
 
-def main(argv=None):
+#: Every ``sis`` command, by area, in the order ``sis --help`` lists them.
+#: A command missing here is still listed (under "Other"), and a test
+#: requires each registered command to appear in exactly one group.
+COMMAND_GROUPS = (
+    ("Rules", ("train", "predict", "predict-batch", "rules", "feedback",
+               "retire", "query", "benchmark", "transfer", "transfer-batch")),
+    ("Integrity and anchors", ("audit", "anchor-export", "anchor-verify")),
+    ("Sealed evaluation", ("eval-seal", "eval-candidate", "eval-score",
+                           "eval-recover", "eval-verify", "eval-qualify",
+                           "eval-verify-qualification")),
+    ("Procedural skills", ("skill-study", "skill-predict", "skills",
+                           "skill-feedback", "skill-retire", "skill-benchmark",
+                           "skill-audit", "skill-freeze", "skill-eval-seal",
+                           "skill-eval-score", "skill-eval-recover",
+                           "skill-eval-verify", "skill-distill-export")),
+    ("Experience and traces", ("experience-capture", "experience-induce",
+                               "experience-study", "trace-study")),
+    ("Tabular workflows", ("workflow-capture", "workflow-study",
+                           "workflow-predict", "workflow-retire",
+                           "workflow-list", "workflow-audit")),
+    ("Code repair recipes", ("code-capture", "code-study", "code-preview",
+                             "code-retire", "code-list", "code-audit")),
+    ("Task-family evaluation", ("family-eval-seal", "family-eval-run",
+                                "family-eval-verify")),
+    ("Neural experiments", ("neural-train", "neural-eval")),
+    ("LLM integration and serving", ("tools", "chat", "paired-eval", "serve")),
+)
+
+
+def _group_commands(parser, commands):
+    """Replace argparse's flat command list with one grouped by area.
+
+    Commands, arguments and behaviour are unchanged; only ``sis --help``
+    is reorganized. Per-command help (``sis <command> --help``) is
+    untouched.
+    """
+    helps = {action.dest: action.help or "" for action in commands._choices_actions}
+    listed, sections = set(), []
+    for title, names in COMMAND_GROUPS:
+        rows = [name for name in names if name in helps]
+        listed.update(rows)
+        sections.append((title, rows))
+    other = [name for name in helps if name not in listed]
+    if other:
+        sections.append(("Other", other))
+    width = max(len(name) for name in helps) + 2
+    lines = []
+    for title, rows in sections:
+        if not rows:
+            continue
+        lines.append(f"{title}:")
+        lines.extend(f"  {name:<{width}}{helps[name]}" for name in rows)
+        lines.append("")
+    lines.append("Run 'sis <command> --help' for a command's options.")
+    commands.metavar = "<command>"
+    commands.help = "one of the commands listed below"
+    commands._choices_actions[:] = []
+    parser.formatter_class = argparse.RawDescriptionHelpFormatter
+    parser.epilog = "\n".join(lines)
+
+
+def build_parser():
+    """Build the ``sis`` argument parser (every command, grouped in --help)."""
     parser = argparse.ArgumentParser(prog="sis", description="Evidence-gated symbolic rule induction")
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     parser.add_argument("--db", default=os.getenv("SIS_DB", "sis.sqlite3"), help="SQLite rule registry")
@@ -209,6 +271,12 @@ def main(argv=None):
     commands.add_parser('workflow-audit',help='check local workflow snapshot and audit consistency')
     wlist=commands.add_parser('workflow-list',help='list known tabular workflows')
     wlist.add_argument('--namespace',default='default')
+    _group_commands(parser, commands)
+    return parser
+
+
+def main(argv=None):
+    parser = build_parser()
     args = parser.parse_args(argv)
     try:
         if args.command == 'family-eval-verify':

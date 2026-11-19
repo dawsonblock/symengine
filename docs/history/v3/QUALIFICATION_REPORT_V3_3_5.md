@@ -67,7 +67,7 @@ repair regressions and the audit reproductions, in
 
 ## Known limitations
 
-See `docs/v3/V33_LIMITATIONS.md`. Material for this release:
+See `docs/history/v3/V33_LIMITATIONS.md`. Material for this release:
 
 - No qualified production sandbox exists. The Linux worker probe
   validates a bubblewrap configuration on a privileged container, not a

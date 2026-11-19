@@ -46,7 +46,7 @@ resolved by this release seal. The post-seal result is recorded in
 
 ## Known limitations
 
-See `docs/v3/V33_LIMITATIONS.md`. The material ones for this release:
+See `docs/history/v3/V33_LIMITATIONS.md`. The material ones for this release:
 
 - The local subprocess executor can never qualify; production execution
   stays closed without a qualified worker host or microVM.

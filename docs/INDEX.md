@@ -10,9 +10,8 @@ claim. Start with the first section; use the last one for provenance.
 | Document | Contents |
 | --- | --- |
 | [../README.md](../README.md) | What SIS is, install, quick start |
-| [v3/STATUS.md](v3/STATUS.md) | Implementation status, gate by gate |
 | [v3/ARCHITECTURE_V3_3.md](v3/ARCHITECTURE_V3_3.md) | v3 subsystem design |
-| [v3/QUALIFICATION_REPORT_V3_3_8.md](v3/QUALIFICATION_REPORT_V3_3_8.md) | Current release: what is implemented and what is not qualified |
+| [v3/QUALIFICATION_REPORT_V3_3_9.md](v3/QUALIFICATION_REPORT_V3_3_9.md) | Current release: what is implemented and what is not qualified |
 | [../CHANGELOG.md](../CHANGELOG.md) | Release-by-release history |
 | [../UPGRADE_README.md](../UPGRADE_README.md) | Operator-facing upgrade notes |
 
@@ -66,29 +65,30 @@ claim. Start with the first section; use the last one for provenance.
 
 ## Historical record
 
-Dated reports that explain how the current state was reached. They are
-not current claims; the operational documents above supersede them where
-they disagree.
+Dated reports that explain how the current state was reached. They live
+under [history/](history/README.md) and are not current claims: the
+operational documents above supersede them where they disagree.
 
 | Document | Contents |
 | --- | --- |
-| [v3/G1_GATE_REPORT.md](v3/G1_GATE_REPORT.md), [G2](v3/G2_GATE_REPORT.md), [G3](v3/G3_GATE_REPORT.md), [G4](v3/G4_GATE_REPORT.md) | v3.1-alpha engineering gates |
-| [v3/QUALIFICATION_REPORT.md](v3/QUALIFICATION_REPORT.md), [V3_3_0](v3/QUALIFICATION_REPORT_V3_3_0.md), [V3_3_4](v3/QUALIFICATION_REPORT_V3_3_4.md), [V3_3_5](v3/QUALIFICATION_REPORT_V3_3_5.md), [V3_3_6](v3/QUALIFICATION_REPORT_V3_3_6.md), [V3_3_7](v3/QUALIFICATION_REPORT_V3_3_7.md) | Earlier release qualifications |
-| [v3/V2_BASELINE.md](v3/V2_BASELINE.md) | v2 baseline |
-| [v3/V32_GAP_MAP.md](v3/V32_GAP_MAP.md) | v3.2 gap map |
-| [v3/V33_LIMITATIONS.md](v3/V33_LIMITATIONS.md) | v3.3 limitations |
-| [v3/RELEASE_NOTES_V3_3.md](v3/RELEASE_NOTES_V3_3.md) | v3.3 release notes |
-| [v3/UPGRADE_2026_10_24.md](v3/UPGRADE_2026_10_24.md) | 2026-10-24 upgrade |
-| [V1_5_TRANSFER_AND_QUALIFICATION.md](V1_5_TRANSFER_AND_QUALIFICATION.md), [V1_6](V1_6_PAIRED_LLM_BENCHMARK.md), [V1_7](V1_7_PROCEDURAL_SKILLS.md), [V1_8](V1_8_PROCEDURAL_HOLDOUT_AND_DISTILLATION.md), [V1_9](V1_9_LORA_AND_NEURAL_COMPARISON.md), [V2_0](V2_0_FAMILY_QUALIFICATION.md), [V2_1](V2_1_TYPED_TRACE_LEARNING.md), [V2_2](V2_2_EXPERIENCE_ABSTRACTION.md), [V2_3](V2_3_WORKFLOW_LEARNING.md), [V2_4](V2_4_CODE_REPAIR.md) | v1.5–v2.4 milestone reports |
-| [TEST_REPORT_V1_2.md](TEST_REPORT_V1_2.md) … [TEST_REPORT_V2_4.md](TEST_REPORT_V2_4.md) | Per-version test reports |
-| [UPGRADE_V1_1.md](UPGRADE_V1_1.md), [V1_2](UPGRADE_V1_2.md), [V1_3](UPGRADE_V1_3.md) | Early upgrade notes |
-| [MIGRATION_V330_TO_V331.md](MIGRATION_V330_TO_V331.md) | v3.3.0 → v3.3.1 migration |
-| [RELEASE_NOTES.md](RELEASE_NOTES.md) | Earlier release notes |
-| [ROADMAP.md](ROADMAP.md) | Roadmap at the time of writing |
-| [LIMITATIONS.md](LIMITATIONS.md) | Earlier limitations |
-| [LEGACY_README.md](LEGACY_README.md) | Pre-3.3.3 README |
-| [../UPGRADE_RELEASE_NOTES_2026-10-24.md](../UPGRADE_RELEASE_NOTES_2026-10-24.md) | 2026-10-24 upgrade notes |
-| [../AUTHORITY_RECOVERY_RELEASE_NOTES.md](../AUTHORITY_RECOVERY_RELEASE_NOTES.md) | Authority recovery notes |
+| [G1_GATE_REPORT.md](history/v3/G1_GATE_REPORT.md), [G2](history/v3/G2_GATE_REPORT.md), [G3](history/v3/G3_GATE_REPORT.md), [G4](history/v3/G4_GATE_REPORT.md) | v3.1-alpha engineering gates |
+| [QUALIFICATION_REPORT.md](history/v3/QUALIFICATION_REPORT.md), [V3_3_0](history/v3/QUALIFICATION_REPORT_V3_3_0.md), [V3_3_4](history/v3/QUALIFICATION_REPORT_V3_3_4.md), [V3_3_5](history/v3/QUALIFICATION_REPORT_V3_3_5.md), [V3_3_6](history/v3/QUALIFICATION_REPORT_V3_3_6.md), [V3_3_7](history/v3/QUALIFICATION_REPORT_V3_3_7.md), [V3_3_8](v3/QUALIFICATION_REPORT_V3_3_8.md) | Earlier release qualifications |
+| [STATUS.md](history/v3/STATUS.md) | M0/M1 implementation ledger |
+| [V2_BASELINE.md](history/v3/V2_BASELINE.md) | v2 baseline |
+| [V32_GAP_MAP.md](history/v3/V32_GAP_MAP.md) | v3.2 gap map |
+| [V33_LIMITATIONS.md](history/v3/V33_LIMITATIONS.md) | v3.3 limitations |
+| [RELEASE_NOTES_V3_3.md](history/v3/RELEASE_NOTES_V3_3.md) | v3.3 release notes |
+| [UPGRADE_2026_10_24.md](history/v3/UPGRADE_2026_10_24.md) | 2026-10-24 upgrade |
+| [V1_5_TRANSFER_AND_QUALIFICATION.md](history/V1_5_TRANSFER_AND_QUALIFICATION.md), [V1_6](history/V1_6_PAIRED_LLM_BENCHMARK.md), [V1_7](history/V1_7_PROCEDURAL_SKILLS.md), [V1_8](history/V1_8_PROCEDURAL_HOLDOUT_AND_DISTILLATION.md), [V1_9](history/V1_9_LORA_AND_NEURAL_COMPARISON.md), [V2_0](history/V2_0_FAMILY_QUALIFICATION.md), [V2_1](history/V2_1_TYPED_TRACE_LEARNING.md), [V2_2](history/V2_2_EXPERIENCE_ABSTRACTION.md), [V2_3](history/V2_3_WORKFLOW_LEARNING.md), [V2_4](history/V2_4_CODE_REPAIR.md) | v1.5–v2.4 milestone reports |
+| [TEST_REPORT_V1_2.md](history/TEST_REPORT_V1_2.md) … [TEST_REPORT_V2_4.md](history/TEST_REPORT_V2_4.md) | Per-version test reports |
+| [UPGRADE_V1_1.md](history/UPGRADE_V1_1.md), [V1_2](history/UPGRADE_V1_2.md), [V1_3](history/UPGRADE_V1_3.md) | Early upgrade notes |
+| [MIGRATION_V330_TO_V331.md](history/MIGRATION_V330_TO_V331.md) | v3.3.0 → v3.3.1 migration |
+| [RELEASE_NOTES.md](history/RELEASE_NOTES.md) | Earlier release notes |
+| [ROADMAP.md](history/ROADMAP.md) | Roadmap at the time of writing |
+| [LIMITATIONS.md](history/LIMITATIONS.md) | Earlier limitations |
+| [LEGACY_README.md](history/LEGACY_README.md) | Pre-3.3.3 README |
+| [UPGRADE_RELEASE_NOTES_2026-10-24.md](history/UPGRADE_RELEASE_NOTES_2026-10-24.md) | 2026-10-24 upgrade notes |
+| [AUTHORITY_RECOVERY_RELEASE_NOTES.md](history/AUTHORITY_RECOVERY_RELEASE_NOTES.md) | Authority recovery notes |
 
 ## Release artifacts
 

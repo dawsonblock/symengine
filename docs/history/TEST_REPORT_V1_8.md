@@ -9,4 +9,4 @@ Validation sequence used by the release maintainer:
 3. Execute `PYTHONPATH=src python -m unittest discover -s tests -q` and synthetic end-to-end CLI exercise.
 4. Rebuild a deterministic SHA-256-manifest ZIP, verify every recorded source digest, extract into a clean directory, and rerun tests.
 
-Do not claim production certification, independent evaluator custody, improvements in LLM benchmark performance, or successful neural fine-tuning based on this record. See `docs/V1_8_PROCEDURAL_HOLDOUT_AND_DISTILLATION.md`.
+Do not claim production certification, independent evaluator custody, improvements in LLM benchmark performance, or successful neural fine-tuning based on this record. See `docs/history/V1_8_PROCEDURAL_HOLDOUT_AND_DISTILLATION.md`.
