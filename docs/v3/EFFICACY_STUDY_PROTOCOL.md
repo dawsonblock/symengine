@@ -77,8 +77,15 @@ version, prompt, budget and evaluator. Arm order is randomized per task.
   repositories contributing tasks: an exact sign-flip test over R
   repositories cannot reach p below 2^(1-R), and cluster-level inference
   with fewer than about twenty clusters is unreliable. The manifest
-  validator still accepts five holdout repositories for an exploratory
-  run. Task-level McNemar is reported as a secondary statistic.
+  validator applies the same floor (`MIN_CONFIRMATORY_HOLDOUT_REPOSITORIES`,
+  imported from `sis.v3.learning_qualification`): a manifest for a
+  powered protocol is a `confirmatory` study unless it declares
+  `"study_tier": "exploratory"`, and a confirmatory manifest is refused
+  unless at least 20 holdout repositories with distinct snapshots
+  contribute tasks. A declared exploratory manifest (or a diagnostic
+  protocol) keeps the lower floor of five; it is still executable but
+  its result can only be exploratory. Task-level McNemar is reported as
+  a secondary statistic.
 - **Equal budgets.** Every arm gets the same wall-clock, token and tool
   budget per task. Budget-exceeded runs are not passes. Budget-exceeded,
   timed-out and errored agent runs are ordinary failures; they do not
@@ -102,9 +109,13 @@ The five-arm template is
 two-arm primary-contrast template is
 [efficacy_manifest_two_arm_template.json](efficacy_manifest_two_arm_template.json).
 Replace every `<placeholder>`, provide at least ten repositories (at
-least five of them holdout repositories with distinct snapshots and
-distinct lineages that each contribute tasks) and at least 103 paired
-holdout tasks, and commit the manifest before any holdout run. Each
+least 20 of them holdout repositories with distinct snapshots and
+distinct lineages that each contribute tasks — the templates list five
+holdout placeholders only as a skeleton) and at least 103 paired
+holdout tasks, and commit the manifest before any holdout run. The
+templates declare `"study_tier": "confirmatory"`; a smaller study with
+five to nineteen holdout repositories must declare
+`"study_tier": "exploratory"` and is reported as such. Each
 repository declares a `lineage_id` shared by every revision of that
 repository and distinct from every other holdout lineage, plus a
 `repo_execution_digest` that pins the permission and entry-type state
@@ -133,8 +144,15 @@ The validator enforces:
 - `sample_size` at or above the recomputed power floor;
 - repository-disjoint induction/holdout partitions, with distinct
   holdout codebases and lineages;
-- at least ten repositories, of which at least five are holdout
-  repositories, and at least `sample_size` tasks;
+- at least ten repositories and at least `sample_size` tasks; every
+  declared holdout repository contributes tasks, and the holdout spans
+  at least 20 repositories with distinct snapshots for a
+  `confirmatory` study (the default for a powered protocol) or at least
+  five for a declared `exploratory` study or a diagnostic protocol;
+- a `study_tier` that agrees with the protocol: `confirmatory` or
+  `exploratory` for a powered protocol, `diagnostic` for a diagnostic
+  one (the report states the resolved `study_tier`, the
+  `min_holdout_repositories` floor it applied, and `confirmatory`);
 - `--check-paths` re-fingerprints every repository with the
   repository-content format (working tree, VCS metadata excluded),
   verifies the declared content digest (full-tree v2 and legacy v1
@@ -160,8 +178,11 @@ The validator enforces:
 - pinned agent kind/model/CLI version;
 - positive equal-budget fields per task.
 
-Exit status `0` means ready; `2` means structurally valid but not ready
-(for example, underpowered or a diagnostic protocol); `1` means invalid.
+Exit status `0` means ready (a confirmatory study, or a declared
+exploratory one, which is executable but never confirmatory); `2` means
+structurally valid but not ready (for example, a diagnostic protocol or
+fewer tasks than `sample_size`); `1` means invalid, including a
+confirmatory manifest whose holdout is below 20 repositories.
 
 ### Build from a study spec
 
@@ -224,6 +245,12 @@ matching Codex CLI; the run host still enforces the pin. The output path
 may not be inside a repository, because writing there would change the
 tree digest the manifest just recorded.
 
+The spec may set `"study_tier": "exploratory"` (default
+`"confirmatory"`); the builder copies the tier into the manifest and
+refuses a confirmatory spec whose tasks span fewer than 20 holdout
+repositories. A `diagnostic` tier is refused: the builder writes only
+powered studies.
+
 For the two-arm primary contrast, set `kind` to
 `primary_contrast_study_spec` and `protocol.arms` to `["A","E"]`; the
 builder writes a `primary_contrast_efficacy_manifest`. Everything else,
@@ -282,8 +309,29 @@ produced from, the training partitions are the manifest's induction
 repositories, and the manifest precommits the bundle digest before the
 run. Passing `--candidate-registry` additionally requires each
 candidate to resolve to a qualified record whose evidence covers the
-declared digest; without it the bundle is recorded as
-`learned_unverified` and can never support a confirmatory label.
+declared digest; the verified candidates are then served per task
+through `GovernedServingGateway`. Without a registry the bundle is
+recorded as `learned_unverified` and can never support a confirmatory
+label.
+
+The registry re-authenticates each candidate's signed operator
+decision and evaluator evidence, so `--candidate-registry` requires
+`--trust-config`: a JSON file in the `sis.v3.bootstrap` format whose
+`evaluator_keys` and `operator_keys` (key id → Ed25519 public key hex)
+and `evaluation_protocol` (the pinned protocol document, inline or a
+path relative to the file) are read; the production v3 config can be
+passed as is, and its `candidate_database` is the default registry.
+A registry without trust anchors is an argument error, because nothing
+could be served; `--record-unverified` instead acknowledges the
+recording-only mode (the registry is not consulted).
+
+```bash
+python3 tools/five_arm_campaign.py --real-agent --allow-local-executor \
+  --manifest /secure/study/manifest.json \
+  --guidance-bundle /secure/study/bundle.json \
+  --candidate-registry /srv/sis/candidates.db \
+  --trust-config /srv/sis/v3.json -o /secure/study/report.json
+```
 
 ```json
 {

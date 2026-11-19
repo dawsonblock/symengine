@@ -14,7 +14,7 @@ from pathlib import Path
 from unittest import mock
 
 from sis.errors import InvalidInput
-from sis.vault_storage import private_sqlite_path
+from sis.vault_storage import private_directory, private_sqlite_path
 
 ROOT = Path(__file__).resolve().parents[1]
 SPEC = importlib.util.spec_from_file_location('verify_release', ROOT / 'tools' / 'verify_release.py')
@@ -25,7 +25,12 @@ SPEC.loader.exec_module(verify_release)
 class TestPrivateVaultPath(unittest.TestCase):
     def test_creates_private_regular_file(self):
         with tempfile.TemporaryDirectory() as temp:
-            path = private_sqlite_path(Path(temp) / 'nested' / 'vault.sqlite3', 'test vault')
+            parent = Path(temp) / 'nested'
+            if os.name == 'nt':
+                # Windows only verifies a vault parent's DACL; os.mkdir
+                # cannot create a parent that passes, so supply one.
+                private_directory(parent)
+            path = private_sqlite_path(parent / 'vault.sqlite3', 'test vault')
             self.assertTrue(path.is_file())
             if os.name == 'posix':
                 self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
@@ -63,7 +68,7 @@ class TestPrivateVaultPath(unittest.TestCase):
     @unittest.skipUnless(os.name == 'nt', 'Windows ACL integration test')
     def test_windows_vault_file_is_created_and_reopened_with_verified_acl(self):
         with tempfile.TemporaryDirectory() as temp:
-            path = Path(temp) / 'vault.sqlite3'
+            path = private_directory(Path(temp) / 'vault') / 'vault.sqlite3'
             self.assertEqual(private_sqlite_path(path, 'test vault'), path)
             self.assertEqual(private_sqlite_path(path, 'test vault'), path)
 

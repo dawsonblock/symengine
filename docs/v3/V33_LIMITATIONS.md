@@ -119,6 +119,9 @@
   `RLIMIT_AS` path. Its receipt is valid only when the child observed
   exactly the requested soft and hard limit, and
   `hard_memory_verified` requires a completed child with no memory kill.
+  The limits are set by the evaluator-owned `python -I` launcher shared
+  with `sis.v3.runner` (not `preexec_fn`, which is unsafe with threads);
+  a limit it cannot set raises `EnforcementUnavailable`.
   This is local evidence: the parent applies the limit and the child
   reports it back, so a principal controlling both can forge the pair.
   Production execution still requires a separately qualified

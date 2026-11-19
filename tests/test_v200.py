@@ -8,6 +8,7 @@ from sis.errors import InvalidInput, RuleRejected
 from sis.family_eval import (DATASET_FORMAT,precommit,validate_protocol,
     evaluate,holm_adjust,FamilyExperimentVault,verify_report)
 from sis.validation import canonical,digest
+from sis.vault_storage import private_directory
 
 KEY=b'evaluator-owned-secret-key-with-adequate-entropy-for-tests'
 
@@ -212,7 +213,7 @@ class TestProtocol(unittest.TestCase):
 
     def test_once_only_spent_even_if_error(self):
         with tempfile.TemporaryDirectory() as d:
-            with_vault=FamilyExperimentVault(Path(d)/'vault.sqlite3')
+            with_vault=FamilyExperimentVault(private_directory(Path(d)/'vault')/'vault.sqlite3')
             try:
                 p=self.seal()
                 report=with_vault.run(self.data,p,self.bundle,OfflineModel(),Adapted(),key=KEY)
@@ -226,7 +227,7 @@ class TestProtocol(unittest.TestCase):
         class Exploding:
             def complete(self,messages,max_tokens):raise Crashes()
         with tempfile.TemporaryDirectory() as d:
-            v=FamilyExperimentVault(Path(d)/'e.sqlite3')
+            v=FamilyExperimentVault(private_directory(Path(d)/'vault')/'e.sqlite3')
             try:
                 with self.assertRaises(Crashes):v.run(self.data,self.seal(),self.bundle,Exploding(),Adapted(),key=KEY)
                 self.assertEqual(v.get_status('trial-001')['status'],'reserved')

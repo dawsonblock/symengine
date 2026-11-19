@@ -2,9 +2,12 @@
 """Validate an efficacy manifest without running the study.
 
 Strict mode requires a powered preregistered protocol, at least ten
-repositories (at least five of them holdout repositories), at least
-``sample_size`` paired tasks, repository-disjoint partitions, hidden
-tests outside the public repository, and no placeholder values.
+repositories, holdout repositories that each contribute tasks (at least
+20 for a ``confirmatory`` study — the default for a powered protocol —
+or at least five for a manifest that declares ``"study_tier":
+"exploratory"``), at least ``sample_size`` paired tasks,
+repository-disjoint partitions, hidden tests outside the public
+repository, and no placeholder values.
 ``--check-paths`` also re-fingerprints every repository and rejects two
 holdout entries — or an induction and a holdout entry — that resolve to
 the same codebase. It verifies the declared execution fingerprint

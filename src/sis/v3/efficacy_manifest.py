@@ -2,7 +2,9 @@
 
 This module does not run a study and does not read hidden tests. It checks
 that a manifest is structurally ready for the existing ``FiveArmCampaign``:
-the protocol is preregistered and powered, the declared arms are fixed
+the protocol is preregistered and powered, the manifest's ``study_tier``
+agrees with the protocol and its holdout covers that tier's repository
+floor, the declared arms are fixed
 (the five-arm design or the A/E primary contrast), the
 holdout is repository-disjoint from induction material, hidden tests live
 outside the public repository, and every task carries an evaluator-owned
@@ -27,6 +29,7 @@ from . import gitquery
 from .contracts import ContractError, canonical_digest
 from .governed_eval import (GOVERNED_ARMS, PRIMARY_CONTRAST_ARMS,
                             preregister, required_sample_size)
+from .learning_qualification import MIN_CONFIRMATORY_HOLDOUT_REPOSITORIES
 from .runner import (RunnerError, repository_execution_digest, tree_digest,
                      verify_repository_digest)
 
@@ -40,7 +43,19 @@ MIN_REPOSITORIES = 10
 # Tasks drawn from one or two holdout repositories are correlated draws,
 # not independent evidence. A floor keeps a study from meeting its task
 # count while concentrating every outcome in a handful of codebases.
+# This is the floor for every manifest, and the whole floor for an
+# ``exploratory`` or ``diagnostic`` study.
 MIN_HOLDOUT_REPOSITORIES = 5
+# A ``confirmatory`` study (the default for a powered protocol) must have
+# at least MIN_CONFIRMATORY_HOLDOUT_REPOSITORIES holdout repositories
+# contributing tasks — the same floor ``analyze_report`` applies before it
+# will label a run confirmatory (an exact repository-level sign-flip test
+# over R repositories cannot reach p below 2**(1 - R)). Re-exported here;
+# ``learning_qualification`` is the single source of truth.
+CONFIRMATORY = "confirmatory"
+EXPLORATORY = "exploratory"
+DIAGNOSTIC = "diagnostic"
+STUDY_TIERS = (CONFIRMATORY, EXPLORATORY, DIAGNOSTIC)
 MANIFEST_ARMS = {
     "five_arm_efficacy_manifest": GOVERNED_ARMS,
     "primary_contrast_efficacy_manifest": PRIMARY_CONTRAST_ARMS,
@@ -678,6 +693,33 @@ def _validate_tasks(document, by_id: dict[str, dict], problems: list[str],
     return tasks
 
 
+def _study_tier(document: Mapping, powered_plan: bool, protocol_ok: bool,
+                problems: list[str], allow_placeholders: bool) -> str:
+    """Resolve the study tier the manifest is built for.
+
+    ``study_tier`` is optional. Absent, a powered protocol is a
+    ``confirmatory`` study and a diagnostic protocol a ``diagnostic`` one.
+    A powered study that cannot meet the confirmatory repository floor
+    must say so by declaring ``exploratory``; it is still executable, but
+    it never claims more than its holdout can support.
+    """
+    implied = CONFIRMATORY if powered_plan else DIAGNOSTIC
+    declared = document.get("study_tier")
+    if declared is None or (allow_placeholders and _placeholder(declared)):
+        return implied
+    if not isinstance(declared, str) or declared not in STUDY_TIERS:
+        _problem(problems, "study_tier must be one of "
+                           + ", ".join(STUDY_TIERS))
+        return implied
+    if protocol_ok and (declared == DIAGNOSTIC) == powered_plan:
+        _problem(problems,
+                 f"study_tier {declared} does not match the protocol: a"
+                 " powered protocol backs a confirmatory or exploratory"
+                 " study, a diagnostic protocol only a diagnostic one")
+        return implied
+    return declared
+
+
 def validate_manifest(document, *, allow_placeholders: bool = False,
                       check_paths: bool = False) -> dict:
     """Validate one manifest without executing or reading hidden tests."""
@@ -711,12 +753,17 @@ def validate_manifest(document, *, allow_placeholders: bool = False,
     document_protocol = document.get("protocol")
     declared_kind = (document_protocol.get("analysis_kind")
                      if isinstance(document_protocol, Mapping) else None)
-    confirmatory = bool(protocol.get("powered") is True
+    powered_plan = bool(protocol.get("powered") is True
                         and declared_kind != "diagnostic")
+    study_tier = _study_tier(document, powered_plan, bool(protocol),
+                             problems, allow_placeholders)
+    confirmatory = powered_plan and study_tier == CONFIRMATORY
+    min_holdout = (MIN_CONFIRMATORY_HOLDOUT_REPOSITORIES if confirmatory
+                   else MIN_HOLDOUT_REPOSITORIES)
     repository_lineage, lineage_components = _verify_repository_lineage(
         by_id, problems,
         derive_git=check_paths and not allow_placeholders,
-        required=confirmatory and not allow_placeholders)
+        required=powered_plan and not allow_placeholders)
     holdout_ids = {
         repository_id for repository_id, repository in by_id.items()
         if repository.get("partition") == "holdout"}
@@ -731,21 +778,29 @@ def validate_manifest(document, *, allow_placeholders: bool = False,
         by_id[repository_id].get("repo_snapshot_digest")
         for repository_id in used
         if isinstance(by_id[repository_id].get("repo_snapshot_digest"), str)}
-    if confirmatory and not allow_placeholders:
-        if len(used) < MIN_HOLDOUT_REPOSITORIES:
+    if powered_plan and not allow_placeholders:
+        reason = (
+            " — a confirmatory study needs that many for its"
+            " repository-level sign-flip test (R repositories cannot reach"
+            " p below 2^(1-R)); declare study_tier exploratory for a"
+            f" smaller study (floor {MIN_HOLDOUT_REPOSITORIES})"
+            if confirmatory else
+            " — a task count concentrated in fewer repositories overstates"
+            " independent evidence")
+        if len(used) < min_holdout:
             _problem(
                 problems,
                 f"tasks use only {len(used)} holdout repositories; at least "
-                f"{MIN_HOLDOUT_REPOSITORIES} must contribute tasks — a task"
-                " count concentrated in fewer repositories overstates"
-                " independent evidence")
-        if len(used_snapshots) < MIN_HOLDOUT_REPOSITORIES:
+                f"{min_holdout} must contribute tasks to a {study_tier}"
+                f" study{reason}")
+        if len(used_snapshots) < min_holdout:
             _problem(
                 problems,
                 f"tasks use only {len(used_snapshots)} distinct holdout"
-                f" repository snapshots; at least {MIN_HOLDOUT_REPOSITORIES}"
-                " independent codebases are required (distinct repository"
-                " IDs with identical snapshots are the same codebase)")
+                f" repository snapshots; at least {min_holdout}"
+                f" independent codebases are required for a {study_tier}"
+                " study (distinct repository IDs with identical snapshots"
+                " are the same codebase)")
         declared = set(
             (document.get("partitions") or {}).get("holdout") or []) \
             if isinstance(document.get("partitions"), Mapping) else set()
@@ -807,7 +862,10 @@ def validate_manifest(document, *, allow_placeholders: bool = False,
                              f" {repository_id}")
     placeholder_count = sum(
         1 for value in _walk(document) if _placeholder(value))
-    ready = (not problems and not placeholder_count and confirmatory
+    # ``ready`` means executable by the real-agent gate: any powered
+    # study, confirmatory or declared exploratory. Only ``confirmatory``
+    # manifests meet the repository floor a confirmatory label needs.
+    ready = (not problems and not placeholder_count and powered_plan
              and len(tasks) >= sample_size)
     return {
         "schema_version": 1,
@@ -844,6 +902,8 @@ def validate_manifest(document, *, allow_placeholders: bool = False,
              if repository_id in holdout_ids}),
         "placeholders": placeholder_count,
         "confirmatory": confirmatory,
+        "study_tier": study_tier,
+        "min_holdout_repositories": min_holdout,
         "manifest_digest": _canonical(document),
     }
 
@@ -859,6 +919,8 @@ def _walk(value):
         yield value
 
 
-__all__ = ["MIN_HOLDOUT_REPOSITORIES", "MIN_REPOSITORIES",
+__all__ = ["CONFIRMATORY", "DIAGNOSTIC", "EXPLORATORY",
+           "MIN_CONFIRMATORY_HOLDOUT_REPOSITORIES",
+           "MIN_HOLDOUT_REPOSITORIES", "MIN_REPOSITORIES", "STUDY_TIERS",
            "validate_manifest", "verify_repository_binding",
            "verify_repository_execution", "verify_repository_provenance"]

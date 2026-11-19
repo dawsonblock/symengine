@@ -82,9 +82,12 @@ class SqliteLifecycleTests(unittest.TestCase):
     """Every SQLite owner supports close() and context management."""
 
     def setUp(self):
+        from sis.vault_storage import private_directory
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name)
+        # Vaults require a private parent; a temp dir is not one on
+        # Windows (its DACL also grants OWNER RIGHTS / inherited ACEs).
+        self.root = private_directory(Path(self.temp.name) / "vaults")
 
     def test_registry_close_and_cm(self):
         from sis.registry import Registry

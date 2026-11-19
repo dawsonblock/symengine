@@ -1,5 +1,29 @@
 # Changelog
 
+## 2026-11-18 — Review follow-ups (SIS-FIX-13)
+
+The follow-ups left open by SIS-FIX-12. The release seal is still stale
+and must be rebuilt before the next release.
+
+- **`sis.enforced_induction` no longer uses `preexec_fn`.** Its hard
+  limits are applied through the evaluator's limit launcher, the change
+  SIS-FIX-11 made for the local runner. A refused limit still raises
+  `EnforcementUnavailable`.
+- **Windows ACL checks compare principals, not SDDL spellings.** The
+  check failed for the RID-500 Administrator (the GitHub Windows
+  runner's account), which Windows writes back as `LA`. The allowed set
+  of principals is unchanged.
+- **The manifest tier binds the label.** A manifest declares
+  `study_tier` (`confirmatory` by default for a powered protocol,
+  `exploratory` or `diagnostic`). A confirmatory manifest needs at least
+  20 holdout repositories, the same floor the analysis applies. A study
+  declared exploratory or diagnostic is never labelled confirmatory.
+- **The five-arm campaign accepts trust anchors.** `--trust-config` (the
+  `sis.v3.bootstrap` config format) supplies the trusted keys, so a
+  verified bundle can be served from the command line. A candidate
+  registry without trust anchors is refused unless `--record-unverified`
+  acknowledges recording-only mode.
+
 ## 2026-11-18 — Review fixes across authority, sandbox and study (SIS-FIX-12)
 
 A whole-repository review found defects in three layers. Each fix has a

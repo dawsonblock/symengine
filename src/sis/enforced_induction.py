@@ -8,6 +8,14 @@ limited with ``RLIMIT_AS`` before the interpreter starts, and returns the
 search result only alongside a receipt describing the limit the child
 actually observed.
 
+The limits are set by the evaluator-owned launcher shared with
+``sis.v3.runner`` (``limit_launcher_argv``): a separate ``python -I``
+process that applies them, reports over a pipe and then execs the child.
+No Python code runs between fork and exec in the caller (``preexec_fn``
+is not used), so the path is safe to call from worker threads. A limit
+the launcher cannot set fails closed and raises
+``EnforcementUnavailable("hard_limit_not_applied")``.
+
 Two levels stay separate:
 
 - the in-process budget remains diagnostic and explicitly soft;
@@ -15,9 +23,9 @@ Two levels stay separate:
   receipt validates (the child observed the exact requested soft and hard
   limits) and the child was not killed by the cap.
 
-The receipt is local evidence, not an independent attestation. The parent
-applies the limit and the child reports it back; a principal that
-controls both can forge the pair. Production execution still requires a
+The receipt is local evidence, not an independent attestation. The
+parent's launcher applies the limit and the child reports it back; a
+principal that controls both can forge the pair. Production execution still requires a
 separately qualified worker (cgroup/microVM) and an externally signed
 isolation attestation.
 """
@@ -28,6 +36,7 @@ import hashlib
 import json
 import os
 import platform
+import shutil
 import signal
 import subprocess
 import sys
@@ -416,55 +425,90 @@ def run_induction_enforced(
         if env is not None:
             child_env.update({str(key): str(value)
                               for key, value in env.items()})
+        resolved = shutil.which(
+            python_executable, path=child_env.get("PATH", os.defpath))
+        if resolved is None:
+            # The launcher would report the limits applied and then fail
+            # to exec; refuse up front as the direct spawn used to.
+            raise EnforcementUnavailable("hard_limit_not_applied") from (
+                FileNotFoundError(python_executable))
+        try:
+            child_cwd = os.getcwd()
+        except OSError:
+            child_cwd = None
+        argv[0] = (os.path.join(child_cwd, resolved)
+                   if child_cwd is not None else resolved)
 
-        def apply_limit() -> None:
-            resource.setrlimit(
-                resource.RLIMIT_AS,
-                (memory_limit_bytes, memory_limit_bytes))
-            if cpu_seconds is not None:
-                resource.setrlimit(
-                    resource.RLIMIT_CPU, (cpu_seconds, cpu_seconds))
-            if process_limit is not None:
-                resource.setrlimit(
-                    resource.RLIMIT_NPROC, (process_limit, process_limit))
+        # The limits are applied by the evaluator-owned launcher (a
+        # separate ``python -I`` process that sets them and then execs the
+        # child), never by ``preexec_fn``: Python code between fork and
+        # exec can deadlock when another thread holds a lock. The launcher
+        # starts in the private temp directory and changes into the
+        # caller's directory only after every limit is set. It fails
+        # closed and reports what it applied over ``status_write``.
+        from .v3.runner import (
+            launcher_markers, limit_launcher_argv, read_launcher_status)
+
+        triples = [("RLIMIT_AS", memory_limit_bytes, memory_limit_bytes)]
+        if cpu_seconds is not None:
+            triples.append(("RLIMIT_CPU", cpu_seconds, cpu_seconds))
+        if process_limit is not None:
+            triples.append(("RLIMIT_NPROC", process_limit, process_limit))
+        status_read, status_write = os.pipe()
+        launch = limit_launcher_argv(
+            argv, triples, cwd=child_cwd, status_fd=status_write)
 
         wall_start = time.monotonic()
         try:
             proc = subprocess.Popen(
-                argv,
+                launch,
+                cwd=str(root),
                 env=child_env,
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 start_new_session=True,
-                preexec_fn=apply_limit,
+                pass_fds=(status_write,),
             )
         except (OSError, subprocess.SubprocessError) as exc:
+            os.close(status_read)
             raise EnforcementUnavailable(
                 "hard_limit_not_applied") from exc
+        finally:
+            os.close(status_write)
 
         timed_out = False
         try:
-            stdout, stderr = proc.communicate(timeout=timeout_seconds)
-        except subprocess.TimeoutExpired:
-            timed_out = True
-            _kill_group(proc)
             try:
-                stdout, stderr = proc.communicate(timeout=2)
+                stdout, stderr = proc.communicate(timeout=timeout_seconds)
             except subprocess.TimeoutExpired:
-                # A grandchild that escaped the process group can hold the
-                # pipe open. Close it so termination stays bounded.
-                proc.kill()
-                for pipe in (proc.stdout, proc.stderr):
-                    try:
-                        if pipe is not None and not pipe.closed:
-                            pipe.close()
-                    except OSError:
-                        pass
-                stdout, stderr = b"", b""
+                timed_out = True
+                _kill_group(proc)
+                try:
+                    stdout, stderr = proc.communicate(timeout=2)
+                except subprocess.TimeoutExpired:
+                    # A grandchild that escaped the process group can hold
+                    # the pipe open. Close it so termination stays bounded.
+                    proc.kill()
+                    for pipe in (proc.stdout, proc.stderr):
+                        try:
+                            if pipe is not None and not pipe.closed:
+                                pipe.close()
+                        except OSError:
+                            pass
+                    stdout, stderr = b"", b""
+        finally:
+            status = read_launcher_status(status_read)
         observed_wall = time.monotonic() - wall_start
         if observed_wall > timeout_seconds:
             timed_out = True
+        if status.startswith("F") or (status != "L" and not timed_out):
+            # A limit the launcher could not set (for example ``RLIMIT_AS``
+            # below the current address space on macOS), or a launcher
+            # that died before applying them: the child never ran under
+            # the requested limits. Report enforcement as unavailable.
+            raise EnforcementUnavailable("hard_limit_not_applied") from (
+                RuntimeError(launcher_markers(status)[0]))
 
         child_signal = -proc.returncode if proc.returncode is not None \
             and proc.returncode < 0 else None

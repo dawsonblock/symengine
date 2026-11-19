@@ -187,6 +187,8 @@ class DarwinMemoryLimitTests(unittest.TestCase):
         self.assertNotIn("memory:not_enforced", errors)
 
 
+@unittest.skipUnless(POSIX, "process groups, signals and os.kill(pid, 0)"
+                     " probing are POSIX semantics")
 class ProcessLifetimeTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()

@@ -97,9 +97,12 @@ def study(root: Path) -> dict:
                 "hidden_tests_path": str(hidden),
             },
         })
+    # Five holdout repositories meet only the exploratory floor; a
+    # confirmatory study needs MIN_CONFIRMATORY_HOLDOUT_REPOSITORIES (20).
     return {
         "schema_version": 1,
         "kind": "five_arm_study_spec",
+        "study_tier": "exploratory",
         "protocol": {
             "primary_metric": "paired solved_delta E vs A",
             "method": "mcnemar_exact",
@@ -177,6 +180,9 @@ class StudyKitTests(unittest.TestCase):
         document, summary = builder.build_manifest(
             self.spec, check_agent=False)
         self.assertTrue(summary["ready"])
+        self.assertEqual(summary["study_tier"], "exploratory")
+        self.assertFalse(summary["confirmatory"])
+        self.assertEqual(document["study_tier"], "exploratory")
         self.assertEqual(summary["repositories"], 10)
         self.assertEqual(summary["holdout_repositories_used"], 5)
         self.assertEqual(summary["holdout_snapshots_used"], 5)
@@ -201,6 +207,29 @@ class StudyKitTests(unittest.TestCase):
         report = validate_manifest(document, check_paths=True)
         self.assertTrue(report["valid"], report["problems"])
         self.assertTrue(report["ready"])
+
+    def test_a_confirmatory_spec_below_the_repository_floor_is_refused(self):
+        for declared in (None, "confirmatory"):
+            with self.subTest(declared=declared):
+                spec = copy.deepcopy(self.spec)
+                if declared is None:
+                    del spec["study_tier"]
+                else:
+                    spec["study_tier"] = declared
+                with self.assertRaisesRegex(
+                        builder.StudySpecError,
+                        "at least 20 must contribute tasks to a"
+                        " confirmatory study"):
+                    builder.build_manifest(spec, check_agent=False)
+
+    def test_a_spec_cannot_declare_a_diagnostic_or_unknown_tier(self):
+        for declared in ("diagnostic", "powered", None):
+            with self.subTest(declared=declared):
+                spec = copy.deepcopy(self.spec)
+                spec["study_tier"] = declared
+                with self.assertRaisesRegex(builder.StudySpecError,
+                                            "study_tier must be"):
+                    builder.build_manifest(spec, check_agent=False)
 
     def test_a_two_arm_spec_cannot_declare_five_arms(self):
         spec = copy.deepcopy(self.spec)
