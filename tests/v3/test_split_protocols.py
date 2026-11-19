@@ -362,6 +362,25 @@ class SplitStateTests(SplitHarness):
             "    assert state.plural_count() == 1\n"
         )})
 
+    def test_threads_in_the_test_do_not_interleave_requests(self):
+        # jmespath's cache-eviction test calls the submission from 32
+        # threads. Each request must get its own answer, not another
+        # thread's: frames on the one socket are serialized.
+        self.assertPasses({"test_hidden.py": (
+            "from concurrent.futures import ThreadPoolExecutor\n"
+            "import state\n"
+            "def check(index):\n"
+            "    for _ in range(200):\n"
+            "        word = 'w%d' % index\n"
+            "        assert state.singularize(word + 's') == word\n"
+            "        assert state.NAME == 'fixed'\n"
+            "    return index\n"
+            "def test_threads():\n"
+            "    with ThreadPoolExecutor(max_workers=8) as pool:\n"
+            "        assert list(pool.map(check, range(16))) =="
+            " list(range(16))\n"
+        )})
+
     def test_repeated_reads_share_one_handle(self):
         client = self.host_client()
         first = client.get(["state", "PLURALS"])

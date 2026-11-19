@@ -114,7 +114,10 @@ Known limits, each because it would need code or class objects to cross:
   imported runs that class's own ``__init_subclass__`` and metaclass,
   which are evaluator-environment code, never submission code.
 * No async protocols. Handles are never released (``MAX_HANDLES``), and
-  every protocol call is one round trip.
+  every protocol call is one round trip. Requests from several test
+  threads are serialized and the worker serves one at a time, so a race
+  a test provokes with threads (jmespath's cache-eviction test) is not
+  reproduced in the submission.
 * Only the registered test file is private material: helper modules,
   ``conftest.py`` and package ``__init__.py`` files beside it in the
   repository are not staged (see docs/v3/SECURITY_BOUNDARIES_V3_3.md).
@@ -129,6 +132,7 @@ import builtins
 import json
 import re
 import socket
+import threading
 from pathlib import PurePath
 from typing import Any, Mapping
 
@@ -395,6 +399,9 @@ class SplitClient:
     def __init__(self, sock: socket.socket) -> None:
         self._sock = sock
         self._stream = sock.makefile("rwb")
+        # One request and its response at a time, whatever the caller's
+        # threads do.
+        self._lock = threading.Lock()
 
     def close(self) -> None:
         for resource in (self._stream, self._sock):
@@ -408,9 +415,10 @@ class SplitClient:
         if len(data) > MAX_FRAME_BYTES:
             raise SplitProtocolError("request frame exceeds the bound")
         try:
-            self._stream.write(data + b"\n")
-            self._stream.flush()
-            line = self._stream.readline(MAX_FRAME_BYTES + 1)
+            with self._lock:
+                self._stream.write(data + b"\n")
+                self._stream.flush()
+                line = self._stream.readline(MAX_FRAME_BYTES + 1)
         except OSError as exc:
             raise SplitProtocolError(f"worker_transport_failed:{exc}") from exc
         if not line:
@@ -976,6 +984,7 @@ import os
 import runpy
 import socket
 import sys
+import threading
 import types
 import warnings
 
@@ -1031,11 +1040,19 @@ except OSError as exc:
          "evaluation_split_worker_unavailable: %s" % (exc,))
 
 
+# One request and its response at a time. A test that calls the
+# submission from several threads (a ThreadPoolExecutor) would otherwise
+# interleave frames on the one socket and read another thread's answer.
+REQUEST_LOCK = threading.Lock()
+
+
 def request(payload):
+    data = json.dumps(payload).encode("utf-8") + b"\n"
     try:
-        stream.write(json.dumps(payload).encode("utf-8") + b"\n")
-        stream.flush()
-        line = stream.readline(MAX_FRAME + 1)
+        with REQUEST_LOCK:
+            stream.write(data)
+            stream.flush()
+            line = stream.readline(MAX_FRAME + 1)
     except OSError:
         fail(SPLIT_LOST_EXIT, "evaluation_split_worker_lost")
     if not line or len(line) > MAX_FRAME:
