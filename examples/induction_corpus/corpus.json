@@ -1,0 +1,8574 @@
+{
+ "kind": "sis_induction_corpus",
+ "targets": [
+  {
+   "category": "linear",
+   "name": "lin_2a_b_1",
+   "reference": {
+    "args": [
+     {
+      "args": [
+       {
+        "args": [
+         {
+          "op": "const",
+          "value": 2
+         },
+         {
+          "name": "a",
+          "op": "field"
+         }
+        ],
+        "op": "mul"
+       },
+       {
+        "name": "b",
+        "op": "field"
+       }
+      ],
+      "op": "add"
+     },
+     {
+      "op": "const",
+      "value": 1
+     }
+    ],
+    "op": "add"
+   },
+   "seed": 1742778656,
+   "train": [
+    {
+     "inputs": {
+      "a": 0,
+      "b": 4
+     },
+     "output": 5
+    },
+    {
+     "inputs": {
+      "a": -9,
+      "b": 2
+     },
+     "output": -15
+    },
+    {
+     "inputs": {
+      "a": -9,
+      "b": -9
+     },
+     "output": -26
+    },
+    {
+     "inputs": {
+      "a": -6,
+      "b": 6
+     },
+     "output": -5
+    },
+    {
+     "inputs": {
+      "a": -6,
+      "b": 1
+     },
+     "output": -10
+    },
+    {
+     "inputs": {
+      "a": 4,
+      "b": -7
+     },
+     "output": 2
+    },
+    {
+     "inputs": {
+      "a": 1,
+      "b": -6
+     },
+     "output": -3
+    },
+    {
+     "inputs": {
+      "a": 5,
+      "b": 2
+     },
+     "output": 13
+    },
+    {
+     "inputs": {
+      "a": 5,
+      "b": 8
+     },
+     "output": 19
+    },
+    {
+     "inputs": {
+      "a": 7,
+      "b": 9
+     },
+     "output": 24
+    }
+   ],
+   "validation": [
+    {
+     "inputs": {
+      "a": 4,
+      "b": -1
+     },
+     "output": 8
+    },
+    {
+     "inputs": {
+      "a": -3,
+      "b": 3
+     },
+     "output": -2
+    },
+    {
+     "inputs": {
+      "a": 2,
+      "b": 6
+     },
+     "output": 11
+    },
+    {
+     "inputs": {
+      "a": 4,
+      "b": -9
+     },
+     "output": 0
+    },
+    {
+     "inputs": {
+      "a": -4,
+      "b": 6
+     },
+     "output": -1
+    },
+    {
+     "inputs": {
+      "a": -7,
+      "b": 6
+     },
+     "output": -7
+    }
+   ]
+  },
+  {
+   "category": "linear",
+   "name": "lin_3a_2b",
+   "reference": {
+    "args": [
+     {
+      "args": [
+       {
+        "op": "const",
+        "value": 3
+       },
+       {
+        "name": "a",
+        "op": "field"
+       }
+      ],
+      "op": "mul"
+     },
+     {
+      "args": [
+       {
+        "op": "const",
+        "value": 2
+       },
+       {
+        "name": "b",
+        "op": "field"
+       }
+      ],
+      "op": "mul"
+     }
+    ],
+    "op": "add"
+   },
+   "seed": 3015734251,
+   "train": [
+    {
+     "inputs": {
+      "a": 7,
+      "b": 8
+     },
+     "output": 37
+    },
+    {
+     "inputs": {
+      "a": 2,
+      "b": 1
+     },
+     "output": 8
+    },
+    {
+     "inputs": {
+      "a": -6,
+      "b": -8
+     },
+     "output": -34
+    },
+    {
+     "inputs": {
+      "a": 3,
+      "b": -8
+     },
+     "output": -7
+    },
+    {
+     "inputs": {
+      "a": -4,
+      "b": 6
+     },
+     "output": 0
+    },
+    {
+     "inputs": {
+      "a": 4,
+      "b": 0
+     },
+     "output": 12
+    },
+    {
+     "inputs": {
+      "a": 7,
+      "b": 9
+     },
+     "output": 39
+    },
+    {
+     "inputs": {
+      "a": -1,
+      "b": -4
+     },
+     "output": -11
+    },
+    {
+     "inputs": {
+      "a": -5,
+      "b": 3
+     },
+     "output": -9
+    },
+    {
+     "inputs": {
+      "a": -8,
+      "b": 6
+     },
+     "output": -12
+    }
+   ],
+   "validation": [
+    {
+     "inputs": {
+      "a": 5,
+      "b": 4
+     },
+     "output": 23
+    },
+    {
+     "inputs": {
+      "a": 8,
+      "b": -9
+     },
+     "output": 6
+    },
+    {
+     "inputs": {
+      "a": -8,
+      "b": 2
+     },
+     "output": -20
+    },
+    {
+     "inputs": {
+      "a": -8,
+      "b": -4
+     },
+     "output": -32
+    },
+    {
+     "inputs": {
+      "a": 2,
+      "b": -8
+     },
+     "output": -10
+    },
+    {
+     "inputs": {
+      "a": -6,
+      "b": 9
+     },
+     "output": 0
+    }
+   ]
+  },
+  {
+   "category": "linear",
+   "name": "lin_a_minus_b_5",
+   "reference": {
+    "args": [
+     {
+      "args": [
+       {
+        "name": "a",
+        "op": "field"
+       },
+       {
+        "name": "b",
+        "op": "field"
+       }
+      ],
+      "op": "sub"
+     },
+     {
+      "op": "const",
+      "value": 5
+     }
+    ],
+    "op": "add"
+   },
+   "seed": 515255806,
+   "train": [
+    {
+     "inputs": {
+      "a": -4,
+      "b": -2
+     },
+     "output": 3
+    },
+    {
+     "inputs": {
+      "a": -2,
+      "b": -1
+     },
+     "output": 4
+    },
+    {
+     "inputs": {
+      "a": -1,
+      "b": -9
+     },
+     "output": 13
+    },
+    {
+     "inputs": {
+      "a": -6,
+      "b": -2
+     },
+     "output": 1
+    },
+    {
+     "inputs": {
+      "a": -6,
+      "b": -7
+     },
+     "output": 6
+    },
+    {
+     "inputs": {
+      "a": -2,
+      "b": 1
+     },
+     "output": 2
+    },
+    {
+     "inputs": {
+      "a": -3,
+      "b": 2
+     },
+     "output": 0
+    },
+    {
+     "inputs": {
+      "a": 9,
+      "b": -5
+     },
+     "output": 19
+    },
+    {
+     "inputs": {
+      "a": 5,
+      "b": 1
+     },
+     "output": 9
+    },
+    {
+     "inputs": {
+      "a": -6,
+      "b": -3
+     },
+     "output": 2
+    }
+   ],
+   "validation": [
+    {
+     "inputs": {
+      "a": -2,
+      "b": 5
+     },
+     "output": -2
+    },
+    {
+     "inputs": {
+      "a": -9,
+      "b": 0
+     },
+     "output": -4
+    },
+    {
+     "inputs": {
+      "a": 2,
+      "b": -1
+     },
+     "output": 8
+    },
+    {
+     "inputs": {
+      "a": 2,
+      "b": 4
+     },
+     "output": 3
+    },
+    {
+     "inputs": {
+      "a": 2,
+      "b": -2
+     },
+     "output": 9
+    },
+    {
+     "inputs": {
+      "a": -9,
+      "b": -8
+     },
+     "output": 4
+    }
+   ]
+  },
+  {
+   "category": "linear",
+   "name": "lin_4a_minus_3",
+   "reference": {
+    "args": [
+     {
+      "args": [
+       {
+        "op": "const",
+        "value": 4
+       },
+       {
+        "name": "a",
+        "op": "field"
+       }
+      ],
+      "op": "mul"
+     },
+     {
+      "op": "const",
+      "value": 3
+     }
+    ],
+    "op": "sub"
+   },
+   "seed": 2021143799,
+   "train": [
+    {
+     "inputs": {
+      "a": 1,
+      "d": 0
+     },
+     "output": 1
+    },
+    {
+     "inputs": {
+      "a": -8,
+      "d": 2
+     },
+     "output": -35
+    },
+    {
+     "inputs": {
+      "a": -4,
+      "d": 3
+     },
+     "output": -19
+    },
+    {
+     "inputs": {
+      "a": 3,
+      "d": -5
+     },
+     "output": 9
+    },
+    {
+     "inputs": {
+      "a": -1,
+      "d": -8
+     },
+     "output": -7
+    },
+    {
+     "inputs": {
+      "a": -1,
+      "d": -7
+     },
+     "output": -7
+    },
+    {
+     "inputs": {
+      "a": 0,
+      "d": -2
+     },
+     "output": -3
+    },
+    {
+     "inputs": {
+      "a": -4,
+      "d": -8
+     },
+     "output": -19
+    },
+    {
+     "inputs": {
+      "a": 2,
+      "d": 6
+     },
+     "output": 5
+    },
+    {
+     "inputs": {
+      "a": -2,
+      "d": 0
+     },
+     "output": -11
+    }
+   ],
+   "validation": [
+    {
+     "inputs": {
+      "a": 9,
+      "d": -1
+     },
+     "output": 33
+    },
+    {
+     "inputs": {
+      "a": 5,
+      "d": 9
+     },
+     "output": 17
+    },
+    {
+     "inputs": {
+      "a": -9,
+      "d": -3
+     },
+     "output": -39
+    },
+    {
+     "inputs": {
+      "a": -1,
+      "d": -1
+     },
+     "output": -7
+    },
+    {
+     "inputs": {
+      "a": 3,
+      "d": 8
+     },
+     "output": 9
+    },
+    {
+     "inputs": {
+      "a": -9,
+      "d": -5
+     },
+     "output": -39
+    }
+   ]
+  },
+  {
+   "category": "linear",
+   "name": "lin_a_b_c",
+   "reference": {
+    "args": [
+     {
+      "args": [
+       {
+        "name": "a",
+        "op": "field"
+       },
+       {
+        "name": "b",
+        "op": "field"
+       }
+      ],
+      "op": "add"
+     },
+     {
+      "name": "c",
+      "op": "field"
+     }
+    ],
+    "op": "add"
+   },
+   "seed": 3591286306,
+   "train": [
+    {
+     "inputs": {
+      "a": -1,
+      "b": 4,
+      "c": -1
+     },
+     "output": 2
+    },
+    {
+     "inputs": {
+      "a": -9,
+      "b": 2,
+      "c": 9
+     },
+     "output": 2
+    },
+    {
+     "inputs": {
+      "a": -3,
+      "b": -5,
+      "c": 5
+     },
+     "output": -3
+    },
+    {
+     "inputs": {
+      "a": -4,
+      "b": 1,
+      "c": -1
+     },
+     "output": -4
+    },
+    {
+     "inputs": {
+      "a": 1,
+      "b": 2,
+      "c": -7
+     },
+     "output": -4
+    },
+    {
+     "inputs": {
+      "a": 1,
+      "b": -3,
+      "c": -7
+     },
+     "output": -9
+    },
+    {
+     "inputs": {
+      "a": -8,
+      "b": 8,
+      "c": 9
+     },
+     "output": 9
+    },
+    {
+     "inputs": {
+      "a": 5,
+      "b": 1,
+      "c": 4
+     },
+     "output": 10
+    },
+    {
+     "inputs": {
+      "a": 5,
+      "b": -6,
+      "c": 4
+     },
+     "output": 3
+    },
+    {
+     "inputs": {
+      "a": -3,
+      "b": 3,
+      "c": -2
+     },
+     "output": -2
+    }
+   ],
+   "validation": [
+    {
+     "inputs": {
+      "a": -5,
+      "b": 6,
+      "c": 0
+     },
+     "output": 1
+    },
+    {
+     "inputs": {
+      "a": 8,
+      "b": 0,
+      "c": 7
+     },
+     "output": 15
+    },
+    {
+     "inputs": {
+      "a": 5,
+      "b": -3,
+      "c": 3
+     },
+     "output": 5
+    },
+    {
+     "inputs": {
+      "a": -4,
+      "b": -1,
+      "c": -5
+     },
+     "output": -10
+    },
+    {
+     "inputs": {
+      "a": -6,
+      "b": -9,
+      "c": 3
+     },
+     "output": -12
+    },
+    {
+     "inputs": {
+      "a": 4,
+      "b": -3,
+      "c": -7
+     },
+     "output": -6
+    }
+   ]
+  },
+  {
+   "category": "linear",
+   "name": "lin_2a_minus_b_minus_c",
+   "reference": {
+    "args": [
+     {
+      "args": [
+       {
+        "args": [
+         {
+          "op": "const",
+          "value": 2
+         },
+         {
+          "name": "a",
+          "op": "field"
+         }
+        ],
+        "op": "mul"
+       },
+       {
+        "name": "b",
+        "op": "field"
+       }
+      ],
+      "op": "sub"
+     },
+     {
+      "name": "c",
+      "op": "field"
+     }
+    ],
+    "op": "sub"
+   },
+   "seed": 4055507197,
+   "train": [
+    {
+     "inputs": {
+      "a": -8,
+      "b": 5,
+      "c": -3
+     },
+     "output": -18
+    },
+    {
+     "inputs": {
+      "a": -6,
+      "b": 9,
+      "c": -5
+     },
+     "output": -16
+    },
+    {
+     "inputs": {
+      "a": 9,
+      "b": -2,
+      "c": -6
+     },
+     "output": 26
+    },
+    {
+     "inputs": {
+      "a": 8,
+      "b": -4,
+      "c": 5
+     },
+     "output": 15
+    },
+    {
+     "inputs": {
+      "a": 8,
+      "b": 0,
+      "c": 3
+     },
+     "output": 13
+    },
+    {
+     "inputs": {
+      "a": -9,
+      "b": -6,
+      "c": -2
+     },
+     "output": -10
+    },
+    {
+     "inputs": {
+      "a": -2,
+      "b": 8,
+      "c": 2
+     },
+     "output": -14
+    },
+    {
+     "inputs": {
+      "a": -1,
+      "b": -7,
+      "c": -8
+     },
+     "output": 13
+    },
+    {
+     "inputs": {
+      "a": 1,
+      "b": 3,
+      "c": 3
+     },
+     "output": -4
+    },
+    {
+     "inputs": {
+      "a": -7,
+      "b": 4,
+      "c": 8
+     },
+     "output": -26
+    }
+   ],
+   "validation": [
+    {
+     "inputs": {
+      "a": 3,
+      "b": 0,
+      "c": -7
+     },
+     "output": 13
+    },
+    {
+     "inputs": {
+      "a": -4,
+      "b": 4,
+      "c": 9
+     },
+     "output": -21
+    },
+    {
+     "inputs": {
+      "a": -5,
+      "b": 1,
+      "c": -3
+     },
+     "output": -8
+    },
+    {
+     "inputs": {
+      "a": 8,
+      "b": 2,
+      "c": 4
+     },
+     "output": 10
+    },
+    {
+     "inputs": {
+      "a": 4,
+      "b": -8,
+      "c": -8
+     },
+     "output": 24
+    },
+    {
+     "inputs": {
+      "a": -1,
+      "b": 3,
+      "c": -5
+     },
+     "output": 0
+    }
+   ]
+  },
+  {
+   "category": "linear",
+   "name": "lin_5a_7",
+   "reference": {
+    "args": [
+     {
+      "args": [
+       {
+        "op": "const",
+        "value": 5
+       },
+       {
+        "name": "a",
+        "op": "field"
+       }
+      ],
+      "op": "mul"
+     },
+     {
+      "op": "const",
+      "value": 7
+     }
+    ],
+    "op": "add"
+   },
+   "seed": 1321745826,
+   "train": [
+    {
+     "inputs": {
+      "a": -9
+     },
+     "output": -38
+    },
+    {
+     "inputs": {
+      "a": 6
+     },
+     "output": 37
+    },
+    {
+     "inputs": {
+      "a": 0
+     },
+     "output": 7
+    },
+    {
+     "inputs": {
+      "a": 7
+     },
+     "output": 42
+    },
+    {
+     "inputs": {
+      "a": 5
+     },
+     "output": 32
+    },
+    {
+     "inputs": {
+      "a": -8
+     },
+     "output": -33
+    },
+    {
+     "inputs": {
+      "a": -6
+     },
+     "output": -23
+    },
+    {
+     "inputs": {
+      "a": 8
+     },
+     "output": 47
+    },
+    {
+     "inputs": {
+      "a": 3
+     },
+     "output": 22
+    },
+    {
+     "inputs": {
+      "a": -4
+     },
+     "output": -13
+    }
+   ],
+   "validation": [
+    {
+     "inputs": {
+      "a": 1
+     },
+     "output": 12
+    },
+    {
+     "inputs": {
+      "a": 2
+     },
+     "output": 17
+    },
+    {
+     "inputs": {
+      "a": -1
+     },
+     "output": 2
+    },
+    {
+     "inputs": {
+      "a": 9
+     },
+     "output": 52
+    },
+    {
+     "inputs": {
+      "a": -5
+     },
+     "output": -18
+    },
+    {
+     "inputs": {
+      "a": -2
+     },
+     "output": -3
+    }
+   ]
+  },
+  {
+   "category": "linear",
+   "name": "lin_3b_minus_a",
+   "reference": {
+    "args": [
+     {
+      "args": [
+       {
+        "op": "const",
+        "value": 3
+       },
+       {
+        "name": "b",
+        "op": "field"
+       }
+      ],
+      "op": "mul"
+     },
+     {
+      "name": "a",
+      "op": "field"
+     }
+    ],
+    "op": "sub"
+   },
+   "seed": 2254907622,
+   "train": [
+    {
+     "inputs": {
+      "a": -1,
+      "b": -1
+     },
+     "output": -2
+    },
+    {
+     "inputs": {
+      "a": -5,
+      "b": 1
+     },
+     "output": 8
+    },
+    {
+     "inputs": {
+      "a": -6,
+      "b": -2
+     },
+     "output": 0
+    },
+    {
+     "inputs": {
+      "a": 3,
+      "b": 2
+     },
+     "output": 3
+    },
+    {
+     "inputs": {
+      "a": -7,
+      "b": 1
+     },
+     "output": 10
+    },
+    {
+     "inputs": {
+      "a": -3,
+      "b": -8
+     },
+     "output": -21
+    },
+    {
+     "inputs": {
+      "a": 8,
+      "b": -4
+     },
+     "output": -20
+    },
+    {
+     "inputs": {
+      "a": 9,
+      "b": 6
+     },
+     "output": 9
+    },
+    {
+     "inputs": {
+      "a": -9,
+      "b": 2
+     },
+     "output": 15
+    },
+    {
+     "inputs": {
+      "a": -8,
+      "b": 6
+     },
+     "output": 26
+    }
+   ],
+   "validation": [
+    {
+     "inputs": {
+      "a": 9,
+      "b": -9
+     },
+     "output": -36
+    },
+    {
+     "inputs": {
+      "a": -6,
+      "b": -8
+     },
+     "output": -18
+    },
+    {
+     "inputs": {
+      "a": 3,
+      "b": -6
+     },
+     "output": -21
+    },
+    {
+     "inputs": {
+      "a": 6,
+      "b": 9
+     },
+     "output": 21
+    },
+    {
+     "inputs": {
+      "a": 7,
+      "b": 7
+     },
+     "output": 14
+    },
+    {
+     "inputs": {
+      "a": 0,
+      "b": -1
+     },
+     "output": -3
+    }
+   ]
+  },
+  {
+   "category": "linear",
+   "name": "lin_a_2b_m3c_4",
+   "reference": {
+    "args": [
+     {
+      "args": [
+       {
+        "args": [
+         {
+          "name": "a",
+          "op": "field"
+         },
+         {
+          "args": [
+           {
+            "op": "const",
+            "value": 2
+           },
+           {
+            "name": "b",
+            "op": "field"
+           }
+          ],
+          "op": "mul"
+         }
+        ],
+        "op": "add"
+       },
+       {
+        "args": [
+         {
+          "op": "const",
+          "value": 3
+         },
+         {
+          "name": "c",
+          "op": "field"
+         }
+        ],
+        "op": "mul"
+       }
+      ],
+      "op": "sub"
+     },
+     {
+      "op": "const",
+      "value": 4
+     }
+    ],
+    "op": "add"
+   },
+   "seed": 1861414070,
+   "train": [
+    {
+     "inputs": {
+      "a": 0,
+      "b": 7,
+      "c": -4
+     },
+     "output": 30
+    },
+    {
+     "inputs": {
+      "a": -5,
+      "b": 9,
+      "c": 6
+     },
+     "output": -1
+    },
+    {
+     "inputs": {
+      "a": -8,
+      "b": 0,
+      "c": 6
+     },
+     "output": -22
+    },
+    {
+     "inputs": {
+      "a": 6,
+      "b": -2,
+      "c": 0
+     },
+     "output": 6
+    },
+    {
+     "inputs": {
+      "a": 9,
+      "b": -3,
+      "c": 1
+     },
+     "output": 4
+    },
+    {
+     "inputs": {
+      "a": -9,
+      "b": -3,
+      "c": -2
+     },
+     "output": -5
+    },
+    {
+     "inputs": {
+      "a": -4,
+      "b": -2,
+      "c": 2
+     },
+     "output": -10
+    },
+    {
+     "inputs": {
+      "a": 3,
+      "b": 5,
+      "c": 1
+     },
+     "output": 14
+    },
+    {
+     "inputs": {
+      "a": -3,
+      "b": -2,
+      "c": -3
+     },
+     "output": 6
+    },
+    {
+     "inputs": {
+      "a": -4,
+      "b": -7,
+      "c": -1
+     },
+     "output": -11
+    }
+   ],
+   "validation": [
+    {
+     "inputs": {
+      "a": -6,
+      "b": -8,
+      "c": -9
+     },
+     "output": 9
+    },
+    {
+     "inputs": {
+      "a": -6,
+      "b": -3,
+      "c": 3
+     },
+     "output": -17
+    },
+    {
+     "inputs": {
+      "a": -7,
+      "b": -9,
+      "c": 6
+     },
+     "output": -39
+    },
+    {
+     "inputs": {
+      "a": 6,
+      "b": 5,
+      "c": 8
+     },
+     "output": -4
+    },
+    {
+     "inputs": {
+      "a": 7,
+      "b": 5,
+      "c": 3
+     },
+     "output": 12
+    },
+    {
+     "inputs": {
+      "a": 9,
+      "b": -9,
+      "c": 0
+     },
+     "output": -5
+    }
+   ]
+  },
+  {
+   "category": "linear",
+   "name": "lin_10_minus_a",
+   "reference": {
+    "args": [
+     {
+      "op": "const",
+      "value": 10
+     },
+     {
+      "name": "a",
+      "op": "field"
+     }
+    ],
+    "op": "sub"
+   },
+   "seed": 235686367,
+   "train": [
+    {
+     "inputs": {
+      "a": 7,
+      "b": 4
+     },
+     "output": 3
+    },
+    {
+     "inputs": {
+      "a": 3,
+      "b": -6
+     },
+     "output": 7
+    },
+    {
+     "inputs": {
+      "a": 0,
+      "b": -8
+     },
+     "output": 10
+    },
+    {
+     "inputs": {
+      "a": 1,
+      "b": -3
+     },
+     "output": 9
+    },
+    {
+     "inputs": {
+      "a": 8,
+      "b": 7
+     },
+     "output": 2
+    },
+    {
+     "inputs": {
+      "a": -9,
+      "b": -9
+     },
+     "output": 19
+    },
+    {
+     "inputs": {
+      "a": 6,
+      "b": 9
+     },
+     "output": 4
+    },
+    {
+     "inputs": {
+      "a": 9,
+      "b": 2
+     },
+     "output": 1
+    },
+    {
+     "inputs": {
+      "a": -3,
+      "b": -6
+     },
+     "output": 13
+    },
+    {
+     "inputs": {
+      "a": 2,
+      "b": -4
+     },
+     "output": 8
+    }
+   ],
+   "validation": [
+    {
+     "inputs": {
+      "a": -5,
+      "b": -6
+     },
+     "output": 15
+    },
+    {
+     "inputs": {
+      "a": 7,
+      "b": -6
+     },
+     "output": 3
+    },
+    {
+     "inputs": {
+      "a": -2,
+      "b": 5
+     },
+     "output": 12
+    },
+    {
+     "inputs": {
+      "a": 3,
+      "b": 0
+     },
+     "output": 7
+    },
+    {
+     "inputs": {
+      "a": 6,
+      "b": 2
+     },
+     "output": 4
+    },
+    {
+     "inputs": {
+      "a": -7,
+      "b": 1
+     },
+     "output": 17
+    }
+   ]
+  },
+  {
+   "category": "nonlinear",
+   "name": "nl_a_times_b",
+   "reference": {
+    "args": [
+     {
+      "name": "a",
+      "op": "field"
+     },
+     {
+      "name": "b",
+      "op": "field"
+     }
+    ],
+    "op": "mul"
+   },
+   "seed": 1244724367,
+   "train": [
+    {
+     "inputs": {
+      "a": -8,
+      "b": 5
+     },
+     "output": -40
+    },
+    {
+     "inputs": {
+      "a": -7,
+      "b": 3
+     },
+     "output": -21
+    },
+    {
+     "inputs": {
+      "a": -6,
+      "b": 0
+     },
+     "output": 0
+    },
+    {
+     "inputs": {
+      "a": -3,
+      "b": 7
+     },
+     "output": -21
+    },
+    {
+     "inputs": {
+      "a": 2,
+      "b": -5
+     },
+     "output": -10
+    },
+    {
+     "inputs": {
+      "a": 9,
+      "b": -8
+     },
+     "output": -72
+    },
+    {
+     "inputs": {
+      "a": 4,
+      "b": 8
+     },
+     "output": 32
+    },
+    {
+     "inputs": {
+      "a": -6,
+      "b": 3
+     },
+     "output": -18
+    },
+    {
+     "inputs": {
+      "a": -2,
+      "b": -3
+     },
+     "output": 6
+    },
+    {
+     "inputs": {
+      "a": 0,
+      "b": 6
+     },
+     "output": 0
+    }
+   ],
+   "validation": [
+    {
+     "inputs": {
+      "a": -1,
+      "b": -6
+     },
+     "output": 6
+    },
+    {
+     "inputs": {
+      "a": 0,
+      "b": -6
+     },
+     "output": 0
+    },
+    {
+     "inputs": {
+      "a": 5,
+      "b": 0
+     },
+     "output": 0
+    },
+    {
+     "inputs": {
+      "a": -3,
+      "b": 3
+     },
+     "output": -9
+    },
+    {
+     "inputs": {
+      "a": 1,
+      "b": -6
+     },
+     "output": -6
+    },
+    {
+     "inputs": {
+      "a": -6,
+      "b": 4
+     },
+     "output": -24
+    }
+   ]
+  },
+  {
+   "category": "nonlinear",
+   "name": "nl_ab_plus_c",
+   "reference": {
+    "args": [
+     {
+      "args": [
+       {
+        "name": "a",
+        "op": "field"
+       },
+       {
+        "name": "b",
+        "op": "field"
+       }
+      ],
+      "op": "mul"
+     },
+     {
+      "name": "c",
+      "op": "field"
+     }
+    ],
+    "op": "add"
+   },
+   "seed": 2862523229,
+   "train": [
+    {
+     "inputs": {
+      "a": -8,
+      "b": 3,
+      "c": -5
+     },
+     "output": -29
+    },
+    {
+     "inputs": {
+      "a": -6,
+      "b": 2,
+      "c": 2
+     },
+     "output": -10
+    },
+    {
+     "inputs": {
+      "a": -3,
+      "b": 3,
+      "c": 8
+     },
+     "output": -1
+    },
+    {
+     "inputs": {
+      "a": -6,
+      "b": -6,
+      "c": -3
+     },
+     "output": 33
+    },
+    {
+     "inputs": {
+      "a": 3,
+      "b": 1,
+      "c": -9
+     },
+     "output": -6
+    },
+    {
+     "inputs": {
+      "a": 5,
+      "b": 8,
+      "c": 8
+     },
+     "output": 48
+    },
+    {
+     "inputs": {
+      "a": -6,
+      "b": 4,
+      "c": -8
+     },
+     "output": -32
+    },
+    {
+     "inputs": {
+      "a": -2,
+      "b": 7,
+      "c": -3
+     },
+     "output": -17
+    },
+    {
+     "inputs": {
+      "a": 6,
+      "b": -4,
+      "c": -9
+     },
+     "output": -33
+    },
+    {
+     "inputs": {
+      "a": 3,
+      "b": 9,
+      "c": -7
+     },
+     "output": 20
+    }
+   ],
+   "validation": [
+    {
+     "inputs": {
+      "a": 6,
+      "b": 4,
+      "c": 9
+     },
+     "output": 33
+    },
+    {
+     "inputs": {
+      "a": -2,
+      "b": 0,
+      "c": 1
+     },
+     "output": 1
+    },
+    {
+     "inputs": {
+      "a": 5,
+      "b": 0,
+      "c": -1
+     },
+     "output": -1
+    },
+    {
+     "inputs": {
+      "a": 2,
+      "b": -8,
+      "c": 0
+     },
+     "output": -16
+    },
+    {
+     "inputs": {
+      "a": 0,
+      "b": 5,
+      "c": 3
+     },
+     "output": 3
+    },
+    {
+     "inputs": {
+      "a": 1,
+      "b": -5,
+      "c": 2
+     },
+     "output": -3
+    }
+   ]
+  },
+  {
+   "category": "nonlinear",
+   "name": "nl_a_squared",
+   "reference": {
+    "args": [
+     {
+      "name": "a",
+      "op": "field"
+     },
+     {
+      "name": "a",
+      "op": "field"
+     }
+    ],
+    "op": "mul"
+   },
+   "seed": 886247782,
+   "train": [
+    {
+     "inputs": {
+      "a": -1,
+      "b": 9
+     },
+     "output": 1
+    },
+    {
+     "inputs": {
+      "a": 1,
+      "b": 9
+     },
+     "output": 1
+    },
+    {
+     "inputs": {
+      "a": -5,
+      "b": 6
+     },
+     "output": 25
+    },
+    {
+     "inputs": {
+      "a": 2,
+      "b": -8
+     },
+     "output": 4
+    },
+    {
+     "inputs": {
+      "a": -9,
+      "b": -4
+     },
+     "output": 81
+    },
+    {
+     "inputs": {
+      "a": 8,
+      "b": 0
+     },
+     "output": 64
+    },
+    {
+     "inputs": {
+      "a": -3,
+      "b": 6
+     },
+     "output": 9
+    },
+    {
+     "inputs": {
+      "a": -1,
+      "b": -9
+     },
+     "output": 1
+    },
+    {
+     "inputs": {
+      "a": 5,
+      "b": -2
+     },
+     "output": 25
+    },
+    {
+     "inputs": {
+      "a": -5,
+      "b": 5
+     },
+     "output": 25
+    }
+   ],
+   "validation": [
+    {
+     "inputs": {
+      "a": -8,
+      "b": 0
+     },
+     "output": 64
+    },
+    {
+     "inputs": {
+      "a": -4,
+      "b": 5
+     },
+     "output": 16
+    },
+    {
+     "inputs": {
+      "a": 8,
+      "b": -4
+     },
+     "output": 64
+    },
+    {
+     "inputs": {
+      "a": -6,
+      "b": -4
+     },
+     "output": 36
+    },
+    {
+     "inputs": {
+      "a": -7,
+      "b": -9
+     },
+     "output": 49
+    },
+    {
+     "inputs": {
+      "a": 5,
+      "b": 4
+     },
+     "output": 25
+    }
+   ]
+  },
+  {
+   "category": "nonlinear",
+   "name": "nl_a_sq_plus_b",
+   "reference": {
+    "args": [
+     {
+      "args": [
+       {
+        "name": "a",
+        "op": "field"
+       },
+       {
+        "name": "a",
+        "op": "field"
+       }
+      ],
+      "op": "mul"
+     },
+     {
+      "name": "b",
+      "op": "field"
+     }
+    ],
+    "op": "add"
+   },
+   "seed": 2172907113,
+   "train": [
+    {
+     "inputs": {
+      "a": -7,
+      "b": 4
+     },
+     "output": 53
+    },
+    {
+     "inputs": {
+      "a": -3,
+      "b": 7
+     },
+     "output": 16
+    },
+    {
+     "inputs": {
+      "a": 3,
+      "b": -4
+     },
+     "output": 5
+    },
+    {
+     "inputs": {
+      "a": 6,
+      "b": 6
+     },
+     "output": 42
+    },
+    {
+     "inputs": {
+      "a": -9,
+      "b": 4
+     },
+     "output": 85
+    },
+    {
+     "inputs": {
+      "a": -9,
+      "b": -4
+     },
+     "output": 77
+    },
+    {
+     "inputs": {
+      "a": 5,
+      "b": 3
+     },
+     "output": 28
+    },
+    {
+     "inputs": {
+      "a": -2,
+      "b": -8
+     },
+     "output": -4
+    },
+    {
+     "inputs": {
+      "a": -7,
+      "b": 7
+     },
+     "output": 56
+    },
+    {
+     "inputs": {
+      "a": -7,
+      "b": -3
+     },
+     "output": 46
+    }
+   ],
+   "validation": [
+    {
+     "inputs": {
+      "a": -5,
+      "b": 2
+     },
+     "output": 27
+    },
+    {
+     "inputs": {
+      "a": -1,
+      "b": 1
+     },
+     "output": 2
+    },
+    {
+     "inputs": {
+      "a": -3,
+      "b": 0
+     },
+     "output": 9
+    },
+    {
+     "inputs": {
+      "a": -8,
+      "b": 0
+     },
+     "output": 64
+    },
+    {
+     "inputs": {
+      "a": -1,
+      "b": -2
+     },
+     "output": -1
+    },
+    {
+     "inputs": {
+      "a": -8,
+      "b": -5
+     },
+     "output": 59
+    }
+   ]
+  },
+  {
+   "category": "nonlinear",
+   "name": "nl_max_ab",
+   "reference": {
+    "args": [
+     {
+      "name": "a",
+      "op": "field"
+     },
+     {
+      "name": "b",
+      "op": "field"
+     }
+    ],
+    "op": "max"
+   },
+   "seed": 2752679049,
+   "train": [
+    {
+     "inputs": {
+      "a": -3,
+      "b": 6
+     },
+     "output": 6
+    },
+    {
+     "inputs": {
+      "a": -1,
+      "b": -6
+     },
+     "output": -1
+    },
+    {
+     "inputs": {
+      "a": 3,
+      "b": -6
+     },
+     "output": 3
+    },
+    {
+     "inputs": {
+      "a": -8,
+      "b": 9
+     },
+     "output": 9
+    },
+    {
+     "inputs": {
+      "a": -2,
+      "b": 8
+     },
+     "output": 8
+    },
+    {
+     "inputs": {
+      "a": -7,
+      "b": -6
+     },
+     "output": -6
+    },
+    {
+     "inputs": {
+      "a": -7,
+      "b": -4
+     },
+     "output": -4
+    },
+    {
+     "inputs": {
+      "a": 9,
+      "b": 7
+     },
+     "output": 9
+    },
+    {
+     "inputs": {
+      "a": 4,
+      "b": 0
+     },
+     "output": 4
+    },
+    {
+     "inputs": {
+      "a": -9,
+      "b": 9
+     },
+     "output": 9
+    }
+   ],
+   "validation": [
+    {
+     "inputs": {
+      "a": -1,
+      "b": -8
+     },
+     "output": -1
+    },
+    {
+     "inputs": {
+      "a": 4,
+      "b": 6
+     },
+     "output": 6
+    },
+    {
+     "inputs": {
+      "a": 9,
+      "b": -5
+     },
+     "output": 9
+    },
+    {
+     "inputs": {
+      "a": -8,
+      "b": -6
+     },
+     "output": -6
+    },
+    {
+     "inputs": {
+      "a": 5,
+      "b": 8
+     },
+     "output": 8
+    },
+    {
+     "inputs": {
+      "a": -2,
+      "b": -3
+     },
+     "output": -2
+    }
+   ]
+  },
+  {
+   "category": "nonlinear",
+   "name": "nl_min_ab_plus_1",
+   "reference": {
+    "args": [
+     {
+      "args": [
+       {
+        "name": "a",
+        "op": "field"
+       },
+       {
+        "name": "b",
+        "op": "field"
+       }
+      ],
+      "op": "min"
+     },
+     {
+      "op": "const",
+      "value": 1
+     }
+    ],
+    "op": "add"
+   },
+   "seed": 426836288,
+   "train": [
+    {
+     "inputs": {
+      "a": -4,
+      "b": 7
+     },
+     "output": -3
+    },
+    {
+     "inputs": {
+      "a": 9,
+      "b": -1
+     },
+     "output": 0
+    },
+    {
+     "inputs": {
+      "a": -8,
+      "b": 6
+     },
+     "output": -7
+    },
+    {
+     "inputs": {
+      "a": 6,
+      "b": -7
+     },
+     "output": -6
+    },
+    {
+     "inputs": {
+      "a": -5,
+      "b": 2
+     },
+     "output": -4
+    },
+    {
+     "inputs": {
+      "a": 5,
+      "b": -8
+     },
+     "output": -7
+    },
+    {
+     "inputs": {
+      "a": 5,
+      "b": 7
+     },
+     "output": 6
+    },
+    {
+     "inputs": {
+      "a": 6,
+      "b": 3
+     },
+     "output": 4
+    },
+    {
+     "inputs": {
+      "a": 9,
+      "b": 4
+     },
+     "output": 5
+    },
+    {
+     "inputs": {
+      "a": -7,
+      "b": -3
+     },
+     "output": -6
+    }
+   ],
+   "validation": [
+    {
+     "inputs": {
+      "a": -8,
+      "b": -6
+     },
+     "output": -7
+    },
+    {
+     "inputs": {
+      "a": 3,
+      "b": 7
+     },
+     "output": 4
+    },
+    {
+     "inputs": {
+      "a": 7,
+      "b": 6
+     },
+     "output": 7
+    },
+    {
+     "inputs": {
+      "a": -7,
+      "b": 8
+     },
+     "output": -6
+    },
+    {
+     "inputs": {
+      "a": -2,
+      "b": 1
+     },
+     "output": -1
+    },
+    {
+     "inputs": {
+      "a": 4,
+      "b": -7
+     },
+     "output": -6
+    }
+   ]
+  },
+  {
+   "category": "nonlinear",
+   "name": "nl_absdiff",
+   "reference": {
+    "args": [
+     {
+      "name": "a",
+      "op": "field"
+     },
+     {
+      "name": "b",
+      "op": "field"
+     }
+    ],
+    "op": "absdiff"
+   },
+   "seed": 2515916534,
+   "train": [
+    {
+     "inputs": {
+      "a": -9,
+      "b": 4
+     },
+     "output": 13
+    },
+    {
+     "inputs": {
+      "a": 1,
+      "b": -1
+     },
+     "output": 2
+    },
+    {
+     "inputs": {
+      "a": -5,
+      "b": -4
+     },
+     "output": 1
+    },
+    {
+     "inputs": {
+      "a": -1,
+      "b": 5
+     },
+     "output": 6
+    },
+    {
+     "inputs": {
+      "a": -7,
+      "b": -4
+     },
+     "output": 3
+    },
+    {
+     "inputs": {
+      "a": 2,
+      "b": 2
+     },
+     "output": 0
+    },
+    {
+     "inputs": {
+      "a": 9,
+      "b": -8
+     },
+     "output": 17
+    },
+    {
+     "inputs": {
+      "a": -4,
+      "b": -2
+     },
+     "output": 2
+    },
+    {
+     "inputs": {
+      "a": -5,
+      "b": -8
+     },
+     "output": 3
+    },
+    {
+     "inputs": {
+      "a": 3,
+      "b": 3
+     },
+     "output": 0
+    }
+   ],
+   "validation": [
+    {
+     "inputs": {
+      "a": 0,
+      "b": -5
+     },
+     "output": 5
+    },
+    {
+     "inputs": {
+      "a": -4,
+      "b": 1
+     },
+     "output": 5
+    },
+    {
+     "inputs": {
+      "a": 3,
+      "b": 6
+     },
+     "output": 3
+    },
+    {
+     "inputs": {
+      "a": -9,
+      "b": -2
+     },
+     "output": 7
+    },
+    {
+     "inputs": {
+      "a": 8,
+      "b": 4
+     },
+     "output": 4
+    },
+    {
+     "inputs": {
+      "a": -4,
+      "b": -8
+     },
+     "output": 4
+    }
+   ]
+  },
+  {
+   "category": "nonlinear",
+   "name": "nl_ab_minus_a",
+   "reference": {
+    "args": [
+     {
+      "args": [
+       {
+        "name": "a",
+        "op": "field"
+       },
+       {
+        "name": "b",
+        "op": "field"
+       }
+      ],
+      "op": "mul"
+     },
+     {
+      "name": "a",
+      "op": "field"
+     }
+    ],
+    "op": "sub"
+   },
+   "seed": 3101561773,
+   "train": [
+    {
+     "inputs": {
+      "a": -5,
+      "b": 7
+     },
+     "output": -30
+    },
+    {
+     "inputs": {
+      "a": 0,
+      "b": 2
+     },
+     "output": 0
+    },
+    {
+     "inputs": {
+      "a": 1,
+      "b": -3
+     },
+     "output": -4
+    },
+    {
+     "inputs": {
+      "a": 4,
+      "b": -6
+     },
+     "output": -28
+    },
+    {
+     "inputs": {
+      "a": 8,
+      "b": 5
+     },
+     "output": 32
+    },
+    {
+     "inputs": {
+      "a": 6,
+      "b": 7
+     },
+     "output": 36
+    },
+    {
+     "inputs": {
+      "a": 7,
+      "b": 0
+     },
+     "output": -7
+    },
+    {
+     "inputs": {
+      "a": -5,
+      "b": 5
+     },
+     "output": -20
+    },
+    {
+     "inputs": {
+      "a": -9,
+      "b": -3
+     },
+     "output": 36
+    },
+    {
+     "inputs": {
+      "a": -8,
+      "b": -9
+     },
+     "output": 80
+    }
+   ],
+   "validation": [
+    {
+     "inputs": {
+      "a": -6,
+      "b": 0
+     },
+     "output": 6
+    },
+    {
+     "inputs": {
+      "a": 7,
+      "b": 6
+     },
+     "output": 35
+    },
+    {
+     "inputs": {
+      "a": -9,
+      "b": -8
+     },
+     "output": 81
+    },
+    {
+     "inputs": {
+      "a": -5,
+      "b": -4
+     },
+     "output": 25
+    },
+    {
+     "inputs": {
+      "a": 3,
+      "b": -9
+     },
+     "output": -30
+    },
+    {
+     "inputs": {
+      "a": 6,
+      "b": -6
+     },
+     "output": -42
+    }
+   ]
+  },
+  {
+   "category": "nonlinear",
+   "name": "nl_sum_times_c",
+   "reference": {
+    "args": [
+     {
+      "args": [
+       {
+        "name": "a",
+        "op": "field"
+       },
+       {
+        "name": "b",
+        "op": "field"
+       }
+      ],
+      "op": "add"
+     },
+     {
+      "name": "c",
+      "op": "field"
+     }
+    ],
+    "op": "mul"
+   },
+   "seed": 3966314444,
+   "train": [
+    {
+     "inputs": {
+      "a": 7,
+      "b": -2,
+      "c": -9
+     },
+     "output": -45
+    },
+    {
+     "inputs": {
+      "a": -9,
+      "b": 4,
+      "c": -8
+     },
+     "output": 40
+    },
+    {
+     "inputs": {
+      "a": -3,
+      "b": 8,
+      "c": 2
+     },
+     "output": 10
+    },
+    {
+     "inputs": {
+      "a": -2,
+      "b": -5,
+      "c": -9
+     },
+     "output": 63
+    },
+    {
+     "inputs": {
+      "a": -2,
+      "b": 4,
+      "c": 3
+     },
+     "output": 6
+    },
+    {
+     "inputs": {
+      "a": -1,
+      "b": 8,
+      "c": -2
+     },
+     "output": -14
+    },
+    {
+     "inputs": {
+      "a": -9,
+      "b": -4,
+      "c": 7
+     },
+     "output": -91
+    },
+    {
+     "inputs": {
+      "a": 5,
+      "b": -3,
+      "c": -6
+     },
+     "output": -12
+    },
+    {
+     "inputs": {
+      "a": 3,
+      "b": -3,
+      "c": 1
+     },
+     "output": 0
+    },
+    {
+     "inputs": {
+      "a": -1,
+      "b": 2,
+      "c": 0
+     },
+     "output": 0
+    }
+   ],
+   "validation": [
+    {
+     "inputs": {
+      "a": -6,
+      "b": 7,
+      "c": -6
+     },
+     "output": -6
+    },
+    {
+     "inputs": {
+      "a": -7,
+      "b": 9,
+      "c": 3
+     },
+     "output": 6
+    },
+    {
+     "inputs": {
+      "a": -3,
+      "b": -4,
+      "c": -2
+     },
+     "output": 14
+    },
+    {
+     "inputs": {
+      "a": -7,
+      "b": 5,
+      "c": -5
+     },
+     "output": 10
+    },
+    {
+     "inputs": {
+      "a": -6,
+      "b": 4,
+      "c": 9
+     },
+     "output": -18
+    },
+    {
+     "inputs": {
+      "a": 4,
+      "b": -3,
+      "c": 1
+     },
+     "output": 1
+    }
+   ]
+  },
+  {
+   "category": "nonlinear",
+   "name": "nl_max_abs",
+   "reference": {
+    "args": [
+     {
+      "arg": {
+       "name": "a",
+       "op": "field"
+      },
+      "op": "abs"
+     },
+     {
+      "arg": {
+       "name": "b",
+       "op": "field"
+      },
+      "op": "abs"
+     }
+    ],
+    "op": "max"
+   },
+   "seed": 2035213095,
+   "train": [
+    {
+     "inputs": {
+      "a": -3,
+      "b": -9
+     },
+     "output": 9
+    },
+    {
+     "inputs": {
+      "a": 4,
+      "b": -5
+     },
+     "output": 5
+    },
+    {
+     "inputs": {
+      "a": -5,
+      "b": -9
+     },
+     "output": 9
+    },
+    {
+     "inputs": {
+      "a": -2,
+      "b": -4
+     },
+     "output": 4
+    },
+    {
+     "inputs": {
+      "a": 8,
+      "b": -5
+     },
+     "output": 8
+    },
+    {
+     "inputs": {
+      "a": 9,
+      "b": -5
+     },
+     "output": 9
+    },
+    {
+     "inputs": {
+      "a": 4,
+      "b": -6
+     },
+     "output": 6
+    },
+    {
+     "inputs": {
+      "a": 3,
+      "b": 5
+     },
+     "output": 5
+    },
+    {
+     "inputs": {
+      "a": 6,
+      "b": 6
+     },
+     "output": 6
+    },
+    {
+     "inputs": {
+      "a": -6,
+      "b": 0
+     },
+     "output": 6
+    }
+   ],
+   "validation": [
+    {
+     "inputs": {
+      "a": -9,
+      "b": -4
+     },
+     "output": 9
+    },
+    {
+     "inputs": {
+      "a": -1,
+      "b": 0
+     },
+     "output": 1
+    },
+    {
+     "inputs": {
+      "a": 8,
+      "b": 5
+     },
+     "output": 8
+    },
+    {
+     "inputs": {
+      "a": 1,
+      "b": 1
+     },
+     "output": 1
+    },
+    {
+     "inputs": {
+      "a": -6,
+      "b": -4
+     },
+     "output": 6
+    },
+    {
+     "inputs": {
+      "a": 4,
+      "b": -8
+     },
+     "output": 8
+    }
+   ]
+  },
+  {
+   "category": "divmod",
+   "name": "dm_half",
+   "reference": {
+    "args": [
+     {
+      "name": "a",
+      "op": "field"
+     },
+     {
+      "op": "const",
+      "value": 2
+     }
+    ],
+    "op": "floordiv"
+   },
+   "seed": 1315814053,
+   "train": [
+    {
+     "inputs": {
+      "a": 20
+     },
+     "output": 10
+    },
+    {
+     "inputs": {
+      "a": -19
+     },
+     "output": -10
+    },
+    {
+     "inputs": {
+      "a": 0
+     },
+     "output": 0
+    },
+    {
+     "inputs": {
+      "a": -8
+     },
+     "output": -4
+    },
+    {
+     "inputs": {
+      "a": -11
+     },
+     "output": -6
+    },
+    {
+     "inputs": {
+      "a": -26
+     },
+     "output": -13
+    },
+    {
+     "inputs": {
+      "a": 22
+     },
+     "output": 11
+    },
+    {
+     "inputs": {
+      "a": 24
+     },
+     "output": 12
+    },
+    {
+     "inputs": {
+      "a": 13
+     },
+     "output": 6
+    },
+    {
+     "inputs": {
+      "a": 16
+     },
+     "output": 8
+    }
+   ],
+   "validation": [
+    {
+     "inputs": {
+      "a": 2
+     },
+     "output": 1
+    },
+    {
+     "inputs": {
+      "a": 15
+     },
+     "output": 7
+    },
+    {
+     "inputs": {
+      "a": 26
+     },
+     "output": 13
+    },
+    {
+     "inputs": {
+      "a": -20
+     },
+     "output": -10
+    },
+    {
+     "inputs": {
+      "a": -9
+     },
+     "output": -5
+    },
+    {
+     "inputs": {
+      "a": 18
+     },
+     "output": 9
+    }
+   ]
+  },
+  {
+   "category": "divmod",
+   "name": "dm_mod3",
+   "reference": {
+    "args": [
+     {
+      "name": "a",
+      "op": "field"
+     },
+     {
+      "op": "const",
+      "value": 3
+     }
+    ],
+    "op": "mod"
+   },
+   "seed": 3824941880,
+   "train": [
+    {
+     "inputs": {
+      "a": 23
+     },
+     "output": 2
+    },
+    {
+     "inputs": {
+      "a": -21
+     },
+     "output": 0
+    },
+    {
+     "inputs": {
+      "a": -23
+     },
+     "output": 1
+    },
+    {
+     "inputs": {
+      "a": 17
+     },
+     "output": 2
+    },
+    {
+     "inputs": {
+      "a": 15
+     },
+     "output": 0
+    },
+    {
+     "inputs": {
+      "a": 20
+     },
+     "output": 2
+    },
+    {
+     "inputs": {
+      "a": -25
+     },
+     "output": 2
+    },
+    {
+     "inputs": {
+      "a": 24
+     },
+     "output": 0
+    },
+    {
+     "inputs": {
+      "a": -4
+     },
+     "output": 2
+    },
+    {
+     "inputs": {
+      "a": 18
+     },
+     "output": 0
+    }
+   ],
+   "validation": [
+    {
+     "inputs": {
+      "a": 14
+     },
+     "output": 2
+    },
+    {
+     "inputs": {
+      "a": 30
+     },
+     "output": 0
+    },
+    {
+     "inputs": {
+      "a": -13
+     },
+     "output": 2
+    },
+    {
+     "inputs": {
+      "a": -8
+     },
+     "output": 1
+    },
+    {
+     "inputs": {
+      "a": 21
+     },
+     "output": 0
+    },
+    {
+     "inputs": {
+      "a": -30
+     },
+     "output": 0
+    }
+   ]
+  },
+  {
+   "category": "divmod",
+   "name": "dm_a_div_b",
+   "reference": {
+    "args": [
+     {
+      "name": "a",
+      "op": "field"
+     },
+     {
+      "name": "b",
+      "op": "field"
+     }
+    ],
+    "op": "floordiv"
+   },
+   "seed": 1423946340,
+   "train": [
+    {
+     "inputs": {
+      "a": 42,
+      "b": 8
+     },
+     "output": 5
+    },
+    {
+     "inputs": {
+      "a": 14,
+      "b": 5
+     },
+     "output": 2
+    },
+    {
+     "inputs": {
+      "a": 49,
+      "b": 7
+     },
+     "output": 7
+    },
+    {
+     "inputs": {
+      "a": 22,
+      "b": 2
+     },
+     "output": 11
+    },
+    {
+     "inputs": {
+      "a": 41,
+      "b": 5
+     },
+     "output": 8
+    },
+    {
+     "inputs": {
+      "a": 0,
+      "b": 9
+     },
+     "output": 0
+    },
+    {
+     "inputs": {
+      "a": 42,
+      "b": 6
+     },
+     "output": 7
+    },
+    {
+     "inputs": {
+      "a": 5,
+      "b": 8
+     },
+     "output": 0
+    },
+    {
+     "inputs": {
+      "a": 22,
+      "b": 4
+     },
+     "output": 5
+    },
+    {
+     "inputs": {
+      "a": 34,
+      "b": 2
+     },
+     "output": 17
+    }
+   ],
+   "validation": [
+    {
+     "inputs": {
+      "a": 14,
+      "b": 6
+     },
+     "output": 2
+    },
+    {
+     "inputs": {
+      "a": 19,
+      "b": 2
+     },
+     "output": 9
+    },
+    {
+     "inputs": {
+      "a": 56,
+      "b": 1
+     },
+     "output": 56
+    },
+    {
+     "inputs": {
+      "a": 5,
+      "b": 3
+     },
+     "output": 1
+    },
+    {
+     "inputs": {
+      "a": 22,
+      "b": 6
+     },
+     "output": 3
+    },
+    {
+     "inputs": {
+      "a": 26,
+      "b": 5
+     },
+     "output": 5
+    }
+   ]
+  },
+  {
+   "category": "divmod",
+   "name": "dm_a_mod_b",
+   "reference": {
+    "args": [
+     {
+      "name": "a",
+      "op": "field"
+     },
+     {
+      "name": "b",
+      "op": "field"
+     }
+    ],
+    "op": "mod"
+   },
+   "seed": 2227215163,
+   "train": [
+    {
+     "inputs": {
+      "a": 21,
+      "b": 1
+     },
+     "output": 0
+    },
+    {
+     "inputs": {
+      "a": 35,
+      "b": 6
+     },
+     "output": 5
+    },
+    {
+     "inputs": {
+      "a": 13,
+      "b": 8
+     },
+     "output": 5
+    },
+    {
+     "inputs": {
+      "a": 57,
+      "b": 4
+     },
+     "output": 1
+    },
+    {
+     "inputs": {
+      "a": 50,
+      "b": 2
+     },
+     "output": 0
+    },
+    {
+     "inputs": {
+      "a": 39,
+      "b": 7
+     },
+     "output": 4
+    },
+    {
+     "inputs": {
+      "a": 53,
+      "b": 5
+     },
+     "output": 3
+    },
+    {
+     "inputs": {
+      "a": 31,
+      "b": 4
+     },
+     "output": 3
+    },
+    {
+     "inputs": {
+      "a": 24,
+      "b": 8
+     },
+     "output": 0
+    },
+    {
+     "inputs": {
+      "a": 41,
+      "b": 7
+     },
+     "output": 6
+    }
+   ],
+   "validation": [
+    {
+     "inputs": {
+      "a": 33,
+      "b": 1
+     },
+     "output": 0
+    },
+    {
+     "inputs": {
+      "a": 10,
+      "b": 2
+     },
+     "output": 0
+    },
+    {
+     "inputs": {
+      "a": 8,
+      "b": 4
+     },
+     "output": 0
+    },
+    {
+     "inputs": {
+      "a": 56,
+      "b": 9
+     },
+     "output": 2
+    },
+    {
+     "inputs": {
+      "a": 24,
+      "b": 1
+     },
+     "output": 0
+    },
+    {
+     "inputs": {
+      "a": 7,
+      "b": 4
+     },
+     "output": 3
+    }
+   ]
+  },
+  {
+   "category": "divmod",
+   "name": "dm_mean_floor",
+   "reference": {
+    "args": [
+     {
+      "args": [
+       {
+        "name": "a",
+        "op": "field"
+       },
+       {
+        "name": "b",
+        "op": "field"
+       }
+      ],
+      "op": "add"
+     },
+     {
+      "op": "const",
+      "value": 2
+     }
+    ],
+    "op": "floordiv"
+   },
+   "seed": 3507465176,
+   "train": [
+    {
+     "inputs": {
+      "a": 13,
+      "b": -10
+     },
+     "output": 1
+    },
+    {
+     "inputs": {
+      "a": 10,
+      "b": 4
+     },
+     "output": 7
+    },
+    {
+     "inputs": {
+      "a": -1,
+      "b": -8
+     },
+     "output": -5
+    },
+    {
+     "inputs": {
+      "a": -2,
+      "b": -9
+     },
+     "output": -6
+    },
+    {
+     "inputs": {
+      "a": -5,
+      "b": 18
+     },
+     "output": 6
+    },
+    {
+     "inputs": {
+      "a": 10,
+      "b": -12
+     },
+     "output": -1
+    },
+    {
+     "inputs": {
+      "a": 8,
+      "b": 10
+     },
+     "output": 9
+    },
+    {
+     "inputs": {
+      "a": -6,
+      "b": -1
+     },
+     "output": -4
+    },
+    {
+     "inputs": {
+      "a": 16,
+      "b": -1
+     },
+     "output": 7
+    },
+    {
+     "inputs": {
+      "a": 0,
+      "b": -10
+     },
+     "output": -5
+    }
+   ],
+   "validation": [
+    {
+     "inputs": {
+      "a": -13,
+      "b": -19
+     },
+     "output": -16
+    },
+    {
+     "inputs": {
+      "a": -17,
+      "b": 3
+     },
+     "output": -7
+    },
+    {
+     "inputs": {
+      "a": -8,
+      "b": -14
+     },
+     "output": -11
+    },
+    {
+     "inputs": {
+      "a": 9,
+      "b": 3
+     },
+     "output": 6
+    },
+    {
+     "inputs": {
+      "a": 7,
+      "b": -16
+     },
+     "output": -5
+    },
+    {
+     "inputs": {
+      "a": 17,
+      "b": 6
+     },
+     "output": 11
+    }
+   ]
+  },
+  {
+   "category": "divmod",
+   "name": "dm_parity",
+   "reference": {
+    "args": [
+     {
+      "name": "a",
+      "op": "field"
+     },
+     {
+      "op": "const",
+      "value": 2
+     }
+    ],
+    "op": "mod"
+   },
+   "seed": 951334026,
+   "train": [
+    {
+     "inputs": {
+      "a": -13,
+      "b": 4
+     },
+     "output": 1
+    },
+    {
+     "inputs": {
+      "a": -10,
+      "b": -25
+     },
+     "output": 0
+    },
+    {
+     "inputs": {
+      "a": -27,
+      "b": 17
+     },
+     "output": 1
+    },
+    {
+     "inputs": {
+      "a": 23,
+      "b": 12
+     },
+     "output": 1
+    },
+    {
+     "inputs": {
+      "a": -11,
+      "b": 18
+     },
+     "output": 1
+    },
+    {
+     "inputs": {
+      "a": 4,
+      "b": -13
+     },
+     "output": 0
+    },
+    {
+     "inputs": {
+      "a": -12,
+      "b": -17
+     },
+     "output": 0
+    },
+    {
+     "inputs": {
+      "a": 13,
+      "b": 13
+     },
+     "output": 1
+    },
+    {
+     "inputs": {
+      "a": -9,
+      "b": -18
+     },
+     "output": 1
+    },
+    {
+     "inputs": {
+      "a": -8,
+      "b": 20
+     },
+     "output": 0
+    }
+   ],
+   "validation": [
+    {
+     "inputs": {
+      "a": 13,
+      "b": -28
+     },
+     "output": 1
+    },
+    {
+     "inputs": {
+      "a": 0,
+      "b": 2
+     },
+     "output": 0
+    },
+    {
+     "inputs": {
+      "a": -23,
+      "b": 6
+     },
+     "output": 1
+    },
+    {
+     "inputs": {
+      "a": 18,
+      "b": 14
+     },
+     "output": 0
+    },
+    {
+     "inputs": {
+      "a": -15,
+      "b": -26
+     },
+     "output": 1
+    },
+    {
+     "inputs": {
+      "a": -2,
+      "b": 21
+     },
+     "output": 0
+    }
+   ]
+  },
+  {
+   "category": "divmod",
+   "name": "dm_div3_plus_b",
+   "reference": {
+    "args": [
+     {
+      "args": [
+       {
+        "name": "a",
+        "op": "field"
+       },
+       {
+        "op": "const",
+        "value": 3
+       }
+      ],
+      "op": "floordiv"
+     },
+     {
+      "name": "b",
+      "op": "field"
+     }
+    ],
+    "op": "add"
+   },
+   "seed": 3043610516,
+   "train": [
+    {
+     "inputs": {
+      "a": -20,
+      "b": -1
+     },
+     "output": -8
+    },
+    {
+     "inputs": {
+      "a": 13,
+      "b": -4
+     },
+     "output": 0
+    },
+    {
+     "inputs": {
+      "a": 14,
+      "b": 4
+     },
+     "output": 8
+    },
+    {
+     "inputs": {
+      "a": 0,
+      "b": -9
+     },
+     "output": -9
+    },
+    {
+     "inputs": {
+      "a": 14,
+      "b": -6
+     },
+     "output": -2
+    },
+    {
+     "inputs": {
+      "a": -8,
+      "b": -5
+     },
+     "output": -8
+    },
+    {
+     "inputs": {
+      "a": 11,
+      "b": -6
+     },
+     "output": -3
+    },
+    {
+     "inputs": {
+      "a": -22,
+      "b": 1
+     },
+     "output": -7
+    },
+    {
+     "inputs": {
+      "a": 0,
+      "b": 6
+     },
+     "output": 6
+    },
+    {
+     "inputs": {
+      "a": -11,
+      "b": -5
+     },
+     "output": -9
+    }
+   ],
+   "validation": [
+    {
+     "inputs": {
+      "a": -25,
+      "b": 9
+     },
+     "output": 0
+    },
+    {
+     "inputs": {
+      "a": 23,
+      "b": -6
+     },
+     "output": 1
+    },
+    {
+     "inputs": {
+      "a": 30,
+      "b": -2
+     },
+     "output": 8
+    },
+    {
+     "inputs": {
+      "a": -25,
+      "b": -6
+     },
+     "output": -15
+    },
+    {
+     "inputs": {
+      "a": -4,
+      "b": -4
+     },
+     "output": -6
+    },
+    {
+     "inputs": {
+      "a": 3,
+      "b": -2
+     },
+     "output": -1
+    }
+   ]
+  },
+  {
+   "category": "divmod",
+   "name": "dm_last_digit",
+   "reference": {
+    "args": [
+     {
+      "name": "n",
+      "op": "field"
+     },
+     {
+      "op": "const",
+      "value": 10
+     }
+    ],
+    "op": "mod"
+   },
+   "seed": 676807652,
+   "train": [
+    {
+     "inputs": {
+      "n": 383
+     },
+     "output": 3
+    },
+    {
+     "inputs": {
+      "n": 980
+     },
+     "output": 0
+    },
+    {
+     "inputs": {
+      "n": 384
+     },
+     "output": 4
+    },
+    {
+     "inputs": {
+      "n": 910
+     },
+     "output": 0
+    },
+    {
+     "inputs": {
+      "n": 129
+     },
+     "output": 9
+    },
+    {
+     "inputs": {
+      "n": 427
+     },
+     "output": 7
+    },
+    {
+     "inputs": {
+      "n": 848
+     },
+     "output": 8
+    },
+    {
+     "inputs": {
+      "n": 166
+     },
+     "output": 6
+    },
+    {
+     "inputs": {
+      "n": 302
+     },
+     "output": 2
+    },
+    {
+     "inputs": {
+      "n": 562
+     },
+     "output": 2
+    }
+   ],
+   "validation": [
+    {
+     "inputs": {
+      "n": 270
+     },
+     "output": 0
+    },
+    {
+     "inputs": {
+      "n": 260
+     },
+     "output": 0
+    },
+    {
+     "inputs": {
+      "n": 694
+     },
+     "output": 4
+    },
+    {
+     "inputs": {
+      "n": 407
+     },
+     "output": 7
+    },
+    {
+     "inputs": {
+      "n": 874
+     },
+     "output": 4
+    },
+    {
+     "inputs": {
+      "n": 790
+     },
+     "output": 0
+    }
+   ]
+  },
+  {
+   "category": "divmod",
+   "name": "dm_tens",
+   "reference": {
+    "args": [
+     {
+      "name": "n",
+      "op": "field"
+     },
+     {
+      "op": "const",
+      "value": 10
+     }
+    ],
+    "op": "floordiv"
+   },
+   "seed": 2805329700,
+   "train": [
+    {
+     "inputs": {
+      "n": 510
+     },
+     "output": 51
+    },
+    {
+     "inputs": {
+      "n": 383
+     },
+     "output": 38
+    },
+    {
+     "inputs": {
+      "n": 532
+     },
+     "output": 53
+    },
+    {
+     "inputs": {
+      "n": 319
+     },
+     "output": 31
+    },
+    {
+     "inputs": {
+      "n": 209
+     },
+     "output": 20
+    },
+    {
+     "inputs": {
+      "n": 58
+     },
+     "output": 5
+    },
+    {
+     "inputs": {
+      "n": 130
+     },
+     "output": 13
+    },
+    {
+     "inputs": {
+      "n": 600
+     },
+     "output": 60
+    },
+    {
+     "inputs": {
+      "n": 964
+     },
+     "output": 96
+    },
+    {
+     "inputs": {
+      "n": 278
+     },
+     "output": 27
+    }
+   ],
+   "validation": [
+    {
+     "inputs": {
+      "n": 994
+     },
+     "output": 99
+    },
+    {
+     "inputs": {
+      "n": 462
+     },
+     "output": 46
+    },
+    {
+     "inputs": {
+      "n": 870
+     },
+     "output": 87
+    },
+    {
+     "inputs": {
+      "n": 943
+     },
+     "output": 94
+    },
+    {
+     "inputs": {
+      "n": 613
+     },
+     "output": 61
+    },
+    {
+     "inputs": {
+      "n": 167
+     },
+     "output": 16
+    }
+   ]
+  },
+  {
+   "category": "divmod",
+   "name": "dm_prod_mod7",
+   "reference": {
+    "args": [
+     {
+      "args": [
+       {
+        "name": "a",
+        "op": "field"
+       },
+       {
+        "name": "b",
+        "op": "field"
+       }
+      ],
+      "op": "mul"
+     },
+     {
+      "op": "const",
+      "value": 7
+     }
+    ],
+    "op": "mod"
+   },
+   "seed": 853571121,
+   "train": [
+    {
+     "inputs": {
+      "a": 1,
+      "b": 13
+     },
+     "output": 6
+    },
+    {
+     "inputs": {
+      "a": 6,
+      "b": 14
+     },
+     "output": 0
+    },
+    {
+     "inputs": {
+      "a": 18,
+      "b": 12
+     },
+     "output": 6
+    },
+    {
+     "inputs": {
+      "a": 14,
+      "b": 2
+     },
+     "output": 0
+    },
+    {
+     "inputs": {
+      "a": 10,
+      "b": 3
+     },
+     "output": 2
+    },
+    {
+     "inputs": {
+      "a": 0,
+      "b": 10
+     },
+     "output": 0
+    },
+    {
+     "inputs": {
+      "a": 16,
+      "b": 9
+     },
+     "output": 4
+    },
+    {
+     "inputs": {
+      "a": 5,
+      "b": 14
+     },
+     "output": 0
+    },
+    {
+     "inputs": {
+      "a": 17,
+      "b": 17
+     },
+     "output": 2
+    },
+    {
+     "inputs": {
+      "a": 5,
+      "b": 13
+     },
+     "output": 2
+    }
+   ],
+   "validation": [
+    {
+     "inputs": {
+      "a": 10,
+      "b": 1
+     },
+     "output": 3
+    },
+    {
+     "inputs": {
+      "a": 19,
+      "b": 8
+     },
+     "output": 5
+    },
+    {
+     "inputs": {
+      "a": 17,
+      "b": 9
+     },
+     "output": 6
+    },
+    {
+     "inputs": {
+      "a": 19,
+      "b": 1
+     },
+     "output": 5
+    },
+    {
+     "inputs": {
+      "a": 8,
+      "b": 16
+     },
+     "output": 2
+    },
+    {
+     "inputs": {
+      "a": 2,
+      "b": 10
+     },
+     "output": 6
+    }
+   ]
+  },
+  {
+   "category": "piecewise",
+   "name": "pw_relu_like",
+   "reference": {
+    "else": {
+     "args": [
+      {
+       "name": "a",
+       "op": "field"
+      },
+      {
+       "op": "const",
+       "value": 1
+      }
+     ],
+     "op": "add"
+    },
+    "left": {
+     "name": "a",
+     "op": "field"
+    },
+    "op": "if_lt",
+    "right": {
+     "op": "const",
+     "value": 0
+    },
+    "then": {
+     "args": [
+      {
+       "op": "const",
+       "value": -2
+      },
+      {
+       "name": "a",
+       "op": "field"
+      }
+     ],
+     "op": "mul"
+    }
+   },
+   "seed": 453665865,
+   "train": [
+    {
+     "inputs": {
+      "a": -1
+     },
+     "output": 2
+    },
+    {
+     "inputs": {
+      "a": 0
+     },
+     "output": 1
+    },
+    {
+     "inputs": {
+      "a": -7
+     },
+     "output": 14
+    },
+    {
+     "inputs": {
+      "a": 8
+     },
+     "output": 9
+    },
+    {
+     "inputs": {
+      "a": -3
+     },
+     "output": 6
+    },
+    {
+     "inputs": {
+      "a": 3
+     },
+     "output": 4
+    },
+    {
+     "inputs": {
+      "a": -4
+     },
+     "output": 8
+    },
+    {
+     "inputs": {
+      "a": 9
+     },
+     "output": 10
+    },
+    {
+     "inputs": {
+      "a": -5
+     },
+     "output": 10
+    },
+    {
+     "inputs": {
+      "a": -9
+     },
+     "output": 18
+    }
+   ],
+   "validation": [
+    {
+     "inputs": {
+      "a": 4
+     },
+     "output": 5
+    },
+    {
+     "inputs": {
+      "a": -8
+     },
+     "output": 16
+    },
+    {
+     "inputs": {
+      "a": 1
+     },
+     "output": 2
+    },
+    {
+     "inputs": {
+      "a": 7
+     },
+     "output": 8
+    },
+    {
+     "inputs": {
+      "a": -6
+     },
+     "output": 12
+    },
+    {
+     "inputs": {
+      "a": 6
+     },
+     "output": 7
+    }
+   ]
+  },
+  {
+   "category": "piecewise",
+   "name": "pw_gap_or_double",
+   "reference": {
+    "else": {
+     "args": [
+      {
+       "op": "const",
+       "value": 2
+      },
+      {
+       "name": "a",
+       "op": "field"
+      }
+     ],
+     "op": "mul"
+    },
+    "left": {
+     "name": "a",
+     "op": "field"
+    },
+    "op": "if_lt",
+    "right": {
+     "name": "b",
+     "op": "field"
+    },
+    "then": {
+     "args": [
+      {
+       "name": "b",
+       "op": "field"
+      },
+      {
+       "name": "a",
+       "op": "field"
+      }
+     ],
+     "op": "sub"
+    }
+   },
+   "seed": 2939345533,
+   "train": [
+    {
+     "inputs": {
+      "a": 3,
+      "b": 3
+     },
+     "output": 6
+    },
+    {
+     "inputs": {
+      "a": 0,
+      "b": 3
+     },
+     "output": 3
+    },
+    {
+     "inputs": {
+      "a": 8,
+      "b": -4
+     },
+     "output": 16
+    },
+    {
+     "inputs": {
+      "a": 5,
+      "b": -8
+     },
+     "output": 10
+    },
+    {
+     "inputs": {
+      "a": 4,
+      "b": 2
+     },
+     "output": 8
+    },
+    {
+     "inputs": {
+      "a": 7,
+      "b": -3
+     },
+     "output": 14
+    },
+    {
+     "inputs": {
+      "a": -9,
+      "b": 3
+     },
+     "output": 12
+    },
+    {
+     "inputs": {
+      "a": 2,
+      "b": 8
+     },
+     "output": 6
+    },
+    {
+     "inputs": {
+      "a": -1,
+      "b": 7
+     },
+     "output": 8
+    },
+    {
+     "inputs": {
+      "a": -3,
+      "b": -7
+     },
+     "output": -6
+    }
+   ],
+   "validation": [
+    {
+     "inputs": {
+      "a": 4,
+      "b": -5
+     },
+     "output": 8
+    },
+    {
+     "inputs": {
+      "a": 7,
+      "b": 7
+     },
+     "output": 14
+    },
+    {
+     "inputs": {
+      "a": -2,
+      "b": -3
+     },
+     "output": -4
+    },
+    {
+     "inputs": {
+      "a": -5,
+      "b": -4
+     },
+     "output": 1
+    },
+    {
+     "inputs": {
+      "a": 3,
+      "b": -7
+     },
+     "output": 6
+    },
+    {
+     "inputs": {
+      "a": -6,
+      "b": 0
+     },
+     "output": 6
+    }
+   ]
+  },
+  {
+   "category": "piecewise",
+   "name": "pw_eq_zero_else_sum",
+   "reference": {
+    "else": {
+     "args": [
+      {
+       "name": "a",
+       "op": "field"
+      },
+      {
+       "name": "b",
+       "op": "field"
+      }
+     ],
+     "op": "add"
+    },
+    "left": {
+     "name": "a",
+     "op": "field"
+    },
+    "op": "if_eq",
+    "right": {
+     "name": "b",
+     "op": "field"
+    },
+    "then": {
+     "op": "const",
+     "value": 0
+    }
+   },
+   "seed": 2063493859,
+   "train": [
+    {
+     "inputs": {
+      "a": 2,
+      "b": 2
+     },
+     "output": 0
+    },
+    {
+     "inputs": {
+      "a": 3,
+      "b": 2
+     },
+     "output": 5
+    },
+    {
+     "inputs": {
+      "a": -1,
+      "b": -3
+     },
+     "output": -4
+    },
+    {
+     "inputs": {
+      "a": -2,
+      "b": -2
+     },
+     "output": 0
+    },
+    {
+     "inputs": {
+      "a": -1,
+      "b": -2
+     },
+     "output": -3
+    },
+    {
+     "inputs": {
+      "a": -3,
+      "b": 3
+     },
+     "output": 0
+    },
+    {
+     "inputs": {
+      "a": 1,
+      "b": 1
+     },
+     "output": 0
+    },
+    {
+     "inputs": {
+      "a": -2,
+      "b": -3
+     },
+     "output": -5
+    },
+    {
+     "inputs": {
+      "a": 3,
+      "b": 0
+     },
+     "output": 3
+    },
+    {
+     "inputs": {
+      "a": 1,
+      "b": -1
+     },
+     "output": 0
+    }
+   ],
+   "validation": [
+    {
+     "inputs": {
+      "a": 2,
+      "b": -2
+     },
+     "output": 0
+    },
+    {
+     "inputs": {
+      "a": -2,
+      "b": -1
+     },
+     "output": -3
+    },
+    {
+     "inputs": {
+      "a": 2,
+      "b": -3
+     },
+     "output": -1
+    },
+    {
+     "inputs": {
+      "a": 3,
+      "b": 3
+     },
+     "output": 0
+    },
+    {
+     "inputs": {
+      "a": 2,
+      "b": 0
+     },
+     "output": 2
+    },
+    {
+     "inputs": {
+      "a": 1,
+      "b": 3
+     },
+     "output": 4
+    }
+   ]
+  },
+  {
+   "category": "piecewise",
+   "name": "pw_step",
+   "reference": {
+    "else": {
+     "op": "const",
+     "value": 2
+    },
+    "left": {
+     "name": "a",
+     "op": "field"
+    },
+    "op": "if_lt",
+    "right": {
+     "op": "const",
+     "value": 5
+    },
+    "then": {
+     "op": "const",
+     "value": 1
+    }
+   },
+   "seed": 549409921,
+   "train": [
+    {
+     "inputs": {
+      "a": 4,
+      "b": 0
+     },
+     "output": 1
+    },
+    {
+     "inputs": {
+      "a": 5,
+      "b": -5
+     },
+     "output": 2
+    },
+    {
+     "inputs": {
+      "a": -6,
+      "b": 7
+     },
+     "output": 1
+    },
+    {
+     "inputs": {
+      "a": -6,
+      "b": -3
+     },
+     "output": 1
+    },
+    {
+     "inputs": {
+      "a": 10,
+      "b": -7
+     },
+     "output": 2
+    },
+    {
+     "inputs": {
+      "a": 12,
+      "b": -8
+     },
+     "output": 2
+    },
+    {
+     "inputs": {
+      "a": 2,
+      "b": -4
+     },
+     "output": 1
+    },
+    {
+     "inputs": {
+      "a": 1,
+      "b": -7
+     },
+     "output": 1
+    },
+    {
+     "inputs": {
+      "a": 15,
+      "b": -9
+     },
+     "output": 2
+    },
+    {
+     "inputs": {
+      "a": 12,
+      "b": 8
+     },
+     "output": 2
+    }
+   ],
+   "validation": [
+    {
+     "inputs": {
+      "a": 15,
+      "b": 5
+     },
+     "output": 2
+    },
+    {
+     "inputs": {
+      "a": -4,
+      "b": -5
+     },
+     "output": 1
+    },
+    {
+     "inputs": {
+      "a": 1,
+      "b": 0
+     },
+     "output": 1
+    },
+    {
+     "inputs": {
+      "a": -8,
+      "b": 7
+     },
+     "output": 1
+    },
+    {
+     "inputs": {
+      "a": 14,
+      "b": -8
+     },
+     "output": 2
+    },
+    {
+     "inputs": {
+      "a": 4,
+      "b": -6
+     },
+     "output": 1
+    }
+   ]
+  },
+  {
+   "category": "piecewise",
+   "name": "pw_sum_or_diff",
+   "reference": {
+    "else": {
+     "args": [
+      {
+       "name": "a",
+       "op": "field"
+      },
+      {
+       "name": "b",
+       "op": "field"
+      }
+     ],
+     "op": "sub"
+    },
+    "left": {
+     "name": "a",
+     "op": "field"
+    },
+    "op": "if_lt",
+    "right": {
+     "name": "b",
+     "op": "field"
+    },
+    "then": {
+     "args": [
+      {
+       "name": "a",
+       "op": "field"
+      },
+      {
+       "name": "b",
+       "op": "field"
+      }
+     ],
+     "op": "add"
+    }
+   },
+   "seed": 823354453,
+   "train": [
+    {
+     "inputs": {
+      "a": 4,
+      "b": 4
+     },
+     "output": 0
+    },
+    {
+     "inputs": {
+      "a": -6,
+      "b": 5
+     },
+     "output": -1
+    },
+    {
+     "inputs": {
+      "a": -2,
+      "b": 4
+     },
+     "output": 2
+    },
+    {
+     "inputs": {
+      "a": -7,
+      "b": 7
+     },
+     "output": 0
+    },
+    {
+     "inputs": {
+      "a": -2,
+      "b": -5
+     },
+     "output": 3
+    },
+    {
+     "inputs": {
+      "a": -6,
+      "b": 0
+     },
+     "output": -6
+    },
+    {
+     "inputs": {
+      "a": -1,
+      "b": 3
+     },
+     "output": 2
+    },
+    {
+     "inputs": {
+      "a": -9,
+      "b": 5
+     },
+     "output": -4
+    },
+    {
+     "inputs": {
+      "a": -6,
+      "b": 4
+     },
+     "output": -2
+    },
+    {
+     "inputs": {
+      "a": 8,
+      "b": -7
+     },
+     "output": 15
+    }
+   ],
+   "validation": [
+    {
+     "inputs": {
+      "a": -7,
+      "b": 6
+     },
+     "output": -1
+    },
+    {
+     "inputs": {
+      "a": -3,
+      "b": 2
+     },
+     "output": -1
+    },
+    {
+     "inputs": {
+      "a": 9,
+      "b": 4
+     },
+     "output": 5
+    },
+    {
+     "inputs": {
+      "a": -3,
+      "b": -9
+     },
+     "output": 6
+    },
+    {
+     "inputs": {
+      "a": -5,
+      "b": -3
+     },
+     "output": -8
+    },
+    {
+     "inputs": {
+      "a": -7,
+      "b": 0
+     },
+     "output": -7
+    }
+   ]
+  },
+  {
+   "category": "piecewise",
+   "name": "pw_tax",
+   "reference": {
+    "else": {
+     "args": [
+      {
+       "args": [
+        {
+         "op": "const",
+         "value": 2
+        },
+        {
+         "name": "a",
+         "op": "field"
+        }
+       ],
+       "op": "mul"
+      },
+      {
+       "op": "const",
+       "value": 10
+      }
+     ],
+     "op": "sub"
+    },
+    "left": {
+     "name": "a",
+     "op": "field"
+    },
+    "op": "if_lt",
+    "right": {
+     "op": "const",
+     "value": 10
+    },
+    "then": {
+     "name": "a",
+     "op": "field"
+    }
+   },
+   "seed": 1745289745,
+   "train": [
+    {
+     "inputs": {
+      "a": 9
+     },
+     "output": 9
+    },
+    {
+     "inputs": {
+      "a": 11
+     },
+     "output": 12
+    },
+    {
+     "inputs": {
+      "a": 25
+     },
+     "output": 40
+    },
+    {
+     "inputs": {
+      "a": 3
+     },
+     "output": 3
+    },
+    {
+     "inputs": {
+      "a": 1
+     },
+     "output": 1
+    },
+    {
+     "inputs": {
+      "a": 24
+     },
+     "output": 38
+    },
+    {
+     "inputs": {
+      "a": 23
+     },
+     "output": 36
+    },
+    {
+     "inputs": {
+      "a": 20
+     },
+     "output": 30
+    },
+    {
+     "inputs": {
+      "a": 18
+     },
+     "output": 26
+    },
+    {
+     "inputs": {
+      "a": 5
+     },
+     "output": 5
+    }
+   ],
+   "validation": [
+    {
+     "inputs": {
+      "a": 12
+     },
+     "output": 14
+    },
+    {
+     "inputs": {
+      "a": 7
+     },
+     "output": 7
+    },
+    {
+     "inputs": {
+      "a": 14
+     },
+     "output": 18
+    },
+    {
+     "inputs": {
+      "a": 21
+     },
+     "output": 32
+    },
+    {
+     "inputs": {
+      "a": 4
+     },
+     "output": 4
+    },
+    {
+     "inputs": {
+      "a": 29
+     },
+     "output": 48
+    }
+   ]
+  },
+  {
+   "category": "piecewise",
+   "name": "pw_flag_select",
+   "reference": {
+    "else": {
+     "name": "b",
+     "op": "field"
+    },
+    "left": {
+     "name": "f",
+     "op": "field"
+    },
+    "op": "if_eq",
+    "right": {
+     "op": "const",
+     "value": true
+    },
+    "then": {
+     "name": "a",
+     "op": "field"
+    }
+   },
+   "seed": 2888293838,
+   "train": [
+    {
+     "inputs": {
+      "a": 1,
+      "b": 4,
+      "f": false
+     },
+     "output": 4
+    },
+    {
+     "inputs": {
+      "a": -9,
+      "b": -1,
+      "f": true
+     },
+     "output": -9
+    },
+    {
+     "inputs": {
+      "a": -2,
+      "b": -1,
+      "f": true
+     },
+     "output": -2
+    },
+    {
+     "inputs": {
+      "a": -7,
+      "b": 2,
+      "f": false
+     },
+     "output": 2
+    },
+    {
+     "inputs": {
+      "a": -9,
+      "b": 3,
+      "f": true
+     },
+     "output": -9
+    },
+    {
+     "inputs": {
+      "a": -5,
+      "b": 5,
+      "f": false
+     },
+     "output": 5
+    },
+    {
+     "inputs": {
+      "a": 1,
+      "b": -4,
+      "f": true
+     },
+     "output": 1
+    },
+    {
+     "inputs": {
+      "a": -5,
+      "b": -2,
+      "f": false
+     },
+     "output": -2
+    },
+    {
+     "inputs": {
+      "a": 0,
+      "b": 4,
+      "f": false
+     },
+     "output": 4
+    },
+    {
+     "inputs": {
+      "a": -6,
+      "b": -4,
+      "f": false
+     },
+     "output": -4
+    }
+   ],
+   "validation": [
+    {
+     "inputs": {
+      "a": 1,
+      "b": -7,
+      "f": true
+     },
+     "output": 1
+    },
+    {
+     "inputs": {
+      "a": 3,
+      "b": -4,
+      "f": true
+     },
+     "output": 3
+    },
+    {
+     "inputs": {
+      "a": -8,
+      "b": -9,
+      "f": false
+     },
+     "output": -9
+    },
+    {
+     "inputs": {
+      "a": 7,
+      "b": 4,
+      "f": true
+     },
+     "output": 7
+    },
+    {
+     "inputs": {
+      "a": -5,
+      "b": -8,
+      "f": false
+     },
+     "output": -8
+    },
+    {
+     "inputs": {
+      "a": 8,
+      "b": -4,
+      "f": true
+     },
+     "output": 8
+    }
+   ]
+  },
+  {
+   "category": "piecewise",
+   "name": "pw_small_zero_else_prod",
+   "reference": {
+    "else": {
+     "args": [
+      {
+       "name": "a",
+       "op": "field"
+      },
+      {
+       "name": "b",
+       "op": "field"
+      }
+     ],
+     "op": "mul"
+    },
+    "left": {
+     "name": "a",
+     "op": "field"
+    },
+    "op": "if_lt",
+    "right": {
+     "op": "const",
+     "value": 3
+    },
+    "then": {
+     "op": "const",
+     "value": 0
+    }
+   },
+   "seed": 1293736923,
+   "train": [
+    {
+     "inputs": {
+      "a": 2,
+      "b": 4
+     },
+     "output": 0
+    },
+    {
+     "inputs": {
+      "a": 3,
+      "b": 5
+     },
+     "output": 15
+    },
+    {
+     "inputs": {
+      "a": 2,
+      "b": 8
+     },
+     "output": 0
+    },
+    {
+     "inputs": {
+      "a": 0,
+      "b": 3
+     },
+     "output": 0
+    },
+    {
+     "inputs": {
+      "a": 8,
+      "b": 1
+     },
+     "output": 8
+    },
+    {
+     "inputs": {
+      "a": 3,
+      "b": -3
+     },
+     "output": -9
+    },
+    {
+     "inputs": {
+      "a": 6,
+      "b": 3
+     },
+     "output": 18
+    },
+    {
+     "inputs": {
+      "a": 7,
+      "b": -9
+     },
+     "output": -63
+    },
+    {
+     "inputs": {
+      "a": 8,
+      "b": 0
+     },
+     "output": 0
+    },
+    {
+     "inputs": {
+      "a": 5,
+      "b": -8
+     },
+     "output": -40
+    }
+   ],
+   "validation": [
+    {
+     "inputs": {
+      "a": 2,
+      "b": -7
+     },
+     "output": 0
+    },
+    {
+     "inputs": {
+      "a": 8,
+      "b": -9
+     },
+     "output": -72
+    },
+    {
+     "inputs": {
+      "a": 5,
+      "b": -3
+     },
+     "output": -15
+    },
+    {
+     "inputs": {
+      "a": 7,
+      "b": 3
+     },
+     "output": 21
+    },
+    {
+     "inputs": {
+      "a": 7,
+      "b": -8
+     },
+     "output": -56
+    },
+    {
+     "inputs": {
+      "a": 0,
+      "b": 0
+     },
+     "output": 0
+    }
+   ]
+  },
+  {
+   "category": "piecewise",
+   "name": "pw_clamp_offset",
+   "reference": {
+    "else": {
+     "op": "const",
+     "value": 11
+    },
+    "left": {
+     "name": "a",
+     "op": "field"
+    },
+    "op": "if_lt",
+    "right": {
+     "op": "const",
+     "value": 8
+    },
+    "then": {
+     "args": [
+      {
+       "name": "a",
+       "op": "field"
+      },
+      {
+       "op": "const",
+       "value": 3
+      }
+     ],
+     "op": "add"
+    }
+   },
+   "seed": 2520651468,
+   "train": [
+    {
+     "inputs": {
+      "a": 7
+     },
+     "output": 10
+    },
+    {
+     "inputs": {
+      "a": 9
+     },
+     "output": 11
+    },
+    {
+     "inputs": {
+      "a": 18
+     },
+     "output": 11
+    },
+    {
+     "inputs": {
+      "a": -8
+     },
+     "output": -5
+    },
+    {
+     "inputs": {
+      "a": -4
+     },
+     "output": -1
+    },
+    {
+     "inputs": {
+      "a": 13
+     },
+     "output": 11
+    },
+    {
+     "inputs": {
+      "a": 4
+     },
+     "output": 7
+    },
+    {
+     "inputs": {
+      "a": 19
+     },
+     "output": 11
+    },
+    {
+     "inputs": {
+      "a": -1
+     },
+     "output": 2
+    },
+    {
+     "inputs": {
+      "a": 1
+     },
+     "output": 4
+    }
+   ],
+   "validation": [
+    {
+     "inputs": {
+      "a": -6
+     },
+     "output": -3
+    },
+    {
+     "inputs": {
+      "a": -3
+     },
+     "output": 0
+    },
+    {
+     "inputs": {
+      "a": 20
+     },
+     "output": 11
+    },
+    {
+     "inputs": {
+      "a": 6
+     },
+     "output": 9
+    },
+    {
+     "inputs": {
+      "a": 16
+     },
+     "output": 11
+    },
+    {
+     "inputs": {
+      "a": 8
+     },
+     "output": 11
+    }
+   ]
+  },
+  {
+   "category": "piecewise",
+   "name": "pw_str_key",
+   "reference": {
+    "else": {
+     "args": [
+      {
+       "name": "a",
+       "op": "field"
+      },
+      {
+       "op": "const",
+       "value": 7
+      }
+     ],
+     "op": "add"
+    },
+    "left": {
+     "name": "k",
+     "op": "field"
+    },
+    "op": "if_eq",
+    "right": {
+     "op": "const",
+     "value": "x"
+    },
+    "then": {
+     "args": [
+      {
+       "op": "const",
+       "value": 2
+      },
+      {
+       "name": "a",
+       "op": "field"
+      }
+     ],
+     "op": "mul"
+    }
+   },
+   "seed": 2648314727,
+   "train": [
+    {
+     "inputs": {
+      "a": -7,
+      "k": "x"
+     },
+     "output": -14
+    },
+    {
+     "inputs": {
+      "a": 6,
+      "k": "w"
+     },
+     "output": 13
+    },
+    {
+     "inputs": {
+      "a": -9,
+      "k": "w"
+     },
+     "output": -2
+    },
+    {
+     "inputs": {
+      "a": -1,
+      "k": "x"
+     },
+     "output": -2
+    },
+    {
+     "inputs": {
+      "a": -1,
+      "k": "z"
+     },
+     "output": 6
+    },
+    {
+     "inputs": {
+      "a": -4,
+      "k": "x"
+     },
+     "output": -8
+    },
+    {
+     "inputs": {
+      "a": 0,
+      "k": "w"
+     },
+     "output": 7
+    },
+    {
+     "inputs": {
+      "a": 1,
+      "k": "w"
+     },
+     "output": 8
+    },
+    {
+     "inputs": {
+      "a": 6,
+      "k": "x"
+     },
+     "output": 12
+    },
+    {
+     "inputs": {
+      "a": 5,
+      "k": "z"
+     },
+     "output": 12
+    }
+   ],
+   "validation": [
+    {
+     "inputs": {
+      "a": 4,
+      "k": "x"
+     },
+     "output": 8
+    },
+    {
+     "inputs": {
+      "a": 9,
+      "k": "x"
+     },
+     "output": 18
+    },
+    {
+     "inputs": {
+      "a": -2,
+      "k": "z"
+     },
+     "output": 5
+    },
+    {
+     "inputs": {
+      "a": -9,
+      "k": "x"
+     },
+     "output": -18
+    },
+    {
+     "inputs": {
+      "a": 4,
+      "k": "z"
+     },
+     "output": 11
+    },
+    {
+     "inputs": {
+      "a": 2,
+      "k": "z"
+     },
+     "output": 9
+    }
+   ]
+  },
+  {
+   "category": "string",
+   "name": "str_upper",
+   "reference": {
+    "arg": {
+     "name": "s",
+     "op": "field"
+    },
+    "op": "upper"
+   },
+   "seed": 2204528574,
+   "train": [
+    {
+     "inputs": {
+      "s": "bd",
+      "t": "bd"
+     },
+     "output": "BD"
+    },
+    {
+     "inputs": {
+      "s": "zaaac",
+      "t": "badddz"
+     },
+     "output": "ZAAAC"
+    },
+    {
+     "inputs": {
+      "s": "cyxxac",
+      "t": "ycbb"
+     },
+     "output": "CYXXAC"
+    },
+    {
+     "inputs": {
+      "s": "cacxb",
+      "t": "ay"
+     },
+     "output": "CACXB"
+    },
+    {
+     "inputs": {
+      "s": "yb",
+      "t": "zyydz"
+     },
+     "output": "YB"
+    },
+    {
+     "inputs": {
+      "s": "dbzb",
+      "t": "xca"
+     },
+     "output": "DBZB"
+    },
+    {
+     "inputs": {
+      "s": "cx",
+      "t": "a"
+     },
+     "output": "CX"
+    },
+    {
+     "inputs": {
+      "s": "yb",
+      "t": "dbc"
+     },
+     "output": "YB"
+    },
+    {
+     "inputs": {
+      "s": "yxxyxa",
+      "t": "xzazdz"
+     },
+     "output": "YXXYXA"
+    },
+    {
+     "inputs": {
+      "s": "b",
+      "t": "bay"
+     },
+     "output": "B"
+    }
+   ],
+   "validation": [
+    {
+     "inputs": {
+      "s": "zdxd",
+      "t": "xxcc"
+     },
+     "output": "ZDXD"
+    },
+    {
+     "inputs": {
+      "s": "bzb",
+      "t": "bb"
+     },
+     "output": "BZB"
+    },
+    {
+     "inputs": {
+      "s": "yy",
+      "t": "yxdax"
+     },
+     "output": "YY"
+    },
+    {
+     "inputs": {
+      "s": "d",
+      "t": "c"
+     },
+     "output": "D"
+    },
+    {
+     "inputs": {
+      "s": "aa",
+      "t": "xbz"
+     },
+     "output": "AA"
+    },
+    {
+     "inputs": {
+      "s": "adz",
+      "t": "dzddx"
+     },
+     "output": "ADZ"
+    }
+   ]
+  },
+  {
+   "category": "string",
+   "name": "str_concat",
+   "reference": {
+    "args": [
+     {
+      "name": "s",
+      "op": "field"
+     },
+     {
+      "name": "t",
+      "op": "field"
+     }
+    ],
+    "op": "concat"
+   },
+   "seed": 2354154311,
+   "train": [
+    {
+     "inputs": {
+      "s": "b",
+      "t": "xydxd"
+     },
+     "output": "bxydxd"
+    },
+    {
+     "inputs": {
+      "s": "z",
+      "t": "xya"
+     },
+     "output": "zxya"
+    },
+    {
+     "inputs": {
+      "s": "cb",
+      "t": "b"
+     },
+     "output": "cbb"
+    },
+    {
+     "inputs": {
+      "s": "yzycz",
+      "t": "y"
+     },
+     "output": "yzyczy"
+    },
+    {
+     "inputs": {
+      "s": "a",
+      "t": "ybba"
+     },
+     "output": "aybba"
+    },
+    {
+     "inputs": {
+      "s": "cyd",
+      "t": "dd"
+     },
+     "output": "cyddd"
+    },
+    {
+     "inputs": {
+      "s": "y",
+      "t": "dacyaz"
+     },
+     "output": "ydacyaz"
+    },
+    {
+     "inputs": {
+      "s": "xx",
+      "t": "cycxa"
+     },
+     "output": "xxcycxa"
+    },
+    {
+     "inputs": {
+      "s": "y",
+      "t": "yczdyy"
+     },
+     "output": "yyczdyy"
+    },
+    {
+     "inputs": {
+      "s": "bcyd",
+      "t": "yzay"
+     },
+     "output": "bcydyzay"
+    }
+   ],
+   "validation": [
+    {
+     "inputs": {
+      "s": "abdzbc",
+      "t": "dadba"
+     },
+     "output": "abdzbcdadba"
+    },
+    {
+     "inputs": {
+      "s": "yxyzyb",
+      "t": "xdccc"
+     },
+     "output": "yxyzybxdccc"
+    },
+    {
+     "inputs": {
+      "s": "zyaa",
+      "t": "dybb"
+     },
+     "output": "zyaadybb"
+    },
+    {
+     "inputs": {
+      "s": "dc",
+      "t": "czxz"
+     },
+     "output": "dcczxz"
+    },
+    {
+     "inputs": {
+      "s": "cc",
+      "t": "yacadb"
+     },
+     "output": "ccyacadb"
+    },
+    {
+     "inputs": {
+      "s": "yzxdb",
+      "t": "da"
+     },
+     "output": "yzxdbda"
+    }
+   ]
+  },
+  {
+   "category": "string",
+   "name": "str_concat_rev_order",
+   "reference": {
+    "args": [
+     {
+      "name": "t",
+      "op": "field"
+     },
+     {
+      "name": "s",
+      "op": "field"
+     }
+    ],
+    "op": "concat"
+   },
+   "seed": 665598167,
+   "train": [
+    {
+     "inputs": {
+      "s": "byycaa",
+      "t": "d"
+     },
+     "output": "dbyycaa"
+    },
+    {
+     "inputs": {
+      "s": "cy",
+      "t": "ac"
+     },
+     "output": "accy"
+    },
+    {
+     "inputs": {
+      "s": "byb",
+      "t": "xdz"
+     },
+     "output": "xdzbyb"
+    },
+    {
+     "inputs": {
+      "s": "dacaxb",
+      "t": "cc"
+     },
+     "output": "ccdacaxb"
+    },
+    {
+     "inputs": {
+      "s": "zyybbc",
+      "t": "zxcc"
+     },
+     "output": "zxcczyybbc"
+    },
+    {
+     "inputs": {
+      "s": "cxza",
+      "t": "bxxd"
+     },
+     "output": "bxxdcxza"
+    },
+    {
+     "inputs": {
+      "s": "xydcd",
+      "t": "b"
+     },
+     "output": "bxydcd"
+    },
+    {
+     "inputs": {
+      "s": "az",
+      "t": "da"
+     },
+     "output": "daaz"
+    },
+    {
+     "inputs": {
+      "s": "c",
+      "t": "c"
+     },
+     "output": "cc"
+    },
+    {
+     "inputs": {
+      "s": "cdca",
+      "t": "yazbx"
+     },
+     "output": "yazbxcdca"
+    }
+   ],
+   "validation": [
+    {
+     "inputs": {
+      "s": "azzcca",
+      "t": "xdcxd"
+     },
+     "output": "xdcxdazzcca"
+    },
+    {
+     "inputs": {
+      "s": "zybz",
+      "t": "d"
+     },
+     "output": "dzybz"
+    },
+    {
+     "inputs": {
+      "s": "cb",
+      "t": "dbyxxb"
+     },
+     "output": "dbyxxbcb"
+    },
+    {
+     "inputs": {
+      "s": "xya",
+      "t": "axaa"
+     },
+     "output": "axaaxya"
+    },
+    {
+     "inputs": {
+      "s": "c",
+      "t": "dya"
+     },
+     "output": "dyac"
+    },
+    {
+     "inputs": {
+      "s": "zxdccx",
+      "t": "dcc"
+     },
+     "output": "dcczxdccx"
+    }
+   ]
+  },
+  {
+   "category": "string",
+   "name": "str_reverse",
+   "reference": {
+    "arg": {
+     "name": "s",
+     "op": "field"
+    },
+    "op": "reverse"
+   },
+   "seed": 2758144291,
+   "train": [
+    {
+     "inputs": {
+      "n": 0,
+      "s": "zzya"
+     },
+     "output": "ayzz"
+    },
+    {
+     "inputs": {
+      "n": 5,
+      "s": "dbxc"
+     },
+     "output": "cxbd"
+    },
+    {
+     "inputs": {
+      "n": 5,
+      "s": "cbba"
+     },
+     "output": "abbc"
+    },
+    {
+     "inputs": {
+      "n": 7,
+      "s": "cya"
+     },
+     "output": "ayc"
+    },
+    {
+     "inputs": {
+      "n": 9,
+      "s": "cxybc"
+     },
+     "output": "cbyxc"
+    },
+    {
+     "inputs": {
+      "n": 8,
+      "s": "bz"
+     },
+     "output": "zb"
+    },
+    {
+     "inputs": {
+      "n": 4,
+      "s": "dbaby"
+     },
+     "output": "ybabd"
+    },
+    {
+     "inputs": {
+      "n": 0,
+      "s": "azcxz"
+     },
+     "output": "zxcza"
+    },
+    {
+     "inputs": {
+      "n": 9,
+      "s": "bcy"
+     },
+     "output": "ycb"
+    },
+    {
+     "inputs": {
+      "n": 9,
+      "s": "yyb"
+     },
+     "output": "byy"
+    }
+   ],
+   "validation": [
+    {
+     "inputs": {
+      "n": 9,
+      "s": "xzax"
+     },
+     "output": "xazx"
+    },
+    {
+     "inputs": {
+      "n": 4,
+      "s": "dbc"
+     },
+     "output": "cbd"
+    },
+    {
+     "inputs": {
+      "n": 9,
+      "s": "x"
+     },
+     "output": "x"
+    },
+    {
+     "inputs": {
+      "n": 8,
+      "s": "zxyc"
+     },
+     "output": "cyxz"
+    },
+    {
+     "inputs": {
+      "n": 9,
+      "s": "xyyydz"
+     },
+     "output": "zdyyyx"
+    },
+    {
+     "inputs": {
+      "n": 2,
+      "s": "ddzd"
+     },
+     "output": "dzdd"
+    }
+   ]
+  },
+  {
+   "category": "string",
+   "name": "str_len",
+   "reference": {
+    "arg": {
+     "name": "s",
+     "op": "field"
+    },
+    "op": "len"
+   },
+   "seed": 3763219524,
+   "train": [
+    {
+     "inputs": {
+      "s": "zzaacd",
+      "t": "cc"
+     },
+     "output": 6
+    },
+    {
+     "inputs": {
+      "s": "czddxc",
+      "t": "bzcyd"
+     },
+     "output": 6
+    },
+    {
+     "inputs": {
+      "s": "dcaxdda",
+      "t": "cbyzd"
+     },
+     "output": 7
+    },
+    {
+     "inputs": {
+      "s": "xday",
+      "t": "a"
+     },
+     "output": 4
+    },
+    {
+     "inputs": {
+      "s": "aybdydzzd",
+      "t": "dycbcb"
+     },
+     "output": 9
+    },
+    {
+     "inputs": {
+      "s": "caxxdda",
+      "t": "zzaa"
+     },
+     "output": 7
+    },
+    {
+     "inputs": {
+      "s": "yayb",
+      "t": "adb"
+     },
+     "output": 4
+    },
+    {
+     "inputs": {
+      "s": "c",
+      "t": "cyxa"
+     },
+     "output": 1
+    },
+    {
+     "inputs": {
+      "s": "zd",
+      "t": "z"
+     },
+     "output": 2
+    },
+    {
+     "inputs": {
+      "s": "cxxxa",
+      "t": "dacdz"
+     },
+     "output": 5
+    }
+   ],
+   "validation": [
+    {
+     "inputs": {
+      "s": "czbyxc",
+      "t": "yxbdcy"
+     },
+     "output": 6
+    },
+    {
+     "inputs": {
+      "s": "aycyzxa",
+      "t": "xabca"
+     },
+     "output": 7
+    },
+    {
+     "inputs": {
+      "s": "azdcba",
+      "t": "x"
+     },
+     "output": 6
+    },
+    {
+     "inputs": {
+      "s": "axy",
+      "t": "b"
+     },
+     "output": 3
+    },
+    {
+     "inputs": {
+      "s": "z",
+      "t": "ydza"
+     },
+     "output": 1
+    },
+    {
+     "inputs": {
+      "s": "",
+      "t": "zxdz"
+     },
+     "output": 0
+    }
+   ]
+  },
+  {
+   "category": "string",
+   "name": "str_len_sum",
+   "reference": {
+    "args": [
+     {
+      "arg": {
+       "name": "s",
+       "op": "field"
+      },
+      "op": "len"
+     },
+     {
+      "arg": {
+       "name": "t",
+       "op": "field"
+      },
+      "op": "len"
+     }
+    ],
+    "op": "add"
+   },
+   "seed": 3534516457,
+   "train": [
+    {
+     "inputs": {
+      "s": "zyxdyxyzb",
+      "t": "by"
+     },
+     "output": 11
+    },
+    {
+     "inputs": {
+      "s": "axcbxzyzc",
+      "t": "y"
+     },
+     "output": 10
+    },
+    {
+     "inputs": {
+      "s": "daaazyxx",
+      "t": "zyyxayacb"
+     },
+     "output": 17
+    },
+    {
+     "inputs": {
+      "s": "aa",
+      "t": "dxzbcbcb"
+     },
+     "output": 10
+    },
+    {
+     "inputs": {
+      "s": "cdbczbyy",
+      "t": "ccca"
+     },
+     "output": 12
+    },
+    {
+     "inputs": {
+      "s": "bc",
+      "t": "czzyybx"
+     },
+     "output": 9
+    },
+    {
+     "inputs": {
+      "s": "cxxyx",
+      "t": "axdba"
+     },
+     "output": 10
+    },
+    {
+     "inputs": {
+      "s": "dbx",
+      "t": "cbyycaz"
+     },
+     "output": 10
+    },
+    {
+     "inputs": {
+      "s": "ya",
+      "t": "cy"
+     },
+     "output": 4
+    },
+    {
+     "inputs": {
+      "s": "dbzba",
+      "t": "bddzzzc"
+     },
+     "output": 12
+    }
+   ],
+   "validation": [
+    {
+     "inputs": {
+      "s": "xczyy",
+      "t": ""
+     },
+     "output": 5
+    },
+    {
+     "inputs": {
+      "s": "a",
+      "t": "zccyxz"
+     },
+     "output": 7
+    },
+    {
+     "inputs": {
+      "s": "x",
+      "t": "zaaa"
+     },
+     "output": 5
+    },
+    {
+     "inputs": {
+      "s": "yacbbyz",
+      "t": ""
+     },
+     "output": 7
+    },
+    {
+     "inputs": {
+      "s": "ccxacyx",
+      "t": ""
+     },
+     "output": 7
+    },
+    {
+     "inputs": {
+      "s": "acb",
+      "t": "abz"
+     },
+     "output": 6
+    }
+   ]
+  },
+  {
+   "category": "string",
+   "name": "str_prefix3",
+   "reference": {
+    "args": [
+     {
+      "name": "s",
+      "op": "field"
+     },
+     {
+      "op": "const",
+      "value": 3
+     }
+    ],
+    "op": "slice_prefix"
+   },
+   "seed": 1717923138,
+   "train": [
+    {
+     "inputs": {
+      "s": "xbbcxa",
+      "t": "yycxc"
+     },
+     "output": "xbb"
+    },
+    {
+     "inputs": {
+      "s": "zxday",
+      "t": "cyadb"
+     },
+     "output": "zxd"
+    },
+    {
+     "inputs": {
+      "s": "zcybbb",
+      "t": "yddxc"
+     },
+     "output": "zcy"
+    },
+    {
+     "inputs": {
+      "s": "ycc",
+      "t": "d"
+     },
+     "output": "ycc"
+    },
+    {
+     "inputs": {
+      "s": "xbz",
+      "t": "ayd"
+     },
+     "output": "xbz"
+    },
+    {
+     "inputs": {
+      "s": "aaycac",
+      "t": "dxada"
+     },
+     "output": "aay"
+    },
+    {
+     "inputs": {
+      "s": "zbyccax",
+      "t": "bzzbyc"
+     },
+     "output": "zby"
+    },
+    {
+     "inputs": {
+      "s": "dyay",
+      "t": "bxbba"
+     },
+     "output": "dya"
+    },
+    {
+     "inputs": {
+      "s": "acbyd",
+      "t": "bbddxc"
+     },
+     "output": "acb"
+    },
+    {
+     "inputs": {
+      "s": "bddadccz",
+      "t": "adxc"
+     },
+     "output": "bdd"
+    }
+   ],
+   "validation": [
+    {
+     "inputs": {
+      "s": "yzdacy",
+      "t": "yxbyzc"
+     },
+     "output": "yzd"
+    },
+    {
+     "inputs": {
+      "s": "xdbcbzcc",
+      "t": "czz"
+     },
+     "output": "xdb"
+    },
+    {
+     "inputs": {
+      "s": "xyczzac",
+      "t": "ca"
+     },
+     "output": "xyc"
+    },
+    {
+     "inputs": {
+      "s": "abybx",
+      "t": "dxcax"
+     },
+     "output": "aby"
+    },
+    {
+     "inputs": {
+      "s": "zzzad",
+      "t": "axzy"
+     },
+     "output": "zzz"
+    },
+    {
+     "inputs": {
+      "s": "xdccd",
+      "t": "yyyxzb"
+     },
+     "output": "xdc"
+    }
+   ]
+  },
+  {
+   "category": "string",
+   "name": "str_suffix2",
+   "reference": {
+    "args": [
+     {
+      "name": "s",
+      "op": "field"
+     },
+     {
+      "op": "const",
+      "value": 2
+     }
+    ],
+    "op": "slice_suffix"
+   },
+   "seed": 1184051775,
+   "train": [
+    {
+     "inputs": {
+      "s": "cddx",
+      "t": "abybcx"
+     },
+     "output": "dx"
+    },
+    {
+     "inputs": {
+      "s": "dacdad",
+      "t": "ayddxy"
+     },
+     "output": "ad"
+    },
+    {
+     "inputs": {
+      "s": "yx",
+      "t": "yy"
+     },
+     "output": "yx"
+    },
+    {
+     "inputs": {
+      "s": "ac",
+      "t": "a"
+     },
+     "output": "ac"
+    },
+    {
+     "inputs": {
+      "s": "dbdcyxbb",
+      "t": "zxxdb"
+     },
+     "output": "bb"
+    },
+    {
+     "inputs": {
+      "s": "yy",
+      "t": "xczaac"
+     },
+     "output": "yy"
+    },
+    {
+     "inputs": {
+      "s": "cc",
+      "t": "yzxbxz"
+     },
+     "output": "cc"
+    },
+    {
+     "inputs": {
+      "s": "yc",
+      "t": "d"
+     },
+     "output": "yc"
+    },
+    {
+     "inputs": {
+      "s": "cbz",
+      "t": "y"
+     },
+     "output": "bz"
+    },
+    {
+     "inputs": {
+      "s": "aazaccxx",
+      "t": "zby"
+     },
+     "output": "xx"
+    }
+   ],
+   "validation": [
+    {
+     "inputs": {
+      "s": "xyzz",
+      "t": "dxbdac"
+     },
+     "output": "zz"
+    },
+    {
+     "inputs": {
+      "s": "xac",
+      "t": "daxyyd"
+     },
+     "output": "ac"
+    },
+    {
+     "inputs": {
+      "s": "axzy",
+      "t": "zzxc"
+     },
+     "output": "zy"
+    },
+    {
+     "inputs": {
+      "s": "bd",
+      "t": "ydxybd"
+     },
+     "output": "bd"
+    },
+    {
+     "inputs": {
+      "s": "dyzzd",
+      "t": "abd"
+     },
+     "output": "zd"
+    },
+    {
+     "inputs": {
+      "s": "xzxbcyx",
+      "t": "dxczcz"
+     },
+     "output": "yx"
+    }
+   ]
+  },
+  {
+   "category": "string",
+   "name": "str_contains",
+   "reference": {
+    "args": [
+     {
+      "name": "s",
+      "op": "field"
+     },
+     {
+      "name": "t",
+      "op": "field"
+     }
+    ],
+    "op": "contains"
+   },
+   "seed": 1073443730,
+   "train": [
+    {
+     "inputs": {
+      "s": "bbbab",
+      "t": "bb"
+     },
+     "output": true
+    },
+    {
+     "inputs": {
+      "s": "bbb",
+      "t": "bb"
+     },
+     "output": true
+    },
+    {
+     "inputs": {
+      "s": "baabb",
+      "t": "b"
+     },
+     "output": true
+    },
+    {
+     "inputs": {
+      "s": "bbaaba",
+      "t": "b"
+     },
+     "output": true
+    },
+    {
+     "inputs": {
+      "s": "baabbb",
+      "t": "ba"
+     },
+     "output": true
+    },
+    {
+     "inputs": {
+      "s": "bba",
+      "t": "b"
+     },
+     "output": true
+    },
+    {
+     "inputs": {
+      "s": "babbba",
+      "t": "bb"
+     },
+     "output": true
+    },
+    {
+     "inputs": {
+      "s": "bbaaaa",
+      "t": "ab"
+     },
+     "output": false
+    },
+    {
+     "inputs": {
+      "s": "baabba",
+      "t": "b"
+     },
+     "output": true
+    },
+    {
+     "inputs": {
+      "s": "ba",
+      "t": "ab"
+     },
+     "output": false
+    }
+   ],
+   "validation": [
+    {
+     "inputs": {
+      "s": "bb",
+      "t": "b"
+     },
+     "output": true
+    },
+    {
+     "inputs": {
+      "s": "aba",
+      "t": "a"
+     },
+     "output": true
+    },
+    {
+     "inputs": {
+      "s": "ab",
+      "t": "b"
+     },
+     "output": true
+    },
+    {
+     "inputs": {
+      "s": "aaab",
+      "t": "a"
+     },
+     "output": true
+    },
+    {
+     "inputs": {
+      "s": "abbba",
+      "t": "bb"
+     },
+     "output": true
+    },
+    {
+     "inputs": {
+      "s": "ab",
+      "t": "ab"
+     },
+     "output": true
+    }
+   ]
+  },
+  {
+   "category": "string",
+   "name": "str_of_int",
+   "reference": {
+    "arg": {
+     "name": "n",
+     "op": "field"
+    },
+    "op": "str_of_int"
+   },
+   "seed": 3465318123,
+   "train": [
+    {
+     "inputs": {
+      "n": 247,
+      "s": "cycb"
+     },
+     "output": "247"
+    },
+    {
+     "inputs": {
+      "n": 335,
+      "s": "ba"
+     },
+     "output": "335"
+    },
+    {
+     "inputs": {
+      "n": 394,
+      "s": "c"
+     },
+     "output": "394"
+    },
+    {
+     "inputs": {
+      "n": 748,
+      "s": "zzz"
+     },
+     "output": "748"
+    },
+    {
+     "inputs": {
+      "n": 70,
+      "s": "zbdxa"
+     },
+     "output": "70"
+    },
+    {
+     "inputs": {
+      "n": 82,
+      "s": "bczyxx"
+     },
+     "output": "82"
+    },
+    {
+     "inputs": {
+      "n": 406,
+      "s": "cxxzy"
+     },
+     "output": "406"
+    },
+    {
+     "inputs": {
+      "n": 715,
+      "s": "zbbdcy"
+     },
+     "output": "715"
+    },
+    {
+     "inputs": {
+      "n": 146,
+      "s": "xx"
+     },
+     "output": "146"
+    },
+    {
+     "inputs": {
+      "n": 305,
+      "s": "zddac"
+     },
+     "output": "305"
+    }
+   ],
+   "validation": [
+    {
+     "inputs": {
+      "n": -85,
+      "s": "c"
+     },
+     "output": "-85"
+    },
+    {
+     "inputs": {
+      "n": 577,
+      "s": "ddc"
+     },
+     "output": "577"
+    },
+    {
+     "inputs": {
+      "n": 829,
+      "s": "zzbz"
+     },
+     "output": "829"
+    },
+    {
+     "inputs": {
+      "n": 737,
+      "s": "xayxz"
+     },
+     "output": "737"
+    },
+    {
+     "inputs": {
+      "n": 501,
+      "s": "xy"
+     },
+     "output": "501"
+    },
+    {
+     "inputs": {
+      "n": 852,
+      "s": "yx"
+     },
+     "output": "852"
+    }
+   ]
+  },
+  {
+   "category": "string",
+   "name": "str_label_number",
+   "reference": {
+    "args": [
+     {
+      "name": "s",
+      "op": "field"
+     },
+     {
+      "arg": {
+       "name": "n",
+       "op": "field"
+      },
+      "op": "str_of_int"
+     }
+    ],
+    "op": "concat"
+   },
+   "seed": 2586278953,
+   "train": [
+    {
+     "inputs": {
+      "n": 40,
+      "s": "zyz"
+     },
+     "output": "zyz40"
+    },
+    {
+     "inputs": {
+      "n": 4,
+      "s": "xzz"
+     },
+     "output": "xzz4"
+    },
+    {
+     "inputs": {
+      "n": 40,
+      "s": "adad"
+     },
+     "output": "adad40"
+    },
+    {
+     "inputs": {
+      "n": 11,
+      "s": "xyby"
+     },
+     "output": "xyby11"
+    },
+    {
+     "inputs": {
+      "n": 34,
+      "s": "yc"
+     },
+     "output": "yc34"
+    },
+    {
+     "inputs": {
+      "n": 45,
+      "s": "zx"
+     },
+     "output": "zx45"
+    },
+    {
+     "inputs": {
+      "n": 85,
+      "s": "dxxc"
+     },
+     "output": "dxxc85"
+    },
+    {
+     "inputs": {
+      "n": 4,
+      "s": "yxdza"
+     },
+     "output": "yxdza4"
+    },
+    {
+     "inputs": {
+      "n": 0,
+      "s": "dc"
+     },
+     "output": "dc0"
+    },
+    {
+     "inputs": {
+      "n": 14,
+      "s": "abxbd"
+     },
+     "output": "abxbd14"
+    }
+   ],
+   "validation": [
+    {
+     "inputs": {
+      "n": 53,
+      "s": "z"
+     },
+     "output": "z53"
+    },
+    {
+     "inputs": {
+      "n": 99,
+      "s": "xyab"
+     },
+     "output": "xyab99"
+    },
+    {
+     "inputs": {
+      "n": 64,
+      "s": "cay"
+     },
+     "output": "cay64"
+    },
+    {
+     "inputs": {
+      "n": 84,
+      "s": "ydyy"
+     },
+     "output": "ydyy84"
+    },
+    {
+     "inputs": {
+      "n": 31,
+      "s": "xcxdyy"
+     },
+     "output": "xcxdyy31"
+    },
+    {
+     "inputs": {
+      "n": 85,
+      "s": "bydcz"
+     },
+     "output": "bydcz85"
+    }
+   ]
+  },
+  {
+   "category": "string",
+   "name": "str_upper_prefix",
+   "reference": {
+    "arg": {
+     "args": [
+      {
+       "name": "s",
+       "op": "field"
+      },
+      {
+       "op": "const",
+       "value": 2
+      }
+     ],
+     "op": "slice_prefix"
+    },
+    "op": "upper"
+   },
+   "seed": 3715661697,
+   "train": [
+    {
+     "inputs": {
+      "s": "zbda",
+      "t": "y"
+     },
+     "output": "ZB"
+    },
+    {
+     "inputs": {
+      "s": "zzcxy",
+      "t": "azxcyd"
+     },
+     "output": "ZZ"
+    },
+    {
+     "inputs": {
+      "s": "xbbzczzz",
+      "t": "bay"
+     },
+     "output": "XB"
+    },
+    {
+     "inputs": {
+      "s": "aa",
+      "t": "aa"
+     },
+     "output": "AA"
+    },
+    {
+     "inputs": {
+      "s": "aycc",
+      "t": "aybz"
+     },
+     "output": "AY"
+    },
+    {
+     "inputs": {
+      "s": "ybb",
+      "t": "acyd"
+     },
+     "output": "YB"
+    },
+    {
+     "inputs": {
+      "s": "babyzyx",
+      "t": "ybdyb"
+     },
+     "output": "BA"
+    },
+    {
+     "inputs": {
+      "s": "xxdydc",
+      "t": "y"
+     },
+     "output": "XX"
+    },
+    {
+     "inputs": {
+      "s": "bbdz",
+      "t": "bz"
+     },
+     "output": "BB"
+    },
+    {
+     "inputs": {
+      "s": "adbay",
+      "t": "ax"
+     },
+     "output": "AD"
+    }
+   ],
+   "validation": [
+    {
+     "inputs": {
+      "s": "xayab",
+      "t": "xzzyzz"
+     },
+     "output": "XA"
+    },
+    {
+     "inputs": {
+      "s": "cccazdd",
+      "t": "dbxxx"
+     },
+     "output": "CC"
+    },
+    {
+     "inputs": {
+      "s": "zybdbzd",
+      "t": "x"
+     },
+     "output": "ZY"
+    },
+    {
+     "inputs": {
+      "s": "cdy",
+      "t": "zd"
+     },
+     "output": "CD"
+    },
+    {
+     "inputs": {
+      "s": "xycaxdy",
+      "t": "czx"
+     },
+     "output": "XY"
+    },
+    {
+     "inputs": {
+      "s": "xxxbbb",
+      "t": "yzycz"
+     },
+     "output": "XX"
+    }
+   ]
+  },
+  {
+   "category": "distractor",
+   "name": "dis_hash_small",
+   "reference": null,
+   "seed": 3619933395,
+   "train": [
+    {
+     "inputs": {
+      "a": 5,
+      "b": 1
+     },
+     "output": 1
+    },
+    {
+     "inputs": {
+      "a": -1,
+      "b": 2
+     },
+     "output": 1
+    },
+    {
+     "inputs": {
+      "a": 5,
+      "b": -6
+     },
+     "output": 2
+    },
+    {
+     "inputs": {
+      "a": -1,
+      "b": 6
+     },
+     "output": 1
+    },
+    {
+     "inputs": {
+      "a": 5,
+      "b": 7
+     },
+     "output": 0
+    },
+    {
+     "inputs": {
+      "a": -7,
+      "b": 8
+     },
+     "output": 3
+    },
+    {
+     "inputs": {
+      "a": -5,
+      "b": -7
+     },
+     "output": 0
+    },
+    {
+     "inputs": {
+      "a": -2,
+      "b": 6
+     },
+     "output": 0
+    },
+    {
+     "inputs": {
+      "a": 6,
+      "b": -7
+     },
+     "output": 3
+    },
+    {
+     "inputs": {
+      "a": -8,
+      "b": 0
+     },
+     "output": 1
+    }
+   ],
+   "validation": [
+    {
+     "inputs": {
+      "a": 0,
+      "b": 2
+     },
+     "output": 3
+    },
+    {
+     "inputs": {
+      "a": -9,
+      "b": 6
+     },
+     "output": 0
+    },
+    {
+     "inputs": {
+      "a": 2,
+      "b": -1
+     },
+     "output": 2
+    },
+    {
+     "inputs": {
+      "a": 9,
+      "b": 4
+     },
+     "output": 3
+    },
+    {
+     "inputs": {
+      "a": 6,
+      "b": 8
+     },
+     "output": 0
+    },
+    {
+     "inputs": {
+      "a": -3,
+      "b": -8
+     },
+     "output": 1
+    }
+   ]
+  },
+  {
+   "category": "distractor",
+   "name": "dis_hash_wide",
+   "reference": null,
+   "seed": 1243127424,
+   "train": [
+    {
+     "inputs": {
+      "a": -7,
+      "b": 9,
+      "c": -4
+     },
+     "output": 7
+    },
+    {
+     "inputs": {
+      "a": 2,
+      "b": -8,
+      "c": 4
+     },
+     "output": 4
+    },
+    {
+     "inputs": {
+      "a": -6,
+      "b": -8,
+      "c": 7
+     },
+     "output": -22
+    },
+    {
+     "inputs": {
+      "a": -1,
+      "b": -8,
+      "c": 0
+     },
+     "output": -22
+    },
+    {
+     "inputs": {
+      "a": -3,
+      "b": 8,
+      "c": -5
+     },
+     "output": 24
+    },
+    {
+     "inputs": {
+      "a": -2,
+      "b": 2,
+      "c": 1
+     },
+     "output": -2
+    },
+    {
+     "inputs": {
+      "a": 6,
+      "b": -1,
+      "c": -3
+     },
+     "output": 2
+    },
+    {
+     "inputs": {
+      "a": 3,
+      "b": -1,
+      "c": 6
+     },
+     "output": -21
+    },
+    {
+     "inputs": {
+      "a": -9,
+      "b": -8,
+      "c": -1
+     },
+     "output": -5
+    },
+    {
+     "inputs": {
+      "a": -8,
+      "b": 2,
+      "c": -5
+     },
+     "output": 22
+    }
+   ],
+   "validation": [
+    {
+     "inputs": {
+      "a": 9,
+      "b": 1,
+      "c": -9
+     },
+     "output": 8
+    },
+    {
+     "inputs": {
+      "a": 5,
+      "b": -3,
+      "c": -6
+     },
+     "output": -1
+    },
+    {
+     "inputs": {
+      "a": -8,
+      "b": 5,
+      "c": 6
+     },
+     "output": 16
+    },
+    {
+     "inputs": {
+      "a": 1,
+      "b": -4,
+      "c": 2
+     },
+     "output": -19
+    },
+    {
+     "inputs": {
+      "a": -2,
+      "b": 2,
+      "c": -9
+     },
+     "output": -3
+    },
+    {
+     "inputs": {
+      "a": 6,
+      "b": 2,
+      "c": 1
+     },
+     "output": -13
+    }
+   ]
+  },
+  {
+   "category": "distractor",
+   "name": "dis_hash_bool",
+   "reference": null,
+   "seed": 2603709370,
+   "train": [
+    {
+     "inputs": {
+      "a": 2,
+      "b": 9
+     },
+     "output": true
+    },
+    {
+     "inputs": {
+      "a": -9,
+      "b": 0
+     },
+     "output": false
+    },
+    {
+     "inputs": {
+      "a": 9,
+      "b": 6
+     },
+     "output": true
+    },
+    {
+     "inputs": {
+      "a": 7,
+      "b": -5
+     },
+     "output": true
+    },
+    {
+     "inputs": {
+      "a": 3,
+      "b": 9
+     },
+     "output": true
+    },
+    {
+     "inputs": {
+      "a": -6,
+      "b": 1
+     },
+     "output": true
+    },
+    {
+     "inputs": {
+      "a": 1,
+      "b": 6
+     },
+     "output": false
+    },
+    {
+     "inputs": {
+      "a": 9,
+      "b": -6
+     },
+     "output": false
+    },
+    {
+     "inputs": {
+      "a": 3,
+      "b": -9
+     },
+     "output": false
+    },
+    {
+     "inputs": {
+      "a": 1,
+      "b": -6
+     },
+     "output": false
+    }
+   ],
+   "validation": [
+    {
+     "inputs": {
+      "a": -5,
+      "b": -3
+     },
+     "output": false
+    },
+    {
+     "inputs": {
+      "a": 9,
+      "b": 4
+     },
+     "output": true
+    },
+    {
+     "inputs": {
+      "a": -6,
+      "b": -8
+     },
+     "output": false
+    },
+    {
+     "inputs": {
+      "a": 5,
+      "b": 7
+     },
+     "output": false
+    },
+    {
+     "inputs": {
+      "a": 5,
+      "b": -3
+     },
+     "output": false
+    },
+    {
+     "inputs": {
+      "a": 2,
+      "b": -6
+     },
+     "output": false
+    }
+   ]
+  },
+  {
+   "category": "distractor",
+   "name": "dis_hash_str",
+   "reference": null,
+   "seed": 1278219243,
+   "train": [
+    {
+     "inputs": {
+      "s": "x",
+      "t": "adb"
+     },
+     "output": "blue"
+    },
+    {
+     "inputs": {
+      "s": "yyaax",
+      "t": "dcyda"
+     },
+     "output": "red"
+    },
+    {
+     "inputs": {
+      "s": "az",
+      "t": "az"
+     },
+     "output": "green"
+    },
+    {
+     "inputs": {
+      "s": "z",
+      "t": "az"
+     },
+     "output": "blue"
+    },
+    {
+     "inputs": {
+      "s": "dddcac",
+      "t": "zxazxa"
+     },
+     "output": "green"
+    },
+    {
+     "inputs": {
+      "s": "yxca",
+      "t": "c"
+     },
+     "output": "green"
+    },
+    {
+     "inputs": {
+      "s": "addbc",
+      "t": "zxxxaa"
+     },
+     "output": "blue"
+    },
+    {
+     "inputs": {
+      "s": "xyxcx",
+      "t": "yz"
+     },
+     "output": "red"
+    },
+    {
+     "inputs": {
+      "s": "xbb",
+      "t": "dczz"
+     },
+     "output": "blue"
+    },
+    {
+     "inputs": {
+      "s": "yacccd",
+      "t": "zbddzz"
+     },
+     "output": "red"
+    }
+   ],
+   "validation": [
+    {
+     "inputs": {
+      "s": "cy",
+      "t": "b"
+     },
+     "output": "green"
+    },
+    {
+     "inputs": {
+      "s": "b",
+      "t": "db"
+     },
+     "output": "green"
+    },
+    {
+     "inputs": {
+      "s": "zxbdc",
+      "t": "dzdaa"
+     },
+     "output": "red"
+    },
+    {
+     "inputs": {
+      "s": "adyd",
+      "t": "zydcax"
+     },
+     "output": "red"
+    },
+    {
+     "inputs": {
+      "s": "bzy",
+      "t": "acdc"
+     },
+     "output": "green"
+    },
+    {
+     "inputs": {
+      "s": "bzxzbb",
+      "t": "dzza"
+     },
+     "output": "blue"
+    }
+   ]
+  },
+  {
+   "category": "distractor",
+   "name": "dis_noisy_sum",
+   "reference": null,
+   "seed": 2381758044,
+   "train": [
+    {
+     "inputs": {
+      "a": 3,
+      "b": -3
+     },
+     "output": -2
+    },
+    {
+     "inputs": {
+      "a": -9,
+      "b": -3
+     },
+     "output": -11
+    },
+    {
+     "inputs": {
+      "a": 1,
+      "b": -8
+     },
+     "output": -7
+    },
+    {
+     "inputs": {
+      "a": 8,
+      "b": -4
+     },
+     "output": 4
+    },
+    {
+     "inputs": {
+      "a": -8,
+      "b": 3
+     },
+     "output": -5
+    },
+    {
+     "inputs": {
+      "a": 7,
+      "b": -3
+     },
+     "output": 4
+    },
+    {
+     "inputs": {
+      "a": -5,
+      "b": 6
+     },
+     "output": 1
+    },
+    {
+     "inputs": {
+      "a": -4,
+      "b": -5
+     },
+     "output": -9
+    },
+    {
+     "inputs": {
+      "a": 2,
+      "b": -5
+     },
+     "output": -6
+    },
+    {
+     "inputs": {
+      "a": -7,
+      "b": -7
+     },
+     "output": -16
+    }
+   ],
+   "validation": [
+    {
+     "inputs": {
+      "a": -8,
+      "b": -7
+     },
+     "output": -18
+    },
+    {
+     "inputs": {
+      "a": 1,
+      "b": -5
+     },
+     "output": -7
+    },
+    {
+     "inputs": {
+      "a": 4,
+      "b": -7
+     },
+     "output": -3
+    },
+    {
+     "inputs": {
+      "a": 0,
+      "b": 7
+     },
+     "output": 5
+    },
+    {
+     "inputs": {
+      "a": -9,
+      "b": 5
+     },
+     "output": -4
+    },
+    {
+     "inputs": {
+      "a": -5,
+      "b": 0
+     },
+     "output": -5
+    }
+   ]
+  },
+  {
+   "category": "distractor",
+   "name": "dis_noisy_double",
+   "reference": null,
+   "seed": 365118608,
+   "train": [
+    {
+     "inputs": {
+      "a": -5,
+      "b": -4
+     },
+     "output": -10
+    },
+    {
+     "inputs": {
+      "a": 1,
+      "b": -1
+     },
+     "output": 2
+    },
+    {
+     "inputs": {
+      "a": -1,
+      "b": -8
+     },
+     "output": -1
+    },
+    {
+     "inputs": {
+      "a": 2,
+      "b": -6
+     },
+     "output": 5
+    },
+    {
+     "inputs": {
+      "a": -7,
+      "b": 7
+     },
+     "output": -14
+    },
+    {
+     "inputs": {
+      "a": 2,
+      "b": 0
+     },
+     "output": 4
+    },
+    {
+     "inputs": {
+      "a": -2,
+      "b": -3
+     },
+     "output": -4
+    },
+    {
+     "inputs": {
+      "a": 3,
+      "b": -6
+     },
+     "output": 6
+    },
+    {
+     "inputs": {
+      "a": -9,
+      "b": -6
+     },
+     "output": -18
+    },
+    {
+     "inputs": {
+      "a": 3,
+      "b": 5
+     },
+     "output": 6
+    }
+   ],
+   "validation": [
+    {
+     "inputs": {
+      "a": -6,
+      "b": -1
+     },
+     "output": -12
+    },
+    {
+     "inputs": {
+      "a": -5,
+      "b": -9
+     },
+     "output": -9
+    },
+    {
+     "inputs": {
+      "a": 3,
+      "b": -1
+     },
+     "output": 6
+    },
+    {
+     "inputs": {
+      "a": -4,
+      "b": 7
+     },
+     "output": -8
+    },
+    {
+     "inputs": {
+      "a": 8,
+      "b": -2
+     },
+     "output": 16
+    },
+    {
+     "inputs": {
+      "a": -6,
+      "b": 4
+     },
+     "output": -12
+    }
+   ]
+  },
+  {
+   "category": "distractor",
+   "name": "dis_hash_list",
+   "reference": null,
+   "seed": 3590871465,
+   "train": [
+    {
+     "inputs": {
+      "v": [
+       9,
+       -3,
+       5
+      ]
+     },
+     "output": 3
+    },
+    {
+     "inputs": {
+      "v": [
+       4,
+       2,
+       7
+      ]
+     },
+     "output": 8
+    },
+    {
+     "inputs": {
+      "v": [
+       -1,
+       -7,
+       -3
+      ]
+     },
+     "output": 9
+    },
+    {
+     "inputs": {
+      "v": [
+       -2,
+       -6,
+       2
+      ]
+     },
+     "output": 3
+    },
+    {
+     "inputs": {
+      "v": [
+       -6,
+       -7,
+       -1
+      ]
+     },
+     "output": 3
+    },
+    {
+     "inputs": {
+      "v": [
+       8,
+       7,
+       5
+      ]
+     },
+     "output": 3
+    },
+    {
+     "inputs": {
+      "v": [
+       7,
+       -4,
+       5
+      ]
+     },
+     "output": 7
+    },
+    {
+     "inputs": {
+      "v": [
+       -8,
+       -4,
+       2
+      ]
+     },
+     "output": 7
+    },
+    {
+     "inputs": {
+      "v": [
+       -3,
+       2,
+       -4
+      ]
+     },
+     "output": 5
+    },
+    {
+     "inputs": {
+      "v": [
+       -8,
+       5,
+       -8
+      ]
+     },
+     "output": 9
+    }
+   ],
+   "validation": [
+    {
+     "inputs": {
+      "v": [
+       3,
+       -1,
+       0
+      ]
+     },
+     "output": 9
+    },
+    {
+     "inputs": {
+      "v": [
+       1,
+       -5,
+       -9
+      ]
+     },
+     "output": 1
+    },
+    {
+     "inputs": {
+      "v": [
+       5,
+       -3,
+       3
+      ]
+     },
+     "output": 5
+    },
+    {
+     "inputs": {
+      "v": [
+       -6,
+       2,
+       -7
+      ]
+     },
+     "output": 2
+    },
+    {
+     "inputs": {
+      "v": [
+       -2,
+       0,
+       -8
+      ]
+     },
+     "output": 0
+    },
+    {
+     "inputs": {
+      "v": [
+       2,
+       1,
+       7
+      ]
+     },
+     "output": 5
+    }
+   ]
+  },
+  {
+   "category": "distractor",
+   "name": "dis_hash_mod_like",
+   "reference": null,
+   "seed": 3725475900,
+   "train": [
+    {
+     "inputs": {
+      "n": 396
+     },
+     "output": 9
+    },
+    {
+     "inputs": {
+      "n": 844
+     },
+     "output": 4
+    },
+    {
+     "inputs": {
+      "n": 315
+     },
+     "output": 6
+    },
+    {
+     "inputs": {
+      "n": 259
+     },
+     "output": 7
+    },
+    {
+     "inputs": {
+      "n": 938
+     },
+     "output": 4
+    },
+    {
+     "inputs": {
+      "n": 318
+     },
+     "output": 6
+    },
+    {
+     "inputs": {
+      "n": 279
+     },
+     "output": 7
+    },
+    {
+     "inputs": {
+      "n": 509
+     },
+     "output": 4
+    },
+    {
+     "inputs": {
+      "n": 195
+     },
+     "output": 2
+    },
+    {
+     "inputs": {
+      "n": 432
+     },
+     "output": 6
+    }
+   ],
+   "validation": [
+    {
+     "inputs": {
+      "n": 550
+     },
+     "output": 8
+    },
+    {
+     "inputs": {
+      "n": 536
+     },
+     "output": 9
+    },
+    {
+     "inputs": {
+      "n": 102
+     },
+     "output": 8
+    },
+    {
+     "inputs": {
+      "n": 535
+     },
+     "output": 9
+    },
+    {
+     "inputs": {
+      "n": 332
+     },
+     "output": 6
+    },
+    {
+     "inputs": {
+      "n": 719
+     },
+     "output": 5
+    }
+   ]
+  },
+  {
+   "category": "distractor",
+   "name": "dis_hash_str_len",
+   "reference": null,
+   "seed": 2490998972,
+   "train": [
+    {
+     "inputs": {
+      "s": "yadazda"
+     },
+     "output": 4
+    },
+    {
+     "inputs": {
+      "s": "bzbya"
+     },
+     "output": 3
+    },
+    {
+     "inputs": {
+      "s": "xdyaxbx"
+     },
+     "output": 6
+    },
+    {
+     "inputs": {
+      "s": "xdz"
+     },
+     "output": 2
+    },
+    {
+     "inputs": {
+      "s": "bybb"
+     },
+     "output": 0
+    },
+    {
+     "inputs": {
+      "s": "ccaczxxzb"
+     },
+     "output": 6
+    },
+    {
+     "inputs": {
+      "s": "caczaxy"
+     },
+     "output": 1
+    },
+    {
+     "inputs": {
+      "s": "yayx"
+     },
+     "output": 6
+    },
+    {
+     "inputs": {
+      "s": "da"
+     },
+     "output": 4
+    },
+    {
+     "inputs": {
+      "s": "ycbzczy"
+     },
+     "output": 7
+    }
+   ],
+   "validation": [
+    {
+     "inputs": {
+      "s": "cy"
+     },
+     "output": 6
+    },
+    {
+     "inputs": {
+      "s": "xby"
+     },
+     "output": 7
+    },
+    {
+     "inputs": {
+      "s": "ydacbdbd"
+     },
+     "output": 6
+    },
+    {
+     "inputs": {
+      "s": "zdacyxx"
+     },
+     "output": 4
+    },
+    {
+     "inputs": {
+      "s": "y"
+     },
+     "output": 3
+    },
+    {
+     "inputs": {
+      "s": "xyxzbbac"
+     },
+     "output": 4
+    }
+   ]
+  },
+  {
+   "category": "distractor",
+   "name": "dis_parity_noise",
+   "reference": null,
+   "seed": 3039234595,
+   "train": [
+    {
+     "inputs": {
+      "a": 24,
+      "b": -8
+     },
+     "output": 0
+    },
+    {
+     "inputs": {
+      "a": 11,
+      "b": 0
+     },
+     "output": 1
+    },
+    {
+     "inputs": {
+      "a": 5,
+      "b": -8
+     },
+     "output": 0
+    },
+    {
+     "inputs": {
+      "a": -3,
+      "b": -8
+     },
+     "output": 0
+    },
+    {
+     "inputs": {
+      "a": 27,
+      "b": -4
+     },
+     "output": 1
+    },
+    {
+     "inputs": {
+      "a": -1,
+      "b": -3
+     },
+     "output": 0
+    },
+    {
+     "inputs": {
+      "a": -17,
+      "b": 3
+     },
+     "output": 0
+    },
+    {
+     "inputs": {
+      "a": 12,
+      "b": -1
+     },
+     "output": 0
+    },
+    {
+     "inputs": {
+      "a": -11,
+      "b": 0
+     },
+     "output": 1
+    },
+    {
+     "inputs": {
+      "a": 5,
+      "b": 8
+     },
+     "output": 1
+    }
+   ],
+   "validation": [
+    {
+     "inputs": {
+      "a": -2,
+      "b": -5
+     },
+     "output": 0
+    },
+    {
+     "inputs": {
+      "a": 18,
+      "b": -7
+     },
+     "output": 0
+    },
+    {
+     "inputs": {
+      "a": -26,
+      "b": 2
+     },
+     "output": 0
+    },
+    {
+     "inputs": {
+      "a": -9,
+      "b": 1
+     },
+     "output": 1
+    },
+    {
+     "inputs": {
+      "a": 28,
+      "b": 3
+     },
+     "output": 0
+    },
+    {
+     "inputs": {
+      "a": 13,
+      "b": -4
+     },
+     "output": 0
+    }
+   ]
+  }
+ ],
+ "train_rows": 10,
+ "validation_rows": 6,
+ "version": 1
+}
