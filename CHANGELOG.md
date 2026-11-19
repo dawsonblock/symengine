@@ -49,6 +49,62 @@ evidence. The release seal is still stale and must be rebuilt.
   evaluator worker and the campaign tools other than
   `five_arm_campaign.py`.
 
+## 2026-11-19 — Efficacy pilot tooling (SIS-FEAT-15)
+
+Track B of the stronger-learner / real-pilot / qualified-sandbox plan:
+everything an exploratory Claude Code pilot needs except the run itself,
+which needs real repositories and agent quota
+(`docs/v3/PILOT_RUNBOOK.md`). No efficacy claim changes.
+
+- **Claude Code adapter.** `sis.v3.adapters.claude_code` runs
+  `claude -p --output-format stream-json` headless in the task
+  workspace (one documented argv builder, scrubbed environment,
+  wall-clock watchdog, process-group cleanup). Tokens are metered as
+  `input_tokens + output_tokens` de-duplicated per API message and
+  reconciled with the final usage; cache tokens and cost are reported
+  per row as `usage_detail`. `ClaudeCodeAgent` enforces the token and
+  tool budgets while the run streams and fails an overrun as an attested
+  budget failure. `agent.kind` is `codex-cli` or `claude-code` in the
+  manifest validator, the builder and the analysis provenance check; the
+  runner pins the version with `claude --version`.
+- **Split custody on Linux.** `five_arm_campaign.py --executor docker`
+  grades in `DockerSandboxExecutor` with a second container identity
+  (`--docker-split-user`), the pinned image by default
+  (`--docker-image`), and passes `--docker-runtime` through when the
+  executor supports one.
+- **Task corpus importer.** `tools/import_study_tasks.py` turns bug-fix
+  commits into tasks (parent = base, the fix's test = hidden acceptance,
+  commit or issue text = prompt) and keeps only tasks whose base fails
+  and fix passes under the runner's own grading. A task may now carry
+  its own `base_commit` within its repository, bound by its own snapshot
+  and execution digests; trees are materialized blob by blob without
+  running repository-configured programs. Hidden tests may be a
+  directory of per-task files.
+- **Guidance bundle producer.** `tools/build_guidance_bundle.py` learns
+  B/C/D candidates on induction training repositories with
+  `sis.v3.learning`, qualifies them on separate induction repositories,
+  and signs evidence and decisions with the `--trust-config` keys. The
+  runner now refuses a bundle whose qualification evidence comes from a
+  study holdout repository, its own training repositories or a study
+  task, or whose qualifying receipts are not the declared ones.
+- **Runner robustness.** `--state-dir` journals every `(task, arm)` row
+  (digest-chained, bound to the study identity; journaled receipts are
+  re-verified) and an interrupted run resumes; `--workers N` runs tasks
+  in parallel with seeded per-task arm order and results equal to a
+  serial run. A tree graded just before an interruption reuses its
+  receipt (`OutcomeVerifier.prior_receipt`).
+- **Repository-level power planning.**
+  `sis.v3.governed_eval.required_repositories` simulates the exact
+  repository sign-flip decision with repository difficulty, task
+  difficulty and a repository-specific effect, and
+  `pilot_planning_inputs` reads the rates and intra-repository
+  correlations from a pilot report.
+- **Pilot preparation.** `docs/v3/pilot_study_spec_template.json`
+  (exploratory, A/E, Claude Code, 900 s / 150k tokens / 100 tools),
+  `docs/v3/pilot_learning_spec_template.json` and the runbook. An
+  end-to-end dry run (imported temporary repositories, scripted agent,
+  SIGKILL and resume) is in `tests/v3/test_efficacy_pilot_dry_run.py`.
+
 ## Learner v2 (SIS-FEAT-14)
 
 Track A of the learner plan: a deeper, typed, conditional rule learner,

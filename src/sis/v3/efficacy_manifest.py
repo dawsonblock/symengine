@@ -29,9 +29,13 @@ from . import gitquery
 from .contracts import ContractError, canonical_digest
 from .governed_eval import (GOVERNED_ARMS, PRIMARY_CONTRAST_ARMS,
                             preregister, required_sample_size)
-from .learning_qualification import MIN_CONFIRMATORY_HOLDOUT_REPOSITORIES
+from .learning_qualification import (AGENT_KINDS,
+                                     MIN_CONFIRMATORY_HOLDOUT_REPOSITORIES)
 from .runner import (RunnerError, repository_execution_digest, tree_digest,
                      verify_repository_digest)
+from .study_runtime import (StudyRuntimeError, commit_exists,
+                            commit_is_ancestor, hidden_test_belongs,
+                            hidden_tests_digest, materialize_commit)
 
 PLACEHOLDER = re.compile(r"^<[^<>]+>$")
 _HEX40 = re.compile(r"^[0-9a-f]{40}$")
@@ -635,8 +639,18 @@ def _validate_tasks(document, by_id: dict[str, dict], problems: list[str],
                 _problem(problems, label + ".base_commit is invalid")
             elif (repository is not None
                   and base_commit != repository.get("base_commit")):
-                _problem(problems,
-                         label + ".base_commit does not match the repository")
+                # A task may start from its own commit inside the
+                # repository (imported bug-fix tasks); it must then bind
+                # the tree it starts from.
+                own = [name for name in ("repo_snapshot_digest",
+                                         "repo_execution_digest")
+                       if not (isinstance(task.get(name), str)
+                               and _HEX64.match(task[name]))]
+                if own:
+                    _problem(problems,
+                             label + ".base_commit differs from the"
+                             " repository, so the task must declare its own "
+                             + " and ".join(own))
         for name in ("prompt", "failure_class"):
             value = task.get(name)
             if not isinstance(value, str) or not value:
@@ -679,10 +693,30 @@ def _validate_tasks(document, by_id: dict[str, dict], problems: list[str],
                             or not _SAFE_REL.match(relative)):
                         _problem(problems,
                                  label + " has an unsafe acceptance path")
+        target = acceptance.get("hidden_tests_target")
+        if target is not None:
+            if (not isinstance(target, str) or not _SAFE_REL.match(target)
+                    or hidden_path is None):
+                _problem(problems,
+                         label + ".acceptance.hidden_tests_target is invalid")
+            elif isinstance(argv, list) and target not in argv:
+                _problem(problems, label + ".acceptance.argv must name"
+                                         " hidden_tests_target")
         if hidden_path is not None:
             if not isinstance(hidden_path, str) or not hidden_path:
                 _problem(problems,
                          label + ".acceptance.hidden_tests_path is invalid")
+            elif (repository is not None
+                  and isinstance(repository.get("hidden_tests"), Mapping)
+                  and isinstance(repository["hidden_tests"].get("path"), str)
+                  and not _placeholder(hidden_path)
+                  and not _placeholder(repository["hidden_tests"]["path"])
+                  and Path(repository["hidden_tests"]["path"]).is_dir()
+                  and not hidden_test_belongs(
+                      hidden_path, repository["hidden_tests"]["path"])):
+                _problem(problems,
+                         label + ".acceptance.hidden_tests_path is not in the"
+                                 " repository's hidden_tests directory")
             digest = acceptance.get("hidden_tests_digest")
             if (_placeholder(digest) and allow_placeholders):
                 pass
@@ -691,6 +725,63 @@ def _validate_tasks(document, by_id: dict[str, dict], problems: list[str],
                 _problem(problems,
                          label + ".acceptance.hidden_tests_digest is invalid")
     return tasks
+
+
+def _verify_task_trees(tasks, by_id: dict[str, dict],
+                       problems: list[str]) -> dict[str, str]:
+    """Bind every task that starts from its own commit to that commit.
+
+    The commit must exist in the task's repository and be an ancestor of
+    the repository's checkout (one repository, one history), and the tree
+    written by :func:`~sis.v3.study_runtime.materialize_commit` must match
+    the task's declared snapshot digest and execution fingerprint. Tasks
+    in one repository share its lineage, so the repository-level lineage
+    check covers them.
+    """
+    import tempfile
+
+    verified: dict[str, str] = {}
+    for index, task in enumerate(tasks):
+        if not isinstance(task, Mapping):
+            continue
+        repository = by_id.get(task.get("repository_id"))
+        commit = task.get("base_commit")
+        if (repository is None or not isinstance(commit, str)
+                or commit == repository.get("base_commit")):
+            continue
+        label = f"tasks[{index}]"
+        path = repository.get("path")
+        head = repository.get("base_commit")
+        if not isinstance(path, str) or not Path(path).is_dir():
+            continue
+        if not commit_exists(path, commit):
+            _problem(problems, label + ".base_commit is not a commit of its"
+                                     " repository")
+            continue
+        if not isinstance(head, str) or not commit_is_ancestor(
+                path, commit, head):
+            _problem(problems, label + ".base_commit is not an ancestor of"
+                                     " the repository's base_commit")
+            continue
+        with tempfile.TemporaryDirectory(prefix="sis-task-tree-") as temp:
+            target = Path(temp) / "tree"
+            try:
+                materialize_commit(path, commit, target)
+                snapshot = tree_digest(target, version=3)
+                execution = repository_execution_digest(target)
+            except (OSError, RunnerError, StudyRuntimeError) as exc:
+                _problem(problems,
+                         f"{label} base tree cannot be materialized: {exc}")
+                continue
+        if snapshot != task.get("repo_snapshot_digest"):
+            _problem(problems, label + ".repo_snapshot_digest does not match"
+                                     " its base_commit tree")
+        elif execution != task.get("repo_execution_digest"):
+            _problem(problems, label + ".repo_execution_digest does not"
+                                     " match its base_commit tree")
+        else:
+            verified[str(task.get("task_id"))] = snapshot
+    return verified
 
 
 def _study_tier(document: Mapping, powered_plan: bool, protocol_ok: bool,
@@ -750,6 +841,23 @@ def validate_manifest(document, *, allow_placeholders: bool = False,
     tasks = _validate_tasks(
         document, by_id, problems, allow_placeholders, sample_size,
         protocol_budget=protocol.get("budget"))
+    task_trees = (
+        {} if allow_placeholders or not check_paths
+        else _verify_task_trees(tasks, by_id, problems))
+    if check_paths and not allow_placeholders:
+        for repository_id, repository in by_id.items():
+            hidden = repository.get("hidden_tests")
+            hidden_path = hidden.get("path") if isinstance(hidden, Mapping) \
+                else None
+            if isinstance(hidden_path, str) and Path(hidden_path).is_dir():
+                try:
+                    matches = hidden_tests_digest(hidden_path) == \
+                        hidden.get("digest")
+                except (OSError, StudyRuntimeError):
+                    matches = False
+                if not matches:
+                    _problem(problems, "hidden tests directory does not match"
+                                       " its digest: " + repository_id)
     document_protocol = document.get("protocol")
     declared_kind = (document_protocol.get("analysis_kind")
                      if isinstance(document_protocol, Mapping) else None)
@@ -825,10 +933,10 @@ def validate_manifest(document, *, allow_placeholders: bool = False,
             value = agent.get(name)
             if not isinstance(value, str) or not value:
                 _problem(problems, f"agent.{name} is missing")
-        if agent.get("kind") not in (None, "codex-cli") and not (
+        if agent.get("kind") not in (None, *AGENT_KINDS) and not (
                 _placeholder(agent.get("kind")) and allow_placeholders):
-            _problem(problems, "agent.kind must be codex-cli for the"
-                               " current harness")
+            _problem(problems, "agent.kind must be one of "
+                               + ", ".join(AGENT_KINDS))
     preregistration = document.get("preregistration")
     if not isinstance(preregistration, Mapping):
         _problem(problems, "preregistration must be an object")
@@ -892,6 +1000,7 @@ def validate_manifest(document, *, allow_placeholders: bool = False,
             sorted(repository_tree_versions.items())),
         "repository_execution": dict(sorted(repository_execution.items())),
         "repository_commits": dict(sorted(repository_commits.items())),
+        "task_trees": dict(sorted(task_trees.items())),
         "repository_origins": dict(sorted(
             (repository_id, repository.get("origin"))
             for repository_id, repository in by_id.items())),

@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "kind": "primary_contrast_study_spec",
+  "study_tier": "exploratory",
+  "notes": "Exploratory pilot (SIS-FEAT-15): A vs E with Claude Code, Docker split custody, 900 s / 150k tokens / 100 tool calls per arm. Fill every <placeholder>. Holdout repositories and tasks are added by tools/import_study_tasks.py --partition holdout --merge-into <this file>; induction repositories are the ones the guidance bundle was learned and qualified on (their entries must match the learning spec's paths). Build with tools/build_efficacy_manifest.py, then commit the manifest before the first run. See docs/v3/PILOT_RUNBOOK.md.",
+  "protocol": {
+    "primary_metric": "paired solved_delta E vs A",
+    "method": "repository_sign_flip_exact",
+    "alpha": 0.05,
+    "min_effect": 0.2,
+    "sample_size": 100,
+    "expected_baseline": 0.3,
+    "expected_treatment": 0.5,
+    "power": 0.8,
+    "budget": {
+      "wall_seconds": 900,
+      "token_budget": 150000,
+      "tool_budget": 100
+    },
+    "arms": ["A", "E"],
+    "powered": true,
+    "notes": "Pilot: estimates the A-to-E effect, its interval, the intra-repository correlation, cost per task and the negative-transfer rate, and sizes a confirmatory study with sis.v3.governed_eval.required_repositories. An exploratory manifest can never yield a confirmatory label."
+  },
+  "agent": {
+    "kind": "claude-code",
+    "model": "<pinned model id, e.g. the full model name passed to claude --model>",
+    "cli_version": "<output of `claude --version`, e.g. 2.1.328>"
+  },
+  "preregistration": {
+    "registered_at": "<ISO-8601 time with timezone, not in the future>",
+    "registered_by": "<operator identity>"
+  },
+  "guidance_bundle": "<absolute path to the bundle written by tools/build_guidance_bundle.py>",
+  "repositories": [
+    {"repository_id": "induction-1", "partition": "induction", "path": "<absolute path: learning-spec training repository 1>"},
+    {"repository_id": "induction-2", "partition": "induction", "path": "<absolute path: learning-spec training repository 2>"},
+    {"repository_id": "induction-3", "partition": "induction", "path": "<absolute path: learning-spec training repository 3>"},
+    {"repository_id": "induction-4", "partition": "induction", "path": "<absolute path: learning-spec training repository 4>"},
+    {"repository_id": "induction-5", "partition": "induction", "path": "<absolute path: learning-spec training repository 5>"},
+    {"repository_id": "induction-6", "partition": "induction", "path": "<absolute path: learning-spec training repository 6>"},
+    {"repository_id": "induction-7", "partition": "induction", "path": "<absolute path: learning-spec qualification repository 1>"},
+    {"repository_id": "induction-8", "partition": "induction", "path": "<absolute path: learning-spec qualification repository 2>"},
+    {"repository_id": "induction-9", "partition": "induction", "path": "<absolute path: learning-spec qualification repository 3>"},
+    {"repository_id": "induction-10", "partition": "induction", "path": "<absolute path: learning-spec qualification repository 4>"}
+  ],
+  "tasks": []
+}

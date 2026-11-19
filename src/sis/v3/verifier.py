@@ -876,6 +876,22 @@ class OutcomeVerifier:
     def issued_receipts(self) -> list[str]:
         return [entry["receipt_digest"] for entry in self._journal]
 
+    def prior_receipt(self, task_ref: str, evaluated_repo_digest: str
+                      ) -> OutcomeReceiptV1 | OutcomeReceiptV2 | None:
+        """The receipt already issued for this exact submission, if any.
+
+        The evaluator refuses to grade one tree twice for a task
+        (``duplicate_evaluation``). A resumed study run can meet a tree
+        that was graded just before the interruption but never journaled;
+        it reuses that signed receipt instead of losing the arm.
+        """
+        for entry in reversed(self._journal):
+            if (entry.get("task_id") == task_ref
+                    and entry.get("evaluated_repo_digest")
+                    == evaluated_repo_digest):
+                return self.load_receipt(entry["receipt_digest"])
+        return None
+
     def load_receipt(self, receipt_digest: str) -> OutcomeReceiptV1 | OutcomeReceiptV2:
         """Reload a persisted signed receipt by its canonical digest.
 

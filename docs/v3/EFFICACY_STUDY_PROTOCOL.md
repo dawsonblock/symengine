@@ -262,22 +262,31 @@ including the power floor and the repository requirements, is unchanged.
 2. Commit the manifest and its protocol digest.
 3. Preflight the agent: binary, authentication, model and CLI version.
 4. Run the declared arms with randomized order and per-`(task, arm)`
-   checkpointing so a quota interruption is recorded as
-   `INVALID_INFRASTRUCTURE` rather than silently dropping pairs. The
-   current runner randomizes order but does not checkpoint: an
-   interrupted run is aborted and must be repeated in full.
+   checkpointing. With `--state-dir` every finished arm is appended to
+   a digest-chained journal (`journal.jsonl`) bound to the manifest,
+   protocol, guidance bundle, executor and evaluator key; rerunning the
+   same command after an interruption resumes from it instead of
+   starting over. A journaled row is reused only when its receipt
+   reloads from the evaluator's store with the same outcome
+   (`BLOCKED_RESUME` otherwise). `--workers N` runs tasks in parallel;
+   each task keeps its manifest-seeded arm order, guidance is resolved
+   in serial order and evaluations are serialized, so the report equals
+   a serial run's.
 5. Verify every outcome with the evaluator-owned acceptance tests.
 6. Preserve the raw report and receipts. Do not edit a failed or
    underpowered result after the fact.
 
-The existing library interface is `sis.v3.learning_qualification.FiveArmCampaign`
-and `CodexCliAgent`; `tools/five_arm_campaign.py --real-agent --manifest`
-is the gate. A validated manifest is executed: the gate builds the
+The library interface is `sis.v3.learning_qualification.FiveArmCampaign`
+with `CodexCliAgent` or `ClaudeCodeAgent` (the manifest's
+`agent.kind`, `codex-cli` or `claude-code`, selects the agent, its
+availability gate and its `--version` check);
+`tools/five_arm_campaign.py --real-agent --manifest` is the gate. A validated manifest is executed: the gate builds the
 declared arms from the manifest, registers the evaluator-owned acceptance
 material, runs the agent against each repository snapshot and writes the
 paired report with a receipt digest per `(task, arm)`. The gate still
-fails closed with `BLOCKED_REAL_AGENT` when Codex is unavailable or
-unauthenticated, `BLOCKED_MANIFEST` when the manifest is invalid, not ready (a
+fails closed with `BLOCKED_REAL_AGENT` when the pinned agent CLI is
+unavailable or unauthenticated, `BLOCKED_EXECUTOR` when the evaluator
+backend cannot be constructed (for example no Docker daemon), `BLOCKED_MANIFEST` when the manifest is invalid, not ready (a
 diagnostic or unpowered plan) or a repository snapshot has drifted,
 `BLOCKED_SPLIT_CUSTODY` when the
 backend cannot keep acceptance tests out of the submission's process,
@@ -289,10 +298,15 @@ Executing a manifest is not evidence. A confirmatory label additionally
 requires all of the following, recorded in the report's `provenance`
 block and enforced by the classifier:
 
-- the agent is the real `codex-cli` (an injected test agent is
-  `invalid`, never `exploratory`);
+- the agent is the real `codex-cli` or `claude-code` (an injected test
+  agent is `invalid`, never `exploratory`);
 - the installed CLI version matched the manifest;
-- private acceptance tests ran under split custody;
+- private acceptance tests ran under split custody — on Linux,
+  `--executor docker`, which grades in `DockerSandboxExecutor` with a
+  second container identity (`--docker-split-user`, default
+  `65533:65533`; image `--docker-image`, default the pinned
+  `sis-evaluator:3.3.9@sha256:5af4f6ce…`; `--docker-runtime runsc` is
+  passed through once the executor supports a runtime);
 - guidance came from `--guidance-bundle`, a frozen file whose every
   step resolves to a qualified candidate record; the built-in
   `Recall…`/`Workflow…`/`Procedure…` prompts are a fixed control
@@ -341,6 +355,14 @@ python3 tools/five_arm_campaign.py --real-agent --allow-local-executor \
   "training": {
     "repository_digests": ["<induction repo snapshot sha256>"]
   },
+  "qualification": {
+    "repository_digests": ["<other induction repo snapshot sha256>"],
+    "tasks": [{"task_id": "<qualification task>",
+               "repository_digest": "<one of the above>"}],
+    "receipt_signer": {"key_id": "<evaluator key id>",
+                       "public_key": "<ed25519 public key hex>"},
+    "receipts": {"<receipt sha256>": {"...": "signed outcome receipt"}}
+  },
   "components": {
     "B": [{
       "candidate_id": "cand-memory-1",
@@ -367,6 +389,94 @@ declared digest does not recompute. Arm E receives the B, C and D steps
 in that order. The built-in prompts are never mixed into a learned
 bundle.
 
+The `qualification` block says where the candidates were qualified. The
+gate refuses the bundle when a qualification repository is a study
+holdout repository (`guidance_qualification_uses_holdout`), is not an
+induction repository of the manifest, or is one of the bundle's own
+training repositories; when a qualification task is a study task; or
+when a receipt does not hash to its address, names an undeclared task,
+or is not signed by the declared evaluator key (which must be a trusted
+`evaluator_keys` entry when `--trust-config` is given). With a registry,
+every receipt a candidate was qualified on must be one of the declared
+receipts. A verified bundle without a `qualification` block is refused.
+
+### Producing the bundle
+
+`tools/build_guidance_bundle.py` produces this file from the induction
+partition alone. Its learning spec (`kind: guidance_learning_spec`)
+lists induction repositories, each with `learning_split: training` or
+`qualification` (disjoint by snapshot and by Git lineage), their tasks
+(as written by `tools/import_study_tasks.py --partition induction`),
+the pinned agent and the per-task budget; `--exclude-spec` names the
+study spec or manifest whose holdout repositories and tasks it must
+never touch.
+
+1. The agent runs every training task without guidance; the evaluator
+   grades each run and the verified source change is captured.
+2. Candidates are derived with `sis.v3.learning`: C (skill) from the
+   tool actions every verified solve shared (`induce_strategies`), D
+   (symbolic procedure) from the most frequent verified single-operator
+   change (`induce_structural_change`, `structure_to_record`), B
+   (memory) from the size of the verified fixes.
+3. On the qualification split, arm A runs once and each candidate runs
+   alone; `select_improvement` keeps a candidate with net paired wins
+   across `--min-repositories` repositories (`--rule non_inferior`
+   accepts wins ≥ losses with at least one assisted pass).
+4. Kept candidates are submitted to `--candidate-registry` and qualified
+   with evidence signed by the evaluator key (the same key directory
+   signs the outcome receipts) and a decision signed by the operator
+   key. Both keys must be listed in `--trust-config`;
+   `--print-public-keys` prints the entries to add. No test keys are
+   involved.
+
+If any of B, C, D has no qualified candidate, no bundle is written and
+`<output>.report.json` says why.
+
+### Claude Code
+
+`ClaudeCodeAdapter` runs `claude -p --output-format stream-json
+--verbose` in the task workspace; `claude_code_argv()` is the one place
+the command line is built (no session persistence, `--safe-mode`, no MCP
+servers or slash commands, `--permission-mode acceptEdits` with an
+allowed tool set and web tools denied). The environment is rebuilt from
+an allowlist (credentials, proxy and CA settings only) and a watchdog
+kills the process group at the wall clock. Tokens are
+`input_tokens + output_tokens`, de-duplicated per API message and
+reconciled with the final `result` usage; cache reads/writes and the
+reported cost are recorded per row as `usage_detail`, not as budget
+tokens. Tool calls are distinct `tool_use` blocks. The token and tool
+budgets are enforced while the run streams: on an overrun the CLI is
+killed and the arm fails with `real_agent_budget_exceeded:<tokens|tools>`,
+an attested budget failure. The manifest pins `agent.cli_version`
+against `claude --version`.
+
+### Importing tasks
+
+`tools/import_study_tasks.py` turns the bug-fix history of a full Git
+clone into tasks: a commit whose message reads as a fix and that changes
+Python source and exactly one Python test file becomes a task whose
+`base_commit` is the commit's parent, whose hidden acceptance file is
+the fix's version of that test (stored outside the repository, staged
+at its original path via `acceptance.hidden_tests_target`) and whose
+prompt is the commit message (or issue text from `--prompt-file`). With
+`--verify local|docker` each task is graded the way the runner grades
+it, and kept only when the base **fails** and the fix **passes**.
+`--merge-into` adds the repository and tasks to a study or learning
+spec.
+
+A task may therefore carry its own `base_commit` inside its repository.
+It must be an ancestor of the repository's checkout, and the task binds
+the tree it starts from with its own `repo_snapshot_digest` and
+`repo_execution_digest`; the builder computes both and the validator
+re-materializes the commit (blob by blob, no checkout, no filters) to
+check them. The repository's `hidden_tests.path` may be a directory of
+per-task files, bound by a directory digest. Lineage disjointness is
+unchanged: tasks of one repository share its lineage.
+
+Imported tasks run in the evaluator image, which carries pytest only;
+a repository whose tests need other packages fails `--verify docker` and
+is rejected.
+
 The run writes `<report>.evidence/` next to the report: the signed
 receipt bytes under `receipts/`, the evaluator public key, the exact
 manifest and a `bundle.json` that binds the manifest digest, the report
@@ -391,6 +501,25 @@ evidence; the bundle is.
   independent draws, so per-repository outcomes and a cluster-robust
   check accompany the paired task-level analysis.
 - Failure categories, including evaluator/bootstrap errors.
+
+## Sizing a confirmatory study
+
+`required_sample_size` assumes independent tasks. The confirmatory
+decision is the repository-level sign-flip test, so the study is sized
+in repositories with `sis.v3.governed_eval.required_repositories`. It
+simulates that exact test under a latent-threshold model with
+repository difficulty (`icc`), task difficulty shared by both arms
+(`task_correlation`) and a repository-specific treatment effect
+(`effect_sd`, or the pilot's `difference_icc`, which is calibrated to
+it), and returns the smallest repository count reaching the target
+power, the power curve, and a recommendation that is never below the 20
+repository floor. `pilot_planning_inputs(report)` extracts the per-arm
+rates, tasks per repository and the two ANOVA intra-repository
+correlations from a pilot report. Pilot estimates are noisy; plan with
+conservative values. The simulation is deterministic for a seed; it
+models the sign-flip test only (not the cluster-bootstrap interval or
+the negative-transfer gate), so it is an upper bound on the power of the
+full gate.
 
 ## Evidence classes
 
@@ -417,12 +546,18 @@ the seal claiming the old source.
 ## Current status
 
 - The scaffold, template and validator are present.
-- The runner executes a validated manifest, randomizes arm order, meters
-  usage, records provenance and exports a signed-receipt evidence bundle.
-- It does not yet checkpoint per `(task, arm)` and still constructs the
-  local executor; a secure Linux run needs the Docker backend wired in.
-- No confirmatory run has been executed: the built-in guidance is a
-  fixed control condition, not learned components, and no preregistered
-  task manifest exists on the development host.
+- The runner executes a validated manifest with Codex CLI or Claude
+  Code, randomizes arm order, meters usage (live token/tool budgets for
+  Claude Code), records provenance, exports a signed-receipt evidence
+  bundle, resumes from a per-`(task, arm)` journal and runs tasks in
+  parallel. `--executor docker` gives split custody on Linux.
+- Tasks can be imported from real bug-fix histories, and a learned,
+  signed guidance bundle can be produced from the induction partition.
+- An end-to-end dry run (scripted agent, imported temporary repositories,
+  kill and resume) is part of the test suite
+  (`tests/v3/test_efficacy_pilot_dry_run.py`).
+- No pilot or confirmatory run has been executed. The exploratory pilot
+  (`docs/v3/PILOT_RUNBOOK.md`, `docs/v3/pilot_study_spec_template.json`)
+  needs real repositories and agent quota.
 - The accurate claim remains: the learning workflow functions; its
   general coding effectiveness is unproven.

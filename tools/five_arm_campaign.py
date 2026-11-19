@@ -8,7 +8,8 @@ The demo path runs the real five-arm harness, real signed receipts and
 the real statistics on a tiny scripted task set. It is explicitly
 labelled DEMONSTRATION and never claims learning efficacy.
 
-The real path requires the Codex CLI to be installed and authenticated.
+The real path requires the manifest's pinned agent (``agent.kind``:
+``codex-cli`` or ``claude-code``) to be installed and authenticated.
 If it is not, the tool writes a BLOCKED_REAL_AGENT report and exits 2;
 it never substitutes a scripted run for a confirmatory one. A real run
 requires a validated task manifest (repository paths, prompts,
@@ -60,13 +61,24 @@ Usage:
     python3 tools/five_arm_campaign.py --real-agent --manifest tasks.json \
         --guidance-bundle bundle.json --candidate-registry candidates.db \
         --trust-config v3.json --allow-local-executor -o real.json
+    # Linux split custody, resumable, two tasks at a time:
+    python3 tools/five_arm_campaign.py --real-agent --executor docker \
+        --manifest tasks.json --guidance-bundle bundle.json \
+        --candidate-registry candidates.db --trust-config v3.json \
+        --state-dir /study/state --workers 2 -o real.json
+
+``--state-dir`` keeps the evaluator keys, receipts, per-task trees and a
+``(task, arm)`` journal; rerunning the same command after an interruption
+resumes from the journal (see docs/v3/PILOT_RUNBOOK.md).
 """
 from __future__ import annotations
 
 import argparse
 import hashlib
 import json
+import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -89,11 +101,18 @@ from sis.v3.evaluation_runtime import EvaluationRuntimeProfile  # noqa: E402
 from sis.v3.governed_eval import (GOVERNED_ARMS, PRIMARY_CONTRAST_ARMS,  # noqa: E402
                                   preregister)
 from sis.v3.learning_qualification import (  # noqa: E402
-    CodexCliAgent, FiveArmCampaign, build_context_provider,
-    codex_agent_status, write_report)
+    AGENT_KINDS, ClaudeCodeAgent, CodexCliAgent, FiveArmCampaign,
+    build_context_provider, claude_code_agent_status, codex_agent_status,
+    write_report)
 from sis.v3.runner import (LocalSubprocessExecutor, ResourceLimits,  # noqa: E402
                            RunnerError, repository_execution_digest,
                            tree_digest, verify_repository_digest)
+from sis.v3.study_runtime import (DEFAULT_SPLIT_USER,  # noqa: E402
+                                  DEFAULT_STUDY_IMAGE, EXECUTOR_KINDS,
+                                  RunJournal, StudyRuntimeError,
+                                  build_study_executor, executor_description,
+                                  hidden_test_belongs, hidden_tests_digest,
+                                  materialize_commit)
 from sis.v3.verifier import OutcomeVerifier  # noqa: E402
 
 PY = sys.executable
@@ -291,7 +310,32 @@ def _normalized_version(value) -> str | None:
     return match.group(0) if match else None
 
 
-def _installed_codex_version(binary: str | None) -> str | None:
+def _agent_status(kind: str) -> dict:
+    """The availability gate of the manifest's pinned agent kind.
+
+    Looked up through the module globals so tests can replace either
+    status function.
+    """
+    if kind == "claude-code":
+        return claude_code_agent_status()
+    return codex_agent_status()
+
+
+def _peek_agent_kind(manifest_path: Path | None) -> str:
+    """The manifest's ``agent.kind`` before full validation (gate choice)."""
+    if manifest_path is None:
+        return "codex-cli"
+    try:
+        document, _ = _load_manifest(manifest_path)
+    except (OSError, ValueError):
+        return "codex-cli"
+    agent = document.get("agent")
+    kind = agent.get("kind") if isinstance(agent, Mapping) else None
+    return kind if kind in AGENT_KINDS else "codex-cli"
+
+
+def _installed_cli_version(binary: str | None) -> str | None:
+    """``<binary> --version`` normalized to ``X.Y.Z`` (both agent CLIs)."""
     if not binary:
         return None
     try:
@@ -300,6 +344,21 @@ def _installed_codex_version(binary: str | None) -> str | None:
     except (OSError, subprocess.SubprocessError):
         return None
     return _normalized_version((proc.stdout or "") + " " + (proc.stderr or ""))
+
+
+def _installed_codex_version(binary: str | None) -> str | None:
+    return _installed_cli_version(binary)
+
+
+def _installed_claude_version(binary: str | None) -> str | None:
+    """``claude --version`` prints ``X.Y.Z (Claude Code)``."""
+    return _installed_cli_version(binary)
+
+
+def _installed_version(kind: str, binary: str | None) -> str | None:
+    if kind == "claude-code":
+        return _installed_claude_version(binary)
+    return _installed_codex_version(binary)
 
 
 def _git_anchor(path: Path) -> dict:
@@ -345,9 +404,125 @@ def _verify_bundle_candidates(registry, components: Mapping) -> bool:
     return True
 
 
+def _check_bundle_qualification(qualification, *, induction_digests: set,
+                                holdout_digests: set, training_digests: set,
+                                study_task_ids: set,
+                                trusted_evaluator_key_ids=None) -> dict:
+    """Prove the bundle's qualification evidence came from induction repos.
+
+    The bundle declares the qualification split it was qualified on: the
+    repository snapshots, the tasks (each bound to one of those
+    snapshots) and the signed outcome receipts. Every qualification
+    repository must be an induction repository of the manifest, never a
+    study holdout repository, and never a training repository (a
+    candidate is not qualified on the material it was learned from). No
+    qualification task may be a study task. Every receipt must hash to
+    its address, name a declared qualification task and carry a valid
+    signature from the declared evaluator key — a key the trust
+    configuration trusts, when one is supplied.
+    """
+    from sis.v3.contracts import parse_outcome_receipt
+    from sis.v3.verifier import verify_receipt_signature
+
+    if not isinstance(qualification, Mapping):
+        raise ValueError("guidance_qualification_invalid: not an object")
+    repositories = qualification.get("repository_digests")
+    if (not isinstance(repositories, list) or not repositories
+            or any(not isinstance(item, str) or not _HEX64.match(item)
+                   for item in repositories)):
+        raise ValueError("guidance_qualification_invalid: repository_digests")
+    repositories = set(repositories)
+    if repositories & holdout_digests:
+        raise ValueError(
+            "guidance_qualification_uses_holdout: qualification evidence"
+            " comes from a study holdout repository")
+    if not repositories <= set(induction_digests):
+        raise ValueError(
+            "guidance_qualification_not_induction: qualification"
+            " repositories are not induction partitions of the manifest")
+    if repositories & training_digests:
+        raise ValueError(
+            "guidance_qualification_overlaps_training: candidates were"
+            " qualified on the repositories they were learned from")
+    tasks = qualification.get("tasks")
+    if not isinstance(tasks, list) or not tasks:
+        raise ValueError("guidance_qualification_invalid: tasks")
+    task_repositories: dict[str, str] = {}
+    for item in tasks:
+        if (not isinstance(item, Mapping)
+                or not isinstance(item.get("task_id"), str)
+                or not item["task_id"]
+                or item.get("repository_digest") not in repositories
+                or item["task_id"] in task_repositories):
+            raise ValueError("guidance_qualification_invalid: task record")
+        task_repositories[item["task_id"]] = item["repository_digest"]
+    shared = set(task_repositories) & study_task_ids
+    if shared:
+        raise ValueError(
+            "guidance_qualification_uses_study_tasks: "
+            + ", ".join(sorted(shared)[:5]))
+    signer = qualification.get("receipt_signer")
+    if (not isinstance(signer, Mapping)
+            or not isinstance(signer.get("key_id"), str)
+            or not isinstance(signer.get("public_key"), str)
+            or not _HEX64.match(signer["public_key"])):
+        raise ValueError("guidance_qualification_invalid: receipt_signer")
+    if (trusted_evaluator_key_ids is not None
+            and signer["key_id"] not in set(trusted_evaluator_key_ids)):
+        raise ValueError(
+            "guidance_qualification_signer_untrusted: " + signer["key_id"])
+    receipts = qualification.get("receipts")
+    if not isinstance(receipts, Mapping) or not receipts:
+        raise ValueError("guidance_qualification_invalid: receipts")
+    used: dict[str, str] = {}
+    for digest, body in receipts.items():
+        try:
+            receipt = parse_outcome_receipt(body)
+        except Exception as exc:  # noqa: BLE001 - surfaced as invalid
+            raise ValueError(
+                "guidance_qualification_invalid: receipt") from exc
+        if receipt.digest != digest:
+            raise ValueError("guidance_qualification_receipt_digest_mismatch")
+        if receipt.task_id not in task_repositories:
+            raise ValueError(
+                "guidance_qualification_receipt_task_unknown: "
+                + receipt.task_id)
+        if receipt.signer_key_id != signer["key_id"] or \
+                not verify_receipt_signature(receipt, signer["public_key"]):
+            raise ValueError("guidance_qualification_receipt_signature")
+        used[digest] = task_repositories[receipt.task_id]
+    return {
+        "repository_digests": sorted(repositories),
+        "tasks": len(task_repositories),
+        "receipt_count": len(used),
+        "receipt_signer": signer["key_id"],
+        "receipts": used,
+    }
+
+
+def _verify_qualification_receipts(registry, components: Mapping,
+                                   receipts: Mapping | None) -> None:
+    """Each candidate's qualifying receipts are declared qualification ones."""
+    if receipts is None:
+        raise ValueError("guidance_qualification_missing")
+    for records in components.values():
+        for record in records:
+            basis = registry.serving_basis(record["candidate_id"])
+            refs = set(basis.get("receipt_refs") or ())
+            if not refs:
+                raise ValueError(
+                    "guidance_qualification_unbound:" + record["candidate_id"])
+            outside = refs - set(receipts)
+            if outside:
+                raise ValueError(
+                    "guidance_qualification_receipt_undeclared:"
+                    + record["candidate_id"])
+
+
 def _load_guidance_bundle(path: Path, *, induction_digests,
                           holdout_digests, precommitted_digest,
-                          registry=None) -> dict:
+                          registry=None, study_task_ids=(),
+                          trusted_evaluator_key_ids=None) -> dict:
     """Load a learned bundle only when its lineage is checkable.
 
     A file that merely says ``"source": "learned"`` is not evidence. The
@@ -445,10 +620,29 @@ def _load_guidance_bundle(path: Path, *, induction_digests,
         except ContractError as exc:
             raise ValueError(
                 f"guidance bundle cannot serve arm {arm}: {exc}") from exc
+    qualification = document.get("qualification")
+    if qualification is None and registry is not None:
+        raise ValueError(
+            "guidance_qualification_missing: a verified bundle must declare"
+            " the qualification split its evidence came from")
+    qualification_summary = None
+    if qualification is not None:
+        qualification_summary = _check_bundle_qualification(
+            qualification, induction_digests=allowed,
+            holdout_digests=set(holdout_digests),
+            training_digests=set(digests),
+            study_task_ids=set(study_task_ids),
+            trusted_evaluator_key_ids=trusted_evaluator_key_ids)
     verified = False
     if registry is not None:
         verified = _verify_bundle_candidates(registry, records_by_arm)
+        _verify_qualification_receipts(
+            registry, records_by_arm, qualification_summary["receipts"])
     return {"source": "learned" if verified else "learned_unverified",
+            "qualification": (
+                {key: value for key, value in qualification_summary.items()
+                 if key != "receipts"}
+                if qualification_summary is not None else None),
             "bundles": steps_by_arm,
             "components": records_by_arm,
             "bundle_digest": computed,
@@ -625,20 +819,78 @@ def _acceptance_material(task: Mapping,
             material[relative] = bytes(payload)
         return material
     hidden = Path(acceptance["hidden_tests_path"])
+    if hidden.is_symlink() or not hidden.is_file():
+        raise ValueError("hidden test file is not a regular file")
     payload = hidden.read_bytes()
     digest = hashlib.sha256(payload).hexdigest()
     if acceptance.get("hidden_tests_digest") != digest:
         raise ValueError("hidden_tests_digest does not match the file")
-    bundle = (repository.get("hidden_tests") or {}).get("digest")
-    if bundle is not None and bundle != digest:
+    record = repository.get("hidden_tests") or {}
+    root = record.get("path")
+    if isinstance(root, str) and root and Path(root).is_dir():
+        # A directory of per-task hidden tests (imported tasks): the task
+        # file must live in it and the directory must still match the
+        # digest the manifest recorded.
+        if not hidden_test_belongs(hidden, root):
+            raise ValueError(
+                "hidden test file is not in the repository's hidden_tests")
+        if record.get("digest") != hidden_tests_digest(root):
+            raise ValueError("repository hidden_tests.digest does not match")
+    elif record.get("digest") is not None and record["digest"] != digest:
         raise ValueError("repository hidden_tests.digest does not match")
-    if hidden.name not in acceptance["argv"]:
+    target = acceptance.get("hidden_tests_target") or hidden.name
+    if target not in acceptance["argv"]:
         raise ValueError("hidden test file is not named by acceptance.argv")
-    return {hidden.name: payload}
+    return {target: payload}
+
+
+def _task_tree(task: Mapping, repository: Mapping,
+               tree_root: Path | None) -> tuple[Path, str, str]:
+    """Materialize a task's own base commit and verify its fingerprints.
+
+    A task whose ``base_commit`` differs from its repository's checkout
+    starts from that commit's tree, written by
+    :func:`sis.v3.study_runtime.materialize_commit` under ``tree_root``
+    (evaluator-owned, outside the repository). The tree must match the
+    task's declared ``repo_snapshot_digest`` and ``repo_execution_digest``.
+    A tree left by an interrupted run is reused only if it still matches.
+    """
+    if tree_root is None:
+        raise ValueError("task_base_commit_requires_tree_root:"
+                         + task["task_id"])
+    target = tree_root / hashlib.sha256(
+        f"{repository['repository_id']}\0{task['base_commit']}".encode()
+    ).hexdigest()[:32]
+    if target.exists():
+        if (tree_digest(target, version=3) == task.get("repo_snapshot_digest")
+                and repository_execution_digest(target)
+                == task.get("repo_execution_digest")):
+            return target, task["repo_snapshot_digest"], \
+                task["repo_execution_digest"]
+        shutil.rmtree(target)
+    tree_root.mkdir(parents=True, exist_ok=True)
+    try:
+        materialize_commit(repository["path"], task["base_commit"], target)
+    except StudyRuntimeError as exc:
+        raise ValueError(f"task_tree_unavailable:{task['task_id']}:{exc}") \
+            from exc
+    snapshot = tree_digest(target, version=3)
+    execution = repository_execution_digest(target)
+    if snapshot != task.get("repo_snapshot_digest"):
+        raise ValueError("task_snapshot_mismatch:" + task["task_id"])
+    if execution != task.get("repo_execution_digest"):
+        raise ValueError("task_execution_mismatch:" + task["task_id"])
+    return target, snapshot, execution
 
 
 def _real_tasks(document: Mapping, verifier: OutcomeVerifier, *,
-                custody: str | None):
+                custody: str | None, tree_root: Path | None = None,
+                executions: dict | None = None):
+    """Register every task and build its envelope and starting tree.
+
+    ``executions`` (when given) receives ``{resolved path: execution
+    digest}`` for every starting tree, for the harness staging check.
+    """
     repositories = {item["repository_id"]: item
                     for item in document["repositories"]}
     # Validation and execution are separated by guidance loading and
@@ -687,6 +939,13 @@ def _real_tasks(document: Mapping, verifier: OutcomeVerifier, *,
                 raise ValueError(
                     "repository_execution_mismatch:"
                     + repository["repository_id"])
+            if executions is not None:
+                executions[str(repo_path)] = execution
+        if task["base_commit"] != repository["base_commit"]:
+            repo_path, snapshot, execution = _task_tree(
+                task, repository, tree_root)
+            if executions is not None:
+                executions[str(repo_path.resolve())] = execution
         material = _acceptance_material(task, repository)
         statement = hashlib.sha256(task["prompt"].encode("utf-8")).hexdigest()
         verifier.register_task(
@@ -736,6 +995,16 @@ def _codex_agent(prompts: Mapping[str, str], budget: BudgetCaps,
                  model: str | None):
     return CodexCliAgent(wall_seconds=budget.wall_seconds, model=model,
                          prompts=prompts)
+
+
+def _claude_code_agent(prompts: Mapping[str, str], budget: BudgetCaps,
+                       model: str | None):
+    return ClaudeCodeAgent(wall_seconds=budget.wall_seconds, model=model,
+                           prompts=prompts)
+
+
+def _default_agent_factory(kind: str) -> Callable:
+    return _claude_code_agent if kind == "claude-code" else _codex_agent
 
 
 def _export_evidence(output: Path, report_sha256: str, verifier,
@@ -924,12 +1193,78 @@ def trusted_registry_factory(trust: Mapping) -> Callable:
     return factory
 
 
+class _StateRoot:
+    """Context manager yielding a persistent state directory as is."""
+
+    def __init__(self, path: Path) -> None:
+        self.path = path
+
+    def __enter__(self) -> str:
+        return str(self.path)
+
+    def __exit__(self, *_exc) -> None:
+        return None
+
+
+def _run_root(state_dir: Path | None):
+    """The run's working root: a private state directory or a temp dir.
+
+    A state directory holds evaluator keys and the task registry, so it is
+    created private (0700) and an existing one must not be readable by
+    others. Leftover arm workspaces from an interrupted run are removed;
+    their arms are re-run from the journal.
+    """
+    if state_dir is None:
+        return tempfile.TemporaryDirectory(prefix="sis-five-arm-real-")
+    path = Path(state_dir).resolve()
+    path.mkdir(parents=True, exist_ok=True, mode=0o700)
+    if os.name == "posix":
+        mode = path.stat().st_mode & 0o777
+        if mode & 0o077:
+            raise ValueError(
+                f"state directory {path} must not be accessible to group or"
+                f" others (mode {mode:o}); chmod 700 it")
+    shutil.rmtree(path / "work", ignore_errors=True)
+    return _StateRoot(path)
+
+
+def _verify_journal_receipts(journal: RunJournal, verifier) -> None:
+    """Every journaled outcome must be a receipt this verifier issued.
+
+    A journal row is reused only when its receipt reloads from the
+    verifier's store under its digest and records the same outcome, so a
+    resumed run cannot import outcomes that were never evaluated here.
+    """
+    issued = set(verifier.issued_receipts())
+    for (task_id, arm), row in journal.rows().items():
+        digest = row.get("receipt_digest")
+        if digest is None:
+            if row.get("outcome") in ("pass", "fail"):
+                raise ValueError(f"journal_row_without_receipt:{task_id}:{arm}")
+            continue
+        if digest not in issued:
+            raise ValueError(f"journal_receipt_not_issued:{task_id}:{arm}")
+        receipt = verifier.load_receipt(digest)
+        if receipt.outcome != row.get("outcome") or \
+                receipt.task_id != task_id:
+            raise ValueError(f"journal_receipt_mismatch:{task_id}:{arm}")
+
+
 def run_real(output: Path, manifest_path: Path | None, *,
              allow_shared_custody: bool = False,
              guidance_path: Path | None = None,
              candidate_registry: Path | None = None,
              agent_factory: Callable | None = None,
-             registry_factory: Callable | None = None) -> int:
+             registry_factory: Callable | None = None,
+             executor: str = "local",
+             docker_image: str | None = None,
+             docker_split_user: str | None = DEFAULT_SPLIT_USER,
+             docker_user: str | None = None,
+             docker_runtime: str | None = None,
+             require_image_digest: bool = True,
+             executor_factory: Callable | None = None,
+             state_dir: Path | None = None,
+             workers: int = 1) -> int:
     """Execute a validated manifest with the real agent.
 
     ``registry_factory(path)`` opens the candidate registry with trusted
@@ -938,12 +1273,34 @@ def run_real(output: Path, manifest_path: Path | None, *,
     ``--trust-config``). A registry without them cannot re-authenticate
     a qualified candidate, so ``candidate_registry`` without a factory is
     blocked rather than run as a campaign that can never serve.
+
+    The manifest's ``agent.kind`` (``codex-cli`` or ``claude-code``)
+    selects the availability gate, the version check and the agent.
+
+    ``executor="docker"`` grades in
+    :class:`~sis.v3.docker_sandbox.DockerSandboxExecutor` with a second
+    container identity (``docker_split_user``), which gives split custody
+    on Linux; ``docker_image`` defaults to the pinned evaluator image and
+    ``docker_runtime`` (for example ``runsc``) is passed through when the
+    executor supports it. ``executor_factory(root, protected_paths)``
+    replaces the backend in tests.
+
+    ``state_dir`` keeps the evaluator keys, task registry, receipts,
+    per-task trees and the run journal across runs: an interrupted run
+    started again with the same ``state_dir`` and manifest resumes from
+    the journal instead of starting over. ``workers`` runs that many tasks
+    concurrently with results identical to a serial run.
     """
-    status = codex_agent_status()
+    output = Path(output)
+    manifest_path = Path(manifest_path) if manifest_path is not None else None
+    state_dir = Path(state_dir) if state_dir is not None else None
+    kind = _peek_agent_kind(manifest_path)
+    status = _agent_status(kind)
     report: dict = {
         "schema_version": 1,
         "kind": "five_arm_learning_qualification_real_run",
         "codex_gate": status,
+        "agent_gate": status,
     }
 
     def blocked(gate: str, note: str) -> int:
@@ -955,9 +1312,15 @@ def run_real(output: Path, manifest_path: Path | None, *,
         return 2
 
     if not status["available"] or not status["authenticated"]:
+        label = "Claude Code" if kind == "claude-code" else "Codex CLI"
         return blocked(
             "BLOCKED_REAL_AGENT",
-            "Codex CLI is unavailable or unauthenticated: " + status["reason"])
+            f"{label} is unavailable or unauthenticated: " + status["reason"])
+    if executor not in EXECUTOR_KINDS:
+        return blocked("BLOCKED_EXECUTOR",
+                       f"executor must be one of {', '.join(EXECUTOR_KINDS)}")
+    if type(workers) is not int or not 1 <= workers <= 256:
+        return blocked("BLOCKED_EXECUTOR", "workers must be in [1, 256]")
     if manifest_path is None:
         return blocked(
             "BLOCKED_MANIFEST",
@@ -1006,8 +1369,9 @@ def run_real(output: Path, manifest_path: Path | None, *,
     injected = agent_factory is not None
     expected_version = _normalized_version(
         document["agent"].get("cli_version"))
+    kind = document["agent"].get("kind")
     installed_version = (None if injected
-                         else _installed_codex_version(status["binary"]))
+                         else _installed_version(kind, status["binary"]))
     if not injected:
         if expected_version is None:
             return blocked(
@@ -1016,7 +1380,7 @@ def run_real(output: Path, manifest_path: Path | None, *,
         if installed_version != expected_version:
             return blocked(
                 "BLOCKED_AGENT_VERSION",
-                f"installed codex version {installed_version!r} does not "
+                f"installed {kind} version {installed_version!r} does not "
                 f"match the manifest {expected_version!r}")
     anchor = _git_anchor(manifest_path)
     learned = tuple(sorted(
@@ -1050,7 +1414,12 @@ def run_real(output: Path, manifest_path: Path | None, *,
                 induction_digests=learned,
                 holdout_digests=holdout_digests,
                 precommitted_digest=document.get("guidance_bundle_digest"),
-                registry=registry)
+                registry=registry,
+                study_task_ids=[task["task_id"] for task in document["tasks"]],
+                trusted_evaluator_key_ids=(
+                    (getattr(registry_factory, "trust_anchors", None) or {})
+                    .get("evaluator_key_ids")
+                    if registry is not None else None))
         except (OSError, ValueError, RuntimeError) as exc:
             return blocked(
                 "BLOCKED_GUIDANCE", f"guidance_bundle_unreadable:{exc}")
@@ -1068,7 +1437,7 @@ def run_real(output: Path, manifest_path: Path | None, *,
         tool_budget=protocol["budget"]["tool_budget"])
     custody = "shared" if allow_shared_custody else None
     provenance = {
-        "agent": "injected" if injected else "codex-cli",
+        "agent": "injected" if injected else kind,
         "expected_cli_version": expected_version,
         "cli_version": installed_version,
         "cli_version_matches": bool(
@@ -1089,31 +1458,81 @@ def run_real(output: Path, manifest_path: Path | None, *,
             "holdout_repositories_used"),
         "manifest_digest": validation["manifest_digest"],
     }
-    with tempfile.TemporaryDirectory(prefix="sis-five-arm-real-") as temp:
+    try:
+        run_root = _run_root(state_dir)
+    except (OSError, ValueError) as exc:
+        return blocked("BLOCKED_STATE", f"state_dir_unusable:{exc}")
+    with run_root as temp:
         root = Path(temp)
         profile = EvaluationRuntimeProfile(
             cpu_seconds=budget.wall_seconds,
             wall_seconds=budget.wall_seconds, process_count=None)
-        verifier = OutcomeVerifier(
-            executor=LocalSubprocessExecutor(
-                root / "exec",
-                protected_paths=(root / "keys", root / "registry")),
-            key_dir=root / "keys", registry_dir=root / "registry",
-            allow_shared_custody=allow_shared_custody,
-            limits=ResourceLimits(
-                wall_seconds=budget.wall_seconds,
-                cpu_seconds=budget.wall_seconds,
-                memory_bytes=profile.task_memory_bytes,
-                process_count=None),
-            runtime_profile=profile)
+        protected = (root / "keys", root / "registry")
+        try:
+            if executor_factory is not None:
+                backend = executor_factory(root / "exec", protected)
+            else:
+                backend = build_study_executor(
+                    executor, root / "exec", protected_paths=protected,
+                    image=docker_image if executor == "docker" else None,
+                    split_user=docker_split_user,
+                    user=docker_user, runtime=docker_runtime,
+                    require_image_digest=require_image_digest)
+            verifier = OutcomeVerifier(
+                executor=backend,
+                key_dir=root / "keys", registry_dir=root / "registry",
+                allow_shared_custody=allow_shared_custody,
+                limits=ResourceLimits(
+                    wall_seconds=budget.wall_seconds,
+                    cpu_seconds=budget.wall_seconds,
+                    memory_bytes=profile.task_memory_bytes,
+                    process_count=None),
+                runtime_profile=profile)
+        except Exception as exc:
+            return blocked(
+                "BLOCKED_EXECUTOR",
+                f"executor_unavailable:{type(exc).__name__}: {exc}")
+        executor_facts = executor_description(backend)
+        executor_facts["kind"] = executor
+        provenance["executor"] = executor_facts
+        if not allow_shared_custody and not executor_facts[
+                "supports_split_custody"]:
+            provenance["custody"] = "unavailable"
+        executions: dict[str, str] = {}
         try:
             tasks, prompts, classes = _real_tasks(
-                document, verifier, custody=custody)
+                document, verifier, custody=custody,
+                tree_root=root / "trees", executions=executions)
         except Exception as exc:
             gate = ("BLOCKED_SPLIT_CUSTODY" if "split_custody" in str(exc)
                     else "BLOCKED_MANIFEST")
             return blocked(
                 gate, f"campaign_setup_failed:{type(exc).__name__}: {exc}")
+        arm_order_seed = int(validation["manifest_digest"][:16], 16)
+        journal = None
+        if state_dir is not None:
+            identity = {
+                "manifest_digest": validation["manifest_digest"],
+                "protocol_digest": protocol.get("protocol_digest"),
+                "arms": list(design_arms),
+                "arm_order_seed": str(arm_order_seed),
+                "agent": provenance["agent"],
+                "custody": provenance["custody"],
+                # The whole resolved configuration (class, image, runtime,
+                # container identities), not just its kind: a resume under
+                # another image or runtime must not reuse these rows.
+                "executor": dict(executor_facts),
+                "guidance_bundle_digest": (learned_bundle["bundle_digest"]
+                                           if learned_bundle is not None
+                                           else None),
+                "guidance_source": guidance_source,
+                "evaluator_key_id": verifier.public_key_record()["key_id"],
+            }
+            try:
+                journal = RunJournal(root / "journal.jsonl", identity)
+                _verify_journal_receipts(journal, verifier)
+            except (StudyRuntimeError, BenchmarkError, ValueError) as exc:
+                return blocked("BLOCKED_RESUME", f"journal_unusable:{exc}")
 
         served: dict = {}
         serving_decisions: list = []
@@ -1171,29 +1590,52 @@ def run_real(output: Path, manifest_path: Path | None, *,
             if serving_registry is not None:
                 serving_registry.close()
 
-        factory = agent_factory or _codex_agent
+        resumed_rows = 0
+        if journal is not None:
+            # Restore what the provider recorded for journaled arms, then
+            # record it for every new arm as soon as the arm finishes.
+            for (task_id, arm), _ in sorted(journal.rows().items()):
+                notes = journal.annotations(task_id, arm)
+                served[(task_id, arm)] = bool(notes.get("served"))
+                if isinstance(notes.get("decision"), Mapping):
+                    serving_decisions.append(dict(notes["decision"]))
+            resumed_rows = journal.resumed_rows
+
+            def annotate(task_id, arm):
+                decision = next(
+                    (item for item in reversed(serving_decisions)
+                     if item.get("task_id") == task_id
+                     and item.get("arm") == arm), None)
+                return {"served": bool(served.get((task_id, arm))),
+                        "decision": decision}
+            journal.annotator = annotate
+
+        factory = agent_factory or _default_agent_factory(kind)
         try:
             agent = factory(prompts, budget, document["agent"]["model"])
         except RuntimeError as exc:
             close_serving()
             return blocked("BLOCKED_REAL_AGENT", str(exc))
         try:
+            expected_execution = {
+                str(Path(repo["path"]).resolve()):
+                    repo["repo_execution_digest"]
+                for repo in document["repositories"]}
+            expected_execution.update(executions)
             campaign = FiveArmCampaign(
                 harness=BenchmarkHarness(
                     verifier=verifier, work_root=root / "work",
-                    expected_execution={
-                        str(Path(repo["path"]).resolve()):
-                            repo["repo_execution_digest"]
-                        for repo in document["repositories"]}),
+                    expected_execution=expected_execution),
                 tasks=tasks, agent=agent, budget=budget, protocol=protocol,
                 context_provider=provider, served_map=served,
                 misleading_tasks=misleading,
                 learned_repo_digests=learned, real_agent=True,
                 hidden_holdout=True, provenance=provenance, arms=design_arms,
-                arm_order_seed=int(validation["manifest_digest"][:16], 16),
+                arm_order_seed=arm_order_seed,
                 repository_ids={
                     task["task_id"]: task["repository_id"]
-                    for task in document["tasks"]})
+                    for task in document["tasks"]},
+                journal=journal, workers=workers)
             campaign.validate()
         except Exception as exc:
             close = getattr(agent, "close", None)
@@ -1219,12 +1661,29 @@ def run_real(output: Path, manifest_path: Path | None, *,
                 close()
             close_serving()
         analysis = report["learning_qualification"]
+        # Serving decisions in serial run order (task order, then each
+        # task's seeded arm order), whether the run was resumed or ran
+        # tasks in parallel.
+        position = {}
+        for index, row in enumerate(report.get("per_task", [])):
+            for offset, arm in enumerate(row.get("arm_order") or ()):
+                position[(row["task_id"], arm)] = (index, offset)
+        serving_decisions.sort(key=lambda item: position.get(
+            (item.get("task_id"), item.get("arm")), (len(position), 0)))
         report["kind"] = (
             "primary_contrast_learning_qualification_real_run"
             if design_arms == PRIMARY_CONTRAST_ARMS
             else "five_arm_learning_qualification_real_run")
         report["manifest"] = manifest_block
         report["codex_gate"] = status
+        report["agent_gate"] = status
+        report["executor"] = executor_facts
+        report["run"] = {
+            "workers": workers,
+            "state_dir": str(state_dir) if state_dir is not None else None,
+            "resumed_rows": resumed_rows,
+            "journal_head": journal.head if journal is not None else None,
+        }
         report["evidence_class"] = analysis["evidence_class"]
         report["release_gate"] = analysis["release_gate"]
         report["evaluator_runtime"] = profile.as_dict()
@@ -1242,6 +1701,8 @@ def run_real(output: Path, manifest_path: Path | None, *,
                 list(learned_bundle["training_repository_digests"])
                 if learned_bundle is not None else None),
             "routing": guidance_routing,
+            "qualification": (learned_bundle.get("qualification")
+                              if learned_bundle is not None else None),
             "trust_anchors": (getattr(registry_factory, "trust_anchors",
                                       None)
                               if candidate_registry is not None else None),
@@ -1375,8 +1836,38 @@ def main(argv: list[str] | None = None) -> int:
                         help="acknowledge recording-only mode: the guidance"
                              " bundle is recorded as learned_unverified and"
                              " no candidate is verified or served")
+    parser.add_argument("--executor", choices=EXECUTOR_KINDS,
+                        default="local",
+                        help="evaluator backend for --real-agent: local"
+                             " (development; Linux needs"
+                             " --allow-shared-custody) or docker (bounded"
+                             " container with a second identity: split"
+                             " custody on Linux)")
+    parser.add_argument("--docker-image", default=None,
+                        help="evaluator image (default: the pinned"
+                             f" {DEFAULT_STUDY_IMAGE})")
+    parser.add_argument("--docker-split-user", default=DEFAULT_SPLIT_USER,
+                        help="numeric uid:gid that runs the submission under"
+                             " split custody (default %(default)s)")
+    parser.add_argument("--docker-user", default=None,
+                        help="numeric uid:gid of the evaluator identity in"
+                             " the container (default: the executor's)")
+    parser.add_argument("--docker-runtime", default=None,
+                        help="OCI runtime for the containers, e.g. runsc;"
+                             " refused if the executor cannot set one")
+    parser.add_argument("--allow-unpinned-image", action="store_true",
+                        help="development-only: accept a --docker-image that"
+                             " is not digest-pinned")
+    parser.add_argument("--state-dir", type=Path, default=None,
+                        help="private directory for evaluator keys,"
+                             " receipts, task trees and the run journal;"
+                             " rerunning with the same directory resumes an"
+                             " interrupted run")
+    parser.add_argument("--workers", type=int, default=1,
+                        help="tasks run concurrently (arms of one task stay"
+                             " sequential; results equal a serial run)")
     args = parser.parse_args(argv)
-    if not args.allow_local_executor:
+    if args.executor == "local" and not args.allow_local_executor:
         parser.error("local executor requires --allow-local-executor")
     if args.demo and args.real_agent:
         parser.error("choose --demo or --real-agent")
@@ -1384,13 +1875,28 @@ def main(argv: list[str] | None = None) -> int:
         if args.arms != "five":
             parser.error("--arms applies to --demo; the manifest declares"
                          " the real-agent arms")
+        if args.executor == "docker" and args.allow_shared_custody:
+            parser.error("--executor docker grades under split custody;"
+                         " drop --allow-shared-custody")
         candidate_registry, registry_factory = _registry_options(
             parser, args)
         return run_real(args.output, args.manifest,
                         allow_shared_custody=args.allow_shared_custody,
                         guidance_path=args.guidance_bundle,
                         candidate_registry=candidate_registry,
-                        registry_factory=registry_factory)
+                        registry_factory=registry_factory,
+                        executor=args.executor,
+                        docker_image=args.docker_image,
+                        docker_split_user=args.docker_split_user,
+                        docker_user=args.docker_user,
+                        docker_runtime=args.docker_runtime,
+                        require_image_digest=not args.allow_unpinned_image,
+                        state_dir=args.state_dir,
+                        workers=args.workers)
+    if args.executor != "local" or args.state_dir is not None \
+            or args.workers != 1:
+        parser.error("--executor, --state-dir and --workers apply to"
+                     " --real-agent")
     if args.trust_config is not None or args.record_unverified:
         parser.error("--trust-config and --record-unverified apply to"
                      " --real-agent")

@@ -144,7 +144,7 @@ class RealRunServingTests(unittest.TestCase):
             stack = CandidateStack(root / "candidates.db")
             self.addCleanup(stack.close)
             document = _manifest(root)
-            bundle = _learned_bundle(document)
+            qualified = {}
             for arm in ("B", "C", "D"):
                 candidate = make_candidate(
                     cid=f"candidate-{arm}",
@@ -152,6 +152,13 @@ class RealRunServingTests(unittest.TestCase):
                     scope={"kind": "global", "value": ""})
                 stack.prepare(candidate)
                 _, evidence, _ = stack.qualify(candidate)
+                qualified[arm] = (candidate, evidence)
+            # The bundle declares the qualification receipts it was
+            # qualified on (induction repositories, never the holdout).
+            bundle = _learned_bundle(
+                document, receipts=list(stack.receipts.values()),
+                signer=(stack.eval_key, stack.eval_public_hex))
+            for arm, (candidate, evidence) in qualified.items():
                 bundle["components"][arm][0].update({
                     "candidate_digest": candidate.digest,
                     "content_digest": candidate.content_digest,

@@ -50,9 +50,14 @@ from sis.v3.efficacy_manifest import (CONFIRMATORY, EXPLORATORY,  # noqa: E402
                                      validate_manifest)
 from sis.v3.governed_eval import (GOVERNED_ARMS, PRIMARY_CONTRAST_ARMS,  # noqa: E402
                                   preregister)
-from sis.v3.learning_qualification import codex_agent_status  # noqa: E402
-from sis.v3.runner import (RunnerError, external_symlinks,
-                           repository_execution_digest, tree_digest)  # noqa: E402
+from sis.v3.learning_qualification import (AGENT_KINDS,  # noqa: E402
+                                           agent_status)
+from sis.v3.runner import (RunnerError, external_symlinks,  # noqa: E402
+                           repository_execution_digest, tree_digest)
+from sis.v3.study_runtime import (StudyRuntimeError,  # noqa: E402
+                                  commit_exists, commit_is_ancestor,
+                                  hidden_test_belongs, hidden_tests_digest,
+                                  materialize_commit)
 
 MAX_SPEC_BYTES = 4 << 20
 HEX40 = re.compile(r"^[0-9a-f]{40}$")
@@ -133,11 +138,11 @@ def _agent(spec: Mapping, *, check_agent: bool) -> tuple[dict, dict]:
     agent = spec.get("agent")
     _require(isinstance(agent, Mapping), "agent must be an object")
     kind = _text(agent.get("kind"), "agent.kind")
-    _require(kind == "codex-cli",
-             "agent.kind must be codex-cli for the current harness")
+    _require(kind in AGENT_KINDS,
+             "agent.kind must be one of " + ", ".join(AGENT_KINDS))
     model = _text(agent.get("model"), "agent.model")
     declared = _text(agent.get("cli_version"), "agent.cli_version")
-    status = codex_agent_status()
+    status = agent_status(kind)
     report = {
         "available": bool(status.get("available")),
         "authenticated": bool(status.get("authenticated")),
@@ -149,26 +154,27 @@ def _agent(spec: Mapping, *, check_agent: bool) -> tuple[dict, dict]:
     if not check_agent:
         return {"kind": kind, "model": model, "cli_version": declared}, report
     _require(report["available"],
-             "codex CLI is unavailable: " + str(status.get("reason")))
+             f"{kind} CLI is unavailable: " + str(status.get("reason")))
     _require(report["authenticated"],
-             "codex CLI is unauthenticated: " + str(status.get("reason")))
+             f"{kind} CLI is unauthenticated: " + str(status.get("reason")))
     binary = status.get("binary")
     _require(isinstance(binary, str) and binary,
-             "codex CLI binary is unknown")
+             f"{kind} CLI binary is unknown")
     try:
         completed = subprocess.run(
             [binary, "--version"], capture_output=True, text=True,
             timeout=30, check=False)
     except (OSError, subprocess.SubprocessError) as exc:
-        raise StudySpecError(f"codex CLI version is unreadable: {exc}") from exc
+        raise StudySpecError(
+            f"{kind} CLI version is unreadable: {exc}") from exc
     installed = _normalized_version(
         (completed.stdout or "") + " " + (completed.stderr or ""))
     _require(installed is not None,
-             "codex CLI did not report a version")
+             f"{kind} CLI did not report a version")
     report["version"] = installed
     report["matches"] = installed == _normalized_version(declared)
     _require(report["matches"],
-             f"installed codex CLI {installed} does not match the spec"
+             f"installed {kind} CLI {installed} does not match the spec"
              f" {declared}; pass --skip-agent-check only to build off-host")
     return {"kind": kind, "model": model, "cli_version": declared}, report
 
@@ -252,15 +258,17 @@ def _hidden_tests(repository: Mapping, root: Path, label: str) -> dict:
     raw = Path(_text(hidden.get("path"), f"{label}.hidden_tests.path"))
     _require(not raw.is_symlink(), f"{label} hidden tests must not be a symlink")
     path = raw.resolve()
-    _require(path.is_file(), f"{label} hidden tests are not a regular file")
-    _require(path != root and root not in path.parents,
+    # A file, or a directory of per-task hidden tests (imported tasks).
+    _require(path.is_file() or path.is_dir(),
+             f"{label} hidden tests are not a regular file or directory")
+    _require(path != root and root not in path.parents
+             and path not in root.parents,
              f"{label} hidden tests are inside the public repository")
     try:
-        payload = path.read_bytes()
-    except OSError as exc:
+        digest = hidden_tests_digest(path)
+    except (OSError, StudyRuntimeError) as exc:
         raise StudySpecError(
             f"{label} hidden tests are unreadable: {exc}") from exc
-    digest = hashlib.sha256(payload).hexdigest()
     declared = hidden.get("digest")
     if declared is not None:
         _require(isinstance(declared, str) and HEX64.fullmatch(declared),
@@ -384,17 +392,23 @@ def _acceptance(task: Mapping, repository: Mapping, label: str) -> dict:
              f"{label} hidden tests must not be a symlink")
     path = raw.resolve()
     expected = Path(repository["hidden_tests"]["path"])
-    _require(path == expected,
+    _require(path.is_file(), f"{label} hidden tests are not a regular file")
+    _require(hidden_test_belongs(path, expected),
              f"{label} acceptance hidden tests must be the repository's"
-             " hidden tests file")
-    _require(path.name in argv,
-             f"{label}.acceptance.argv must name {path.name}")
+             " hidden tests file (or a file in its hidden tests directory)")
+    target = acceptance.get("hidden_tests_target")
+    if target is not None:
+        _require(isinstance(target, str) and SAFE_REL.fullmatch(target),
+                 f"{label}.acceptance.hidden_tests_target is unsafe")
+    name = target or path.name
+    _require(name in argv, f"{label}.acceptance.argv must name {name}")
     try:
         digest = hashlib.sha256(path.read_bytes()).hexdigest()
-    except OSError as exc:
+        bundle = hidden_tests_digest(expected)
+    except (OSError, StudyRuntimeError) as exc:
         raise StudySpecError(
             f"{label} hidden tests are unreadable: {exc}") from exc
-    _require(digest == repository["hidden_tests"]["digest"],
+    _require(bundle == repository["hidden_tests"]["digest"],
              f"{label} hidden tests changed during manifest construction")
     declared = acceptance.get("hidden_tests_digest")
     if declared is not None:
@@ -402,7 +416,41 @@ def _acceptance(task: Mapping, repository: Mapping, label: str) -> dict:
                  f"{label}.acceptance.hidden_tests_digest does not match")
     result["hidden_tests_path"] = str(path)
     result["hidden_tests_digest"] = digest
+    if target is not None:
+        result["hidden_tests_target"] = target
     return result
+
+
+def _task_base(item: Mapping, repository: Mapping, label: str) -> dict:
+    """The task's base commit and, when it is its own, the tree it binds.
+
+    A task inherits its repository's checkout unless it names another
+    ``base_commit``; that commit must be an ancestor of the checkout, and
+    the builder fingerprints the tree it materializes for it.
+    """
+    declared = item.get("base_commit")
+    if declared is None or declared == repository["base_commit"]:
+        return {"base_commit": repository["base_commit"]}
+    _require(isinstance(declared, str)
+             and (HEX40.fullmatch(declared) or HEX64.fullmatch(declared)),
+             f"{label}.base_commit must be a 40- or 64-hex commit")
+    root = Path(repository["path"])
+    _require(commit_exists(root, declared),
+             f"{label}.base_commit is not a commit of its repository")
+    _require(commit_is_ancestor(root, declared, repository["base_commit"]),
+             f"{label}.base_commit is not an ancestor of the repository"
+             " checkout")
+    with tempfile.TemporaryDirectory(prefix="sis-task-tree-") as temp:
+        target = Path(temp) / "tree"
+        try:
+            materialize_commit(root, declared, target)
+            snapshot = tree_digest(target, version=3)
+            execution = repository_execution_digest(target)
+        except (OSError, RunnerError, StudyRuntimeError) as exc:
+            raise StudySpecError(
+                f"{label} base tree cannot be materialized: {exc}") from exc
+    return {"base_commit": declared, "repo_snapshot_digest": snapshot,
+            "repo_execution_digest": execution}
 
 
 def _tasks(spec: Mapping, repositories: Mapping[str, dict],
@@ -426,10 +474,10 @@ def _tasks(spec: Mapping, repositories: Mapping[str, dict],
                  f"{label} names an unknown repository")
         _require(repository["partition"] == "holdout",
                  f"{label} must target a holdout repository")
-        tasks.append({
+        entry = {
             "task_id": task_id,
             "repository_id": repository_id,
-            "base_commit": repository["base_commit"],
+            **_task_base(item, repository, label),
             "prompt": _text(item.get("prompt"), label + ".prompt"),
             "failure_class": _text(item.get("failure_class"),
                                    label + ".failure_class"),
@@ -440,7 +488,12 @@ def _tasks(spec: Mapping, repositories: Mapping[str, dict],
                 "tool_budget": budget["tool_budget"],
             },
             "acceptance": _acceptance(item, repository, label),
-        })
+        }
+        if item.get("misleading") is not None:
+            _require(type(item["misleading"]) is bool,
+                     f"{label}.misleading must be a bool")
+            entry["misleading"] = item["misleading"]
+        tasks.append(entry)
     return tasks
 
 
@@ -528,6 +581,27 @@ def _guidance(spec: Mapping, *, induction: set[str],
              " partitions of the manifest")
     _require(not (set(digests) & holdout),
              "guidance_bundle training repositories overlap the holdout")
+    qualification = document.get("qualification")
+    if qualification is not None:
+        # The runner re-checks the full qualification block (tasks,
+        # receipts, signer); the builder refuses the obvious leak early.
+        _require(isinstance(qualification, Mapping),
+                 "guidance_bundle qualification must be an object")
+        qualified = qualification.get("repository_digests")
+        _require(isinstance(qualified, list) and bool(qualified)
+                 and all(isinstance(item, str) and HEX64.fullmatch(item)
+                         for item in qualified),
+                 "guidance_bundle qualification.repository_digests must be"
+                 " non-empty sha256 digests")
+        _require(not (set(qualified) & holdout),
+                 "guidance_bundle qualification evidence comes from a study"
+                 " holdout repository")
+        _require(set(qualified) <= induction,
+                 "guidance_bundle qualification repositories are not"
+                 " induction partitions of the manifest")
+        _require(not (set(qualified) & set(digests)),
+                 "guidance_bundle qualification repositories overlap its"
+                 " training repositories")
     digest = _bundle_digest(document)
     _require(document.get("bundle_digest") == digest,
              "guidance_bundle digest does not match its contents")
