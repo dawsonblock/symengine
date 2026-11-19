@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import json
 import math
+import random
 import statistics
 from dataclasses import dataclass
 from typing import Mapping, Sequence
@@ -264,6 +265,357 @@ def required_sample_size(p1: float = 0.6, p2: float = 0.4, *,
     d = p1 * (1 - p2) + p2 * (1 - p1)
     q = abs(p1 - p2)
     return max(4, math.ceil(d * ((z_a + z_p) / q) ** 2))
+
+
+def sign_flip_p_value(totals: Sequence[int]) -> float:
+    """Exact two-sided sign-flip p-value of per-repository totals.
+
+    The same test as ``learning_qualification.repository_sign_flip_test``:
+    under the null every repository total's sign is exchangeable, and the
+    p-value is the share of the ``2**R`` sign assignments whose absolute
+    sum reaches the observed one. Zero totals do not change it.
+    """
+    values = [abs(int(total)) for total in totals if total]
+    observed = abs(sum(int(total) for total in totals))
+    if not values:
+        return 1.0
+    span = sum(values)
+    # Subset-sum counts: choosing the negative set with |sum| j gives the
+    # signed sum span - 2j.
+    counts = [1] + [0] * span
+    for value in values:
+        counts = counts[:value] + [
+            high + low for high, low in zip(counts[value:], counts)]
+    extreme = sum(count for j, count in enumerate(counts)
+                  if abs(span - 2 * j) >= observed)
+    return extreme / (2 ** len(values))
+
+
+class _ClusterModel:
+    """Latent-threshold model of paired outcomes clustered by repository.
+
+    A task ``t`` of repository ``r`` is solved in arm ``a`` when
+    ``z_a + d_ra + sqrt(icc)*u_r + sqrt(1-icc)*(sqrt(k)*v_t + sqrt(1-k)*w_ta)
+    > 0`` with standard-normal ``u_r`` (repository difficulty, shared by
+    both arms), ``v_t`` (task difficulty, shared by both arms of the task,
+    ``k = task_correlation``) and ``w_ta`` (independent noise). The
+    treatment arm adds a repository-specific effect ``d_rE = effect_sd *
+    h_r`` (``h_r`` standard normal; ``d_rA = 0``). The thresholds ``z_a``
+    are scaled so the marginal solve rates are exactly ``baseline_rate``
+    and ``treatment_rate``.
+    """
+
+    def __init__(self, *, baseline_rate, treatment_rate, icc,
+                 task_correlation, effect_sd) -> None:
+        normal = statistics.NormalDist()
+        self.z_a = normal.inv_cdf(baseline_rate)
+        self.z_e = normal.inv_cdf(treatment_rate) * math.sqrt(
+            1 + effect_sd * effect_sd)
+        self.between = math.sqrt(icc)
+        self.within = math.sqrt(1 - icc)
+        self.shared = math.sqrt(task_correlation)
+        self.own = math.sqrt(1 - task_correlation)
+        self.effect_sd = effect_sd
+
+    def repository(self, rng: random.Random, tasks: int) -> list[int]:
+        """Per-task paired differences (E minus A) for one repository."""
+        difficulty = self.between * rng.gauss(0.0, 1.0)
+        effect = self.effect_sd * rng.gauss(0.0, 1.0) if self.effect_sd \
+            else 0.0
+        deltas = []
+        for _ in range(tasks):
+            task = self.shared * rng.gauss(0.0, 1.0)
+            solved_a = self.z_a + difficulty + self.within * (
+                task + self.own * rng.gauss(0.0, 1.0)) > 0
+            solved_e = self.z_e + effect + difficulty + self.within * (
+                task + self.own * rng.gauss(0.0, 1.0)) > 0
+            deltas.append(int(solved_e) - int(solved_a))
+        return deltas
+
+
+def anova_icc(clusters: Sequence[Sequence[float]]) -> float | None:
+    """One-way ANOVA intra-cluster correlation (unequal sizes allowed).
+
+    ``(MSB - MSW) / (MSB + (n0 - 1) * MSW)`` with the usual ``n0`` for
+    unequal cluster sizes; ``None`` when it is undefined (fewer than two
+    clusters, or no within-cluster replication). Clipped below at 0.
+    """
+    groups = [list(map(float, group)) for group in clusters if group]
+    total_n = sum(len(group) for group in groups)
+    k = len(groups)
+    if k < 2 or total_n <= k:
+        return None
+    grand = sum(sum(group) for group in groups) / total_n
+    ssb = sum(len(g) * (sum(g) / len(g) - grand) ** 2 for g in groups)
+    ssw = sum(sum((x - sum(g) / len(g)) ** 2 for x in g) for g in groups)
+    msb = ssb / (k - 1)
+    msw = ssw / (total_n - k)
+    n0 = (total_n - sum(len(g) ** 2 for g in groups) / total_n) / (k - 1)
+    denominator = msb + (n0 - 1) * msw
+    if denominator <= 0:
+        return 0.0
+    return max(0.0, (msb - msw) / denominator)
+
+
+def _simulated_power(repositories: int, *, tasks_per_repository: int,
+                     model: _ClusterModel, alpha: float, simulations: int,
+                     seed) -> float:
+    rng = random.Random(f"{seed}:{repositories}:{tasks_per_repository}")
+    supported = 0
+    for _ in range(simulations):
+        totals = [sum(model.repository(rng, tasks_per_repository))
+                  for _ in range(repositories)]
+        if sum(totals) > 0 and sign_flip_p_value(totals) <= alpha:
+            supported += 1
+    return supported / simulations
+
+
+def _check_power_inputs(repositories, tasks_per_repository, baseline_rate,
+                        treatment_rate, icc, task_correlation, effect_sd,
+                        alpha, simulations) -> None:
+    if type(repositories) is not int or repositories < 1:
+        raise ContractError("repositories must be a positive integer")
+    if type(tasks_per_repository) is not int or tasks_per_repository < 1:
+        raise ContractError("tasks_per_repository must be a positive integer")
+    for name, value in (("baseline_rate", baseline_rate),
+                        ("treatment_rate", treatment_rate)):
+        if type(value) not in (int, float) or not 0 < value < 1:
+            raise ContractError(f"{name} must be in (0, 1)")
+    if type(icc) not in (int, float) or not 0 <= icc < 1:
+        raise ContractError("icc must be in [0, 1)")
+    if type(task_correlation) not in (int, float) or \
+            not 0 <= task_correlation <= 1:
+        raise ContractError("task_correlation must be in [0, 1]")
+    if type(effect_sd) not in (int, float) or not 0 <= effect_sd <= 10:
+        raise ContractError("effect_sd must be in [0, 10]")
+    if type(alpha) not in (int, float) or not 0 < alpha < 0.5:
+        raise ContractError("alpha must be in (0, 0.5)")
+    if type(simulations) is not int or not 10 <= simulations <= 1_000_000:
+        raise ContractError("simulations must be an integer in [10, 1e6]")
+
+
+def repository_power(repositories: int, *, tasks_per_repository: int,
+                     baseline_rate: float, treatment_rate: float,
+                     icc: float = 0.0, effect_sd: float = 0.0,
+                     task_correlation: float = 0.5, alpha: float = 0.05,
+                     simulations: int = 1000, seed: int | str = 0) -> float:
+    """Simulated power of the repository-level sign-flip decision.
+
+    Outcomes follow :class:`_ClusterModel`. ``icc`` is the latent
+    intra-repository correlation of task difficulty (shared by both arms),
+    ``effect_sd`` the between-repository spread of the treatment effect on
+    the latent scale (what makes repositories disagree about the effect),
+    ``task_correlation`` the share of a task's own difficulty that both
+    arms face. A simulated study supports efficacy when its wins-minus-
+    losses total is positive and the exact sign-flip p-value over
+    repositories is at most ``alpha`` — the decisive test of
+    ``analyze_report``. Its cluster-bootstrap interval and the
+    negative-transfer gate are not simulated, so this is an upper bound
+    on the power of the full gate. Deterministic for a given ``seed``.
+    """
+    _check_power_inputs(repositories, tasks_per_repository, baseline_rate,
+                        treatment_rate, icc, task_correlation, effect_sd,
+                        alpha, simulations)
+    model = _ClusterModel(baseline_rate=baseline_rate,
+                          treatment_rate=treatment_rate, icc=icc,
+                          task_correlation=task_correlation,
+                          effect_sd=effect_sd)
+    return _simulated_power(repositories,
+                            tasks_per_repository=tasks_per_repository,
+                            model=model, alpha=alpha,
+                            simulations=simulations, seed=seed)
+
+
+def calibrate_effect_sd(difference_icc: float, *, tasks_per_repository: int,
+                        baseline_rate: float, treatment_rate: float,
+                        icc: float = 0.0, task_correlation: float = 0.5,
+                        repositories: int = 2000, seed: int | str = 0
+                        ) -> float:
+    """The ``effect_sd`` whose simulated difference ICC matches a pilot's.
+
+    A pilot measures the intra-repository correlation of the paired task
+    differences (:func:`pilot_planning_inputs`); this inverts the model
+    by bisection on a large deterministic simulation. Returns 0 when the
+    target is at or below what shared difficulty alone produces.
+    """
+    if type(difference_icc) not in (int, float) or \
+            not 0 <= difference_icc < 1:
+        raise ContractError("difference_icc must be in [0, 1)")
+
+    def simulated(effect_sd: float) -> float:
+        model = _ClusterModel(baseline_rate=baseline_rate,
+                              treatment_rate=treatment_rate, icc=icc,
+                              task_correlation=task_correlation,
+                              effect_sd=effect_sd)
+        rng = random.Random(f"{seed}:calibrate")
+        value = anova_icc([model.repository(rng, tasks_per_repository)
+                           for _ in range(repositories)])
+        return value or 0.0
+
+    low, high = 0.0, 4.0
+    if simulated(low) >= difference_icc:
+        return 0.0
+    if simulated(high) <= difference_icc:
+        return high
+    for _ in range(20):
+        middle = (low + high) / 2
+        if simulated(middle) < difference_icc:
+            low = middle
+        else:
+            high = middle
+    return round((low + high) / 2, 4)
+
+
+def pilot_planning_inputs(report: Mapping, *, baseline: str = "A",
+                          treatment: str = "E") -> dict:
+    """What a pilot run measured that :func:`required_repositories` needs.
+
+    From the task rows of a governed report (``repository_id`` set on
+    every row): per-arm valid-solve rates, mean tasks per repository, the
+    ANOVA intra-repository correlation of baseline outcomes
+    (``outcome_icc``) and of the paired differences
+    (``difference_icc``). These are point estimates from a small sample;
+    plan with a conservative value, not the estimate alone.
+    """
+    def solved(row: Mapping) -> int:
+        return int(row.get("outcome") == "pass"
+                   and not row.get("budget_exceeded")
+                   and not row.get("error"))
+
+    outcomes: dict[str, list[int]] = {}
+    deltas: dict[str, list[int]] = {}
+    base = treat = n = 0
+    for row in report.get("per_task", []):
+        repository = row.get("repository_id")
+        arms = row.get("arms", {})
+        if not isinstance(repository, str) or baseline not in arms \
+                or treatment not in arms:
+            continue
+        a, e = solved(arms[baseline]), solved(arms[treatment])
+        outcomes.setdefault(repository, []).append(a)
+        deltas.setdefault(repository, []).append(e - a)
+        base += a
+        treat += e
+        n += 1
+    repositories = len(deltas)
+    return {
+        "tasks": n,
+        "repositories": repositories,
+        "tasks_per_repository": round(n / repositories, 3)
+        if repositories else None,
+        "baseline_rate": round(base / n, 6) if n else None,
+        "treatment_rate": round(treat / n, 6) if n else None,
+        "outcome_icc": anova_icc(list(outcomes.values())),
+        "difference_icc": anova_icc(list(deltas.values())),
+    }
+
+
+def required_repositories(
+    *,
+    baseline_rate: float,
+    treatment_rate: float,
+    tasks_per_repository: int,
+    icc: float = 0.0,
+    effect_sd: float | None = None,
+    difference_icc: float | None = None,
+    power: float = 0.8,
+    alpha: float = 0.05,
+    task_correlation: float = 0.5,
+    simulations: int = 1000,
+    seed: int | str = 0,
+    max_repositories: int = 400,
+) -> dict:
+    """Smallest number of holdout repositories that reaches ``power``.
+
+    Sizes a confirmatory study for the repository-level decision of
+    ``analyze_report`` from a pilot's estimates (see
+    :func:`pilot_planning_inputs`): per-arm solve rates, tasks per
+    repository, the latent difficulty ``icc`` and the between-repository
+    spread of the effect — given directly as ``effect_sd`` or as the
+    pilot's ``difference_icc`` (then calibrated with
+    :func:`calibrate_effect_sd`). :func:`required_sample_size` assumes
+    independent tasks; this accounts for repositories being the unit of
+    the test. The search doubles until the target is reached and then
+    bisects; every candidate size has its own deterministic stream, so
+    the result is reproducible for a given ``seed``. ``recommended_*``
+    is never below the confirmatory floor
+    (``MIN_CONFIRMATORY_HOLDOUT_REPOSITORIES``).
+    """
+    from .learning_qualification import MIN_CONFIRMATORY_HOLDOUT_REPOSITORIES
+
+    if type(power) not in (int, float) or not 0 < power < 1:
+        raise ContractError("power must be in (0, 1)")
+    if baseline_rate == treatment_rate:
+        raise ContractError("expected rates must differ")
+    if type(max_repositories) is not int or max_repositories < 2:
+        raise ContractError("max_repositories must be an integer >= 2")
+    if effect_sd is not None and difference_icc is not None:
+        raise ContractError("give effect_sd or difference_icc, not both")
+    _check_power_inputs(2, tasks_per_repository, baseline_rate,
+                        treatment_rate, icc, task_correlation,
+                        effect_sd or 0.0, alpha, simulations)
+    if difference_icc is not None:
+        effect_sd = calibrate_effect_sd(
+            difference_icc, tasks_per_repository=tasks_per_repository,
+            baseline_rate=baseline_rate, treatment_rate=treatment_rate,
+            icc=icc, task_correlation=task_correlation, seed=seed)
+    effect_sd = effect_sd or 0.0
+    model = _ClusterModel(baseline_rate=baseline_rate,
+                          treatment_rate=treatment_rate, icc=icc,
+                          task_correlation=task_correlation,
+                          effect_sd=effect_sd)
+    curve: dict[int, float] = {}
+
+    def at(repositories: int) -> float:
+        if repositories not in curve:
+            curve[repositories] = _simulated_power(
+                repositories, tasks_per_repository=tasks_per_repository,
+                model=model, alpha=alpha, simulations=simulations, seed=seed)
+        return curve[repositories]
+
+    inputs = {"baseline_rate": baseline_rate,
+              "treatment_rate": treatment_rate,
+              "tasks_per_repository": tasks_per_repository, "icc": icc,
+              "effect_sd": effect_sd, "difference_icc": difference_icc,
+              "task_correlation": task_correlation, "power": power,
+              "alpha": alpha, "simulations": simulations, "seed": seed}
+    # A test over R repositories cannot reach p below 2**(1 - R).
+    low = max(2, math.ceil(1 - math.log2(alpha)))
+    high = low
+    while at(high) < power:
+        if high >= max_repositories:
+            return {"required_repositories": None, "reached": False,
+                    "power_at_max": round(at(high), 6),
+                    "max_repositories": max_repositories,
+                    "curve": {str(k): round(v, 6)
+                              for k, v in sorted(curve.items())},
+                    **inputs}
+        low = high
+        high = min(max_repositories, high * 2)
+    while high - low > 1:
+        middle = (low + high) // 2
+        if at(middle) >= power:
+            high = middle
+        else:
+            low = middle
+    if at(low) >= power:
+        high = low
+    recommended = max(high, MIN_CONFIRMATORY_HOLDOUT_REPOSITORIES)
+    return {
+        "required_repositories": high,
+        "reached": True,
+        "achieved_power": round(at(high), 6),
+        "confirmatory_floor": MIN_CONFIRMATORY_HOLDOUT_REPOSITORIES,
+        "recommended_repositories": recommended,
+        "recommended_tasks": recommended * tasks_per_repository,
+        "independent_task_n": required_sample_size(
+            baseline_rate, treatment_rate, power=power, alpha=alpha),
+        "curve": {str(k): round(v, 6) for k, v in sorted(curve.items())},
+        "decision": "repository_sign_flip_exact",
+        "model": "probit latent threshold: repository difficulty, task"
+                 " difficulty and repository-specific effect",
+        **inputs,
+    }
 
 
 def protocol_required_sample_size(protocol: Mapping) -> int:
