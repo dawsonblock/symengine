@@ -78,11 +78,16 @@ def _status(available=True, authenticated=True):
 
 
 def _manifest(root: Path, *, arms=GOVERNED_ARMS,
-              kind="five_arm_efficacy_manifest") -> dict:
+              kind="five_arm_efficacy_manifest",
+              identical_induction=False) -> dict:
     repositories = []
     for index in range(5):
         path = root / f"induction-{index}"
-        base_commit, origin = _repository(path, "seed.py", "SEED = 1\n")
+        # Distinct contents: the guidance bundle trains on some induction
+        # repositories and qualifies on others.
+        base_commit, origin = _repository(
+            path, "seed.py",
+            "SEED = 1\n" if identical_induction else f"SEED = {index}\n")
         repositories.append({
             "repository_id": f"repo-induction-{index}",
             "lineage_id": f"lineage-induction-{index}",
@@ -166,9 +171,39 @@ def _write(root: Path, document: dict) -> Path:
     return path
 
 
-def _learned_bundle(document: dict) -> dict:
-    induction = [item for item in document["repositories"]
-                 if item["partition"] == "induction"]
+def _qualification_block(qualification_repositories, *, receipts=None,
+                         signer=None) -> dict:
+    """A bundle's qualification split with real signed outcome receipts.
+
+    ``receipts``/``signer`` reuse receipts a candidate stack qualified
+    with; otherwise three receipts are signed with a fresh key.
+    """
+    from tests.v3.candidate_testkit import keypair, signed_receipt
+    if receipts is None:
+        seed, public, key_id = keypair("eval")
+        receipts = [signed_receipt(seed, key_id, task_id=f"qual-task-{i}")
+                    for i in range(3)]
+        signer = (key_id, public.hex())
+    digests = sorted({item["repo_snapshot_digest"]
+                      for item in qualification_repositories})
+    tasks = []
+    for index, task_id in enumerate(sorted({r.task_id for r in receipts})):
+        tasks.append({"task_id": task_id,
+                      "repository_digest": digests[index % len(digests)]})
+    return {
+        "repository_digests": digests,
+        "tasks": tasks,
+        "receipt_signer": {"key_id": signer[0], "public_key": signer[1]},
+        "receipts": {receipt.digest: receipt.to_dict()
+                     for receipt in receipts},
+    }
+
+
+def _learned_bundle(document: dict, *, receipts=None, signer=None) -> dict:
+    """A bundle trained on induction repos 0-2, qualified on 3-4."""
+    repositories = [item for item in document["repositories"]
+                    if item["partition"] == "induction"]
+    induction = repositories[:3]
     components = {}
     for arm in ("B", "C", "D"):
         components[arm] = [{
@@ -188,6 +223,8 @@ def _learned_bundle(document: dict) -> dict:
         "training": {
             "repository_digests": sorted({
                 item["repo_snapshot_digest"] for item in induction})},
+        "qualification": _qualification_block(
+            repositories[3:], receipts=receipts, signer=signer),
         "components": components,
     }
     bundle["bundle_digest"] = campaign_tool._bundle_digest(bundle)
@@ -341,7 +378,9 @@ class GuidanceBundleLineageTests(unittest.TestCase):
 
         def serving_basis(self, candidate_id):
             record = self._record(candidate_id)
-            return {"evidence_refs": (record["evidence_digest"],)}
+            return {"evidence_refs": (record["evidence_digest"],),
+                    "receipt_refs": tuple(
+                        self.bundle["qualification"]["receipts"])}
 
     def _load(self, root, *, registry, document=None, bundle=None):
         document = document or _manifest(root)
@@ -906,7 +945,7 @@ class RepositoryTreeValidationTests(unittest.TestCase):
 
     def test_identical_induction_repositories_are_allowed(self):
         with tempfile.TemporaryDirectory() as temp:
-            document = _manifest(Path(temp))
+            document = _manifest(Path(temp), identical_induction=True)
             report = validate_manifest(document, check_paths=True)
         self.assertTrue(report["valid"], report["problems"])
         self.assertEqual(report["distinct_repository_trees"], 6)

@@ -284,10 +284,16 @@ class CliServingEndToEndTests(unittest.TestCase):
             self.root / "candidates.db",
             protocol=self.protocol["protocol_digest"])
         self.addCleanup(stack.close)
-        bundle = _learned_bundle(document)
+        qualified = {arm: _qualified(stack, f"candidate-{arm}",
+                                     f"{arm} served step")
+                     for arm in ("B", "C", "D")}
+        # The bundle declares the qualification split the candidates'
+        # receipts came from (induction repositories, never the holdout).
+        bundle = _learned_bundle(
+            document, receipts=list(stack.receipts.values()),
+            signer=(stack.eval_key, stack.eval_public_hex))
         for arm in ("B", "C", "D"):
-            candidate, evidence = _qualified(
-                stack, f"candidate-{arm}", f"{arm} served step")
+            candidate, evidence = qualified[arm]
             bundle["components"][arm][0].update({
                 "candidate_digest": candidate.digest,
                 "content_digest": candidate.content_digest,
