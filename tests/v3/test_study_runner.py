@@ -246,6 +246,34 @@ class RunRealOptionTests(unittest.TestCase):
         self.assertEqual({task["custody"] for task in registry["tasks"]},
                          {"split"})
 
+    def test_a_resume_under_another_executor_configuration_is_blocked(self):
+        """Journaled rows are reused only under the executor that made them."""
+        manifest = _write(self.root, _manifest(self.root))
+        output = self.root / "report.json"
+        state = self.root / "state"
+
+        def run(image):
+            with mock.patch.object(DockerSandboxExecutor, "_require_docker",
+                                   return_value="test"), \
+                    mock.patch.object(DockerSandboxExecutor, "prepare",
+                                      side_effect=RunnerError("no_daemon")), \
+                    contextlib.redirect_stdout(io.StringIO()):
+                code = tool.run_real(
+                    output, manifest, executor="docker", docker_image=image,
+                    require_image_digest=False, docker_user="1000:1000",
+                    agent_factory=_scripted_agent, state_dir=state)
+            return code, json.loads(output.read_text(encoding="utf-8"))
+
+        first, _ = run("sis-evaluator:a")
+        self.assertIn(first, (0, 1))
+        code, report = run("sis-evaluator:b")
+        self.assertEqual(code, 2, report.get("note"))
+        self.assertEqual(report["release_gate"], "BLOCKED_RESUME")
+        self.assertIn("journal_identity_mismatch", report["note"])
+        again, report = run("sis-evaluator:a")
+        self.assertIn(again, (0, 1), report.get("note"))
+        self.assertNotEqual(report.get("release_gate"), "BLOCKED_RESUME")
+
     def test_a_state_dir_open_to_others_is_refused(self):
         state = self.root / "state"
         state.mkdir(mode=0o755)

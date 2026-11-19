@@ -1518,7 +1518,10 @@ def run_real(output: Path, manifest_path: Path | None, *,
                 "arm_order_seed": str(arm_order_seed),
                 "agent": provenance["agent"],
                 "custody": provenance["custody"],
-                "executor": executor,
+                # The whole resolved configuration (class, image, runtime,
+                # container identities), not just its kind: a resume under
+                # another image or runtime must not reuse these rows.
+                "executor": dict(executor_facts),
                 "guidance_bundle_digest": (learned_bundle["bundle_digest"]
                                            if learned_bundle is not None
                                            else None),
