@@ -7,10 +7,11 @@ on:
 jobs:
   tests:
     runs-on: ${{ matrix.os }}
-    # Windows is experimental: some evaluator-runtime paths rely on
-    # POSIX process semantics. Linux/macOS POSIX is the supported
-    # evaluator platform for this release.
-    continue-on-error: ${{ matrix.experimental == true }}
+    # Platform support (docs/v3/SECURITY_BOUNDARIES_V3_3.md): Linux and
+    # macOS run the whole suite. Windows is supported for the core learner
+    # and CLI only; the v3 evaluator, sandbox and study layer (tests/v3)
+    # is POSIX-only, so the Windows job runs the core suite, and it is a
+    # required job like the others.
     strategy:
       matrix:
         include:
@@ -24,7 +25,6 @@ jobs:
             python-version: '3.12'
           - os: windows-latest
             python-version: '3.12'
-            experimental: true
     steps:
       - uses: actions/checkout@v4
         with:
@@ -40,7 +40,15 @@ jobs:
         # here is what makes them run in CI.
         if: runner.os == 'Linux'
         run: docker build -t sis-evaluator:3.3.9 docker/sandbox
-      - run: python -m pytest tests/ -q
+      - name: Run the test suite
+        if: runner.os != 'Windows'
+        run: python -m pytest tests/ -q
+        env:
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
+          PYTHONNOUSERSITE: "1"
+      - name: Run the core test suite (Windows; tests/v3 is POSIX-only)
+        if: runner.os == 'Windows'
+        run: python -m pytest tests/ -q --ignore=tests/v3
         env:
           PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
           PYTHONNOUSERSITE: "1"
@@ -50,7 +58,9 @@ jobs:
         # local file wins; otherwise fetch the asset for this tag. Nothing
         # downloaded is trusted: the gate re-hashes it against
         # release/release_manifest.json and the signed provenance.
-        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'release'
+        # The strict gate re-hashes LF source bytes; Windows checkouts
+        # convert line endings, so it runs on the POSIX runners.
+        if: runner.os != 'Windows' && (startsWith(github.ref, 'refs/tags/') || github.event_name == 'release')
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -75,7 +85,7 @@ jobs:
         #            SIS_ISOLATOR_PUBLIC_KEY
         #   vars:    SIS_ISOLATION_IMAGE_DIGEST,
         #            SIS_ISOLATION_POLICY_DIGEST, SIS_ISOLATION_PROPERTIES
-        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'release'
+        if: runner.os != 'Windows' && (startsWith(github.ref, 'refs/tags/') || github.event_name == 'release')
         shell: bash
         env:
           SIS_RELEASE_PUBLIC_KEY: ${{ secrets.SIS_RELEASE_PUBLIC_KEY }}

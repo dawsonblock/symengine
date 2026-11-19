@@ -167,7 +167,8 @@ see [Gate 2](docs/v3/SANDBOX_QUALIFICATION_GATE2.md).
 > [!WARNING]
 > Do not evaluate hostile code on the local subprocess backend. macOS is
 > development-only: memory is enforced by a watchdog, not a kernel limit.
-> Windows support is experimental.
+> On Windows only the core learner and CLI are supported; the evaluator,
+> sandbox and study layer is POSIX-only.
 
 ## Efficacy studies
 
@@ -245,7 +246,8 @@ CI covers:
 - a Docker-absent profile;
 - lint;
 - gVisor sandbox qualification;
-- an experimental Windows job.
+- Windows on Python 3.12 for the core suite (`tests/v3` is POSIX-only and
+  is not collected there).
 
 ```text
 src/sis/          core engine (induction, registry, CLI, HTTP server)

@@ -1,5 +1,28 @@
 # Changelog
 
+## 2026-11-19 — Repository cleanup (SIS-CHORE-17)
+
+No behaviour changes for users; every CLI command works as before.
+
+- **Historical record moved to `docs/history/`.** The files
+  `docs/INDEX.md` lists as historical (v1.5–v2.4 milestone reports,
+  per-version test reports, early upgrade and release notes, the
+  pre-3.3.3 README, the v3 gate and pre-3.3.8 qualification reports,
+  the v3 status ledger and two root-level release notes) moved with
+  `git mv`; every relative link was rewritten and none is broken.
+  `docs/INDEX.md` names the v3.3.9 qualification report as current.
+- **Grouped `sis --help`.** The 58 commands are listed once, under ten
+  headings, instead of twice as a flat list. `COMMAND_GROUPS` in
+  `sis.cli` is the single table, and `tests/test_cli_help.py` requires
+  every command to be in exactly one group.
+- **Windows: core only.** Windows is supported for the core learner and
+  CLI; the v3 evaluator, sandbox and study layer is POSIX-only. The
+  Windows CI job is no longer experimental: it runs the core suite
+  (`--ignore=tests/v3`) and is required. `tests/conftest.py` leaves
+  `tests/v3` out of collection on Windows and says so in the run header.
+  The strict release-tag gate runs on the POSIX runners, since it
+  re-hashes LF source bytes.
+
 ## 2026-11-19 — Sandbox qualification path (SIS-FEAT-16)
 
 Track C of the efficacy plan: a Docker + gVisor qualification path with a
