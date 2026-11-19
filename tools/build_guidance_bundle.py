@@ -515,6 +515,29 @@ def candidate_guidance(candidate: CandidateV1) -> GuidanceV1:
         reason_code=None, approximate_tokens=60)
 
 
+def _qualification_attempt(row: Mapping, task_id: str,
+                           arm: str) -> tuple[bool, str | None, bool]:
+    """Classify one qualification arm as ``(passed, receipt, agent_failure)``.
+
+    An evaluated attempt passes only with a passing receipt inside its
+    budget, the study's own success rule. An agent that timed out, raised
+    or reported invalid usage produced no submission to evaluate: that is
+    an ordinary failed attempt and must count, or a candidate whose
+    guidance makes the agent fail would look like it never lost. An
+    evaluation that could not run is not evidence about the agent at all,
+    so qualification stops rather than guess.
+    """
+    receipt = row.get("receipt_digest")
+    if receipt is not None:
+        return (row.get("outcome") == "pass"
+                and not row.get("budget_exceeded"), receipt, False)
+    error = str(row.get("error") or "")
+    if not error or error.startswith("evaluation:"):
+        raise BundleBuildError(
+            f"qualification_evaluation_error:{task_id}:{arm}")
+    return False, None, True
+
+
 def _selected(trials: list[CandidateTrial], *, rule: str,
               min_repositories: int) -> bool:
     if rule == "net_wins":
@@ -650,6 +673,7 @@ def build_bundle(spec: Mapping, *, trust: Mapping, keys: Mapping,
         base_rows = {row["task_id"]: row["arms"]["A"]
                      for row in baseline["per_task"]}
         trials_by_arm: dict[str, list[CandidateTrial]] = {}
+        failures_by_arm: dict[str, tuple[dict, int]] = {}
         assisted_by_arm: dict[str, dict] = {}
         for arm, candidate in sorted(proposals.items()):
             guidance = candidate_guidance(candidate)
@@ -659,23 +683,35 @@ def build_bundle(spec: Mapping, *, trust: Mapping, keys: Mapping,
                     for row in assisted["per_task"]}
             assisted_by_arm[arm] = rows
             trials = []
-            for task_id, row in rows.items():
-                base = base_rows[task_id]
-                if row.get("receipt_digest") is None or \
-                        base.get("receipt_digest") is None:
+            failures = {"assisted": 0, "baseline": 0}
+            unevidenced = 0
+            for task_id, row in sorted(rows.items()):
+                base_passed, base_receipt, base_failed = \
+                    _qualification_attempt(base_rows[task_id], task_id, "A")
+                passed, receipt, failed = _qualification_attempt(
+                    row, task_id, "E")
+                failures["baseline"] += base_failed
+                failures["assisted"] += failed
+                evidence = receipt or base_receipt
+                if evidence is None:
+                    # Both agents failed before evaluation: a neutral pair
+                    # with no signed evidence. Leaving it out cannot add a
+                    # win or a loss, and adds no repository coverage.
+                    unevidenced += 1
                     continue
+                # Over-budget attempts are already failures (above), so
+                # every evaluated pair is a valid comparison.
                 trials.append(CandidateTrial(
                     candidate_id=candidate.candidate_id,
                     repository_id=run.tasks[task_id]["repository_id"],
                     task_id=task_id,
-                    baseline_passed=base["outcome"] == "pass"
-                    and not base["budget_exceeded"],
-                    assisted_passed=row["outcome"] == "pass"
-                    and not row["budget_exceeded"],
-                    budget_valid=not row["budget_exceeded"],
-                    signed_evidence_digest=row["receipt_digest"],
+                    baseline_passed=base_passed,
+                    assisted_passed=passed,
+                    budget_valid=True,
+                    signed_evidence_digest=evidence,
                     evaluator_verified=True))
             trials_by_arm[arm] = trials
+            failures_by_arm[arm] = (failures, unevidenced)
     finally:
         close = getattr(agent, "close", None)
         if callable(close):
@@ -706,6 +742,8 @@ def build_bundle(spec: Mapping, *, trust: Mapping, keys: Mapping,
                               for t in trials),
                   "losses": sum(t.baseline_passed and not t.assisted_passed
                                 for t in trials),
+                  "agent_failures": failures_by_arm[arm][0],
+                  "unevidenced_pairs": failures_by_arm[arm][1],
                   "selected": arm in selected}
             for arm, trials in trials_by_arm.items()},
         "executor": campaign.executor_description(run.verifier.executor),

@@ -224,6 +224,72 @@ class GuidanceBundleBuildTests(unittest.TestCase):
         report = json.loads((self.root / "none.json.report.json").read_text())
         self.assertEqual(report["missing_arms"], ["B", "C", "D"])
 
+    def test_assisted_agent_failures_count_as_losses(self):
+        # Per qualification repository: the baseline solves one task and
+        # the guided agent errors on it (a loss); on the other task the
+        # baseline fails and the guided agent solves it (a win). Dropping
+        # the errored pairs would report 2 wins and 0 losses and qualify
+        # every candidate; counted, the net is zero and nothing qualifies.
+        by_repo: dict[str, list[str]] = {}
+        for task in self.spec["tasks"]:
+            if task["task_id"] not in self.training_ids:
+                by_repo.setdefault(task["repository_id"], []).append(
+                    task["task_id"])
+        baseline_solves = {sorted(ids)[0] for ids in by_repo.values()}
+
+        def factory(prompts, budget, model):
+            def agent(ctx):
+                task_id = ctx.task.task_id
+                target = fix_target(prompts[task_id])
+                guided = ctx.guidance is not None and bool(
+                    ctx.guidance.helpful_next_checks)
+                ctx.usage_meter.record_tokens(100)
+                ctx.usage_meter.record_tool_call()
+                if guided and task_id in baseline_solves:
+                    raise RuntimeError("real_agent_error_event")
+                if target is not None and (
+                        task_id in self.training_ids or guided
+                        or task_id in baseline_solves):
+                    apply_fix(ctx.workspace, *target)
+                return {"tokens_used": 100, "tools_used": 1,
+                        "actions": ["Read", "Bash", "Edit"]}
+            return agent
+
+        output = self.root / "errors.json"
+        code = self.build(output, self.root / "errors.db",
+                          self.root / "state-errors", factory=factory)
+        report = json.loads(
+            (self.root / "errors.json.report.json").read_text())
+        self.assertEqual(code, 1, report)
+        self.assertFalse(output.exists())
+        for arm, summary in report["qualification"].items():
+            self.assertEqual((summary["wins"], summary["losses"]), (2, 2),
+                             arm)
+            self.assertEqual(summary["agent_failures"],
+                             {"assisted": 2, "baseline": 0}, arm)
+            self.assertFalse(summary["selected"], arm)
+
+    def test_qualification_attempts_classify_errors(self):
+        attempt = bundler._qualification_attempt
+        self.assertEqual(
+            attempt({"outcome": "pass", "receipt_digest": "d",
+                     "budget_exceeded": False}, "t", "E"),
+            (True, "d", False))
+        self.assertEqual(
+            attempt({"outcome": "pass", "receipt_digest": "d",
+                     "budget_exceeded": True}, "t", "E"),
+            (False, "d", False))
+        self.assertEqual(
+            attempt({"outcome": "error", "receipt_digest": None,
+                     "budget_exceeded": True, "error": "agent_timeout"},
+                    "t", "E"),
+            (False, None, True))
+        with self.assertRaisesRegex(bundler.BundleBuildError,
+                                    "qualification_evaluation_error:t:E"):
+            attempt({"outcome": "error", "receipt_digest": None,
+                     "budget_exceeded": False,
+                     "error": "evaluation:executor down"}, "t", "E")
+
     def test_untrusted_signing_keys_are_refused(self):
         other = self.root / "other-trust.json"
         trust = json.loads(self.trust_path.read_text())
