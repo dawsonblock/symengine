@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import os
 import sys
 import tarfile
 import tempfile
@@ -135,6 +136,13 @@ class PolicyRoundTripTests(unittest.TestCase):
             python=sys.executable, log=str(self.log),
             payload=str(self.payload)))
         self.fake.chmod(0o755)
+        if os.name == "nt":
+            # Windows cannot execute a shebang script (WinError 193); run the
+            # same fake through the interpreter from a .cmd wrapper.
+            wrapper = self.root / "fake-docker.cmd"
+            wrapper.write_text(
+                f'@"{sys.executable}" "{self.fake}" %*\r\n')
+            self.fake = wrapper
         self.base = self.root / "base"
         self.base.mkdir()
         (self.base / "seed.txt").write_text("seed")
