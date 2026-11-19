@@ -200,9 +200,20 @@ def main() -> int:
     parser.add_argument("--only", default=None)
     parser.add_argument("--allow-local-executor", action="store_true",
                         help="local execution is development-only")
+    parser.add_argument("--allow-unqualified", action="store_true",
+                        help="development only: run hostile code on a platform"
+                             " that cannot qualify it (native macOS)")
     args = parser.parse_args()
     if not args.list and not args.allow_local_executor:
         parser.error("local executor requires --allow-local-executor")
+    if not args.list:
+        from sis.v3.runner import (RunnerError,
+                                   refuse_unqualified_hostile_evaluation)
+        try:
+            refuse_unqualified_hostile_evaluation(
+                allow_unqualified=args.allow_unqualified)
+        except RunnerError as exc:
+            parser.error(str(exc))
 
     if args.list:
         print(json.dumps(describe(), indent=2, sort_keys=True))
