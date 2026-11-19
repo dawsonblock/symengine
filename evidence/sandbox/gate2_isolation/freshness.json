@@ -1,0 +1,22 @@
+{
+  "attestation_expired_at": "2026-11-16T08:41:42Z",
+  "evidence_commit": "9daf61f",
+  "files": {
+    "attestation.json": "6d1cc7dabadf92a4bbe7bde08564958a303f14237f3f50e48fd98f9707120a72",
+    "qualification.json": "de76a82847b578f1c8a30cc75b106ee97b682a66c8f10d5743df286f140aa49d",
+    "receipt.json": "09b39fe02e527d04ee3716120283f5ab534a86b9caec481ad4f9d5c890f0d9aa"
+  },
+  "evidence_generated_at": "2026-11-16T07:41:42Z",
+  "kind": "gate2_evidence_freshness",
+  "marked_stale_at": "2026-11-19",
+  "reasons": [
+    "The attestation expired at 2026-11-16T08:41:42Z; it verifies only with an explicit at_time inside its validity window.",
+    "The evidence predates commit 22b2f37 (2026-11-18), which changed how sandbox containers are launched and cleaned up.",
+    "The signed policy digest f244ee64... is the schema-1 hand-written policy (it states pids_limit 128 while the receipt shows docker:pids_limit:64); it is not the digest of DockerSandboxExecutor.launch_policy().",
+    "The receipt ran under the default runtime (runc) with Docker's default seccomp profile; it carries no docker:runtime:runsc or docker:seccomp_profile marker, so kernel:gvisor and syscalls:seccomp_allowlist were never attested.",
+    "The probe and receipt came from a developer machine (Docker server linux/aarch64, container user 501:20), not from the CI gVisor job."
+  ],
+  "regenerate_with": "The sandbox-qualification CI job (.github/workflows/ci.yml) or the commands in docs/v3/SANDBOX_QUALIFICATION_GATE2.md, under runsc with docker/sandbox/seccomp.json.",
+  "schema_version": 1,
+  "status": "stale"
+}

@@ -4,7 +4,7 @@ A sat witness disproves candidate equivalence. Unsat does NOT establish a rule i
 correct relative to the real task, and is only over the configured bounded domain.
 """
 from .errors import InvalidInput
-from .expression import evaluate
+from .expression import evaluate, z3_translate
 
 
 def bounded_disagreement(a, b, schema, low=-20, high=20, timeout_ms=150):
@@ -34,32 +34,15 @@ def bounded_disagreement(a, b, schema, low=-20, high=20, timeout_ms=150):
         else:
             return None, "unsupported_noninteger_schema"
 
+    guards = []
+
     def translate(ast):
-        op = ast["op"]
-        if op == "field": return vars[ast["name"]]
-        if op == "item": return vars[ast["name"]][ast["index"]]
-        if op == "const":
-            if type(ast["value"]) is not int:
-                raise ValueError("numeric only")
-            return z3.IntVal(ast["value"])
-        if op == "if_eq":
-            return z3.If(translate(ast["left"]) == translate(ast["right"]),
-                         translate(ast["then"]), translate(ast["else"]))
-        if op in ("neg", "abs"):
-            x = translate(ast["arg"])
-            return -x if op == "neg" else z3.If(x >= 0, x, -x)
-        x, y = [translate(child) for child in ast["args"]]
-        if op == "add": return x + y
-        if op == "sub": return x - y
-        if op == "mul": return x * y
-        if op == "min": return z3.If(x <= y, x, y)
-        if op == "max": return z3.If(x >= y, x, y)
-        if op == "absdiff": return z3.If(x - y >= 0, x - y, y - x)
-        if op == "eq": return x == y
-        raise ValueError("unsupported op for Z3")
+        return z3_translate(ast, vars, z3, guards)
 
     try:
         solver.add(translate(a) != translate(b))
+        for guard in guards:
+            solver.add(guard)
     except (KeyError, ValueError, IndexError, TypeError):
         return None, "unsupported_expression"
     verdict = solver.check()

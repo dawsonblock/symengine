@@ -18,11 +18,23 @@ ambiguous. Use ``--input-min`` to include negative values and
 ``--equivalence z3`` to verify equivalence over the declared box; only
 ``exact_recovery_verified`` claims the intended rule.
 
+Corpus mode (``--corpus examples/induction_corpus``) runs the fixed
+induction corpus instead: about sixty targets in six categories (linear,
+nonlinear, divmod, piecewise, string, distractor), each induced with the
+legacy ``induce(train, validation)`` call that ``sis train`` uses. Per
+category it reports the recovery rate (status ``locally_validated`` and
+the rule equals the oracle on every labelled row and every seeded fresh
+oracle point), exact structural recovery, the false-positive rate
+(``locally_validated`` but wrong on a fresh oracle point), the
+``no_rule`` rate, and runtime p50/p95.
+
 Usage:
     PYTHONPATH=src python3 tools/benchmark_induction.py
     PYTHONPATH=src python3 tools/benchmark_induction.py --fields 2,4,8
     PYTHONPATH=src python3 tools/benchmark_induction.py \
         --input-min -9 --equivalence z3
+    PYTHONPATH=src python3 tools/benchmark_induction.py \
+        --corpus examples/induction_corpus --output corpus.json
 """
 from __future__ import annotations
 
@@ -35,7 +47,7 @@ import time
 import tracemalloc
 from datetime import datetime, timezone
 
-from sis.expression import evaluate
+from sis.expression import OPS, evaluate
 from sis.induction import SearchBudget, induce
 
 
@@ -58,28 +70,31 @@ def target_rule(features: int) -> dict:
     }
 
 
-_COMMUTATIVE = frozenset({"add", "mul", "min", "max", "absdiff"})
-
-
 def structural_form(ast) -> tuple:
-    """A commutative-normalized form used for structural comparison."""
+    """A commutative-normalized form used for structural comparison.
+
+    Commutativity and tags come from the grammar's op registry. Reference
+    rules in the corpus are compared as data and never evaluated here, so
+    an op the running grammar does not know is compared by name.
+    """
     op = ast["op"]
-    if op in _COMMUTATIVE:
-        return (op, tuple(sorted(structural_form(child)
-                                 for child in ast["args"])))
     if op == "field":
         return ("field", ast["name"])
     if op == "item":
         return ("item", ast["name"], ast["index"])
     if op == "const":
-        return ("const", ast["value"])
-    if op in ("neg", "abs"):
-        return (op, structural_form(ast["arg"]))
-    if op == "if_eq":
-        return ("if_eq", structural_form(ast["left"]),
-                structural_form(ast["right"]), structural_form(ast["then"]),
-                structural_form(ast["else"]))
-    return (op, tuple(structural_form(child) for child in ast["args"]))
+        return ("const", type(ast["value"]).__name__, ast["value"])
+    if "arg" in ast:
+        kids = [ast["arg"]]
+    elif "args" in ast:
+        kids = list(ast["args"])
+    else:
+        kids = [ast[key] for key in ("left", "right", "then", "else")]
+    forms = tuple(structural_form(child) for child in kids)
+    spec = OPS.get(op)
+    if spec is not None and spec.commutative:
+        forms = tuple(sorted(forms))
+    return ((spec.form_tag if spec is not None else op),) + forms
 
 
 def verify_equivalence(rule, target, schema, *, mode: str,
@@ -278,6 +293,183 @@ METRIC_DEFINITIONS = {
 }
 
 
+# --------------------------------------------------------------- corpus mode
+
+CORPUS_METRIC_DEFINITIONS = {
+    "recovered": (
+        "status locally_validated and the rule matches the oracle on every "
+        "labelled row and every seeded fresh oracle point (exact structure "
+        "or probe-equivalence over the fresh points)"),
+    "exact_structure": (
+        "the rule equals the reference rule up to commutative operand order"),
+    "equivalent_any_status": (
+        "the returned rule matches the oracle on all labelled and fresh "
+        "points, whatever its status"),
+    "false_positive": (
+        "status locally_validated but the rule disagrees with the oracle on "
+        "at least one fresh point; the metric a learner must keep at zero"),
+    "wrong_rule_any_status": (
+        "some rule was returned (any status) and it disagrees with the "
+        "oracle on a fresh point"),
+    "no_rule": "status no_rule",
+}
+
+
+def load_corpus(corpus_dir):
+    """Return ``(materialised corpus, generator module)`` for a corpus dir."""
+    import importlib.util
+    from pathlib import Path
+    root = Path(corpus_dir)
+    spec = importlib.util.spec_from_file_location(
+        "sis_induction_corpus_targets", root / "targets.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    corpus = json.loads((root / "corpus.json").read_text(encoding="utf-8"))
+    return corpus, module
+
+
+def _percentile(values, q):
+    if not values:
+        return None
+    ordered = sorted(values)
+    index = min(len(ordered) - 1, max(0, round(q * (len(ordered) - 1))))
+    return round(ordered[index], 4)
+
+
+def _oracle_agreement(rule, oracle, points):
+    """Return ``(mismatches, first_witness)`` of ``rule`` against ``oracle``."""
+    mismatches = 0
+    witness = None
+    for inputs in points:
+        expected = oracle(inputs)
+        try:
+            got = evaluate(rule, inputs)
+        except Exception:
+            got = None
+        if type(got) is not type(expected) or got != expected:
+            mismatches += 1
+            if witness is None:
+                witness = {"inputs": inputs, "expected": expected,
+                           "rule_output": got}
+    return mismatches, witness
+
+
+def run_corpus_target(entry, generator, *, budget=None):
+    """Induce one corpus target and score it against its oracle."""
+    target = generator.by_name()[entry["name"]]
+    kwargs = {"namespace": "corpus"}
+    if budget is not None:
+        kwargs["budget"] = budget
+    started = time.monotonic()
+    result = induce(entry["train"], entry["validation"], **kwargs)
+    elapsed = time.monotonic() - started
+    rule = result.get("rule")
+    status = result.get("status")
+    labelled = [row["inputs"] for row in entry["train"] + entry["validation"]]
+    fresh = generator.fresh_points(target)
+    if rule is not None:
+        mismatches, witness = _oracle_agreement(
+            rule, target["oracle"], labelled + fresh)
+    else:
+        mismatches, witness = None, None
+    equivalent = rule is not None and mismatches == 0
+    reference = entry.get("reference")
+    exact = bool(rule is not None and reference is not None
+                 and structural_form(rule) == structural_form(reference))
+    validated = status == "locally_validated"
+    return {
+        "name": entry["name"],
+        "category": entry["category"],
+        "status": status,
+        "search_outcome": result.get("search_outcome"),
+        "rule": rule,
+        "runtime_seconds": round(elapsed, 4),
+        "fresh_points": len(fresh),
+        "fresh_mismatches": mismatches,
+        "first_mismatch": witness,
+        "exact_structure": exact,
+        "equivalent_any_status": equivalent,
+        "recovered": bool(validated and equivalent),
+        "false_positive": bool(validated and not equivalent),
+        "wrong_rule_any_status": bool(rule is not None and not equivalent),
+        "no_rule": status == "no_rule",
+        "candidates_evaluated": result.get("candidates_evaluated"),
+        "signature_checks": result.get("signature_checks"),
+        "grammar_version": result.get("grammar_version"),
+        "engine_version": result.get("engine_version"),
+    }
+
+
+def summarize_corpus(rows):
+    """Per-category and overall rates; ``ALL`` aggregates every target."""
+    categories = {}
+    for row in rows:
+        categories.setdefault(row["category"], []).append(row)
+    summary = {}
+    for name, items in sorted(categories.items()) + [("ALL", rows)]:
+        count = len(items)
+        statuses = {}
+        for item in items:
+            statuses[item["status"]] = statuses.get(item["status"], 0) + 1
+        runtimes = [item["runtime_seconds"] for item in items]
+
+        def rate(key, items=items, count=count):
+            return round(sum(1 for item in items if item[key]) / count, 4)
+
+        summary[name] = {
+            "targets": count,
+            "recovered": sum(1 for item in items if item["recovered"]),
+            "recovery_rate": rate("recovered"),
+            "exact_structure_rate": rate("exact_structure"),
+            "equivalent_any_status_rate": rate("equivalent_any_status"),
+            "false_positives": sum(
+                1 for item in items if item["false_positive"]),
+            "false_positive_rate": rate("false_positive"),
+            "wrong_rule_any_status_rate": rate("wrong_rule_any_status"),
+            "no_rule_rate": rate("no_rule"),
+            "status_counts": dict(sorted(statuses.items())),
+            "runtime_p50_seconds": _percentile(runtimes, 0.5),
+            "runtime_p95_seconds": _percentile(runtimes, 0.95),
+        }
+    return summary
+
+
+def run_corpus(corpus_dir, *, names=None, categories=None, budget=None):
+    corpus, generator = load_corpus(corpus_dir)
+    entries = corpus["targets"]
+    if names:
+        wanted = set(names)
+        unknown = wanted - {e["name"] for e in entries}
+        if unknown:
+            raise ValueError(
+                "unknown corpus targets: " + ", ".join(sorted(unknown)))
+        entries = [e for e in entries if e["name"] in wanted]
+    if categories:
+        entries = [e for e in entries if e["category"] in set(categories)]
+    rows = [run_corpus_target(entry, generator, budget=budget)
+            for entry in entries]
+    from sis import induction as _induction
+    return {
+        "kind": "induction_corpus",
+        "generated_at": _utcnow(),
+        "platform": platform.platform(),
+        "python": sys.version.split()[0],
+        "grammar_version": getattr(_induction, "GRAMMAR_VERSION", None),
+        "engine_version": getattr(_induction, "ENGINE_VERSION", None),
+        "corpus_version": corpus.get("version"),
+        "partition": {"train": corpus.get("train_rows"),
+                      "validation": corpus.get("validation_rows"),
+                      "call": "induce(train, validation) legacy split"},
+        "equivalence": (
+            "labelled rows plus seeded fresh oracle points from a widened "
+            "domain; probe-equivalence, not a proof"),
+        "budget": (budget or SearchBudget()).as_dict(),
+        "metric_definitions": CORPUS_METRIC_DEFINITIONS,
+        "summary": summarize_corpus(rows),
+        "results": rows,
+    }
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--fields", default="2,4,8,16,32,64",
@@ -297,7 +489,25 @@ def main(argv=None) -> int:
                         default="none",
                         help="bounded equivalence check against the target")
     parser.add_argument("--output", default=None)
+    parser.add_argument("--corpus", default=None,
+                        help="run the induction corpus in this directory")
+    parser.add_argument("--targets", default=None,
+                        help="corpus mode: comma-separated target names")
+    parser.add_argument("--categories", default=None,
+                        help="corpus mode: comma-separated categories")
     args = parser.parse_args(argv)
+
+    if args.corpus is not None:
+        def split(text):
+            return [x.strip() for x in text.split(",") if x.strip()] if text else None
+        report = run_corpus(args.corpus, names=split(args.targets),
+                            categories=split(args.categories))
+        text = json.dumps(report, indent=2, sort_keys=True)
+        if args.output:
+            from pathlib import Path
+            Path(args.output).write_text(text + "\n", encoding="utf-8")
+        print(json.dumps(report["summary"], indent=2, sort_keys=True))
+        return 0
 
     try:
         fields = [int(item) for item in args.fields.split(",") if item.strip()]

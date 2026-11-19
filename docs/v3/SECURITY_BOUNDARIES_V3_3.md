@@ -214,6 +214,27 @@
 
 ## What is NOT enforced here (honest limits)
 
+- **Native macOS is development-only.** It is refused for production
+  (`LocalSubprocessExecutor(production=True)` raises
+  `local_backend_not_production_qualified`), and qualified runs go
+  through Docker + gVisor on Linux (`docs/v3/SANDBOX_QUALIFICATION_GATE2.md`).
+  Every entry point that runs submitted code with the local backend —
+  the evaluator worker (`build_worker_executor`,
+  `evaluate_via_subprocess`, `python -m sis.v3.evaluator_worker`) and
+  the `governed_campaign`, `governed_live_campaign`, `live_study`,
+  `real_agent_campaign`, `skill_holdout` and `learn_recommend_cycle`
+  tools — refuses to start on darwin with
+  `hostile_evaluation_unqualified_platform:darwin` unless the caller
+  passes `allow_unqualified=True` / `--allow-unqualified` in addition to
+  `--allow-local-executor`. (`five_arm_campaign.py` is outside this
+  change and still needs the gate.) On macOS the local runner also runs
+  an RSS watchdog: it polls the command's process tree with `ps` every
+  0.2 s and kills the tree once its resident size exceeds
+  `limits.memory_bytes`. Receipts record `memory:watchdog` when it ran
+  and `rlimit:memory_watchdog_exceeded` (a RESOURCE_LIMIT verdict) when
+  it killed. The watchdog is best effort, not a limit: an allocation
+  can outrun one sample, a descendant that left the tree is not counted,
+  and `memory:not_enforced` stays on every macOS receipt.
 - Local execution is `isolation:unverified_local`; seatbelt network
   denial is opportunistic, not a guarantee.
 - Private-material separation moves acceptance files out of the graded
@@ -285,7 +306,10 @@
 - The Linux worker's seccomp filter is a denylist. It also denies the
   x32 ABI on x86_64, `clone` with any `CLONE_NEW*` flag, the new mount
   API and io_uring, and makes `clone3` fail with ENOSYS (its flags are
-  in memory and cannot be inspected), but it is not an allowlist.
+  in memory and cannot be inspected), but it is not an allowlist. The
+  production Docker backend uses an allowlist instead
+  (`docker/sandbox/seccomp.json`, applied inside gVisor with
+  `--oci-seccomp`); see `docs/v3/SANDBOX_QUALIFICATION_GATE2.md`.
 - Repository validation never runs `git status`/`diff`: a checkout's
   `.gitattributes` filter, textconv or external-diff driver would run.
   Cleanliness is decided from raw object ids hashed in Python, with

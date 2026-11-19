@@ -59,7 +59,7 @@ class LiveCampaignWiringTests(unittest.TestCase):
                 argv = sys.argv
                 sys.argv = ["governed_live_campaign.py",
                             "-o", temp, "--wall", "60",
-                            "--allow-local-executor"]
+                            "--allow-local-executor", "--allow-unqualified"]
                 try:
                     rc = glc.main()
                 finally:

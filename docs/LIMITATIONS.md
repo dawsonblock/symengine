@@ -4,10 +4,13 @@
 > isolation, real-agent efficacy and multi-host PostgreSQL — see
 > `docs/V332_EFFICACY_STATUS.md` and `docs/v3/V33_LIMITATIONS.md`.
 
-- Deterministic enumerator covers **shallow** expressions and bounded second-stage arithmetic, not universal program
-  synthesis.
-- `if_eq` exists in the interpreter but currently enters through an optional untrusted model proposal or a manually
-  constructed AST; there is no exhaustive conditional induction.
+- The deterministic enumerator (learner v2) covers a declared space: typed pool programs up to cost 7 and depth 3,
+  goal-directed completions up to depth 4, exact small-integer affine fits over at most three features, and
+  **one-level** conditionals (`if_lt`/`if_eq` on leaves and observed constants). It is not universal program
+  synthesis; nested conditionals, loops and real-valued fitting are out of scope.
+- Rivals count toward ambiguity only within a cost margin (4) of the selected rule, so a much costlier rule that also
+  fits every labelled row is not reported. A threshold that the data does not pin down is reported ambiguous rather
+  than guessed.
 - Only integers, booleans, short strings and fixed-size input lists; no vectors, images, time series, probabilities,
   continuous numeric fitting, or open-world relationships.
 - Search is bounded and explicitly labeled incomplete if budget exhausted. Even when complete for this grammar/stage, an

@@ -11,7 +11,9 @@ split still requires a separate service account or host.
 The worker executes submitted code in the Docker sandbox by default. Local
 subprocess execution is development-only and requires an explicit
 ``allow_local_executor=True`` from the caller (or ``--allow-local-executor``
-on the CLI).
+on the CLI). On macOS the native local backend is never qualified for
+hostile code (no enforceable memory limit, no qualified containment), so
+it additionally needs ``allow_unqualified=True`` (``--allow-unqualified``).
 
 ``split_user`` (CLI ``--split-user``) configures the second numeric Docker
 identity that process-split custody needs; without it the Docker backend
@@ -60,6 +62,7 @@ def build_worker_executor(
     allow_local_executor: bool = False,
     require_image_digest: bool = True,
     split_user: str | None = None,
+    allow_unqualified: bool = False,
 ):
     """Construct the worker's executor; local execution is opt-in.
 
@@ -81,7 +84,13 @@ def build_worker_executor(
         if not allow_local_executor:
             raise EvaluatorWorkerError(
                 "local_executor_requires_explicit_authorization")
-        from .runner import LocalSubprocessExecutor
+        from .runner import (LocalSubprocessExecutor, RunnerError,
+                             refuse_unqualified_hostile_evaluation)
+        try:
+            refuse_unqualified_hostile_evaluation(
+                allow_unqualified=allow_unqualified)
+        except RunnerError as exc:
+            raise EvaluatorWorkerError(str(exc)) from exc
         return LocalSubprocessExecutor(executor_root)
     if not isinstance(sandbox_image, str) or not sandbox_image:
         raise EvaluatorWorkerError("sandbox_image_required")
@@ -108,6 +117,7 @@ def evaluate_via_subprocess(
     split_user: str | None = None,
     require_split_custody: bool = False,
     allow_shared_custody: bool = False,
+    allow_unqualified: bool = False,
 ) -> WorkerResult:
     """Evaluate a submission in a child process; returns the signed receipt."""
     if not isinstance(task, TaskEnvelopeV1):
@@ -125,6 +135,13 @@ def evaluate_via_subprocess(
     if executor == "local" and not allow_local_executor:
         raise EvaluatorWorkerError(
             "local_executor_requires_explicit_authorization")
+    if executor == "local":
+        from .runner import RunnerError, refuse_unqualified_hostile_evaluation
+        try:
+            refuse_unqualified_hostile_evaluation(
+                allow_unqualified=allow_unqualified)
+        except RunnerError as exc:
+            raise EvaluatorWorkerError(str(exc)) from exc
     if executor == "docker" and not sandbox_image:
         raise EvaluatorWorkerError("sandbox_image_required")
     for name, value in (("key_dir", key_dir), ("registry_dir", registry_dir),
@@ -154,6 +171,8 @@ def evaluate_via_subprocess(
         argv += ["--sandbox-image", sandbox_image]
     if allow_local_executor:
         argv += ["--allow-local-executor"]
+    if allow_unqualified:
+        argv += ["--allow-unqualified"]
     if not require_image_digest:
         argv += ["--allow-tagged-image"]
     if split_user is not None:
@@ -205,6 +224,10 @@ def _main() -> int:
                         default="docker")
     parser.add_argument("--sandbox-image", default=None)
     parser.add_argument("--allow-local-executor", action="store_true")
+    parser.add_argument("--allow-unqualified", action="store_true",
+                        help="development only: run the local backend on a"
+                             " platform that cannot qualify hostile"
+                             " evaluation (macOS)")
     parser.add_argument("--allow-tagged-image", action="store_true")
     parser.add_argument("--split-user", default=None,
                         help="second numeric uid[:gid] for split custody")
@@ -240,6 +263,7 @@ def _main() -> int:
             allow_local_executor=args.allow_local_executor,
             require_image_digest=not args.allow_tagged_image,
             split_user=args.split_user,
+            allow_unqualified=args.allow_unqualified,
         )
     except (ContractError, EvaluatorWorkerError, RunnerError) as exc:
         print(f"executor_unavailable: {exc}", file=sys.stderr)

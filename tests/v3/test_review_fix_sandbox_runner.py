@@ -85,9 +85,12 @@ class LauncherTests(unittest.TestCase):
         with mock.patch.object(subprocess, "Popen",
                                wraps=subprocess.Popen) as popen:
             self.executor.run(self.workspace, CommandSpec(argv=("true",)))
-        self.assertEqual(popen.call_args.kwargs["cwd"],
-                         os.path.abspath(os.sep))
-        self.assertIn("-I", popen.call_args.args[0][:2])
+        # Pick the launcher's own Popen: on darwin the RSS watchdog also
+        # spawns helper processes (``ps``) after it.
+        launches = [call for call in popen.call_args_list
+                    if call.args and list(call.args[0][:2]) == [sys.executable, "-I"]]
+        self.assertTrue(launches, popen.call_args_list)
+        self.assertEqual(launches[0].kwargs["cwd"], os.path.abspath(os.sep))
 
     def test_command_still_runs_in_its_workspace_cwd(self):
         (self.base / "sub").mkdir()

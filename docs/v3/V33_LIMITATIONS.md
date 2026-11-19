@@ -134,9 +134,11 @@
   `target_structure_recovered`, `equivalence_verified`,
   `holdout_accuracy`, `search_complete` and `exact_recovery_verified`.
   A candidate that matches every generated example is not a recovered
-  rule: on the default non-negative domain the search returns
+  rule: on the default non-negative domain the v3.3.x search returned
   `absdiff(x[n-2] * x[n-1], -2)`, a different function that its own
-  result reports as ambiguous. `equivalence_verified` is a bounded-box
+  result reported as ambiguous. Learner v2 returns the intended
+  structure there, but the absdiff rival still fits every row, so the
+  result stays ambiguous and is not exact recovery. `equivalence_verified` is a bounded-box
   result (z3 only), and `exact_recovery_verified` additionally requires
   the intended structure, a perfect holdout, a completed search and a
   non-ambiguous result. None of this is a mathematical proof over all

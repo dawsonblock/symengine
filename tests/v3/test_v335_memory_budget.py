@@ -28,9 +28,13 @@ def _study(features=16, rows=9):
         inputs = {name: (i * 7 + j * 3) % 11 for j, name in enumerate(names)}
         inputs[names[-2]] = i % 9 + 1
         inputs[names[-1]] = (i * 2) % 9 + 1
+        # Learner v2 finds ``x[n-2] * x[n-1] + 2`` in its cheap affine
+        # stage within the cap, so the workload multiplies by a decoy: the
+        # search must build the full 16-field pool and exceed 1 MiB.
         examples.append({
             "inputs": inputs,
-            "output": inputs[names[-2]] * inputs[names[-1]] + 2,
+            "output": (inputs[names[-2]] * inputs[names[-1]]
+                       * (inputs[names[0]] + 1)),
         })
     return examples[:6], examples[6:]
 
