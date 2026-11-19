@@ -1,5 +1,50 @@
 # Changelog
 
+## 2026-11-19 — Split custody grades ordinary pytest suites (SIS-FIX-18)
+
+The pilot graded correct upstream fixes under Docker split custody and
+saw them fail on the harness, not the code. The boundary is unchanged:
+the worker still cannot run code in the evaluator, nothing is unpickled
+or evaluated there, and no class or callable crosses except as a handle.
+The release seal is still stale and must be rebuilt before the next
+release.
+
+- **Sets and non-text-key mappings cross as data.** `set`, `frozenset`
+  and mappings whose keys are not text join the closed codec in all
+  three encoders; call arguments may be slices. Elements and keys must
+  decode to something hashable, within `MAX_ITEMS` and `MAX_DEPTH`;
+  anything else stays a handle. inflection's
+  `[(w,) for w in inflection.UNCOUNTABLES]` now works.
+- **Protocols on worker objects.** `len`, `in`, indexing and item
+  assignment, iteration, `reversed`, comparisons in both directions with
+  plain data, arithmetic (plain, reflected, in-place), `bool`, `str`,
+  `repr`, `hash`, `format`, `int`/`float`/`index`/`round`, `with`
+  blocks, `isinstance`/`issubclass` against worker classes and attribute
+  assignment are forwarded through one new worker op, `dunder`, whose
+  names come from a fixed table; every other name is refused there.
+  Iteration streams through a worker-held iterator, one round trip per
+  item. `__name__`, `__qualname__`, `__version__` and `__all__` are the
+  only dunder attributes a test can read.
+- **Submission exception classes.** The worker reports an exception's
+  class chain by name; the bootstrap raises a local stand-in class per
+  (module, qualname), which is also what `pkg.CustomError` resolves to
+  through the proxy. `pytest.raises(pkg.CustomError)`, `except
+  pkg.Base`, `match=` on the worker's message and `excinfo.value.attr`
+  (read through a handle) work. Stand-ins always derive from
+  `Exception`; a forged report cannot raise `BaseException`,
+  `SystemExit` or `KeyboardInterrupt` in the evaluator. Worker messages
+  carry up to 8 KiB instead of 400 characters.
+- **src/ layout.** A workspace with a `src/` directory that is not a
+  package is searched at its root and then under `src/`, in the same
+  order by the worker and the evaluator's finder (cachetools). Trusted
+  modules still cannot be shadowed from either place.
+- **Still open: test helper files.** Only the registered test file is
+  staged, so a test importing a sibling helper, `conftest.py` or
+  package `__init__.py` fails (jmespath). The design is in
+  `docs/v3/SECURITY_BOUNDARIES_V3_3.md`; it needs the task spec to carry
+  several hidden files. The remaining proxy limits are listed in the
+  `sis.v3.split_harness` module docstring.
+
 ## 2026-11-19 — Repository cleanup (SIS-CHORE-17)
 
 No behaviour changes for users; every CLI command works as before.

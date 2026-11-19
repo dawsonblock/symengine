@@ -282,11 +282,40 @@
   interprocess sandbox. Workspace modules — including packages and their
   submodules — are proxied, except names the evaluator's environment
   provides (standard library, installed packages, modules beside the
-  tests): a workspace cannot shadow a library the tests import. Only
-  primitives, callables and composites of primitives cross the socket;
-  other call results stay in the worker behind a handle. A test that
-  deliberately shells out to run the submission under the evaluator
-  principal re-opens the shared path.
+  tests): a workspace cannot shadow a library the tests import. A
+  src-layout workspace is searched at its root and then under `src/`, in
+  the same order in both processes. Only data crosses the socket as
+  values (scalars, bytes, and bounded lists, tuples, sets, frozensets
+  and mappings of data); every other object stays in the worker behind
+  a handle. Protocols on a handle (`len`, `in`, indexing, iteration,
+  comparisons, arithmetic, `bool`/`str`/`repr`/`hash`, `with`,
+  `isinstance`) go through one worker op restricted to a fixed table of
+  dunder names; `__getattribute__`, `__reduce__`, `__class__`,
+  `__dict__` and the like are refused. Worker exceptions cross as class
+  names only and are raised as local stand-in classes that always derive
+  from `Exception`, so `pytest.raises(pkg.Error)` matches without a
+  worker ever raising `BaseException`, `SystemExit` or
+  `KeyboardInterrupt` in the evaluator. The module docstring of
+  `sis.v3.split_harness` lists what this cannot cover (local callbacks
+  passed to the submission, `type()` identity, subclassing a worker
+  class, mutation through returned data). A test that deliberately
+  shells out to run the submission under the evaluator principal
+  re-opens the shared path.
+- Split custody stages only the registered test file. A test that
+  imports a sibling helper (`from .helpers import ...`, `from tests
+  import unittest`) or relies on a `conftest.py` or package
+  `__init__.py` beside it fails to collect, and the task is rejected at
+  import time (`fix_does_not_pass`). The intended repair: the importer
+  registers, as further private files at their repository-relative
+  paths, the test's sibling `conftest.py` files and package
+  `__init__.py` files up to the test root, and the modules the test
+  imports from its own test package, all read from the fix commit by the
+  evaluator at registration time (never from the submission), so they
+  are as trusted as the test itself. Pytest's rootdir and package
+  resolution then work in the private directory. It needs the task spec
+  to carry several hidden files (paths and digests) where
+  `hidden_tests_path`/`hidden_tests_digest` carry one today, and the
+  manifest builder and the five-arm campaign to verify each.
 - Resource limits are applied by an evaluator-owned launcher run as
   `python -I` from a neutral directory, so no workspace module can run
   before the limits or outside seatbelt. It fails closed: a limit it

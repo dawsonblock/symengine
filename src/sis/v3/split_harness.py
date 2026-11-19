@@ -25,11 +25,75 @@ The boundary is factual, and the receipt says which one held:
 Only top-level modules are proxied, and never one the evaluator's own
 environment provides (standard library, installed packages, modules
 beside the tests): a workspace cannot shadow a library the tests import.
-Only primitives, callables and composites of primitives cross the
-socket; any other call result stays in the worker and is referred to by
-a handle. The codec is JSON over a closed
-type set: submission-produced bytes are never unpickled in the evaluator
-process.
+They are found in the workspace root and, for a src-layout project, in
+``<workspace>/src`` (unless ``src`` is itself a package), in that order
+in both processes.
+
+What crosses the socket. The codec is JSON over a closed type set:
+submission-produced bytes are never unpickled or evaluated in the
+evaluator process, and no class object or callable crosses except as a
+handle.
+
+* Data: ``None``, ``bool``, ``int``, ``float``, ``str``, ``bytes``, and
+  ``list``, ``tuple``, ``set``, ``frozenset`` and ``dict`` of data
+  (mapping keys and set elements must decode to something hashable),
+  bounded by ``MAX_ITEMS`` per container, ``MAX_DEPTH`` nesting and
+  ``MAX_FRAME_BYTES`` per frame. Call arguments may also be slices.
+* Anything else stays in the worker. An attribute read refers to it by
+  path, a call or protocol result by handle (``Ref``/``SplitRef``).
+* Protocols on a handle go through one ``dunder`` op whose names come
+  from a fixed table in the worker: ``len``, ``in``, item get/set/delete,
+  iteration, ``reversed``, ``bool``/``str``/``repr``/``hash``/``format``,
+  ``int``/``float``/``index``/``round``, comparisons, arithmetic
+  (plain, reflected and in-place), unary operators, ``with`` blocks,
+  ``isinstance``/``issubclass`` against a worker class, and attribute
+  assignment and deletion. The worker refuses every other name, and no
+  attribute path may name a dunder outside ``__name__``,
+  ``__qualname__``, ``__version__`` and ``__all__``. Iteration streams:
+  the iterator stays in the worker and each ``next`` is one round trip
+  ending in ``StopIteration``. Operators answer ``NotImplemented`` for a
+  local operand with no wire form, so comparisons with plain data work
+  in both directions.
+* Exceptions cross as names only. The worker reports the class chain
+  (module and qualified name of each MRO entry, with base indices); the
+  bootstrap maps each entry to the builtin, to a class of a module the
+  evaluator itself already imported (static lookup, nothing imported),
+  or to a local stand-in class cached by (module, qualname). A worker
+  exception class read through the proxy is that same stand-in, so
+  ``pytest.raises(pkg.Error)`` and ``except pkg.Base`` match what the
+  worker raises. Every stand-in derives from ``Exception``: the
+  evaluator never raises ``BaseException``, ``SystemExit`` or
+  ``KeyboardInterrupt`` for the worker, whatever the worker reports. The
+  raised object stays in the worker; the local exception carries its
+  message and reads further attributes through its handle.
+
+Known limits, each because it would need code or class objects to cross:
+
+* ``type(obj)`` of a worker object is ``Ref``; ``obj.__class__``,
+  ``__dict__``, ``vars()``, ``dir()``, pickling and ``copy`` are not
+  forwarded. A test cannot subclass a worker class, and a non-exception
+  worker class is a handle, not a type (``isinstance`` still works).
+* Local callables, classes and arbitrary objects cannot be passed to the
+  submission (callbacks, ``key=`` functions, test-defined subclasses).
+* Data is copied: mutating a returned list does not change the worker's,
+  and ``monkeypatch.setattr(pkg, ...)`` changes only the local proxy.
+* Stand-ins collapse worker classes with the same module and qualified
+  name. An exception the test constructs itself is local: it is not a
+  call argument, and reaches a worker ``__exit__`` only as a builtin
+  name and its args. A builtin raised in the worker is
+  rebuilt from its args, or from its message when the args do not
+  reproduce it (``OSError.filename``); ``__cause__`` and the worker
+  traceback do not cross. A stand-in based on a class the evaluator
+  imported runs that class's own ``__init_subclass__`` and metaclass,
+  which are evaluator-environment code, never submission code.
+* No async protocols. Handles are never released (``MAX_HANDLES``), and
+  every protocol call is one round trip.
+* Only the registered test file is private material: helper modules,
+  ``conftest.py`` and package ``__init__.py`` files beside it in the
+  repository are not staged (see docs/v3/SECURITY_BOUNDARIES_V3_3.md).
+
+The host-side :class:`SplitClient` forwards the same data and protocols
+but maps worker exceptions only to builtins (else :class:`RemoteError`).
 """
 from __future__ import annotations
 
