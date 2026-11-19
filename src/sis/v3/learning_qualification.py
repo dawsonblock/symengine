@@ -990,6 +990,22 @@ def codex_agent_status() -> dict:
     }
 
 
+_CODEX_ACTION_NAMES = {
+    "tool_result": "command_execution",
+    "edit": "file_change",
+}
+
+
+def _codex_action_name(event_type: str, item_type) -> str:
+    """Stable snake_case name for a counted Codex tool call."""
+    name = _CODEX_ACTION_NAMES.get(event_type)
+    if name is not None:
+        return name
+    text = str(item_type or "unknown")[:128]
+    return "".join("_" + ch.lower() if ch.isupper() else ch
+                   for ch in text).lstrip("_")
+
+
 class CodexCliAgent:
     """Real coding-agent callable backed by ``codex exec --json``.
 
@@ -1025,6 +1041,7 @@ class CodexCliAgent:
             supervisor.register_terminator(
                 lambda: self._cancel(turn.turn_id))
         tools = 0
+        actions: list[str] = []
         delta_tokens = 0
         terminal_tokens: int | None = None
         error_event = False
@@ -1082,6 +1099,8 @@ class CodexCliAgent:
                         and summary.get("item_type")
                         in {"mcp_tool_call", "web_search"})):
                 tools += 1
+                actions.append(_codex_action_name(event.event_type,
+                                                  summary.get("item_type")))
                 if ctx.usage_meter is not None:
                     ctx.usage_meter.record_tool_call()
         tokens = max(delta_tokens, terminal_tokens or 0)
@@ -1100,8 +1119,11 @@ class CodexCliAgent:
             raise fail("real_agent_no_action")
         if tokens_seen and ctx.usage_meter is not None:
             ctx.usage_meter.record_tokens(tokens)
+        # The observed action sequence, as ClaudeCodeAgent reports it, so
+        # strategy induction (arm C) works for Codex-backed builds too.
+        # The adapter redacts command text, so actions are item types.
         return {"tokens_used": tokens if tokens_seen else None,
-                "tools_used": tools}
+                "tools_used": tools, "actions": actions[:256]}
 
     def _cancel(self, turn_id: str) -> None:
         """Terminate the active CLI turn when the harness aborts the arm."""

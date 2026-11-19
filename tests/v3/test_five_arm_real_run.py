@@ -289,6 +289,35 @@ class CodexMeteringTests(unittest.TestCase):
         self.assertTrue(meter.tokens_verified)
         self.assertTrue(meter.tools_verified)
 
+    def test_observed_actions_are_returned_for_strategy_induction(self):
+        # The guidance-bundle builder derives arm C from the action
+        # sequence an agent reports; a Codex run must report one too.
+        from sis.v3.benchmark import UsageMeter
+        events = [
+            self._event("tool_request", "item.started", {
+                "item_type": "command_execution"}),
+            self._event("tool_result", "item.completed", {
+                "item_type": "command_execution"}),
+            self._event("edit", "item.completed", {
+                "item_type": "fileChange"}),
+            self._event("agent_event", "item.completed", {
+                "item_type": "web_search"}),
+            self._event("agent_event", "item.completed", {
+                "item_type": "agent_message"}),
+            self._event("completion", "turn.completed", {}),
+            self._event("completion", "sis/process_exit",
+                        {"cli_exit_status": 0}),
+        ]
+        with tempfile.TemporaryDirectory() as temp:
+            agent = self._agent(events, temp)
+            ctx = SimpleNamespace(
+                task=SimpleNamespace(task_id="t1"), workspace=Path(temp),
+                guidance=None, usage_meter=UsageMeter())
+            usage = agent(ctx)
+        self.assertEqual(usage["actions"],
+                         ["command_execution", "file_change", "web_search"])
+        self.assertEqual(usage["tools_used"], 3)
+
     def test_cumulative_turn_usage_is_not_double_counted(self):
         from sis.v3.benchmark import UsageMeter
         events = [
