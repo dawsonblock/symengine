@@ -51,6 +51,13 @@ elif argv[:1] == ["exec"] and argv[-6:] == ["tar", "-C", "/workspace", "-cf", "-
     sys.stdout.buffer.write(open({payload!r}, "rb").read())
 elif argv[:1] == ["exec"] and "-c" in argv and argv[-1].startswith("print("):
     print("qualified")
+elif argv[:1] == ["exec"] and "-c" in argv and argv[-1].startswith("flood"):
+    # Like a docker client still holding a workload's buffered output: it
+    # cannot exit until its stdout is drained.
+    chunk = b"x" * 65536
+    for _ in range(128):
+        sys.stdout.buffer.write(chunk)
+    sys.stdout.buffer.flush()
 sys.exit(0)
 '''
 
@@ -229,6 +236,27 @@ class PolicyRoundTripTests(unittest.TestCase):
         self.assertLessEqual(
             int(values["memory_bytes"]) - ceilings["runtime_memory_overhead_bytes"],
             ceilings["memory_bytes"])
+
+    def test_output_cap_does_not_turn_into_a_wall_clock_timeout(self):
+        # Regression: after the cap the reader killed the container and
+        # stopped reading, so a client still flushing output blocked on a
+        # full pipe until the wall clock (CI saw huge_output as "timeout").
+        import time
+        executor = _executor(self.root, docker_binary=str(self.fake))
+        workspace = executor.prepare(self.base)
+        try:
+            start = time.monotonic()
+            receipt = executor.run(workspace, CommandSpec(
+                argv=("python3", "-c", "flood"),
+                limits=ResourceLimits(wall_seconds=20, output_bytes=65_536,
+                                      process_count=64)))
+            elapsed = time.monotonic() - start
+        finally:
+            executor.destroy(workspace)
+        self.assertFalse(receipt.timeout, receipt.security_errors)
+        self.assertIn("output:stdout_truncated", receipt.security_errors)
+        self.assertNotIn("process:wall_clock_killed", receipt.security_errors)
+        self.assertLess(elapsed, 15)
 
     def test_gvisor_memory_allowance_is_signed_and_reported(self):
         from sis.v3.docker_sandbox import RUNSC_MEMORY_OVERHEAD_BYTES

@@ -720,6 +720,25 @@ class DockerSandboxExecutor:
                             truncated[name] = True
                 return True
 
+            def discard(pipe) -> None:
+                # After the cap the container is killed, but the docker
+                # client can still hold buffered output. Keep draining (and
+                # dropping) it: a pipe nobody reads blocks the client, which
+                # then never exits and the run is reported as a wall-clock
+                # timeout instead of an output cap.
+                while not stop.is_set():
+                    if os.name == "posix":
+                        import select
+                        ready, _, _ = select.select(
+                            [pipe.fileno()], [], [], 0.1)
+                        if not ready:
+                            continue
+                        chunk = os.read(pipe.fileno(), _READ_CHUNK)
+                    else:
+                        chunk = pipe.read(_READ_CHUNK)
+                    if not chunk:
+                        return
+
             def pump(pipe, sink: bytearray, name: str) -> None:
                 try:
                     if os.name == "posix":
@@ -733,6 +752,7 @@ class DockerSandboxExecutor:
                                 return
                             if over:
                                 self._kill(container)
+                                discard(pipe)
                                 return
                         return
                     while not stop.is_set():
@@ -740,6 +760,7 @@ class DockerSandboxExecutor:
                             return
                         if over:
                             self._kill(container)
+                            discard(pipe)
                             return
                 except (OSError, ValueError):
                     return
