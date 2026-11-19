@@ -1,5 +1,63 @@
 # Changelog
 
+## Learner v2 (SIS-FEAT-14)
+
+Track A of the learner plan: a deeper, typed, conditional rule learner,
+measured on a fixed corpus before and after. Induction results now carry
+`grammar_version: sis-grammar-2` and `engine_version: sis-induce-2`.
+Stored rules keep their ids and still pass `sis audit`; a result induced
+by an earlier engine must be re-induced before promotion.
+
+- **One op registry.** Every grammar op is an `OpSpec` in
+  `sis.expression.OPS` (shape, operand/result types, total evaluation
+  function, cost, commutativity, Z3 translation, structural tag).
+  Evaluation, validation, cost, the enumerator, `smt.py`, schema
+  transfer, the LLM proposal prompt and the benchmark's structural form
+  all read it. `validate_ast` counts depth from 1 like `depth()`; the
+  accepted set (31 nodes, 6 levels) is unchanged and the message now
+  states it.
+- **Version stamps.** `induce` stamps both versions. `Registry.promote`
+  and sealed evaluation (`score` for submissions, `verify` for receipts)
+  refuse another engine's output with "re-induce under the current
+  engine" instead of an opaque mismatch.
+- **Grammar 2 ops.** `floordiv` and `mod` (Python floor semantics; a
+  zero divisor is an evaluation error on that record, never a fitted
+  value), `lt`/`le`/`gt`, `concat` (bounded to 128 characters),
+  `slice_prefix`/`slice_suffix` with a literal length, `len`, `contains`,
+  `str_of_int` and the `if_lt` conditional. `if_eq` is now enumerated.
+- **Typed bottom-up enumeration** (`sis.synthesis`) replaces the
+  stage-1/stage-2 search: pools per type built by increasing cost with
+  observational-equivalence pruning over training, development and a
+  probe prefix; exact small-integer affine fitting over at most three
+  features (plus one ranked depth-2 feature); goal-directed completions;
+  one-level conditional synthesis that learns each branch separately.
+  `SearchBudget` and `SearchState.outcome` keep their meaning, and
+  truncation is still reported.
+- **Ambiguity over the whole space.** A rival scan resumes the selection
+  enumerator to the end of its declared space, including conditionals,
+  and replaces the bounded depth-2 `_deep_rival_scan`. A rival counts
+  when it fits every labelled row, costs at most 4 more than the selected
+  rule and disagrees on a probe. Probes add values for the new ops and
+  data-derived boundaries. `ambiguity_scope` is now `full_search_space`,
+  `bounded_rival_scan` or `selection_pool_only`.
+- **Stricter `locally_validated`.** A conditional rule is `provisional`
+  unless the holdout exercises both branches (`branch_holdout_coverage`).
+  A holdout carrying less than 4 bits of evidence under the label
+  distribution (`holdout_evidence_bits`; three binary rows carry 3) is
+  `provisional`. A rule that still fails development rows after
+  refinement is `validation_failed`.
+- **Induction corpus.** `examples/induction_corpus/` holds 62 seeded
+  targets in six categories with a committed split;
+  `tools/benchmark_induction.py --corpus` reports per-category recovery,
+  false positives, `no_rule` rate and runtime percentiles.
+  `evidence/benchmark/induction_corpus_baseline.json` (previous engine)
+  and `induction_corpus_v2.json` hold the results: recovery rises from
+  23% to 58% overall (linear 40%→80%, divmod 0%→50%, piecewise 0%→70%,
+  string 17%→67%) with no false positives in any category.
+  `tests/test_induction_corpus.py` runs a 15-target subset.
+- **Pinned tests updated deliberately** where the stronger learner
+  changes an outcome: see the commit that updates them for each reason.
+
 ## 2026-11-18 — Review follow-ups (SIS-FIX-13)
 
 The follow-ups left open by SIS-FIX-12. The release seal is still stale

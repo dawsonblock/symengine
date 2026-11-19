@@ -28,9 +28,10 @@ demonstrated is a governed learning workflow with reproducible evidence — see
 
 ## What it does
 
-- **Induces bounded rules** from labelled examples over a small expression
-  grammar — arithmetic, comparisons and simple transformations, not general
-  program synthesis.
+- **Induces bounded rules** from labelled examples over a small typed
+  expression grammar — arithmetic, integer division and remainder,
+  comparisons, string slicing and concatenation, and one-level conditionals
+  — not general program synthesis.
 - **Learns procedural skills** from verified execution traces, then versions and
   evaluates them.
 - **Remembers episodes** with provenance, so a past success can be retrieved and
