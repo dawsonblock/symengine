@@ -88,6 +88,10 @@ class SplitProtocolError(RuntimeError):
     """A split request or response violated the closed wire protocol."""
 
 
+class SplitArgumentError(SplitProtocolError):
+    """A local value has no form on the wire."""
+
+
 class RemoteError(RuntimeError):
     """A worker raised an exception that has no safe local counterpart."""
 
@@ -195,15 +199,97 @@ class SplitRef:
         self._path = list(path)
 
     def __getattr__(self, name: str) -> Any:
-        if name.startswith("__") and name.endswith("__"):
+        if _is_dunder(name) and name not in READABLE_DUNDERS:
             raise AttributeError(name)
         return self._client.get(self._path + [name])
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         return self._client.call(self._path, args, kwargs)
 
-    def __repr__(self) -> str:
-        return f"<split-ref {'.'.join(self._path)}>"
+    def __iter__(self) -> "SplitRef":
+        # Iteration streams through a worker-held iterator; see Ref.
+        iterator = self._client.dunder(self._path, "__iter__", ())
+        if not isinstance(iterator, SplitRef):
+            raise SplitProtocolError("iterator did not stay in the worker")
+        return iterator
+
+    def __setitem__(self, key: Any, value: Any) -> None:
+        self._client.dunder(self._path, "__setitem__", (key, value))
+
+    def __round__(self, ndigits: int | None = None) -> Any:
+        return self._client.dunder(
+            self._path, "__round__", () if ndigits is None else (ndigits,))
+
+    def __instancecheck__(self, instance: Any) -> bool:
+        try:
+            return bool(self._client.dunder(
+                self._path, "__instancecheck__", (instance,)))
+        except SplitArgumentError:
+            return False
+
+    def __subclasscheck__(self, subclass: Any) -> bool:
+        try:
+            return bool(self._client.dunder(
+                self._path, "__subclasscheck__", (subclass,)))
+        except SplitArgumentError:
+            return False
+
+    def __exit__(self, exc_type: Any, exc: Any, traceback: Any) -> bool:
+        payload = None
+        if exc is not None:
+            name = type(exc).__name__
+            if getattr(builtins, name, None) is not type(exc):
+                name = "Exception"
+            payload = (name, tuple(exc.args))
+            try:
+                _host_encode(payload)
+            except SplitArgumentError:
+                payload = (name, (str(exc),))
+        return bool(self._client.dunder(self._path, "__exit__", (payload,)))
+
+
+def _is_dunder(name: str) -> bool:
+    return name.startswith("__") and name.endswith("__")
+
+
+def _host_protocol(name: str, operator: bool):
+    def method(self: SplitRef, *args: Any) -> Any:
+        try:
+            return self._client.dunder(self._path, name, args)
+        except SplitArgumentError:
+            if operator:
+                return NotImplemented
+            raise
+    method.__name__ = method.__qualname__ = name
+    return method
+
+
+#: Dunder attributes a caller may read from a worker object: metadata,
+#: never a way into the object model. The worker holds the same set.
+READABLE_DUNDERS = frozenset({"__name__", "__qualname__", "__version__",
+                              "__all__"})
+_ARITHMETIC = ("add", "sub", "mul", "truediv", "floordiv", "mod", "pow",
+               "matmul", "and", "or", "xor", "lshift", "rshift")
+#: Protocols forwarded through the worker's ``dunder`` op, which refuses
+#: any name outside its own fixed table. Operators answer NotImplemented
+#: for an operand with no wire form, so Python tries the reflected method.
+FORWARDED_PROTOCOLS = frozenset({
+    "__len__", "__contains__", "__getitem__", "__delitem__", "__next__",
+    "__reversed__", "__bool__", "__str__", "__repr__", "__hash__",
+    "__int__", "__float__", "__index__", "__neg__", "__pos__", "__abs__",
+    "__invert__", "__format__", "__enter__",
+})
+FORWARDED_OPERATORS = frozenset(
+    {"__eq__", "__ne__", "__lt__", "__le__", "__gt__", "__ge__",
+     "__divmod__", "__rdivmod__"}
+    | {f"__{item}__" for item in _ARITHMETIC}
+    | {f"__r{item}__" for item in _ARITHMETIC}
+    | {f"__i{item}__" for item in _ARITHMETIC})
+for _name in FORWARDED_PROTOCOLS:
+    setattr(SplitRef, _name, _host_protocol(_name, False))
+for _name in FORWARDED_OPERATORS:
+    setattr(SplitRef, _name, _host_protocol(_name, True))
+del _name
 
 
 class SplitClient:
@@ -263,6 +349,21 @@ class SplitClient:
             "args": [_host_encode(item) for item in args],
             "kwargs": {key: _host_encode(item) for key, item in kwargs.items()},
         })
+        return self._result(response)
+
+    def dunder(self, path: list[str], name: str, args) -> Any:
+        """Apply one allow-listed protocol to a worker object."""
+        if name not in FORWARDED_PROTOCOLS | FORWARDED_OPERATORS | {
+                "__iter__", "__setitem__", "__round__", "__instancecheck__",
+                "__subclasscheck__", "__exit__"}:
+            raise SplitProtocolError(f"protocol is not forwarded: {name}")
+        response = self.request({
+            "op": "dunder", "path": list(path), "name": name,
+            "args": [_host_encode(item) for item in args],
+        })
+        return self._result(response)
+
+    def _result(self, response: dict) -> Any:
         if not response.get("ok"):
             _raise_remote(response.get("error"))
         value = response.get("value")
@@ -286,7 +387,7 @@ _HANDLE = re.compile(r"^#[0-9]{1,9}$")
 def _host_encode(value: Any, depth: int = 0) -> dict:
     """Encode evaluator-supplied call arguments for the worker."""
     if depth > MAX_DEPTH:
-        raise SplitProtocolError("argument nesting exceeds the bound")
+        raise SplitArgumentError("argument nesting exceeds the bound")
     if value is None:
         return {"t": "none"}
     if isinstance(value, SplitRef):
@@ -304,17 +405,17 @@ def _host_encode(value: Any, depth: int = 0) -> dict:
                 "v": base64.b64encode(bytes(value)).decode("ascii")}
     if isinstance(value, (list, tuple)):
         if len(value) > MAX_ITEMS:
-            raise SplitProtocolError("argument sequence exceeds the bound")
+            raise SplitArgumentError("argument sequence exceeds the bound")
         return {"t": "list" if isinstance(value, list) else "tuple",
                 "v": [_host_encode(item, depth + 1) for item in value]}
     if isinstance(value, (set, frozenset)):
         if len(value) > MAX_ITEMS:
-            raise SplitProtocolError("argument set exceeds the bound")
+            raise SplitArgumentError("argument set exceeds the bound")
         return {"t": "frozenset" if isinstance(value, frozenset) else "set",
                 "v": [_host_encode(item, depth + 1) for item in value]}
     if isinstance(value, dict):
         if len(value) > MAX_ITEMS:
-            raise SplitProtocolError("argument mapping exceeds the bound")
+            raise SplitArgumentError("argument mapping exceeds the bound")
         if all(isinstance(key, str) for key in value):
             return {"t": "dict",
                     "v": [[key, _host_encode(item, depth + 1)]
@@ -328,7 +429,7 @@ def _host_encode(value: Any, depth: int = 0) -> dict:
                 "v": [_host_encode(value.start, depth + 1),
                       _host_encode(value.stop, depth + 1),
                       _host_encode(value.step, depth + 1)]}
-    raise SplitProtocolError(
+    raise SplitArgumentError(
         f"argument type is not transferable: {type(value).__name__}")
 
 
@@ -338,6 +439,7 @@ WORKER_SOURCE = r'''"""SIS split-custody worker (restricted principal)."""
 import base64
 import importlib
 import json
+import operator
 import os
 import socket
 import sys
@@ -345,9 +447,14 @@ import sys
 MAX_DEPTH = 32
 MAX_ITEMS = 10000
 MAX_HANDLES = 100000
+MAX_MESSAGE = 8192
 # Call results that cannot cross the socket stay here; the evaluator
 # refers to them by handle ("#<n>"), never by the callable's path.
 HANDLES = {}
+# Dunder attributes the evaluator may read: plain metadata, never a way to
+# reach the object model (no __class__, __dict__, __reduce__, ...).
+READABLE_DUNDERS = frozenset({"__name__", "__qualname__", "__version__",
+                              "__all__"})
 HASHABLE_KINDS = frozenset({"none", "bool", "int", "float", "str", "bytes"})
 
 
@@ -445,10 +552,21 @@ def encode(value, depth=0):
     raise NotEncodable("object")
 
 
-def resolve(path):
+def is_dunder(name):
+    return name.startswith("__") and name.endswith("__")
+
+
+def check_path(path):
     if (not isinstance(path, list) or not path
             or not all(isinstance(part, str) for part in path)):
         raise ValueError("invalid path")
+    for part in path[1:]:
+        if is_dunder(part) and part not in READABLE_DUNDERS:
+            raise AttributeError(part)
+
+
+def resolve(path):
+    check_path(path)
     if path[0].startswith("#"):
         obj = HANDLES[path[0]]
     else:
@@ -464,6 +582,105 @@ def keep(value):
     handle = "#%d" % (len(HANDLES) + 1,)
     HANDLES[handle] = value
     return {"t": "ref", "handle": handle}
+
+
+def result(value, force_ref=False):
+    if not force_ref:
+        try:
+            return {"ok": True, "value": encode(value)}
+        except NotEncodable:
+            pass
+    return {"ok": True, "value": keep(value)}
+
+
+def reflected(function):
+    return lambda obj, other: function(other, obj)
+
+
+# The dunder protocols the evaluator may forward. Each entry maps a
+# protocol name to the builtin or operator that implements it, so the
+# worker applies Python's own semantics (reflected operands, NotImplemented
+# fallback, __len__ for truth). Nothing outside this table is reachable.
+UNARY = {
+    "__len__": len, "__bool__": bool, "__str__": str, "__repr__": repr,
+    "__hash__": hash, "__int__": int, "__float__": float,
+    "__index__": operator.index, "__iter__": iter, "__next__": next,
+    "__reversed__": reversed, "__neg__": operator.neg,
+    "__pos__": operator.pos, "__abs__": abs, "__invert__": operator.invert,
+    "__enter__": lambda obj: type(obj).__enter__(obj),
+}
+BINARY = {
+    "__contains__": lambda obj, item: item in obj,
+    "__getitem__": operator.getitem, "__delitem__": operator.delitem,
+    "__format__": format,
+    "__instancecheck__": lambda obj, item: isinstance(item, obj),
+    "__subclasscheck__": lambda obj, item: issubclass(item, obj),
+    "__eq__": operator.eq, "__ne__": operator.ne, "__lt__": operator.lt,
+    "__le__": operator.le, "__gt__": operator.gt, "__ge__": operator.ge,
+}
+ARITHMETIC = {
+    "add": operator.add, "sub": operator.sub, "mul": operator.mul,
+    "truediv": operator.truediv, "floordiv": operator.floordiv,
+    "mod": operator.mod, "pow": operator.pow, "matmul": operator.matmul,
+    "and": operator.and_, "or": operator.or_, "xor": operator.xor,
+    "lshift": operator.lshift, "rshift": operator.rshift,
+}
+for _name, _function in ARITHMETIC.items():
+    BINARY["__%s__" % _name] = _function
+    BINARY["__r%s__" % _name] = reflected(_function)
+    BINARY["__i%s__" % _name] = getattr(operator, "i" + _name)
+BINARY["__divmod__"] = divmod
+BINARY["__rdivmod__"] = reflected(divmod)
+SPECIAL = frozenset({"__setitem__", "__setattr__", "__delattr__",
+                     "__exit__", "__round__"})
+DUNDERS = frozenset(UNARY) | frozenset(BINARY) | SPECIAL
+
+
+def exit_value(arg):
+    # The evaluator names the exception that left a ``with`` block: the
+    # worker-side original when it came from here, else a builtin by name.
+    if arg is None or isinstance(arg, BaseException):
+        return arg
+    name, args = arg
+    import builtins
+    candidate = getattr(builtins, str(name), None)
+    if not (isinstance(candidate, type) and issubclass(candidate, Exception)):
+        candidate = Exception
+    try:
+        return candidate(*args)
+    except Exception:
+        return Exception(*args)
+
+
+def dunder(obj, name, args):
+    if name in UNARY and not args:
+        return result(UNARY[name](obj), force_ref=name == "__iter__")
+    if name in BINARY and len(args) == 1:
+        return result(BINARY[name](obj, args[0]))
+    if name == "__setitem__" and len(args) == 2:
+        obj[args[0]] = args[1]
+        return result(None)
+    if name in ("__setattr__", "__delattr__") and args:
+        attribute = args[0]
+        if not isinstance(attribute, str) or is_dunder(attribute):
+            raise AttributeError(str(attribute))
+        if name == "__setattr__" and len(args) == 2:
+            setattr(obj, attribute, args[1])
+            return result(None)
+        if name == "__delattr__" and len(args) == 1:
+            delattr(obj, attribute)
+            return result(None)
+    if name == "__exit__" and len(args) == 1:
+        error = exit_value(args[0])
+        if error is None:
+            outcome = type(obj).__exit__(obj, None, None, None)
+        else:
+            outcome = type(obj).__exit__(
+                obj, type(error), error, error.__traceback__)
+        return result(bool(outcome))
+    if name == "__round__" and len(args) <= 1:
+        return result(round(obj, *args))
+    raise TypeError("wrong arguments for " + name)
 
 
 def handle(request):
@@ -491,11 +708,16 @@ def handle(request):
         args = [decode(item) for item in request.get("args") or []]
         kwargs = {key: decode(item)
                   for key, item in (request.get("kwargs") or {}).items()}
-        result = obj(*args, **kwargs)
-        try:
-            return {"ok": True, "value": encode(result)}
-        except NotEncodable:
-            return {"ok": True, "value": keep(result)}
+        return result(obj(*args, **kwargs))
+    if op == "dunder":
+        name = request.get("name")
+        if name not in DUNDERS:
+            return {"ok": False,
+                    "error": {"type": "SplitProtocolError",
+                              "message": "protocol is not forwarded"}}
+        obj = resolve(path)
+        args = [decode(item) for item in request.get("args") or []]
+        return dunder(obj, name, args)
     return {"ok": False,
             "error": {"type": "SplitProtocolError", "message": "unknown op"}}
 
@@ -524,7 +746,7 @@ def main():
         except BaseException as exc:
             response = {"ok": False,
                         "error": {"type": type(exc).__name__,
-                                  "message": str(exc)[:400]}}
+                                  "message": str(exc)[:MAX_MESSAGE]}}
         stream.write(json.dumps(response).encode("utf-8") + b"\n")
         stream.flush()
 
@@ -537,6 +759,7 @@ if __name__ == "__main__":
 #: Runs as the evaluator principal. It imports the trusted runner and the
 #: acceptance tests, and reaches submitted code only through the proxy.
 SPLIT_BOOTSTRAP_SOURCE = r'''"""SIS split-custody bootstrap (evaluator-owned, read-only)."""
+import builtins
 import importlib
 import importlib.abc
 import importlib.machinery
@@ -561,6 +784,10 @@ RESERVED = frozenset({
     "pytest", "_pytest", "pluggy", "py", "iniconfig", "sis", "setuptools",
     "pkg_resources", "sitecustomize", "usercustomize",
 })
+# Dunder attributes a test may read from a submitted object: metadata,
+# never a way into the object model. The worker holds the same set.
+READABLE_DUNDERS = frozenset({"__name__", "__qualname__", "__version__",
+                              "__all__"})
 
 mode, target, workspace = sys.argv[1], sys.argv[2], sys.argv[3]
 command = sys.argv[4:]
@@ -672,25 +899,79 @@ def raise_remote(error):
     raise RuntimeError("%s: %s" % (name, message))
 
 
+class SplitArgumentError(TypeError):
+    """A local value that has no form on the wire."""
+
+
+def is_dunder(name):
+    return name.startswith("__") and name.endswith("__")
+
+
+def result_value(value, path=None):
+    """Decode a response value; an object that stayed remote is a Ref.
+
+    ``path`` names an attribute read, which the worker resolves again on
+    use. A call or protocol result has no path: the worker keeps it and
+    the evaluator refers to it by handle, never by the callable's path
+    (that would re-call it on every access).
+    """
+    if value.get("t") != "ref":
+        return decode(value)
+    if path is None:
+        handle = value.get("handle")
+        if (not isinstance(handle, str) or not handle.startswith("#")
+                or not handle[1:].isdigit() or len(handle) > 10):
+            fail(SPLIT_LOST_EXIT, "evaluation_split_worker_lost")
+        path = [handle]
+    return Ref(path)
+
+
+def fetch(path):
+    response = request({"op": "get", "path": list(path)})
+    if not response.get("ok"):
+        raise_remote(response.get("error"))
+    return result_value(response.get("value") or {}, list(path))
+
+
+def forward(path, name, payload):
+    # One allow-listed protocol call; the worker refuses any other name.
+    response = request({"op": "dunder", "path": list(path), "name": name,
+                        "args": payload})
+    if not response.get("ok"):
+        raise_remote(response.get("error"))
+    return result_value(response.get("value") or {})
+
+
 class Ref:
+    """An object that stays in the worker, reached by path or handle.
+
+    Attribute reads and calls cross the socket. So do the protocols in
+    PROTOCOLS and OPERATORS below, through the worker's single ``dunder``
+    op; nothing else does (no ``__getattribute__``, ``__reduce__``,
+    ``__class__`` or ``__dict__``). ``type(ref)`` is always ``Ref``.
+    """
+
     __slots__ = ("_path",)
 
     def __init__(self, path):
-        self._path = list(path)
+        object.__setattr__(self, "_path", list(path))
 
     def __getattr__(self, name):
         # Read the attribute in the worker: a plain value (``box.n``)
         # comes back as data, anything else stays a reference.
-        if name.startswith("__") and name.endswith("__"):
+        if is_dunder(name) and name not in READABLE_DUNDERS:
             raise AttributeError(name)
-        path = self._path + [name]
-        response = request({"op": "get", "path": path})
-        if not response.get("ok"):
-            raise_remote(response.get("error"))
-        value = response.get("value") or {}
-        if value.get("t") == "ref":
-            return Ref(path)
-        return decode(value)
+        return fetch(self._path + [name])
+
+    def __setattr__(self, name, value):
+        if is_dunder(name) or name == "_path":
+            raise AttributeError(name)
+        forward(self._path, "__setattr__", [encode(name), encode(value)])
+
+    def __delattr__(self, name):
+        if is_dunder(name) or name == "_path":
+            raise AttributeError(name)
+        forward(self._path, "__delattr__", [encode(name)])
 
     def __call__(self, *args, **kwargs):
         response = request({"op": "call", "path": self._path,
@@ -699,25 +980,95 @@ class Ref:
                                        for key, item in kwargs.items()}})
         if not response.get("ok"):
             raise_remote(response.get("error"))
-        value = response.get("value") or {}
-        if value.get("t") == "ref":
-            # The result stayed in the worker: refer to it by its handle.
-            # Returning a reference to the callable instead would re-call
-            # it on every attribute access.
-            handle = value.get("handle")
-            if (not isinstance(handle, str) or not handle.startswith("#")
-                    or not handle[1:].isdigit() or len(handle) > 10):
-                fail(SPLIT_LOST_EXIT, "evaluation_split_worker_lost")
-            return Ref([handle])
-        return decode(value)
+        return result_value(response.get("value") or {})
 
-    def __repr__(self):
-        return "<split-ref %s>" % ".".join(self._path)
+    def __iter__(self):
+        # Iteration streams: the worker keeps the iterator and each
+        # ``next`` is one round trip, ending with StopIteration.
+        iterator = forward(self._path, "__iter__", [])
+        if not isinstance(iterator, Ref):
+            raise TypeError("split iterator did not stay in the worker")
+        return iterator
+
+    def __setitem__(self, key, value):
+        forward(self._path, "__setitem__", [encode(key), encode(value)])
+
+    def __round__(self, ndigits=None):
+        return forward(self._path, "__round__",
+                       [] if ndigits is None else [encode(ndigits)])
+
+    def __instancecheck__(self, instance):
+        # isinstance(obj, pkg.Class): the worker answers for its classes.
+        try:
+            payload = [encode(instance)]
+        except SplitArgumentError:
+            return False
+        return bool(forward(self._path, "__instancecheck__", payload))
+
+    def __subclasscheck__(self, subclass):
+        try:
+            payload = [encode(subclass)]
+        except SplitArgumentError:
+            return False
+        return bool(forward(self._path, "__subclasscheck__", payload))
+
+    def __exit__(self, exc_type, exc, traceback):
+        return bool(forward(self._path, "__exit__", [exit_payload(exc)]))
+
+
+def exit_payload(exc):
+    """Name the exception leaving a ``with`` block for the worker."""
+    if exc is None:
+        return encode(None)
+    name = type(exc).__name__
+    if getattr(builtins, name, None) is not type(exc):
+        name = "Exception"
+    try:
+        return encode((name, tuple(exc.args)))
+    except SplitArgumentError:
+        return encode((name, (str(exc),)))
+
+
+def protocol(name, operator):
+    def method(self, *args):
+        try:
+            payload = [encode(item) for item in args]
+        except SplitArgumentError:
+            # An operand with no wire form: let Python try the reflected
+            # method of the other operand, as for any foreign type.
+            if operator:
+                return NotImplemented
+            raise
+        return forward(self._path, name, payload)
+    method.__name__ = method.__qualname__ = name
+    return method
+
+
+# The protocols forwarded on Ref. The worker holds the same fixed table;
+# a name outside it is refused there as well.
+PROTOCOLS = frozenset({
+    "__len__", "__contains__", "__getitem__", "__delitem__", "__next__",
+    "__reversed__", "__bool__", "__str__", "__repr__", "__hash__",
+    "__int__", "__float__", "__index__", "__neg__", "__pos__", "__abs__",
+    "__invert__", "__format__", "__enter__",
+})
+ARITHMETIC = ("add", "sub", "mul", "truediv", "floordiv", "mod", "pow",
+              "matmul", "and", "or", "xor", "lshift", "rshift")
+OPERATORS = frozenset(
+    {"__eq__", "__ne__", "__lt__", "__le__", "__gt__", "__ge__",
+     "__divmod__", "__rdivmod__"}
+    | {"__%s__" % item for item in ARITHMETIC}
+    | {"__r%s__" % item for item in ARITHMETIC}
+    | {"__i%s__" % item for item in ARITHMETIC})
+for _name in PROTOCOLS:
+    setattr(Ref, _name, protocol(_name, False))
+for _name in OPERATORS:
+    setattr(Ref, _name, protocol(_name, True))
 
 
 def encode(value, depth=0):
     if depth > 32:
-        raise TypeError("split argument nesting exceeds the bound")
+        raise SplitArgumentError("split argument nesting exceeds the bound")
     if value is None:
         return {"t": "none"}
     if isinstance(value, Ref):
@@ -736,17 +1087,17 @@ def encode(value, depth=0):
                 "v": base64.b64encode(bytes(value)).decode("ascii")}
     if isinstance(value, (list, tuple)):
         if len(value) > MAX_ITEMS:
-            raise TypeError("split argument sequence exceeds the bound")
+            raise SplitArgumentError("split argument sequence exceeds the bound")
         return {"t": "list" if isinstance(value, list) else "tuple",
                 "v": [encode(item, depth + 1) for item in value]}
     if isinstance(value, (set, frozenset)):
         if len(value) > MAX_ITEMS:
-            raise TypeError("split argument set exceeds the bound")
+            raise SplitArgumentError("split argument set exceeds the bound")
         return {"t": "frozenset" if isinstance(value, frozenset) else "set",
                 "v": [encode(item, depth + 1) for item in value]}
     if isinstance(value, dict):
         if len(value) > MAX_ITEMS:
-            raise TypeError("split argument mapping exceeds the bound")
+            raise SplitArgumentError("split argument mapping exceeds the bound")
         if all(isinstance(key, str) for key in value):
             return {"t": "dict",
                     "v": [[key, encode(item, depth + 1)]
@@ -759,22 +1110,15 @@ def encode(value, depth=0):
                 "v": [encode(value.start, depth + 1),
                       encode(value.stop, depth + 1),
                       encode(value.step, depth + 1)]}
-    raise TypeError("split argument type is not transferable: %s"
-                    % type(value).__name__)
+    raise SplitArgumentError("split argument type is not transferable: %s"
+                             % type(value).__name__)
 
 
 class ProxyModule(types.ModuleType):
     def __getattr__(self, name):
-        if name.startswith("__") and name.endswith("__"):
+        if is_dunder(name) and name not in READABLE_DUNDERS:
             raise AttributeError(name)
-        response = request({"op": "get",
-                            "path": [self.__name__, name]})
-        if not response.get("ok"):
-            raise_remote(response.get("error"))
-        value = response.get("value") or {}
-        if value.get("t") == "ref":
-            return Ref([self.__name__, name])
-        return decode(value)
+        return fetch([self.__name__, name])
 
 
 class WorkspaceLoader(importlib.abc.Loader):

@@ -24,6 +24,7 @@ from sis.v3.split_harness import (
     SPLIT_BOOTSTRAP_NAME,
     SplitClient,
     SplitProtocolError,
+    SplitRef,
     _decode,
     split_bootstrap_argv,
     split_pytest_argv,
@@ -185,6 +186,311 @@ class SplitCodecTests(SplitHarness):
         payload = {"t": "set", "v": [{"t": "none"}] * (MAX_ITEMS + 1)}
         with self.assertRaisesRegex(SplitProtocolError, "out of bounds"):
             _decode(payload)
+
+
+PROTOCOL_MODULE = """
+import functools
+
+__version__ = "1.2"
+__all__ = ["Bag", "make_bag"]
+LOG = []
+
+
+class Bag:
+    def __init__(self, *items):
+        self.items = list(items)
+    def __len__(self):
+        return len(self.items)
+    def __contains__(self, item):
+        return item in self.items
+    def __getitem__(self, index):
+        return self.items[index]
+    def __setitem__(self, index, value):
+        self.items[index] = value
+    def __delitem__(self, index):
+        del self.items[index]
+    def __iter__(self):
+        return iter(self.items)
+    def __reversed__(self):
+        return reversed(self.items)
+    def __repr__(self):
+        return "Bag(%r)" % (self.items,)
+    def __str__(self):
+        return "bag of %d" % len(self.items)
+
+
+class Node:
+    def __init__(self, name):
+        self.name = name
+    def __repr__(self):
+        return "Node(%s)" % self.name
+
+
+def make_bag(*items):
+    return Bag(*items)
+
+
+def nodes(*names):
+    return Bag(*[Node(name) for name in names])
+
+
+def count(limit):
+    for value in range(limit):
+        yield value
+
+
+@functools.total_ordering
+class Version:
+    def __init__(self, major, minor=0):
+        self.key = (major, minor)
+    def __eq__(self, other):
+        if isinstance(other, int):
+            return self.key == (other, 0)
+        if isinstance(other, Version):
+            return self.key == other.key
+        return NotImplemented
+    def __lt__(self, other):
+        if isinstance(other, int):
+            other = Version(other)
+        return self.key < other.key
+    def __hash__(self):
+        return hash(self.key)
+    def __format__(self, spec):
+        return format("%d.%d" % self.key, spec)
+    def __bool__(self):
+        return self.key != (0, 0)
+    def __int__(self):
+        return self.key[0]
+    def __index__(self):
+        return self.key[0]
+
+
+class Money:
+    def __init__(self, cents):
+        self.cents = cents
+    def __add__(self, other):
+        other = other.cents if isinstance(other, Money) else other
+        return Money(self.cents + other)
+    __radd__ = __add__
+    def __sub__(self, other):
+        return Money(self.cents - other)
+    def __rsub__(self, other):
+        return Money(other - self.cents)
+    def __mul__(self, factor):
+        return Money(self.cents * factor)
+    def __neg__(self):
+        return Money(-self.cents)
+    def __abs__(self):
+        return Money(abs(self.cents))
+    def __float__(self):
+        return self.cents / 100
+    def __round__(self, digits=None):
+        return round(self.cents / 100, digits)
+    def __eq__(self, other):
+        return isinstance(other, Money) and other.cents == self.cents
+    def __hash__(self):
+        return hash(self.cents)
+
+
+class Resource:
+    def __init__(self, suppress=False):
+        self.suppress = suppress
+    def __enter__(self):
+        LOG.append("enter")
+        return self
+    def __exit__(self, kind, value, traceback):
+        LOG.append("exit:%s" % (None if kind is None
+                                else "%s:%s" % (kind.__name__, value)))
+        return self.suppress
+    def use(self):
+        LOG.append("use")
+
+
+class Shape:
+    pass
+
+
+class Square(Shape):
+    pass
+
+
+class Other:
+    pass
+
+
+def log():
+    return list(LOG)
+"""
+
+
+@unittest.skipUnless(os.name == "posix", "socketpair transport")
+class SplitProtocolTests(SplitHarness):
+    def setUp(self):
+        super().setUp()
+        self.write("shop.py", PROTOCOL_MODULE)
+
+    def test_container_protocols(self):
+        self.assertPasses({"test_hidden.py": (
+            "import shop\n"
+            "def test_container():\n"
+            "    bag = shop.make_bag(1, 2, 3)\n"
+            "    assert len(bag) == 3\n"
+            "    assert 2 in bag and 9 not in bag\n"
+            "    assert bag[0] == 1 and bag[-1] == 3\n"
+            "    assert bag[1:] == [2, 3]\n"
+            "    bag[0] = 10\n"
+            "    del bag[1]\n"
+            "    assert bag.items == [10, 3]\n"
+            "    assert list(bag) == [10, 3]\n"
+            "    assert [item * 2 for item in bag] == [20, 6]\n"
+            "    assert list(reversed(bag)) == [3, 10]\n"
+            "    assert str(bag) == 'bag of 2'\n"
+            "    assert repr(bag) == 'Bag([10, 3])'\n"
+            "    assert bool(bag) and not shop.make_bag()\n"
+        )})
+
+    def test_iteration_streams_through_handles(self):
+        self.assertPasses({"test_hidden.py": (
+            "import pytest\n"
+            "import shop\n"
+            "def test_stream():\n"
+            "    counter = shop.count(3)\n"
+            "    assert next(counter) == 0\n"
+            "    assert list(counter) == [1, 2]\n"
+            "    with pytest.raises(StopIteration):\n"
+            "        next(counter)\n"
+            "    names = [repr(node) for node in shop.nodes('a', 'b')]\n"
+            "    assert names == ['Node(a)', 'Node(b)']\n"
+            "    assert [node.name for node in shop.nodes('x')] == ['x']\n"
+            "    assert 4 in shop.count(5)\n"
+            "    assert sum(shop.count(4)) == 6\n"
+        )})
+
+    def test_comparisons_work_in_both_directions(self):
+        self.assertPasses({"test_hidden.py": (
+            "import shop\n"
+            "def test_compare():\n"
+            "    one, two = shop.Version(1), shop.Version(1, 5)\n"
+            "    assert one < two and two > one and one <= one\n"
+            "    assert one == shop.Version(1) and one != two\n"
+            "    assert one == 1 and 1 == one\n"
+            "    assert 0 < one and 2 > two and one < 2\n"
+            "    assert one != object()\n"
+            "    assert sorted([two, one])[0] == one\n"
+            "    assert hash(one) == hash(shop.Version(1))\n"
+            "    assert {one: 'x'}[shop.Version(1)] == 'x'\n"
+            "    assert f'{two}' == '1.5' and f'{two:>5}' == '  1.5'\n"
+            "    assert int(two) == 1 and [10, 20][one] == 20\n"
+            "    assert not shop.Version(0)\n"
+        )})
+
+    def test_arithmetic_on_returned_objects(self):
+        self.assertPasses({"test_hidden.py": (
+            "import shop\n"
+            "def test_money():\n"
+            "    a = shop.Money(150)\n"
+            "    assert (a + 50).cents == 200\n"
+            "    assert (50 + a).cents == 200\n"
+            "    assert (a + shop.Money(1)).cents == 151\n"
+            "    assert (200 - a).cents == 50 and (a - 50).cents == 100\n"
+            "    assert (a * 2).cents == 300\n"
+            "    assert (-a).cents == -150 and abs(-a).cents == 150\n"
+            "    assert sum([a, shop.Money(10)]).cents == 160\n"
+            "    assert float(a) == 1.5 and round(a) == 2\n"
+            "    a += 5\n"
+            "    assert a.cents == 155\n"
+        )})
+
+    def test_context_managers(self):
+        self.assertPasses({"test_hidden.py": (
+            "import pytest\n"
+            "import shop\n"
+            "def test_with():\n"
+            "    with shop.Resource() as resource:\n"
+            "        resource.use()\n"
+            "    with pytest.raises(KeyError):\n"
+            "        with shop.Resource():\n"
+            "            raise KeyError('k')\n"
+            "    with shop.Resource(suppress=True):\n"
+            "        raise ValueError('quiet')\n"
+            "    assert shop.log() == ['enter', 'use', 'exit:None', 'enter',\n"
+            "                          \"exit:KeyError:'k'\", 'enter',\n"
+            "                          'exit:ValueError:quiet']\n"
+        )})
+
+    def test_isinstance_and_issubclass_ask_the_worker(self):
+        self.assertPasses({"test_hidden.py": (
+            "import shop\n"
+            "def test_types():\n"
+            "    square = shop.Square()\n"
+            "    assert isinstance(square, shop.Shape)\n"
+            "    assert isinstance(square, (shop.Other, shop.Square))\n"
+            "    assert not isinstance(square, shop.Other)\n"
+            "    assert not isinstance(3, shop.Shape)\n"
+            "    assert not isinstance(object(), shop.Shape)\n"
+            "    assert issubclass(shop.Square, shop.Shape)\n"
+            "    assert not issubclass(shop.Other, shop.Shape)\n"
+        )})
+
+    def test_attribute_assignment_and_readable_metadata(self):
+        self.assertPasses({"test_hidden.py": (
+            "import pytest\n"
+            "import shop\n"
+            "from shop import *\n"
+            "def test_attributes():\n"
+            "    node = shop.Node('a')\n"
+            "    node.name = 'b'\n"
+            "    assert node.name == 'b'\n"
+            "    node.extra = [1]\n"
+            "    del node.extra\n"
+            "    with pytest.raises(AttributeError):\n"
+            "        node.extra\n"
+            "    assert shop.make_bag.__name__ == 'make_bag'\n"
+            "    assert shop.Node.__qualname__ == 'Node'\n"
+            "    assert shop.__version__ == '1.2'\n"
+            "    assert make_bag(1).items == [1]\n"
+            "    with pytest.raises(AttributeError):\n"
+            "        node.__dict__\n"
+            "    with pytest.raises(AttributeError):\n"
+            "        node.__class__ = object\n"
+        )})
+
+    def test_the_worker_refuses_protocols_outside_its_table(self):
+        client = self.host_client()
+        bag = client.call(["shop", "make_bag"], (1,), {})
+        for name in ("__reduce__", "__reduce_ex__", "__getattribute__",
+                     "__class__", "__init_subclass__", "__del__",
+                     "__getstate__", "__dict__", "__init__", "__call__"):
+            response = client.request({"op": "dunder", "path": bag._path,
+                                       "name": name, "args": []})
+            self.assertFalse(response.get("ok"), name)
+            self.assertIn("not forwarded", response["error"]["message"])
+            with self.assertRaises(SplitProtocolError):
+                client.dunder(bag._path, name, ())
+        for attribute in ("__class__", "__dict__", "__globals__",
+                          "__reduce__"):
+            response = client.request(
+                {"op": "get", "path": ["shop", "make_bag", attribute]})
+            self.assertFalse(response.get("ok"), attribute)
+            self.assertEqual(response["error"]["type"], "AttributeError")
+        response = client.request(
+            {"op": "dunder", "path": bag._path, "name": "__setattr__",
+             "args": [{"t": "str", "v": "__class__"}, {"t": "none"}]})
+        self.assertFalse(response.get("ok"))
+
+    def test_host_client_forwards_the_same_protocols(self):
+        client = self.host_client()
+        bag = client.call(["shop", "make_bag"], (1, 2), {})
+        self.assertIsInstance(bag, SplitRef)
+        self.assertEqual(len(bag), 2)
+        self.assertIn(2, bag)
+        self.assertEqual(list(bag), [1, 2])
+        self.assertEqual(bag[0], 1)
+        version = client.call(["shop", "Version"], (1,), {})
+        self.assertTrue(version == 1 and 1 == version)
+        self.assertLess(0, version)
+        self.assertNotEqual(version, object())
+        self.assertEqual(str(bag), "bag of 2")
 
 
 if __name__ == "__main__":
