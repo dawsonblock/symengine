@@ -1,5 +1,54 @@
 # Changelog
 
+## 2026-11-19 — Sandbox qualification path (SIS-FEAT-16)
+
+Track C of the efficacy plan: a Docker + gVisor qualification path with a
+red team and the in-repo half of independent sign-off. No new sandbox
+evidence was generated (no Docker daemon or gVisor was available); the
+stored Gate 2 evidence is marked stale and the new CI job produces fresh
+evidence. The release seal is still stale and must be rebuilt.
+
+- **The signed policy is the launch.** `DockerSandboxExecutor.launch_flags()`
+  builds both the security-relevant `docker run` flags and, with
+  placeholders, the policy document whose digest is signed
+  (`launch_policy()`, `policy_digest()`). The hand-written policy in
+  `tools/qualify_docker_isolation.py` (which said `pids_limit: 128`
+  while receipts showed 64) is gone. Receipts carry
+  `docker:policy:<digest>`, `docker:runtime:*` and
+  `docker:seccomp_profile:*`; the qualification tool writes `policy.json`
+  and refuses to sign a digest the receipt does not name.
+- **gVisor and an allowlist seccomp profile.** `runtime="runsc"`
+  (`--runtime runsc`) and `seccomp_profile=` (`--security-opt
+  seccomp=...`, from an executor-owned copy) are new executor options; a
+  production executor requires both. `docker/sandbox/seccomp.json` denies
+  by default and is derived reproducibly by
+  `tools/derive_sandbox_seccomp.py` from Moby's v27.3.1 default profile.
+  The probe adds `kernel_gvisor` and `seccomp_filter_active`;
+  `PRODUCTION_PROPERTIES` adds `kernel:gvisor` and
+  `syscalls:seccomp_allowlist`, and `check_release_ci.py` refuses a
+  release property set that omits any production property.
+- **Red team.** `tools/redteam_sandbox.py` runs seventeen hostile
+  payloads and a health check with expected outcomes (resource bombs,
+  egress, runtime sockets, setuid, ptrace, mount/unshare, foreign
+  processes, copy-out link escapes, `/proc`/`/sys` writes, host
+  credentials) and exits non-zero on any unexpected outcome.
+- **CI.** A new `sandbox-qualification` job installs gVisor 20261026.0
+  (SHA-512 pinned) with `--oci-seccomp`, builds the digest-pinned image
+  and runs the probe, red team and qualification with a generated
+  qualification-only key. Existing jobs are unchanged.
+- **Independent sign-off, in-repo half.** `tools/isolator_key_fingerprint.py`
+  prints a stable key fingerprint; `SANDBOX_QUALIFICATION_GATE2.md`
+  documents key custody and the out-of-band fingerprint ritual, and
+  `RELEASE_PROCESS.md` the re-attestation policy (per release and per
+  launch change, at most one hour old). The isolator host and key are
+  the operator's to provide.
+- **macOS stays development-only.** The local runner's RSS watchdog
+  kills a darwin run over `memory_bytes` (`memory:watchdog`,
+  `rlimit:memory_watchdog_exceeded`; `memory:not_enforced` stays). Local
+  hostile evaluation on darwin needs `--allow-unqualified` in the
+  evaluator worker and the campaign tools other than
+  `five_arm_campaign.py`.
+
 ## Learner v2 (SIS-FEAT-14)
 
 Track A of the learner plan: a deeper, typed, conditional rule learner,

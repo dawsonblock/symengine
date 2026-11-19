@@ -55,6 +55,7 @@ class EvaluatorWorkerTests(unittest.TestCase):
             evaluation_nonce="sub-nonce-1",
             executor_root=self.root / "work-exec",
             executor="local", allow_local_executor=True,
+            allow_unqualified=True,
             allow_shared_custody=True,
         )
         self.assertEqual(result.exit_status, 0)
@@ -76,6 +77,7 @@ class EvaluatorWorkerTests(unittest.TestCase):
                 task=bad, submission_dir=self.repo,
                 evaluation_nonce="sub-nonce-2",
                 executor="local", allow_local_executor=True,
+            allow_unqualified=True,
                 allow_shared_custody=True,
             )
 
@@ -86,6 +88,7 @@ class EvaluatorWorkerTests(unittest.TestCase):
                 task=self.task, submission_dir=self.repo,
                 evaluation_nonce="sub-nonce-shared",
                 executor="local", allow_local_executor=True,
+            allow_unqualified=True,
             )
 
     def test_worker_refuses_a_split_registry_without_a_second_principal(self):
@@ -139,6 +142,7 @@ class EvaluatorWorkerTests(unittest.TestCase):
                 task=self.task, submission_dir=self.repo,
                 evaluation_nonce="sub-nonce-conflict",
                 executor="local", allow_local_executor=True,
+            allow_unqualified=True,
                 require_split_custody=True, allow_shared_custody=True)
 
     def test_missing_dirs_fail_fast(self):

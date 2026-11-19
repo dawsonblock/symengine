@@ -16,12 +16,13 @@ import verify_release  # noqa: E402
 from build_release import write_manifest  # noqa: E402
 from sis.v3 import signatures  # noqa: E402
 from sis.v3.contracts import ExecutionReceiptV1  # noqa: E402
+from sis.v3.docker_sandbox import PRODUCTION_PROPERTIES  # noqa: E402
 from sis.v3.isolation import issue_attestation_for_receipt  # noqa: E402
 
 COMMIT = "a" * 40
 IMAGE = "1" * 64
 POLICY = "2" * 64
-PROPERTIES = ("net:denied", "fs:root_read_only")
+PROPERTIES = PRODUCTION_PROPERTIES
 
 
 def _utcnow() -> str:
@@ -213,8 +214,8 @@ class ReleaseCITests(unittest.TestCase):
             "--isolator-public-key", self.isolator_public.hex(),
             "--isolation-image-digest", IMAGE,
             "--isolation-policy-digest", POLICY,
-            "--isolation-property", PROPERTIES[0],
-            "--isolation-property", PROPERTIES[1],
+            *(item for prop in PROPERTIES
+              for item in ("--isolation-property", prop)),
         )
 
     def test_matching_inventory_passes_development_only(self):
@@ -251,6 +252,18 @@ class ReleaseCITests(unittest.TestCase):
         result = self.run_check("release", *self.valid_args())
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("release qualification verified", result.stdout)
+
+    def test_a_gate_without_the_gvisor_property_fails_release(self):
+        # A release configured with a weaker property set would accept an
+        # attestation for a runc launch; the gate refuses the configuration.
+        self.write_valid_release()
+        args = [arg for arg in self.valid_args()]
+        index = args.index("kernel:gvisor")
+        del args[index - 1:index + 1]
+        result = self.run_check("release", *args)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("omits required production properties: kernel:gvisor",
+                      result.stderr)
 
     def test_public_key_files_are_accepted(self):
         self.write_valid_release()

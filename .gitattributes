@@ -4,3 +4,7 @@
 # them.
 src/sis/v3/schemas/*.json text eol=lf
 tests/v3/fixtures/** text eol=lf
+# The seccomp profile and stored evidence are bound by SHA-256 digests
+# (seccomp_profile_sha256, evidence freshness and release inventories).
+docker/sandbox/seccomp.json text eol=lf
+evidence/** text eol=lf

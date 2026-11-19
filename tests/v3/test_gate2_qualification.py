@@ -6,12 +6,14 @@ it names, without requiring a daemon.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import sys
 import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
@@ -20,6 +22,7 @@ sys.path.insert(0, str(ROOT / "tools"))
 import qualify_docker_isolation as gate2
 import verify_external_attestation as external
 from sis.v3 import signatures
+from sis.v3.docker_sandbox import DockerSandboxExecutor
 from sis.v3.isolation import (ProductionIsolationPolicy,
                               issue_attestation_for_receipt,
                               verify_production_isolation)
@@ -28,20 +31,37 @@ from sis.v3.contracts import ExecutionReceiptV1, IsolationAttestationV1
 EVIDENCE = ROOT / "evidence" / "sandbox" / "gate2_isolation"
 
 
+def _executor(root, image_hex):
+    with mock.patch.object(DockerSandboxExecutor, "_require_docker",
+                           return_value="test-server"):
+        return DockerSandboxExecutor(
+            root, image="sis-evaluator@sha256:" + image_hex,
+            production=True, runtime="runsc",
+            seccomp_profile=gate2.DEFAULT_SECCOMP, image_id=image_hex)
+
+
 class PolicyDigestTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+
     def test_policy_digest_is_deterministic_hex(self) -> None:
-        first = gate2.policy_digest("a" * 64)
+        first = _executor(self.root / "a", "a" * 64).policy_digest()
         self.assertRegex(first, r"^[0-9a-f]{64}$")
-        self.assertEqual(first, gate2.policy_digest("a" * 64))
+        self.assertEqual(
+            first, _executor(self.root / "b", "a" * 64).policy_digest())
 
     def test_policy_digest_binds_the_image(self) -> None:
-        self.assertNotEqual(gate2.policy_digest("a" * 64),
-                            gate2.policy_digest("b" * 64))
+        self.assertNotEqual(
+            _executor(self.root / "a", "a" * 64).policy_digest(),
+            _executor(self.root / "b", "b" * 64).policy_digest())
 
     def test_properties_cover_every_probe_check(self) -> None:
         for name in ("net:denied", "fs:root_read_only",
                      "fs:workspace_confined", "user:non_root",
-                     "caps:dropped", "proc:no_new_privileges"):
+                     "caps:dropped", "proc:no_new_privileges",
+                     "kernel:gvisor", "syscalls:seccomp_allowlist"):
             self.assertIn(name, gate2.PROPERTIES)
 
 
@@ -96,6 +116,26 @@ class StoredEvidenceTests(unittest.TestCase):
         if not EVIDENCE.exists():
             self.skipTest("Gate 2 qualification evidence is not present")
         self.assertEqual(list(EVIDENCE.glob("*.seed")), [])
+
+    def test_stored_evidence_is_current_or_marked_stale(self) -> None:
+        # Evidence that no longer describes the executor must say so: it
+        # is current only if its policy digest is what the production
+        # launch policy for its image produces today.
+        record, _receipt, _attestation = self._load()
+        with tempfile.TemporaryDirectory() as temp:
+            current = _executor(
+                Path(temp), record["image_digest"]).policy_digest()
+        freshness_path = EVIDENCE / "freshness.json"
+        if record["policy_digest"] == current:
+            return
+        self.assertTrue(freshness_path.is_file(),
+                        "stale Gate 2 evidence must carry freshness.json")
+        freshness = json.loads(freshness_path.read_text())
+        self.assertEqual(freshness["status"], "stale")
+        for name, digest in freshness["files"].items():
+            self.assertEqual(
+                hashlib.sha256((EVIDENCE / name).read_bytes()).hexdigest(),
+                digest, name)
 
 
 if __name__ == "__main__":
