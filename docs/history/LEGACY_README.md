@@ -356,7 +356,7 @@ This makes **60 LLM calls** for the included 30-row *synthetic* example (30 base
 
 Only bounded integers, booleans, short strings, and fixed-length lists of these are accepted. The grammar supports feature references, indexed references, constants, addition, subtraction, multiplication, absolute difference, min/max, equality, negation, absolute value, case changes, string reverse, and LLM-proposed conditional equality. The deterministic search enumerates simple unary/binary rules first and bounded two-stage arithmetic rules if none of the simple ones fit. It does not learn general programs, recursive algorithms, unbounded formulas, image representations, causal mechanisms, or neural model weights.
 
-See `docs/LIMITATIONS.md` and `docs/ROADMAP.md` before extending this to untrusted users or consequential decisions.
+See `docs/history/LIMITATIONS.md` and `docs/history/ROADMAP.md` before extending this to untrusted users or consequential decisions.
 
 ### 9. v1.2: Secure promotion and out-of-band audit checkpoint
 

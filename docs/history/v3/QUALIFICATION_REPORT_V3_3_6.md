@@ -176,7 +176,7 @@ Not proved:
 
 ## Known limitations
 
-See `docs/v3/V33_LIMITATIONS.md`. Material for this release:
+See `docs/history/v3/V33_LIMITATIONS.md`. Material for this release:
 
 - The soft memory budget cannot see native-extension allocations and
   samples at resource-check points.

@@ -140,4 +140,4 @@ attestation.
 Typed execution traces are replayed locally and converted into untrusted
 procedural hypotheses; they are never an independent correctness oracle.
 Validation traces are not accepted, and the tool bridge cannot invoke
-trace studies or promote skills. See `docs/V2_1_TYPED_TRACE_LEARNING.md`.
+trace studies or promote skills. See `docs/history/V2_1_TYPED_TRACE_LEARNING.md`.

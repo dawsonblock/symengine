@@ -106,7 +106,7 @@ mode. A local-only database is never treated as rollback resistant.
 A deployment should anchor an **empty** registry before its first
 qualification. Anchoring a populated registry is trust-on-first-use: it
 proves the state existed at adoption time, not that it was correct
-before adoption. `docs/MIGRATION_V330_TO_V331.md` describes the safe
+before adoption. `docs/history/MIGRATION_V330_TO_V331.md` describes the safe
 order.
 
 ## Adversarial coverage

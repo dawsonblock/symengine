@@ -4,8 +4,8 @@ Platform support (docs/v3/SECURITY_BOUNDARIES_V3_3.md): Linux and macOS run
 the whole suite. Windows is supported for the core learner and CLI only; the
 v3 evaluator, sandbox and study layer under tests/v3 relies on POSIX process,
 permission and file semantics and on the Linux sandbox, so it is not
-collected on Windows. The run header says so, so the omission is never
-silent.
+collected on Windows. The run says so (in the header, and in the terminal
+summary, which pytest prints even under -q), so the omission is never silent.
 """
 from __future__ import annotations
 
@@ -27,3 +27,10 @@ def pytest_report_header(config):
     if os.name == "nt":
         return POSIX_ONLY_NOTE
     return None
+
+
+def pytest_terminal_summary(terminalreporter, exitstatus, config):
+    # The header above is suppressed by -q (CI runs pytest -q); the
+    # terminal summary is not.
+    if os.name == "nt":
+        terminalreporter.write_line(POSIX_ONLY_NOTE)

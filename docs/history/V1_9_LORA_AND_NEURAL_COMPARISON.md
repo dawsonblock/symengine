@@ -25,7 +25,7 @@ The optional dependency versions are specified in `pyproject.toml`. Actual runti
 
 ### Workflow
 
-1. Follow `docs/V1_8_PROCEDURAL_HOLDOUT_AND_DISTILLATION.md` to freeze a procedural skill, seal evaluator-controlled holdouts, score once, verify, and export a **disjoint** pseudo-labeled JSONL plus its HMAC manifest.
+1. Follow `docs/history/V1_8_PROCEDURAL_HOLDOUT_AND_DISTILLATION.md` to freeze a procedural skill, seal evaluator-controlled holdouts, score once, verify, and export a **disjoint** pseudo-labeled JSONL plus its HMAC manifest.
 2. Copy `examples/neural_training_config.json`, choose a **pinned local** model checkpoint, valid model-specific LoRA target modules and a fresh output folder. Run validation first:
 
 ```bash
