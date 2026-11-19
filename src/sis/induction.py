@@ -19,7 +19,13 @@ from itertools import product
 
 from .errors import InvalidInput
 from .validation import check_examples, input_schema, namespace_name, canonical, digest
-from .expression import validate_ast, evaluate, cost, depth, fingerprint
+from .expression import (GRAMMAR_VERSION, OPS, apply_op, cost, depth, evaluate,
+                         fingerprint, ops_of, validate_ast)
+
+#: Version of the search procedure. With ``GRAMMAR_VERSION`` it is stamped
+#: on every induction result; promotion and sealed evaluation re-run the
+#: search and refuse a result produced under another engine or grammar.
+ENGINE_VERSION = "sis-induce-1"
 
 
 def leaf_expressions(inputs):
@@ -48,7 +54,7 @@ def _signature(ast, all_inputs):
 
 
 def _combine(op, a, b):
-    """Evaluate binary op over two signature vectors; None on any error."""
+    """Evaluate an integer binary op over two signature vectors; None on any error."""
     out = []
     for x, y in zip(a, b):
         if x is _EVAL_ERR or y is _EVAL_ERR:
@@ -57,24 +63,17 @@ def _combine(op, a, b):
         if type(x) is not int or type(y) is not int:
             return None
         try:
-            if op == "add":
-                v = x + y
-            elif op == "sub":
-                v = x - y
-            elif op == "mul":
-                v = x * y
-            elif op == "min":
-                v = min(x, y)
-            elif op == "max":
-                v = max(x, y)
-            else:
-                v = abs(x - y)
-            if abs(v) > 1_000_000_000:
-                return None
-            out.append(v)
-        except (TypeError, ValueError, OverflowError):
+            out.append(apply_op(op, x, y))
+        except (InvalidInput, TypeError, ValueError, OverflowError):
             return None
     return tuple(out)
+
+
+# Stage-1/stage-2 op lists, read from the grammar registry.
+_INT_UNARY = tuple(s.name for s in ops_of("unary", arg_types=("int",), result_type="int"))
+_STR_UNARY = tuple(s.name for s in ops_of("unary", arg_types=("str",), result_type="str"))
+_INT_BINARY = tuple(s.name for s in ops_of("binary", arg_types=("int", "int"), result_type="int"))
+_INT_RESULT = frozenset(_INT_UNARY + _INT_BINARY)
 
 
 @dataclass(frozen=True)
@@ -362,19 +361,19 @@ def candidates(train, max_candidates=12000, observed_inputs=(), stats=None,
         if len({canonical(e["output"]) for e in train}) == 1:
             yield {"op": "const", "value": train[0]["output"]}
         for leaf in numeric:
-            for op in ("neg", "abs"):
+            for op in _INT_UNARY:
                 yield {"op": op, "arg": leaf}
         for leaf in string:
-            for op in ("upper", "lower", "reverse"):
+            for op in _STR_UNARY:
                 yield {"op": op, "arg": leaf}
         terminals = numeric + [{"op": "const", "value": v} for v in (-2, -1, 0, 1, 2, 3)]
         binary = []
-        for op in ("add", "sub", "mul", "min", "max", "absdiff"):
+        for op in _INT_BINARY:
             for a in range(len(terminals)):
                 for b in range(len(terminals)):
                     if a >= len(numeric) and b >= len(numeric):
                         continue
-                    if op in ("add", "mul", "min", "max", "absdiff") and a > b:
+                    if OPS[op].commutative and a > b:
                         continue
                     binary.append({"op": op, "args": [terminals[a], terminals[b]]})
         if len(numeric) > 12 and all(type(o) is int for o in outputs):
@@ -433,8 +432,7 @@ def candidates(train, max_candidates=12000, observed_inputs=(), stats=None,
     if not all(type(o) is int for o in outputs):
         # Stage 2 only covers numeric operators.
         return
-    shallow = [x for x in first_results
-               if x["op"] in {"add", "sub", "mul", "min", "max", "absdiff", "neg", "abs"}]
+    shallow = [x for x in first_results if x["op"] in _INT_RESULT]
 
     def resid_var(ast):
         sig = cheap_signature(ast)
@@ -494,7 +492,7 @@ def candidates(train, max_candidates=12000, observed_inputs=(), stats=None,
                 yield ast
             for tast, ts in term_sigs:
                 ts = ts[:n_train]
-                for op in ("add", "sub", "mul", "min", "max", "absdiff"):
+                for op in _INT_BINARY:
                     if not spend():
                         return
                     if _combine(op, ms, ts) == outputs:
@@ -699,6 +697,25 @@ def _deep_rival_scan(train, labelled, observed, probes, best, budget):
 MIN_HOLDOUT_EXAMPLES = 2
 
 
+def check_engine_version(result):
+    """Raise ``RuleRejected`` unless ``result`` was induced under this engine.
+
+    Promotion and sealed evaluation re-run the search and compare outputs;
+    a result from another grammar or engine would only show up as an
+    opaque mismatch, so the version stamp is checked first.
+    """
+    from .errors import RuleRejected
+    grammar = result.get("grammar_version") if isinstance(result, dict) else None
+    engine = result.get("engine_version") if isinstance(result, dict) else None
+    if grammar != GRAMMAR_VERSION or engine != ENGINE_VERSION:
+        raise RuleRejected(
+            f"induction result was produced under grammar {grammar!r} and "
+            f"engine {engine!r}, but this installation runs grammar "
+            f"{GRAMMAR_VERSION!r} and engine {ENGINE_VERSION!r}; re-induce "
+            "under the current engine")
+    return result
+
+
 def legacy_split(validation):
     """Deterministically split legacy ``validation`` into (dev, holdout).
 
@@ -795,6 +812,8 @@ def induce(train, validation=None, *, namespace="default", max_candidates=12000,
             return {
                 "namespace": namespace,
                 "status": "resource_exhausted",
+                "grammar_version": GRAMMAR_VERSION,
+                "engine_version": ENGINE_VERSION,
                 "search_outcome": "resource_exhausted",
                 "limits_hit": enforced.receipt.resource_limits_hit,
                 "budget_enforcement": "hard_subprocess",
@@ -994,6 +1013,8 @@ def induce(train, validation=None, *, namespace="default", max_candidates=12000,
         "namespace": namespace,
         "status": status,
         "rule": best,
+        "grammar_version": GRAMMAR_VERSION,
+        "engine_version": ENGINE_VERSION,
         "schema": input_schema(original_train[0]["inputs"]),
         "train_count": len(original_train),
         "validation_count": len(holdout_examples),

@@ -47,7 +47,7 @@ import time
 import tracemalloc
 from datetime import datetime, timezone
 
-from sis.expression import evaluate
+from sis.expression import OPS, evaluate
 from sis.induction import SearchBudget, induce
 
 
@@ -70,28 +70,31 @@ def target_rule(features: int) -> dict:
     }
 
 
-_COMMUTATIVE = frozenset({"add", "mul", "min", "max", "absdiff"})
-
-
 def structural_form(ast) -> tuple:
-    """A commutative-normalized form used for structural comparison."""
+    """A commutative-normalized form used for structural comparison.
+
+    Commutativity and tags come from the grammar's op registry. Reference
+    rules in the corpus are compared as data and never evaluated here, so
+    an op the running grammar does not know is compared by name.
+    """
     op = ast["op"]
-    if op in _COMMUTATIVE:
-        return (op, tuple(sorted(structural_form(child)
-                                 for child in ast["args"])))
     if op == "field":
         return ("field", ast["name"])
     if op == "item":
         return ("item", ast["name"], ast["index"])
     if op == "const":
-        return ("const", ast["value"])
+        return ("const", type(ast["value"]).__name__, ast["value"])
     if "arg" in ast:
-        return (op, structural_form(ast["arg"]))
-    if "left" in ast:
-        return (op, structural_form(ast["left"]),
-                structural_form(ast["right"]), structural_form(ast["then"]),
-                structural_form(ast["else"]))
-    return (op, tuple(structural_form(child) for child in ast["args"]))
+        kids = [ast["arg"]]
+    elif "args" in ast:
+        kids = list(ast["args"])
+    else:
+        kids = [ast[key] for key in ("left", "right", "then", "else")]
+    forms = tuple(structural_form(child) for child in kids)
+    spec = OPS.get(op)
+    if spec is not None and spec.commutative:
+        forms = tuple(sorted(forms))
+    return ((spec.form_tag if spec is not None else op),) + forms
 
 
 def verify_equivalence(rule, target, schema, *, mode: str,

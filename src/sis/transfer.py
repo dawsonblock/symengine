@@ -4,7 +4,7 @@ The mapping is selected by the operator, not inferred from held-out labels.
 Passing exact schema checks proves *structural compatibility*, not target accuracy.
 """
 from .errors import InvalidInput
-from .expression import validate_ast, evaluate
+from .expression import validate_ast, evaluate, children, rebuild
 from .validation import NAME, check_inputs, input_schema, digest
 
 
@@ -36,11 +36,7 @@ def map_expression(expression, source_schema, target_inputs, field_map):
             return {**node, 'name': field_map[node['name']]}
         if op == 'const':
             return dict(node)
-        if op == 'if_eq':
-            return {'op':op, **{k:rewrite(node[k]) for k in ('left','right','then','else')}}
-        if 'arg' in node:
-            return {'op':op, 'arg':rewrite(node['arg'])}
-        return {'op':op, 'args':[rewrite(x) for x in node['args']]}
+        return rebuild(node, [rewrite(child) for child in children(node)])
 
     mapped = rewrite(expression)
     validate_ast(mapped)
