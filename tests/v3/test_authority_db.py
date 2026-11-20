@@ -371,6 +371,10 @@ class ConcurrencyTests(unittest.TestCase):
         finally:
             reader._con = real
         self.assertTrue(fired, "the interposed write never ran")
+        # The write landed after verify's revision read, not some other
+        # procedure_revision query.
+        self.assertIn("ORDER BY procedure_id, revision", fired[0])
+        self.assertIn("record_json", fired[0])
         self.assertTrue(report["ok"], report["problems"])
         # The committed transition is visible to the next read.
         self.assertEqual(reader.get("p1").status, "candidate")
