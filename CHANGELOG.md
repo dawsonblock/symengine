@@ -154,6 +154,13 @@ paths are now tighter.
   not take the primary test's staged name even without
   `hidden_tests_target`. Relative imports of a captured helper resolve
   against its own package, so `tests/sub/helper.py` brings `.data`.
+- **A response JSON cannot write stays in the worker.** A result such
+  as `frozenset({10**5000})` passes the wire encoder but not
+  `json.dumps` (the int-to-str digit limit); it now takes the same
+  handle fallback as an oversized result instead of ending the worker.
+  A response refused as over the frame bound releases the handle it
+  would have handed out, so refused errors no longer use up
+  `MAX_HANDLES`.
 - **Only whole `/` chains name a path.** `HERE / 'fixtures' / 'nested'
   / 'one.txt'` names that file and no longer also `fixtures/nested` as
   a directory, whose unreferenced siblings were captured with it.

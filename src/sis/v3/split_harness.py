@@ -1042,18 +1042,40 @@ def describe_error(exc):
     return error
 
 
+def serialized(response):
+    """The response as one frame, or None when it cannot be one.
+
+    None when it exceeds the frame bound, or when JSON cannot write it at
+    all (an int past the interpreter's int-to-str digit limit, which the
+    wire encoder accepts).
+    """
+    try:
+        data = json.dumps(response).encode("utf-8")
+    except Exception:
+        return None
+    return data if len(data) < MAX_FRAME else None
+
+
+def handed_out(response):
+    """The handles a response hands to the evaluator."""
+    for entry in (response.get("value"), response.get("error")):
+        if isinstance(entry, dict) and isinstance(entry.get("handle"), str):
+            yield entry["handle"]
+
+
 def frame(response):
     """The serialized response, within the evaluator's frame bound.
 
-    A data result too large for one frame (within the item and depth
-    bounds, a frozenset of two long strings say) is answered with what
-    its ``LARGE`` entry gives instead: a handle to the value already
-    computed, never a second call. An error drops its encoded args, and
-    anything still too large is refused as a protocol error.
+    A data result that cannot be one frame (within the item and depth
+    bounds, a frozenset of two long strings say, or of an int JSON cannot
+    write) is answered with what its ``LARGE`` entry gives instead: a
+    handle to the value already computed, never a second call. An error
+    drops its encoded args, and anything still too large is refused as a
+    protocol error, releasing the handle it would have handed out.
     """
     large = response.pop(LARGE, None)
-    data = json.dumps(response).encode("utf-8")
-    if len(data) < MAX_FRAME:
+    data = serialized(response)
+    if data is not None:
         return data
     if large is not None:
         try:
@@ -1064,9 +1086,12 @@ def frame(response):
     error = response.get("error")
     if isinstance(error, dict):
         error.pop("args", None)
-    data = json.dumps(response).encode("utf-8")
-    if len(data) < MAX_FRAME:
+    data = serialized(response)
+    if data is not None:
         return data
+    # The evaluator never sees this response, so it can never release the
+    # handle it names: drop that hand-out here.
+    release([[handle, 1] for handle in handed_out(response)])
     return json.dumps({"ok": False, "error": {
         "type": "SplitProtocolError",
         "message": "response exceeds the frame bound"}}).encode("utf-8")

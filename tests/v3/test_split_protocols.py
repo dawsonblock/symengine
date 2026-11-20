@@ -228,6 +228,63 @@ class SplitCodecTests(SplitHarness):
         self.assertEqual(client.call(["large", "small"], (), {}),
                          frozenset({"x", "y"}))
 
+    def test_results_json_cannot_write_stay_in_the_worker(self):
+        # The wire encoder accepts an int of any size, but json.dumps
+        # refuses one past the interpreter's int-to-str digit limit. The
+        # result already computed comes back as a handle, from the one
+        # call made, and the worker keeps serving.
+        self.write("huge.py", (
+            "CALLS = []\n"
+            "BIG = 10 ** 5000\n"
+            "def number():\n"
+            "    CALLS.append(1)\n"
+            "    return frozenset({10 ** 5000})\n"
+            "def plain():\n"
+            "    return 10 ** 5000\n"
+            "def fail():\n"
+            "    raise ValueError(10 ** 5000)\n"))
+        self.assertPasses({"test_hidden.py": (
+            "import pytest\n"
+            "import huge\n"
+            "def test_huge():\n"
+            "    value = huge.number()\n"
+            "    assert not isinstance(value, frozenset)\n"
+            "    assert len(value) == 1 and len(huge.CALLS) == 1\n"
+            "    assert not isinstance(huge.plain(), int)\n"
+            "    assert huge.plain() % 7 == 10 ** 5000 % 7\n"
+            "    assert huge.BIG % 7 == 10 ** 5000 % 7\n"
+            "    with pytest.raises(ValueError):\n"
+            "        huge.fail()\n"
+            "    assert huge.number() is not None\n"
+        )})
+        client = self.host_client()
+        self.assertIsInstance(client.call(["huge", "number"], (), {}),
+                              SplitRef)
+        client.ping()
+
+    def test_a_refused_response_releases_the_handle_it_held(self):
+        # An exception (or exception class) whose class chain alone is
+        # over the frame bound is refused as a protocol error. The
+        # handle allocated for it never reaches the evaluator, so the
+        # worker must not keep it.
+        self.write("names.py", (
+            "class Huge(Exception):\n"
+            "    pass\n"
+            "Huge.__qualname__ = 'H' * 1100000\n"
+            "def boom():\n"
+            "    raise Huge()\n"
+            "def cls():\n"
+            "    return Huge\n"
+            "def live():\n"
+            "    import __main__\n"
+            "    return len(__main__.HANDLES)\n"))
+        client = self.host_client()
+        before = client.call(["names", "live"], (), {})
+        for name in ("boom", "cls") * 3:
+            with self.assertRaisesRegex(RemoteError, "frame bound"):
+                client.call(["names", name], (), {})
+        self.assertEqual(client.call(["names", "live"], (), {}), before)
+
     def test_host_client_decodes_sets_and_maps(self):
         self.write("data.py", (
             "S = {1, 2}\n"
