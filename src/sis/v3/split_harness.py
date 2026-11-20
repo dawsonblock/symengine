@@ -82,7 +82,14 @@ handle.
   the iterator stays in the worker and each ``next`` is one round trip
   ending in ``StopIteration``. Operators answer ``NotImplemented`` for a
   local operand with no wire form, so comparisons with plain data work
-  in both directions.
+  in both directions. Against a local operand, a forward or in-place
+  arithmetic operator runs only the worker object's own method, and
+  answers ``NotImplemented`` when that declines, so Python goes on to
+  the local operand's reflected method (a test's ``int`` subclass,
+  which crosses as a plain ``int``). When neither answers, the
+  ``TypeError`` names ``Ref``, not the worker class. Between two worker
+  objects, and for reflected operators, Python's whole dispatch runs in
+  the worker.
 * Exceptions cross as data, never as classes. The worker reports the
   class chain (module and qualified name of each MRO entry, with base
   indices), a bounded message and, when they encode, the exception's
@@ -529,6 +536,13 @@ class SplitClient:
             "op": "dunder", "path": list(path), "name": name,
             "args": [_host_encode(item) for item in args],
         })
+        value = response.get("value")
+        if (name in FORWARDED_OPERATORS and response.get("ok")
+                and isinstance(value, dict)
+                and value.get("t") == "notimplemented"):
+            # The worker object's own method declined a local operand:
+            # Python tries that operand's reflected method next.
+            return NotImplemented
         return self._result(response)
 
     def _result(self, response: dict) -> Any:
@@ -918,6 +932,41 @@ SPECIAL = frozenset({"__setitem__", "__setattr__", "__delattr__",
                      "__exit__", "__round__"})
 DUNDERS = frozenset(UNARY) | frozenset(BINARY) | SPECIAL
 INPLACE = frozenset("__i%s__" % _name for _name in ARITHMETIC)
+# Operators the worker object answers first, before its operand. Against
+# an evaluator-local operand only the worker object's own method runs here
+# (see own_method); reflected operators keep Python's whole dispatch.
+FIRST = (frozenset("__%s__" % _name for _name in ARITHMETIC) | INPLACE
+         | {"__divmod__"})
+# A worker method declined a local operand: the evaluator continues
+# Python's dispatch with that operand's own reflected method.
+DECLINED = {"t": "notimplemented"}
+
+
+def own_method(obj, name, other):
+    """Apply ``obj``'s own operator method ``name`` to a local operand.
+
+    The operand is evaluator data, which crossed as its plain form (a
+    test's ``int`` subclass as an ``int``), so its reflected method cannot
+    run here. When the method is missing or returns NotImplemented the
+    evaluator is told so and tries that method itself, as one process
+    would. A TypeError the method raises is an error, not a decline.
+    Looked up on the type's MRO, as Python looks up special methods.
+    """
+    cls = type(obj)
+    method = None
+    for klass in cls.__mro__:
+        if name in vars(klass):
+            method = vars(klass)[name]
+            break
+    if method is None:
+        return {"ok": True, "value": DECLINED}
+    bind = getattr(type(method), "__get__", None)
+    value = (bind(method, obj, cls) if bind is not None else method)(other)
+    if value is NotImplemented:
+        return {"ok": True, "value": DECLINED}
+    if name in INPLACE and value is obj:
+        return state(value)
+    return result(value)
 
 
 def exit_value(arg):
@@ -1022,7 +1071,12 @@ def handle(request):
                     "error": {"type": "SplitProtocolError",
                               "message": "protocol is not forwarded"}}
         obj = resolve(path)
-        args = [decode(item) for item in request.get("args") or []]
+        raw = request.get("args") or []
+        args = [decode(item) for item in raw]
+        if (name in FIRST and len(raw) == 1
+                and not (isinstance(raw[0], dict)
+                         and raw[0].get("t") == "handle")):
+            return own_method(obj, name, args[0])
         return dunder(obj, name, args)
     return {"ok": False,
             "error": {"type": "SplitProtocolError", "message": "unknown op"}}
@@ -1767,13 +1821,18 @@ def fetch(path, lease=None):
     return result_value(response.get("value") or {}, list(path), lease)
 
 
-def forward(path, name, payload):
+def forward(path, name, payload, declinable=False):
     # One allow-listed protocol call; the worker refuses any other name.
     response = request({"op": "dunder", "path": list(path), "name": name,
                         "args": payload})
     if not response.get("ok"):
         raise_remote(response.get("error"))
-    return result_value(response.get("value") or {})
+    value = response.get("value") or {}
+    if declinable and value.get("t") == "notimplemented":
+        # The worker object's own operator method declined a local
+        # operand: Python tries that operand's reflected method next.
+        return NotImplemented
+    return result_value(value)
 
 
 class Ref:
@@ -1887,7 +1946,7 @@ def protocol(name, operator):
             if operator:
                 return NotImplemented
             raise
-        return forward(self._path, name, payload)
+        return forward(self._path, name, payload, declinable=operator)
     method.__name__ = method.__qualname__ = name
     return method
 

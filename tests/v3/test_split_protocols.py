@@ -855,6 +855,28 @@ class Resource:
         LOG.append("use")
 
 
+class Strict:
+    # Declines every operand that is not a worker object.
+    def __add__(self, other):
+        return "both" if isinstance(other, Strict) else NotImplemented
+    def __iadd__(self, other):
+        return NotImplemented
+    def __mul__(self, other):
+        return NotImplemented
+    def __sub__(self, other):
+        raise TypeError("no subtraction")
+
+
+class Left:
+    def __add__(self, other):
+        return NotImplemented
+
+
+class Right:
+    def __radd__(self, other):
+        return "right radd"
+
+
 class Shape:
     pass
 
@@ -949,6 +971,53 @@ class SplitProtocolTests(SplitHarness):
             "    a += 5\n"
             "    assert a.cents == 155\n"
         )})
+
+    def test_a_declined_operator_tries_the_local_operand(self):
+        # ``ref + Cents(5)``: when the worker object's own method declines,
+        # Python must try the local operand's reflected method, which a
+        # plain int on the wire has lost. A TypeError the method raises is
+        # an error, not a decline.
+        self.assertPasses({"test_hidden.py": (
+            "import pytest\n"
+            "import shop\n"
+            "class Cents(int):\n"
+            "    def __radd__(self, other):\n"
+            "        return 'cents radd'\n"
+            "    def __rsub__(self, other):\n"
+            "        return 'cents rsub'\n"
+            "    def __rmul__(self, other):\n"
+            "        return 'cents rmul'\n"
+            "def test_declined():\n"
+            "    strict = shop.Strict()\n"
+            "    assert strict + Cents(5) == 'cents radd'\n"
+            "    assert strict * Cents(5) == 'cents rmul'\n"
+            "    with pytest.raises(TypeError):\n"
+            "        strict + 5\n"
+            "    with pytest.raises(TypeError, match='no subtraction'):\n"
+            "        strict - Cents(5)\n"
+            "    held = strict\n"
+            "    held += Cents(1)\n"
+            "    assert held == 'cents radd'\n"
+            # Two worker objects: Python's whole dispatch runs there.
+            "    assert strict + shop.Strict() == 'both'\n"
+            "    assert shop.Left() + shop.Right() == 'right radd'\n"
+            "    money = shop.Money(1)\n"
+            "    money += 2\n"
+            "    assert money.cents == 3\n"
+            "    items = shop.LOG\n"
+            "    items += ['x']\n"
+            "    assert shop.LOG == ['x'] and items == ['x']\n"
+        )})
+        client = self.host_client()
+
+        class Cents(int):
+            def __radd__(self, other):
+                return "cents radd"
+
+        strict = client.call(["shop", "Strict"], (), {})
+        self.assertEqual(strict + Cents(5), "cents radd")
+        with self.assertRaises(TypeError):
+            strict + 5
 
     def test_context_managers(self):
         self.assertPasses({"test_hidden.py": (

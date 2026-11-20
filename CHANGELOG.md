@@ -169,6 +169,15 @@ paths are now tighter.
   so a set with two NaNs, or a mapping with two NaN keys, lost entries
   on the way across. Each of the three decoders (worker requests,
   bootstrap and host responses) now builds a fresh float per NaN.
+- **A declined operator tries the local operand.** `ref + Cents(5)`,
+  with `Cents` a test's `int` subclass, crossed as a plain `int`, so the
+  worker's `operator.add` never reached `Cents.__radd__`. Against a
+  local operand, forward and in-place arithmetic now run only the worker
+  object's own method; when it is missing or returns `NotImplemented`
+  the response says so (`{"t": "notimplemented"}`, read only by the
+  operator path) and Python's dispatch continues locally. A `TypeError`
+  the method raises still propagates. Reflected operators and
+  operations between two worker objects keep the worker's full dispatch.
 - **Only whole `/` chains name a path.** `HERE / 'fixtures' / 'nested'
   / 'one.txt'` names that file and no longer also `fixtures/nested` as
   a directory, whose unreferenced siblings were captured with it.
