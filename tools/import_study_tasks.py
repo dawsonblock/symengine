@@ -442,7 +442,10 @@ def _data_files(root: Path, commit: str, test_path: str, test_bytes: bytes,
       or a size bound, not at all, with a note saying why.
 
     Single files come first, then directories, each in path order, after
-    every Python support file.
+    every Python support file. A named file inside a named directory is
+    captured with that directory, and a directory inside a refused one is
+    refused too (``enclosing_directory_refused``), so no directory the
+    test names is ever staged in part.
     """
     root_text = test_root.as_posix()
     prefix = "" if root_text == "." else root_text + "/"
@@ -481,7 +484,14 @@ def _data_files(root: Path, commit: str, test_path: str, test_bytes: bytes,
     def note(path: str, reason: str, **extra) -> None:
         notes.append({"path": path, "reason": reason, **extra})
 
+    def grouped(path: str) -> bool:
+        # A file inside a directory the test also names is captured with
+        # that directory, all or none, never ahead of it.
+        return any(path.startswith(folder + "/") for folder in folders)
+
     for path in sorted(files - set(found)):
+        if grouped(path):
+            continue
         if not SAFE_REL.fullmatch(path) or not support_target_allowed(path):
             note(path, "data_path_unsafe")
         elif len(found) >= MAX_SUPPORT_FILES:
@@ -493,7 +503,14 @@ def _data_files(root: Path, commit: str, test_path: str, test_bytes: bytes,
                 note(path, "private_size_bound")
             else:
                 found[path] = data
+    refused: list[str] = []
+    # In path order, so a directory comes before the directories in it.
     for folder in sorted(folders):
+        if any(folder.startswith(other + "/") for other in refused):
+            # Part of a directory refused as a whole: staging it would
+            # leave a partial listing of that directory.
+            note(folder, "enclosing_directory_refused")
+            continue
         members = sorted(path for path in paths
                          if path.startswith(folder + "/") and eligible(path)
                          and support_target_allowed(path)
@@ -502,10 +519,12 @@ def _data_files(root: Path, commit: str, test_path: str, test_bytes: bytes,
             continue
         if any(not SAFE_REL.fullmatch(path) for path in members):
             note(folder, "data_path_unsafe")
+            refused.append(folder)
             continue
         if len(found) + len(members) > MAX_SUPPORT_FILES:
             note(folder, "support_files_cap", files=len(members),
                  room=MAX_SUPPORT_FILES - len(found))
+            refused.append(folder)
             continue
         payloads = {path: _blob(root, commit, path) for path in members}
         if (max(len(data) for data in payloads.values())
@@ -513,6 +532,7 @@ def _data_files(root: Path, commit: str, test_path: str, test_bytes: bytes,
                 or total() + sum(len(data) for data in payloads.values())
                 > MAX_PRIVATE_TOTAL_BYTES):
             note(folder, "private_size_bound", files=len(members))
+            refused.append(folder)
             continue
         found.update(payloads)
 

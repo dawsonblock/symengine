@@ -511,6 +511,39 @@ class SupportFileTests(unittest.TestCase):
                       if not path.endswith(".py"))
         self.assertEqual(data, ["tests/fixtures/nested/one.txt"])
 
+    def test_a_file_inside_a_refused_directory_is_not_kept(self):
+        # The test names the directory and one of its files. When the
+        # directory is over the cap, none of it is staged: a test that
+        # lists ``cases`` must not silently run the one file kept.
+        self.add_data({f"tests/cases/{name}.json": "[]"
+                       for name in ("a", "b", "c", "d", "e")}
+                      | {"tests/cases/deeper/f.json": "[]"})
+        fix = self.fix_with_test("test_cases.py", (
+            "import os\n"
+            "HERE = os.path.dirname(__file__)\n"
+            "def test_cases():\n"
+            "    assert os.listdir(os.path.join(HERE, 'cases'))\n"
+            "    assert open(os.path.join(HERE, 'cases/a.json')).read()\n"
+            "    assert os.listdir(os.path.join(HERE, 'cases', 'deeper'))\n"))
+        full = self.describe(fix)
+        cases = sorted(path for path in full["support"]
+                       if path.startswith("tests/cases/"))
+        self.assertEqual(len(cases), 6)
+        code = len(full["support"]) - len(cases)
+        original = self.importer.MAX_SUPPORT_FILES
+        # Room for the single file and for ``cases/deeper`` alone, not
+        # for the whole directory.
+        self.importer.MAX_SUPPORT_FILES = code + 3
+        self.addCleanup(setattr, self.importer, "MAX_SUPPORT_FILES",
+                        original)
+        info = self.describe(fix)
+        self.assertEqual([path for path in info["support"]
+                          if path.startswith("tests/cases/")], [])
+        self.assertEqual([note["path"] for note in info["support_notes"]],
+                         ["tests/cases", "tests/cases/deeper"])
+        self.assertEqual(info["support_notes"][0]["reason"],
+                         "support_files_cap")
+
     def test_a_data_file_over_the_size_bound_is_noted(self):
         original = self.importer.MAX_PRIVATE_FILE_BYTES
         self.importer.MAX_PRIVATE_FILE_BYTES = 4096

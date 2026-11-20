@@ -157,6 +157,11 @@ paths are now tighter.
 - **Only whole `/` chains name a path.** `HERE / 'fixtures' / 'nested'
   / 'one.txt'` names that file and no longer also `fixtures/nested` as
   a directory, whose unreferenced siblings were captured with it.
+- **Overlapping data references are captured together.** A file the
+  test names inside a directory it also names (`cases/a.json` and
+  `cases`) is captured with that directory, and a directory inside a
+  refused one is refused too, so a directory over a bound leaves none of
+  its files staged.
 
 ## 2026-11-20 — Authority verification reads one snapshot (SIS-FIX-19)
 
