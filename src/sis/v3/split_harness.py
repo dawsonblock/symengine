@@ -592,6 +592,12 @@ MAX_HANDLES = 100000
 MAX_HANDLE_ID = 999999999
 MAX_CLASSES = 64
 MAX_MESSAGE = 8192
+# The evaluator's bound on one response line, newline included.
+MAX_FRAME = 1 << 20
+# A response may carry, under this key, how to answer instead when its
+# serialized form would exceed MAX_FRAME (a handle, not a copy). It never
+# crosses the socket.
+LARGE = "_sis_large"
 # Call results that cannot cross the socket stay here; the evaluator
 # refers to them by handle ("#<n>"), never by the callable's path.
 HANDLES = {}
@@ -824,7 +830,8 @@ def annotate(ref, value):
 def result(value, force_ref=False):
     if not force_ref:
         try:
-            return {"ok": True, "value": encode(value)}
+            return {"ok": True, "value": encode(value),
+                    LARGE: lambda: result(value, force_ref=True)}
         except NotEncodable:
             pass
     return {"ok": True, "value": annotate(keep(value), value)}
@@ -948,10 +955,11 @@ def handle(request):
         obj = resolve(path)
         if isinstance(obj, MUTABLE):
             return state(obj)
+        by_path = {"ok": True, "value": annotate({"t": "ref"}, obj)}
         try:
-            return {"ok": True, "value": encode(obj)}
+            return {"ok": True, "value": encode(obj), LARGE: lambda: by_path}
         except NotEncodable:
-            return {"ok": True, "value": annotate({"t": "ref"}, obj)}
+            return by_path
     if op == "call":
         obj = resolve(path)
         if not callable(obj):
@@ -997,6 +1005,36 @@ def describe_error(exc):
         except Exception:
             pass
     return error
+
+
+def frame(response):
+    """The serialized response, within the evaluator's frame bound.
+
+    A data result too large for one frame (within the item and depth
+    bounds, a frozenset of two long strings say) is answered with what
+    its ``LARGE`` entry gives instead: a handle to the value already
+    computed, never a second call. An error drops its encoded args, and
+    anything still too large is refused as a protocol error.
+    """
+    large = response.pop(LARGE, None)
+    data = json.dumps(response).encode("utf-8")
+    if len(data) < MAX_FRAME:
+        return data
+    if large is not None:
+        try:
+            response = large()
+        except BaseException as exc:
+            response = {"ok": False, "error": describe_error(exc)}
+        response.pop(LARGE, None)
+    error = response.get("error")
+    if isinstance(error, dict):
+        error.pop("args", None)
+    data = json.dumps(response).encode("utf-8")
+    if len(data) < MAX_FRAME:
+        return data
+    return json.dumps({"ok": False, "error": {
+        "type": "SplitProtocolError",
+        "message": "response exceeds the frame bound"}}).encode("utf-8")
 
 
 def source_root(workspace):
@@ -1048,7 +1086,7 @@ def main():
             response = handle(request)
         except BaseException as exc:
             response = {"ok": False, "error": describe_error(exc)}
-        stream.write(json.dumps(response).encode("utf-8") + b"\n")
+        stream.write(frame(response) + b"\n")
         stream.flush()
 
 

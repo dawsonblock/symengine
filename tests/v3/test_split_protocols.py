@@ -180,6 +180,41 @@ class SplitCodecTests(SplitHarness):
             "    assert not isinstance(bags.MIXED, set)\n"
         )})
 
+    def test_results_too_large_for_a_frame_stay_in_the_worker(self):
+        # Within the item and depth bounds but over the frame bound: the
+        # result must come back as a handle, from the one call already
+        # made, never end the run as a lost worker.
+        self.write("large.py", (
+            "CALLS = []\n"
+            "BIG = 'b' * 1100000\n"
+            "def pair():\n"
+            "    CALLS.append(1)\n"
+            "    return frozenset({'x' * 600000, 'y' * 600000})\n"
+            "def small():\n"
+            "    return frozenset({'x', 'y'})\n"
+            "def fail():\n"
+            "    raise ValueError('z' * 1100000)\n"))
+        self.assertPasses({"test_hidden.py": (
+            "import pytest\n"
+            "import large\n"
+            "def test_large():\n"
+            "    value = large.pair()\n"
+            "    assert not isinstance(value, frozenset)\n"
+            "    assert len(value) == 2 and len(large.CALLS) == 1\n"
+            "    assert sorted(len(item) for item in value) == [600000] * 2\n"
+            "    assert large.small() == frozenset({'x', 'y'})\n"
+            "    assert isinstance(large.small(), frozenset)\n"
+            "    assert not isinstance(large.BIG, str)\n"
+            "    assert len(large.BIG) == 1100000\n"
+            "    with pytest.raises(ValueError):\n"
+            "        large.fail()\n"
+        )})
+        client = self.host_client()
+        self.assertIsInstance(client.call(["large", "pair"], (), {}),
+                              SplitRef)
+        self.assertEqual(client.call(["large", "small"], (), {}),
+                         frozenset({"x", "y"}))
+
     def test_host_client_decodes_sets_and_maps(self):
         self.write("data.py", (
             "S = {1, 2}\n"
