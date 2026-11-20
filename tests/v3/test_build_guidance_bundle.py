@@ -312,6 +312,79 @@ class GuidanceBundleBuildTests(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("operator key", stderr.getvalue())
 
+    def test_an_unknown_agent_user_is_refused(self):
+        with contextlib.redirect_stderr(io.StringIO()) as stderr, \
+                contextlib.redirect_stdout(io.StringIO()):
+            code = bundler.main([
+                "--learning-spec", str(self.spec_path),
+                "--trust-config", str(self.trust_path),
+                "--candidate-registry", str(self.root / "p.db"),
+                "--evaluator-key-dir", str(self.root / "keys" / "evaluator"),
+                "--operator-key-dir", str(self.root / "keys" / "operator"),
+                "--state-dir", str(self.root / "state-p"),
+                "--allow-local-executor", "--allow-shared-custody",
+                "--agent-user", "sis-no-such-user-x",
+                "-o", str(self.root / "p.json")],
+                agent_factory=scripted_factory(self.training_ids))
+        self.assertEqual(code, 1)
+        self.assertIn("does not exist", stderr.getvalue())
+
+    def test_an_agent_principal_is_checked_and_recorded(self):
+        class Principal:
+            user, uid = "sisagent", 4242
+
+            def __init__(self):
+                self.checked = []
+                self.checkouts = 0
+
+            def describe(self):
+                return {"separated": True, "user": self.user}
+
+            def credentials(self):
+                return {}
+
+            def preflight(self, paths, *, executables=()):
+                self.checked = [str(path) for path in paths]
+                return {"checked_paths": len(self.checked),
+                        "readable_paths": 0}
+
+            @contextlib.contextmanager
+            def checkout(self, workspace):
+                self.checkouts += 1
+                yield str(workspace)
+
+        principal = Principal()
+        inner = scripted_factory(self.training_ids)
+
+        def factory(prompts, budget, model, principal=None):
+            agent = inner(prompts, budget, model)
+
+            def run(ctx):
+                with principal.checkout(ctx.workspace):
+                    return agent(ctx)
+            return run
+
+        keys = bundler.signing_keys(self.root / "keys" / "evaluator",
+                                    self.root / "keys" / "operator")
+        keys["evaluator_key_dir"] = str(self.root / "keys" / "evaluator")
+        keys["operator_key_dir"] = str(self.root / "keys" / "operator")
+        result = bundler.build_bundle(
+            self.spec, trust=campaign.load_trust_config(self.trust_path),
+            keys=keys, registry_path=self.root / "pr.db",
+            state_dir=self.root / "state-pr", allow_shared_custody=True,
+            agent_factory=factory, agent_principal=principal,
+            private_paths=(self.trust_path,))
+        self.assertEqual(result["report"]["agent"]["principal"]["preflight"],
+                         {"checked_paths": len(principal.checked),
+                          "readable_paths": 0})
+        self.assertGreater(principal.checkouts, 0)
+        for expected in (self.trust_path, self.root / "keys" / "operator",
+                         self.root / "keys" / "evaluator",
+                         self.root / "state-pr", self.root / "pr.db"):
+            self.assertIn(str(expected), principal.checked)
+        self.assertTrue(any(str(self.root / "hidden") in path
+                            for path in principal.checked))
+
     def test_print_public_keys_emits_trust_entries(self):
         with contextlib.redirect_stdout(io.StringIO()) as out:
             code = bundler.main([

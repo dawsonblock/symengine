@@ -70,6 +70,14 @@ Usage:
 ``--state-dir`` keeps the evaluator keys, receipts, per-task trees and a
 ``(task, arm)`` journal; rerunning the same command after an interruption
 resumes from the journal (see docs/v3/PILOT_RUNBOOK.md).
+
+``--agent-user NAME`` runs the agent CLI as that separate OS user
+(:mod:`sis.v3.agent_principal`): it works in its own copy of each task
+workspace and cannot read the hidden tests, keys, registry, trust config
+or state directory. Before any agent turn the run checks, as that user,
+that a sample of those paths is unreadable, and stops with
+``BLOCKED_AGENT_PRINCIPAL`` if not. The principal is recorded in the
+report provenance and bound into the run journal identity.
 """
 from __future__ import annotations
 
@@ -90,6 +98,8 @@ from types import SimpleNamespace
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from sis.v3 import gitquery  # noqa: E402
+from sis.v3.agent_principal import (AgentPrincipal,  # noqa: E402
+                                    AgentPrincipalError)
 from sis.v3.benchmark import (  # noqa: E402
     BenchmarkError, BenchmarkHarness, BudgetCaps)
 from sis.v3.contracts import (  # noqa: E402
@@ -310,15 +320,64 @@ def _normalized_version(value) -> str | None:
     return match.group(0) if match else None
 
 
-def _agent_status(kind: str) -> dict:
+def _agent_status(kind: str, principal: AgentPrincipal | None = None) -> dict:
     """The availability gate of the manifest's pinned agent kind.
 
     Looked up through the module globals so tests can replace either
-    status function.
+    status function. Under an agent ``principal`` stored credentials are
+    looked up in that user's home.
     """
-    if kind == "claude-code":
-        return claude_code_agent_status()
-    return codex_agent_status()
+    status = (claude_code_agent_status if kind == "claude-code"
+              else codex_agent_status)
+    return status(principal) if principal is not None else status()
+
+
+def agent_private_paths(document: Mapping | None, *, roots=()) -> list[Path]:
+    """Evaluator material an agent principal must not be able to read.
+
+    ``roots`` are the run's own private paths (state directory, keys,
+    registry, journal, trust config, candidate registry); the manifest or
+    learning spec adds every hidden-test file and hidden-test directory.
+    """
+    paths: list[Path] = [Path(root) for root in roots if root is not None]
+    document = document if isinstance(document, Mapping) else {}
+    for repository in document.get("repositories") or ():
+        if not isinstance(repository, Mapping):
+            continue
+        hidden = repository.get("hidden_tests")
+        if isinstance(hidden, Mapping) and isinstance(hidden.get("path"),
+                                                      str):
+            paths.append(Path(hidden["path"]))
+    for task in document.get("tasks") or ():
+        acceptance = task.get("acceptance") if isinstance(task, Mapping) \
+            else None
+        if isinstance(acceptance, Mapping) and isinstance(
+                acceptance.get("hidden_tests_path"), str):
+            paths.append(Path(acceptance["hidden_tests_path"]))
+    unique: dict[str, Path] = {}
+    for path in paths:
+        unique.setdefault(str(path), path)
+    return list(unique.values())
+
+
+def check_agent_principal(principal: AgentPrincipal, private: list[Path],
+                          binary: str | None) -> dict:
+    """Fail closed before any agent turn; the record goes in provenance."""
+    executables = []
+    if isinstance(binary, str) and binary:
+        executables.append(str(Path(binary).resolve()))
+    record = principal.describe()
+    record["preflight"] = principal.preflight(private,
+                                              executables=executables)
+    return record
+
+
+def _resolve_agent_principal(agent_user, agent_principal):
+    if agent_principal is not None:
+        return agent_principal
+    if agent_user is None:
+        return None
+    return AgentPrincipal.resolve(agent_user)
 
 
 def _peek_agent_kind(manifest_path: Path | None) -> str:
@@ -999,15 +1058,26 @@ def _task_contexts(document: Mapping, tasks) -> dict[str, dict]:
 
 
 def _codex_agent(prompts: Mapping[str, str], budget: BudgetCaps,
-                 model: str | None):
+                 model: str | None, *, principal=None):
     return CodexCliAgent(wall_seconds=budget.wall_seconds, model=model,
-                         prompts=prompts)
+                         prompts=prompts, principal=principal)
 
 
 def _claude_code_agent(prompts: Mapping[str, str], budget: BudgetCaps,
-                       model: str | None):
+                       model: str | None, *, principal=None):
     return ClaudeCodeAgent(wall_seconds=budget.wall_seconds, model=model,
-                           prompts=prompts)
+                           prompts=prompts, principal=principal)
+
+
+def make_agent(factory: Callable, prompts, budget, model, principal):
+    """Call an agent factory; a principal is passed only when there is one.
+
+    Factories written before agent principals take three arguments; a
+    factory used with ``--agent-user`` must accept ``principal=``.
+    """
+    if principal is None:
+        return factory(prompts, budget, model)
+    return factory(prompts, budget, model, principal=principal)
 
 
 def _default_agent_factory(kind: str) -> Callable:
@@ -1271,7 +1341,10 @@ def run_real(output: Path, manifest_path: Path | None, *,
              require_image_digest: bool = True,
              executor_factory: Callable | None = None,
              state_dir: Path | None = None,
-             workers: int = 1) -> int:
+             workers: int = 1,
+             agent_user: str | None = None,
+             agent_principal: AgentPrincipal | None = None,
+             private_paths=()) -> int:
     """Execute a validated manifest with the real agent.
 
     ``registry_factory(path)`` opens the candidate registry with trusted
@@ -1297,17 +1370,21 @@ def run_real(output: Path, manifest_path: Path | None, *,
     started again with the same ``state_dir`` and manifest resumes from
     the journal instead of starting over. ``workers`` runs that many tasks
     concurrently with results identical to a serial run.
+
+    ``agent_user`` (or an ``agent_principal`` built by the caller) runs
+    the agent CLI as that separate OS user; ``private_paths`` adds paths
+    outside the state directory (the trust config) to the preflight that
+    the user cannot read them. An injected ``agent_factory`` then
+    receives ``principal=``. One principal serves one turn at a time, so
+    ``workers`` must be 1.
     """
     output = Path(output)
     manifest_path = Path(manifest_path) if manifest_path is not None else None
     state_dir = Path(state_dir) if state_dir is not None else None
     kind = _peek_agent_kind(manifest_path)
-    status = _agent_status(kind)
     report: dict = {
         "schema_version": 1,
         "kind": "five_arm_learning_qualification_real_run",
-        "codex_gate": status,
-        "agent_gate": status,
     }
 
     def blocked(gate: str, note: str) -> int:
@@ -1318,6 +1395,21 @@ def run_real(output: Path, manifest_path: Path | None, *,
         print(json.dumps(report, indent=2))
         return 2
 
+    try:
+        principal = _resolve_agent_principal(agent_user, agent_principal)
+    except AgentPrincipalError as exc:
+        return blocked("BLOCKED_AGENT_PRINCIPAL", str(exc))
+    if principal is not None and workers != 1:
+        return blocked(
+            "BLOCKED_AGENT_PRINCIPAL",
+            "an agent user runs one turn at a time (every process of that"
+            " user is killed after each turn); use --workers 1")
+    status = _agent_status(kind, principal)
+    report["codex_gate"] = status
+    report["agent_gate"] = status
+    if str(status.get("reason", "")).startswith(
+            "agent_principal_unavailable"):
+        return blocked("BLOCKED_AGENT_PRINCIPAL", status["reason"])
     if not status["available"] or not status["authenticated"]:
         label = "Claude Code" if kind == "claude-code" else "Codex CLI"
         return blocked(
@@ -1464,6 +1556,8 @@ def run_real(output: Path, manifest_path: Path | None, *,
         "holdout_repositories_used": validation.get(
             "holdout_repositories_used"),
         "manifest_digest": validation["manifest_digest"],
+        # Replaced by the checked principal record before any agent turn.
+        "agent_principal": {"separated": False},
     }
     try:
         run_root = _run_root(state_dir)
@@ -1535,6 +1629,11 @@ def run_real(output: Path, manifest_path: Path | None, *,
                 "guidance_source": guidance_source,
                 "evaluator_key_id": verifier.public_key_record()["key_id"],
             }
+            if principal is not None:
+                # Only when set, so journals from before agent principals
+                # still resume without one. A resume as another user (or
+                # without one) does not match and is refused.
+                identity["agent_principal"] = principal.identity()
             try:
                 journal = RunJournal(root / "journal.jsonl", identity)
                 _verify_journal_receipts(journal, verifier)
@@ -1617,9 +1716,22 @@ def run_real(output: Path, manifest_path: Path | None, *,
                         "decision": decision}
             journal.annotator = annotate
 
+        if principal is not None:
+            private = agent_private_paths(document, roots=(
+                root, root / "keys", root / "registry",
+                root / "journal.jsonl", candidate_registry,
+                *(private_paths or ())))
+            try:
+                principal_record = check_agent_principal(
+                    principal, private, status.get("binary"))
+            except AgentPrincipalError as exc:
+                close_serving()
+                return blocked("BLOCKED_AGENT_PRINCIPAL", str(exc))
+            provenance["agent_principal"] = principal_record
         factory = agent_factory or _default_agent_factory(kind)
         try:
-            agent = factory(prompts, budget, document["agent"]["model"])
+            agent = make_agent(factory, prompts, budget,
+                               document["agent"]["model"], principal)
         except RuntimeError as exc:
             close_serving()
             return blocked("BLOCKED_REAL_AGENT", str(exc))
@@ -1685,6 +1797,7 @@ def run_real(output: Path, manifest_path: Path | None, *,
         report["codex_gate"] = status
         report["agent_gate"] = status
         report["executor"] = executor_facts
+        report["agent_principal"] = provenance["agent_principal"]
         report["run"] = {
             "workers": workers,
             "state_dir": str(state_dir) if state_dir is not None else None,
@@ -1873,6 +1986,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--workers", type=int, default=1,
                         help="tasks run concurrently (arms of one task stay"
                              " sequential; results equal a serial run)")
+    parser.add_argument("--agent-user", default=None, metavar="NAME",
+                        help="run the agent CLI as this separate OS user"
+                             " (via sudo -n -u NAME); it gets its own copy"
+                             " of each workspace and must not be able to"
+                             " read the hidden tests, keys, registry,"
+                             " trust config or state directory (checked"
+                             " before any agent turn); needs --workers 1")
     args = parser.parse_args(argv)
     if args.executor == "local" and not args.allow_local_executor:
         parser.error("local executor requires --allow-local-executor")
@@ -1899,7 +2019,13 @@ def main(argv: list[str] | None = None) -> int:
                         docker_runtime=args.docker_runtime,
                         require_image_digest=not args.allow_unpinned_image,
                         state_dir=args.state_dir,
-                        workers=args.workers)
+                        workers=args.workers,
+                        agent_user=args.agent_user,
+                        private_paths=tuple(
+                            path for path in (args.trust_config,)
+                            if path is not None))
+    if args.agent_user is not None:
+        parser.error("--agent-user applies to --real-agent")
     if args.executor != "local" or args.state_dir is not None \
             or args.workers != 1:
         parser.error("--executor, --state-dir and --workers apply to"
