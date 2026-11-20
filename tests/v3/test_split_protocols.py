@@ -1023,6 +1023,43 @@ class SplitSourceLayoutTests(SplitHarness):
         })
         self.assertFalse(marker.exists())
 
+    def test_the_workspace_is_never_on_the_evaluator_import_path(self):
+        # Standard-library names the run has not imported yet when the
+        # test starts: a workspace copy on the evaluator's sys.path (as
+        # '', '.', the cwd or the workspace itself) would be executed by
+        # the import below, in the process that holds the tests.
+        marker = self.root / "WORKSPACE_STDLIB_RAN"
+        names = ("colorsys", "wave", "fractions", "graphlib")
+        for name in names:
+            for relative in (f"{name}.py", f"src/{name}.py"):
+                self.write(relative, (
+                    f"open({str(marker)!r}, 'a').write({relative!r})\n"
+                    "WHO = 'workspace'\n"))
+        self.write("pkg/__init__.py", "def f():\n    return 1\n")
+        self.assertPasses({"test_hidden.py": (
+            "import os\n"
+            "import sys\n"
+            f"WORKSPACE = os.path.realpath({str(self.workspace)!r})\n"
+            "def inside(entry):\n"
+            "    path = os.path.realpath(entry)\n"
+            "    return path == WORKSPACE or path.startswith("
+            "os.path.join(WORKSPACE, ''))\n"
+            "def test_stdlib_resolves_outside_the_workspace():\n"
+            "    assert '' not in sys.path\n"
+            "    assert [entry for entry in sys.path\n"
+            "            if isinstance(entry, str) and inside(entry)] == []\n"
+            + "".join(f"    import {name}\n" for name in names)
+            + "".join(
+                f"    assert not hasattr({name}, 'WHO')\n"
+                f"    assert not inside({name}.__file__)\n" for name in names)
+            + "    import pkg\n"
+            "    assert type(pkg).__name__ == 'ProxyModule'\n"
+            "    assert pkg.f() == 1\n"
+            "    assert [entry for entry in sys.path\n"
+            "            if isinstance(entry, str) and inside(entry)] == []\n"
+        )})
+        self.assertFalse(marker.exists())
+
 
 @unittest.skipUnless(os.name == "posix", "socketpair transport")
 class SplitSupportFileTests(SplitHarness):
