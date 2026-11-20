@@ -135,6 +135,63 @@ class ScreenTests(unittest.TestCase):
         self.assertIn("pkg.apply(double)", details)
         self.assertIn("key=Key()", details)
 
+    def test_values_the_split_codec_cannot_carry_are_found(self):
+        path = self.repo({
+            "pkg/__init__.py": """
+                class Exit(SystemExit):
+                    pass
+
+                class Usage(Exit):
+                    pass
+
+                def run(*args, **kwargs):
+                    return args
+                """,
+            "tests/test_values.py": """
+                import re
+                import sys
+                import pytest
+                import pkg
+
+                SENTINEL = object()
+
+                def test_values():
+                    pkg.run(range(3))
+                    pkg.run(pattern=re.compile("x"))
+                    pkg.run(key=str)
+                    pkg.run(SENTINEL)
+                    pkg.run(x for x in [1])
+                    pkg.run([1, "two", {"k": (3.0, None)}], b"x")
+
+                def test_exit():
+                    with pytest.raises(pkg.Usage):
+                        pkg.run()
+                    with pytest.raises(SystemExit):
+                        pkg.run()
+
+                def test_state(capsys, tmp_path, monkeypatch):
+                    sys.argv = ["prog"]
+                    monkeypatch.setenv("HOME", "/x")
+                    pkg.run()
+                """})
+        report = screen.screen_repository(path)
+        details = report["examples"]
+        self.assertEqual(report["signal_counts"]["non_data_argument"], 5)
+        self.assertEqual(
+            [item.split(" ", 1)[1] for item in details["non_data_argument"]],
+            ["pkg.run(range(...))", "pkg.run(pattern=re.compile(...))",
+             "pkg.run(key=str)"])
+        self.assertEqual(report["signal_counts"]["base_exception_expected"],
+                         2)
+        self.assertIn("pytest.raises(pkg.Usage)",
+                      " ".join(details["base_exception_expected"]))
+        self.assertEqual(report["signal_counts"]["captures_package_output"],
+                         1)
+        self.assertEqual(report["signal_counts"]["evaluator_temp_files"], 1)
+        self.assertEqual(report["signal_counts"]["evaluator_process_state"],
+                         2)
+        self.assertEqual(report["verdict"], "unlikely")
+
     def test_plain_data_and_stdlib_callbacks_are_not_flagged(self):
         path = self.repo({**PACKAGE, "tests/test_ok.py": """
             import copy

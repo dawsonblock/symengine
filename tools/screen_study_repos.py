@@ -22,6 +22,17 @@ repository is imported or executed) and reports, per repository:
   (``@pkg.cached(...)``), a test class subclassing a package class,
   ``pickle``/``copy`` of a package object, and ``monkeypatch.setattr`` or
   ``mock.patch`` on the package;
+- values the split codec cannot carry into the package (it carries
+  ``None``, numbers, text, bytes, slices and containers of those): a
+  ``range``, generator, iterator, compiled pattern, ``datetime``, path,
+  ``StringIO``, ``functools.partial``, ``object()`` sentinel or builtin
+  callable (``key=str``);
+- what stays in the evaluator process: an expected ``SystemExit``,
+  ``KeyboardInterrupt`` or package exception derived from them (they cross
+  as ordinary errors), captured output (``capsys``, ``caplog``,
+  ``redirect_stdout``), changed ``sys.argv``/``os.environ``/working
+  directory, and temporary files (``tmp_path``, ``tempfile``) the worker
+  UID cannot read;
 - reads of data files beside the tests (the importer ships a hidden test
   with its Python support files only);
 - Python 2-era and nose-era APIs that Python 3.12 or pytest 8 removed
@@ -54,6 +65,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import builtins
 import importlib.util
 import json
 import re
@@ -113,10 +125,46 @@ CONFIG_NAMES = frozenset({".coveragerc", ".gitignore", "requirements.txt",
                           "README", "README.md", "README.rst", ".flake8",
                           "__pycache__", "py.typed"})
 BLOCKING = ("missing_test_dependency", "callable_into_package",
-            "package_decorator_on_test_function",
+            "non_data_argument", "package_decorator_on_test_function",
             "subclass_of_package_class", "pickle_or_copy_of_package_object",
-            "patches_package", "reads_data_files", "removed_python_api",
-            "nose_style_test", "unparseable")
+            "patches_package", "base_exception_expected",
+            "captures_package_output", "evaluator_process_state",
+            "evaluator_temp_files", "reads_data_files",
+            "removed_python_api", "nose_style_test", "unparseable")
+#: Call results that the split codec cannot carry into the worker (it
+#: carries None, bool, int, float, str, bytes, slices, and lists, tuples,
+#: sets and mappings of those; anything else needs a callback).
+NON_DATA_CALLS = frozenset({
+    "iter", "range", "map", "filter", "zip", "reversed", "enumerate",
+    "object", "complex", "memoryview", "open", "re.compile",
+    "functools.partial", "collections.deque", "operator.itemgetter",
+    "operator.attrgetter", "operator.methodcaller"})
+NON_DATA_PREFIXES = ("datetime.", "decimal.", "fractions.", "pathlib.",
+                     "uuid.", "ipaddress.", "io.", "itertools.", "array.",
+                     "threading.", "weakref.")
+#: Builtin classes and functions passed as values (``key=str``).
+BUILTIN_CALLABLES = frozenset(
+    name for name, value in vars(builtins).items()
+    if callable(value) and not name.startswith("_"))
+#: Exceptions the split bootstrap never raises in the evaluator: a worker
+#: SystemExit or KeyboardInterrupt crosses as an ordinary error.
+BASE_EXCEPTIONS = frozenset({"SystemExit", "KeyboardInterrupt",
+                             "GeneratorExit", "BaseException"})
+#: Fixtures that capture this process's output; the package writes in the
+#: worker process.
+CAPTURE_FIXTURES = frozenset({"capsys", "capfd", "capsysbinary",
+                              "capfdbinary", "caplog"})
+#: Fixtures and calls that create files only the evaluator UID can read
+#: (pytest's base temp directory and ``tempfile`` results are private).
+TEMP_FIXTURES = frozenset({"tmp_path", "tmpdir", "tmp_path_factory",
+                           "tmpdir_factory"})
+#: Changes to process state that stay in the evaluator process.
+PROCESS_STATE_CALLS = frozenset({
+    "monkeypatch.setenv", "monkeypatch.delenv", "monkeypatch.chdir",
+    "monkeypatch.syspath_prepend", "os.chdir", "os.putenv", "os.unsetenv",
+    "time.tzset", "locale.setlocale", "os.environ.update",
+    "os.environ.pop", "os.environ.setdefault", "os.environ.clear",
+    "os.umask"})
 _IDENTIFIER = re.compile(r"[^A-Za-z0-9_.:@-]+")
 
 
@@ -307,8 +355,10 @@ class ModuleScan:
 
     def __init__(self, path: str, source: bytes, *, packages: set[str],
                  local_modules: set[str], package_attrs: set[str],
-                 data_names: set[str]) -> None:
+                 data_names: set[str],
+                 base_exceptions: frozenset = frozenset()) -> None:
         self.path = path
+        self.base_exceptions = BASE_EXCEPTIONS | base_exceptions
         self.signals: list[dict] = []
         self.imports: dict[str, bool] = {}
         self.import_lines: list[tuple[str, bool, int]] = []
@@ -374,6 +424,23 @@ class ModuleScan:
                         self.test_defined.add(target.id)
         self.test_defined -= set(self.aliases)
         self.test_classes -= set(self.aliases)
+        self.assigned: set[str] = set()
+        self.non_data_names: set[str] = set()
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.Assign, ast.AnnAssign)):
+                targets = (node.targets if isinstance(node, ast.Assign)
+                           else [node.target])
+                names = [target.id for target in targets
+                         if isinstance(target, ast.Name)]
+                self.assigned.update(names)
+                if node.value is not None and self._non_data_value(
+                        node.value):
+                    self.non_data_names.update(names)
+            elif isinstance(node, (ast.For, ast.comprehension)) and \
+                    isinstance(node.target, ast.Name):
+                self.assigned.add(node.target.id)
+            elif isinstance(node, ast.arg):
+                self.assigned.add(node.arg)
         # Names bound to package objects: flow-insensitive, to a fixpoint.
         for _ in range(4):
             before = len(self.pkg_names)
@@ -430,6 +497,55 @@ class ModuleScan:
                     names.update(target.id for target in item.targets
                                  if isinstance(target, ast.Name))
         return names
+
+    def _resolve(self, node: ast.AST) -> str:
+        """The dotted name a callee or value spells, through import aliases."""
+        dotted = _dotted(node) or ""
+        if not dotted:
+            return ""
+        first, _, rest = dotted.partition(".")
+        base = self.aliases.get(first, first)
+        return base + ("." + rest if rest else "")
+
+    def _non_data_value(self, node: ast.AST) -> str | None:
+        """Describe ``node`` if the split codec cannot carry its value."""
+        if isinstance(node, ast.GeneratorExp):
+            return "generator"
+        if isinstance(node, ast.Constant):
+            return ("complex" if isinstance(node.value, complex) else
+                    "Ellipsis" if node.value is Ellipsis else None)
+        if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
+            for item in node.elts:
+                found = self._non_data_value(item)
+                if found:
+                    return found
+            return None
+        if isinstance(node, ast.Dict):
+            for item in [*node.keys, *node.values]:
+                found = item is not None and self._non_data_value(item)
+                if found:
+                    return found
+            return None
+        if self.rooted(node):
+            return None
+        if isinstance(node, ast.Call):
+            name = self._resolve(node.func)
+            if name in NON_DATA_CALLS or name.startswith(NON_DATA_PREFIXES):
+                return f"{name}(...)"
+            return None
+        if isinstance(node, ast.Name):
+            if node.id in self.non_data_names:
+                return node.id
+            if (node.id in BUILTIN_CALLABLES and node.id not in self.assigned
+                    and node.id not in self.aliases
+                    and node.id not in self.test_defined):
+                return node.id
+            return None
+        if isinstance(node, ast.Attribute):
+            name = self._resolve(node)
+            if name.startswith(NON_DATA_PREFIXES):
+                return name
+        return None
 
     def _test_object(self, node: ast.AST) -> str | None:
         """Describe ``node`` if it is a test-defined callable or object."""
@@ -499,6 +615,26 @@ class ModuleScan:
                   and node.value.id in ("self", "cls", "unittest")):
                 self._hit("removed_python_api", node.lineno,
                           f"{node.value.id}.{node.attr}")
+            elif (isinstance(node, (ast.Assign, ast.AugAssign))
+                  and self.pkg_names):
+                targets = (node.targets if isinstance(node, ast.Assign)
+                           else [node.target])
+                for target in targets:
+                    text = ast.unparse(target)
+                    if re.match(r"(sys\.(argv|path|stdin|stdout|stderr)|"
+                                r"os\.environ\[)", text):
+                        self._hit("evaluator_process_state", node.lineno,
+                                  f"{text} = ...")
+            elif isinstance(node, ast.ExceptHandler) and node.type:
+                names = [_dotted(item) or "" for item in (
+                    node.type.elts if isinstance(node.type, ast.Tuple)
+                    else [node.type])]
+                hit = [name for name in names
+                       if name.rsplit(".", 1)[-1] in self.base_exceptions
+                       and name.rsplit(".", 1)[-1] != "BaseException"]
+                if hit and self.pkg_names:
+                    self._hit("base_exception_expected", node.lineno,
+                              f"except {', '.join(hit)}")
             elif isinstance(node, ast.Name) and node.id == "__file__":
                 self._file_relative = min(
                     node.lineno, getattr(self, "_file_relative", None)
@@ -534,6 +670,12 @@ class ModuleScan:
             module = PLUGIN_FIXTURES.get(arg.arg)
             if module:
                 self._import(module, False, node.lineno)
+            if arg.arg in CAPTURE_FIXTURES and self.pkg_names:
+                self._hit("captures_package_output", node.lineno,
+                          f"{node.name}({arg.arg})")
+            if arg.arg in TEMP_FIXTURES and self.pkg_names:
+                self._hit("evaluator_temp_files", node.lineno,
+                          f"{node.name}({arg.arg})")
         if test_module and node.name.startswith("test") \
                 and _yields(node):
             self._hit("nose_style_test", node.lineno,
@@ -564,8 +706,19 @@ class ModuleScan:
 
     def _call(self, node: ast.Call) -> None:
         dotted = _dotted(node.func) or ""
-        resolved = self.aliases.get(dotted.split(".")[0], dotted.split(".")[0])
-        full = ".".join([resolved, *dotted.split(".")[1:]]) if dotted else ""
+        full = self._resolve(node.func)
+        if self.pkg_names:
+            self._state_call(node, dotted, full)
+        if (dotted.endswith(("raises", "assertRaises", "assertRaisesRegex",
+                             "assertRaisesRegexp")) and node.args):
+            names = [_dotted(item) or "" for item in (
+                node.args[0].elts if isinstance(node.args[0], ast.Tuple)
+                else [node.args[0]])]
+            hit = [name for name in names
+                   if name.rsplit(".", 1)[-1] in self.base_exceptions]
+            if hit:
+                self._hit("base_exception_expected", node.lineno,
+                          f"{dotted}({', '.join(hit)})")
         if full in ("pickle.dumps", "pickle.dump", "pickle.loads",
                     "copy.copy", "copy.deepcopy", "copy.replace"):
             if any(self.rooted(arg) for arg in node.args):
@@ -591,14 +744,45 @@ class ModuleScan:
         if not self.rooted(node.func):
             return
         for value in [*node.args, *(item.value for item in node.keywords)]:
+            keyword = next((item.arg for item in node.keywords
+                            if item.value is value), None)
             what = self._test_object(value)
             if what is not None:
-                keyword = next((item.arg for item in node.keywords
-                                if item.value is value), None)
                 label = f"{keyword}={what}" if keyword else what
                 self._hit("callable_into_package", node.lineno,
                           f"{ast.unparse(node.func)[:50]}({label})")
                 break
+            what = self._non_data_value(value)
+            if what is not None:
+                label = f"{keyword}={what}" if keyword else what
+                self._hit("non_data_argument", node.lineno,
+                          f"{ast.unparse(node.func)[:50]}({label})")
+                break
+
+    def _state_call(self, node: ast.Call, dotted: str, full: str) -> None:
+        """Output capture, process state and private temporary files."""
+        if full in ("contextlib.redirect_stdout",
+                    "contextlib.redirect_stderr"):
+            self._hit("captures_package_output", node.lineno, full)
+        elif full in PROCESS_STATE_CALLS or dotted in PROCESS_STATE_CALLS:
+            self._hit("evaluator_process_state", node.lineno, dotted)
+        elif dotted.endswith("setattr") and len(node.args) >= 2:
+            target = " ".join(ast.unparse(item) for item in node.args[:2])
+            if re.search(r"\bsys\b.*argv|sys\.argv|\bsys\b.*stdin", target):
+                self._hit("evaluator_process_state", node.lineno,
+                          f"{dotted}({target[:50]})")
+        elif (full.startswith(("unittest.mock.patch", "mock.patch"))
+              or dotted.startswith("patch")) and node.args:
+            target = ast.unparse(node.args[0])
+            if re.search(r"sys\.(argv|stdout|stderr|stdin)|os\.environ|"
+                         r"^sys$", target.strip("'\"")):
+                self._hit("evaluator_process_state", node.lineno,
+                          f"{dotted}({target[:50]})")
+        elif full.startswith("tempfile.") and full.rsplit(".", 1)[-1] in (
+                "mkdtemp", "mkstemp", "NamedTemporaryFile",
+                "TemporaryDirectory", "TemporaryFile",
+                "SpooledTemporaryFile"):
+            self._hit("evaluator_temp_files", node.lineno, full)
 
     def _names_package(self, node: ast.AST) -> bool:
         return (isinstance(node, ast.Constant) and isinstance(node.value, str)
@@ -691,10 +875,14 @@ class TreeAnalysis:
                   if "/" not in path and path.endswith(".py")}
         self.data_names = _data_names(paths)
 
+        self.runtime, base_exceptions = self._package_facts(
+            root, rev, paths, package_set, local)
+
         def scanner(path, attrs):
             return ModuleScan(path, sources[path], packages=package_set,
                               local_modules=local, package_attrs=attrs,
-                              data_names=self.data_names)
+                              data_names=self.data_names,
+                              base_exceptions=base_exceptions)
 
         # Class attributes bound to package classes anywhere in the tests
         # (``Cache = cachetools.LRUCache``) make ``self.Cache``
@@ -704,12 +892,13 @@ class TreeAnalysis:
             attrs |= scanner(path, set()).class_attrs()
         self.scans = {path: scanner(path, attrs).scan(
             test_module=path in self.modules) for path in self.python_tests}
-        self.runtime = self._runtime_imports(
-            root, rev, paths, package_set, local)
 
-    def _runtime_imports(self, root, rev, paths, package_set, local):
-        """Module-level third-party imports of the package under test."""
+    def _package_facts(self, root, rev, paths, package_set, local):
+        """The package's module-level third-party imports, and its classes
+        that derive from ``SystemExit``/``KeyboardInterrupt``/``BaseException``
+        rather than ``Exception``."""
         runtime: Counter = Counter()
+        bases: dict[str, set[str]] = {}
         for path in paths:
             pure = PurePosixPath(path)
             if pure.suffix != ".py" or is_test_path(path):
@@ -726,7 +915,18 @@ class TreeAnalysis:
                         and name not in local and not _is_stdlib(name)
                         and name not in STDLIB_REMOVED):
                     runtime[name] += 1
-        return runtime
+            for node in ast.walk(tree):
+                if isinstance(node, ast.ClassDef):
+                    bases.setdefault(node.name, set()).update(
+                        (_dotted(base) or "").rsplit(".", 1)[-1]
+                        for base in node.bases)
+        derived = set()
+        while True:
+            grown = {name for name, parents in bases.items()
+                     if parents & (BASE_EXCEPTIONS | derived)} - derived
+            if not grown:
+                return runtime, frozenset(derived)
+            derived |= grown
 
     def evidence(self, path: str) -> tuple[list[dict], dict[str, bool]]:
         """Signals and imports that decide whether ``path`` can be graded.

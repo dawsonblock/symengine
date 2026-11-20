@@ -41,14 +41,18 @@
   test-defined callables, classes or instances passed into the package,
   package decorators on test functions, subclasses of package classes,
   `pickle`/`copy` of package objects, `monkeypatch`/`mock.patch` on the
-  package, data files read beside tests, and Python 3.12/pytest 8
-  removals. Support modules count for the test modules that import them,
+  package, values the split codec cannot carry (`range`, generators,
+  compiled patterns, `datetime`, `partial`, sentinels, builtin
+  callables), expected `SystemExit`-type exceptions, captured output,
+  changed `sys.argv`/environment, evaluator-private temporary files,
+  data files read beside tests, and Python 3.12/pytest 8 removals. Support modules count for the test modules that import them,
   conftest fixtures for the modules that request them. The coarse
   verdict rests on the first fix candidates at their fix commits (the
   importer's own candidate selection), and `--sample N` adds the
   importer's Docker acceptance rate. On the pilot clones it agrees with
   the known results: inflection `likely` (Docker 4/6), cachetools and
-  jmespath `unlikely` (Docker 0/8 each). The output says it is a
+  jmespath `unlikely` (Docker 0/8 each); docopt and boltons `unlikely`
+  (Docker 0/6 each), pathspec `likely` (Docker 3/6). The output says it is a
   heuristic, not a verdict on any task.
 
 ## 2026-11-20 — Split custody releases handles and stages test data (SIS-FIX-20)

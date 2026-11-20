@@ -115,9 +115,13 @@ names, the third-party test imports that the base image and the
 test-defined function, lambda, class or instance passed into the
 package (`key=`, callbacks), a package decorator on a test function, a
 test class subclassing a package class, `pickle`/`copy` of a package
-object, `monkeypatch.setattr`/`mock.patch` on the package, data files
-read beside the tests, and APIs Python 3.12 or pytest 8 removed
-(`assertEquals`, `assertRaisesRegexp`, nose `setup`, `yield` tests).
+object, `monkeypatch.setattr`/`mock.patch` on the package, values the
+split codec cannot carry (`range`, generators, compiled patterns,
+`datetime`, `partial`, `object()` sentinels, `key=str`), expected
+`SystemExit`-type exceptions, captured output, changed `sys.argv` or
+environment, evaluator-private temporary files, data files read beside
+the tests, and APIs Python 3.12 or pytest 8 removed (`assertEquals`,
+`assertRaisesRegexp`, nose `setup`, `yield` tests).
 The verdict (`likely`, `partial`, `unlikely`, for each image) rests on
 the share of the first ten fix candidates (`--candidates`) whose test
 file, at its fix commit, shows none of these, or on the test modules at
@@ -129,8 +133,11 @@ decides. Prefer `likely` repositories, check `partial` ones with
 On the pilot clones (2026-11-20) the screen gave inflection `likely`
 (6/6 candidates clean; Docker accepted 4/6), cachetools `unlikely` (0/10
 clean: package decorators on test functions, subclassing, callbacks;
-Docker 0/8) and jmespath `unlikely` (1/10 clean: hypothesis, nose-era
-APIs, subclassing, data files; Docker 0/8).
+Docker 0/8) and jmespath `unlikely` (0/10 clean: hypothesis, nose-era
+APIs, subclassing, data files; Docker 0/8). Of the other clones, docopt
+(`SystemExit`-derived errors, `sys.argv`) and boltons (sentinels,
+`range`, data files) are `unlikely` (Docker 0/6 each) and pathspec
+`likely` (Docker 3/6).
 
 ## 2. Tasks
 
