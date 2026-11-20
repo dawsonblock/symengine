@@ -168,16 +168,29 @@ class SplitCodecTests(SplitHarness):
     def test_unhashable_or_unbounded_sets_stay_in_the_worker(self):
         # A set whose element does not decode to something hashable (an
         # object, which would come back as a handle) is not data.
+        # Call results, so the encoder decides (a module-level set is
+        # state and a handle whatever its contents).
         self.write("bags.py", (
             "class Thing:\n"
             "    pass\n"
-            f"BIG = set(range({MAX_ITEMS + 1}))\n"
-            "MIXED = {1, Thing()}\n"))
+            "def big():\n"
+            f"    return set(range({MAX_ITEMS + 1}))\n"
+            "def mixed():\n"
+            "    return {1, Thing()}\n"
+            "def nested():\n"
+            "    return frozenset({(1, Thing())})\n"
+            "def small():\n"
+            "    return {1, (2, 'a')}\n"))
         self.assertPasses({"test_hidden.py": (
             "import bags\n"
             "def test_refs():\n"
-            "    assert not isinstance(bags.BIG, set)\n"
-            "    assert not isinstance(bags.MIXED, set)\n"
+            "    assert not isinstance(bags.big(), set)\n"
+            f"    assert len(bags.big()) == {MAX_ITEMS + 1}\n"
+            "    assert not isinstance(bags.mixed(), set)\n"
+            "    assert len(bags.mixed()) == 2\n"
+            "    assert not isinstance(bags.nested(), frozenset)\n"
+            "    assert type(bags.small()) is set\n"
+            "    assert bags.small() == {1, (2, 'a')}\n"
         )})
 
     def test_results_too_large_for_a_frame_stay_in_the_worker(self):
