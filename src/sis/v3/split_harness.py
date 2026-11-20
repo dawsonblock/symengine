@@ -83,14 +83,19 @@ handle.
   ending in ``StopIteration``. Operators answer ``NotImplemented`` for a
   local operand with no wire form, so comparisons with plain data work
   in both directions.
-* Exceptions cross as names only. The worker reports the class chain
-  (module and qualified name of each MRO entry, with base indices); the
-  bootstrap maps each entry to the builtin, to a class of a
-  standard-library module the evaluator itself already imported (static
-  lookup, nothing imported), or to a local stand-in class cached by
-  (module, qualname). Classes of installed packages and of the tests'
-  own helpers always get a stand-in: the worker chooses the name and
-  the arguments, so no hook of theirs runs for it. A worker
+* Exceptions cross as data, never as classes. The worker reports the
+  class chain (module and qualified name of each MRO entry, with base
+  indices), a bounded message and, when they encode, the exception's
+  args, which the evaluator uses to build the local exception. Each
+  chain entry maps to a builtin exception, to one of a fixed set of
+  reviewed standard-library exceptions (``REVIEWED_STDLIB_EXCEPTIONS``,
+  recorded by identity when the bootstrap starts, before any test code
+  runs, and looked up by the reported name without walking anything),
+  or to a local stand-in class cached by (module, qualname). Every other
+  class, including those of installed packages, of the tests' own
+  helpers, and aliases or spoofs of standard-library names, gets a
+  stand-in: the worker chooses the name and the arguments, so no hook of
+  theirs runs for it. A worker
   exception class read through the proxy is that same stand-in, so
   ``pytest.raises(pkg.Error)`` and ``except pkg.Base`` match what the
   worker raises. Every stand-in derives from ``Exception``: the
@@ -1392,169 +1397,107 @@ def class_entries(classes):
     return entries
 
 
+#: Reviewed standard-library exception classes a worker may name. Each is
+#: imported and recorded by identity when the bootstrap starts, before any
+#: test, conftest or helper code runs, so later changes to these modules
+#: (``json.Hooked = Helper``, a replaced attribute) cannot add to the table.
+REVIEWED_STDLIB_EXCEPTIONS = (
+    ("argparse", ("ArgumentError", "ArgumentTypeError")),
+    ("binascii", ("Error", "Incomplete")),
+    ("configparser", ("Error", "NoSectionError", "DuplicateSectionError",
+                      "DuplicateOptionError", "NoOptionError",
+                      "InterpolationError", "InterpolationMissingOptionError",
+                      "InterpolationSyntaxError", "InterpolationDepthError",
+                      "ParsingError", "MissingSectionHeaderError")),
+    ("copy", ("Error",)),
+    ("csv", ("Error",)),
+    ("decimal", ("DecimalException", "InvalidOperation", "DivisionByZero",
+                 "Inexact", "Rounded", "Subnormal", "Overflow", "Underflow",
+                 "Clamped", "FloatOperation", "ConversionSyntax",
+                 "DivisionImpossible", "DivisionUndefined",
+                 "InvalidContext")),
+    ("email.errors", ("MessageError", "MessageParseError", "HeaderParseError",
+                      "BoundaryError", "MultipartConversionError")),
+    ("getopt", ("GetoptError",)),
+    ("gzip", ("BadGzipFile",)),
+    ("http.client", ("HTTPException", "IncompleteRead", "InvalidURL",
+                     "RemoteDisconnected", "BadStatusLine")),
+    ("ipaddress", ("AddressValueError", "NetmaskValueError")),
+    ("json", ("JSONDecodeError",)),
+    ("locale", ("Error",)),
+    ("lzma", ("LZMAError",)),
+    ("pickle", ("PickleError", "PicklingError", "UnpicklingError")),
+    ("queue", ("Empty", "Full")),
+    ("re", ("error", "PatternError")),
+    ("shutil", ("Error", "SameFileError")),
+    ("socket", ("herror", "gaierror")),
+    ("sqlite3", ("Error", "Warning", "DatabaseError", "IntegrityError",
+                 "OperationalError", "ProgrammingError", "InterfaceError",
+                 "DataError", "NotSupportedError", "InternalError")),
+    ("statistics", ("StatisticsError",)),
+    ("struct", ("error",)),
+    ("subprocess", ("SubprocessError", "CalledProcessError",
+                    "TimeoutExpired")),
+    ("tarfile", ("TarError", "ReadError", "CompressionError",
+                 "StreamError", "ExtractError", "HeaderError")),
+    ("tomllib", ("TOMLDecodeError",)),
+    ("urllib.error", ("URLError", "HTTPError", "ContentTooShortError")),
+    ("xml.etree.ElementTree", ("ParseError",)),
+    ("zipfile", ("BadZipFile", "LargeZipFile")),
+    ("zlib", ("error",)),
+)
+
 TYPE_MODULE = type.__dict__["__module__"]
 TYPE_QUALNAME = type.__dict__["__qualname__"]
-TYPE_DICT = type.__dict__["__dict__"]
-TYPE_MRO = type.__dict__["__mro__"]
-MODULE_DICT = types.ModuleType.__dict__["__dict__"]
-BUILTIN_CLASSES = frozenset(
-    id(value) for value in vars(builtins).values() if isinstance(value, type))
 
 
-def _stdlib_roots():
-    import sysconfig
-    paths = sysconfig.get_paths()
-    std = {os.path.realpath(paths[key]) for key in ("stdlib", "platstdlib")
-           if paths.get(key)}
-    site = {os.path.realpath(paths[key]) for key in ("purelib", "platlib")
-            if paths.get(key)}
-    return (tuple(os.path.join(entry, "") for entry in std),
-            tuple(os.path.join(entry, "") for entry in site))
+def _reviewed_classes():
+    """(module, qualname) -> class for the builtin and reviewed exceptions.
 
-
-STDLIB_DIRS, SITE_DIRS = _stdlib_roots()
-
-
-def is_class(value):
-    """True for a class, decided from its real type: no __class__ hook."""
-    return issubclass(type(value), type)
-
-
-def static_namespace(value):
-    """The namespace of a plain module or class, read without any hook."""
-    if type(value) is types.ModuleType:
-        return MODULE_DICT.__get__(value)
-    if is_class(value):
-        return TYPE_DICT.__get__(value, type)
-    return None
-
-
-def static_lookup(root, dotted):
-    """Walk a dotted name through namespaces only; no attribute hook runs."""
-    candidate = root
-    for part in dotted.split("."):
-        namespace = static_namespace(candidate)
-        if namespace is None:
-            return None
-        candidate = namespace.get(part)
-    return candidate
-
-
-def stdlib_code(function):
-    try:
-        filename = os.path.realpath(function.__code__.co_filename)
-    except Exception:
-        return False
-    if any(filename.startswith(entry) for entry in SITE_DIRS):
-        return False
-    return any(filename.startswith(entry) for entry in STDLIB_DIRS)
-
-
-SAFE_DESCRIPTORS = frozenset((
-    types.BuiltinFunctionType, types.WrapperDescriptorType,
-    types.MethodDescriptorType, types.GetSetDescriptorType,
-    types.MemberDescriptorType, types.ClassMethodDescriptorType,
-    types.MethodWrapperType))
-# Exact types only: a subclass of str (or of any of these) can define
-# __get__ and run when the attribute is read.
-INERT_DATA = frozenset((str, bytes, int, float, bool, tuple, frozenset,
-                        dict, type(None)))
-
-
-def runs_only_stdlib_code(cls):
-    """True when building ``cls``, or deriving from it, runs no other code.
-
-    Every class of its MRO must use the plain ``type`` metaclass, and
-    every callable it defines must be builtin or standard-library Python
-    (site-packages excluded). A class defined in a test helper fails
-    even if it claims a standard-library ``__module__``; one that
-    defines nothing at all runs only builtin code and passes.
+    Keyed by the class's own defining module and qualified name (what the
+    worker reports for the same class), recorded by identity at startup.
     """
-    try:
-        mro = TYPE_MRO.__get__(cls, type)
-    except Exception:
-        return False
-    for klass in mro:
-        if id(klass) in BUILTIN_CLASSES:
+    table = {}
+
+    def record(cls):
+        if not (issubclass(type(cls), type) and issubclass(cls, Exception)):
+            return
+        key = (TYPE_MODULE.__get__(cls, type), TYPE_QUALNAME.__get__(cls, type))
+        if key[0].split(".")[0] in RUNNER_MODULES:
+            return
+        table.setdefault(key, cls)
+
+    for value in list(vars(builtins).values()):
+        record(value)
+    for module_name, names in REVIEWED_STDLIB_EXCEPTIONS:
+        try:
+            module = importlib.import_module(module_name)
+        except Exception:
             continue
-        if type(klass) is not type:
-            return False
-        for value in TYPE_DICT.__get__(klass, type).values():
-            kind = type(value)
-            if kind is staticmethod or kind is classmethod:
-                value = value.__func__
-                kind = type(value)
-            if kind is property:
-                parts = [value.fget, value.fset, value.fdel]
-            else:
-                parts = [value]
-            for part in parts:
-                kind = type(part)
-                if kind in SAFE_DESCRIPTORS or kind in INERT_DATA:
-                    continue
-                if kind is types.FunctionType:
-                    if not stdlib_code(part):
-                        return False
-                    continue
-                if kind is type:
-                    # A nested plain class: reading it runs no hook.
-                    continue
-                # Any other object could be a descriptor or callable
-                # defined elsewhere.
-                return False
-    return True
+        namespace = vars(module)
+        for name in names:
+            value = namespace.get(name)
+            if value is not None:
+                record(value)
+    return table
+
+
+REVIEWED_CLASSES = _reviewed_classes()
 
 
 def trusted_class(module, qualname):
-    """An Exception class the evaluator already has under this name.
+    """The evaluator's own class for a worker-reported name, or None.
 
-    Builtins, and classes of standard-library modules the evaluator
-    itself imported (never a proxied workspace module). The worker picks
-    the name and the arguments the class is built with, so nothing else
-    qualifies: a class of an installed package or of the tests' own
-    helpers would run its ``__init__``, metaclass or ``__init_subclass__``
-    (as a stand-in base) on the worker's behalf; it gets an inert
-    stand-in instead. Every lookup is static (namespaces read through
-    the type and module slot descriptors), the class must be defined
-    where its own name says, and it must run only builtin or
-    standard-library code: an alias such as ``json.Hooked = Helper`` or a
-    helper claiming ``__module__ = 'json'`` does not qualify.
+    Only builtin exceptions and the reviewed standard-library exceptions
+    qualify, looked up by the reported (module, qualname) in a table of
+    identities recorded at startup. Nothing is walked, nothing is imported
+    and no attribute or class hook runs. Every other name, including a
+    class of an installed package, a test helper, or an alias or spoof of
+    a standard-library name, gets an inert stand-in.
     """
-    root_name = module.split(".")[0]
-    if root_name in RUNNER_MODULES or root_name not in STDLIB:
+    if not (isinstance(module, str) and isinstance(qualname, str)):
         return None
-    if module == "builtins":
-        candidate = vars(builtins).get(qualname)
-    else:
-        loaded = sys.modules.get(module)
-        if type(loaded) is not types.ModuleType:
-            return None
-        candidate = static_lookup(loaded, qualname)
-    if not (is_class(candidate) and issubclass(candidate, Exception)):
-        return None
-    # The name must be where the class is defined, not an alias.
-    try:
-        home = TYPE_MODULE.__get__(candidate, type)
-        own_name = TYPE_QUALNAME.__get__(candidate, type)
-    except Exception:
-        return None
-    if not isinstance(home, str) or not isinstance(own_name, str):
-        return None
-    home_root = home.split(".")[0]
-    if home_root in RUNNER_MODULES or home_root not in STDLIB:
-        return None
-    if home == "builtins":
-        defined = vars(builtins).get(own_name)
-    else:
-        home_module = sys.modules.get(home)
-        if type(home_module) is not types.ModuleType:
-            return None
-        defined = static_lookup(home_module, own_name)
-    if defined is not candidate:
-        return None
-    if not runs_only_stdlib_code(candidate):
-        return None
-    return candidate
+    return REVIEWED_CLASSES.get((module, qualname))
 
 
 def stand_in(module, qualname, bases, path, lease=None):

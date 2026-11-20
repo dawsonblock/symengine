@@ -300,15 +300,20 @@
   `isinstance`) go through one worker op restricted to a fixed table of
   dunder names; `__getattribute__`, `__reduce__`, `__class__`,
   `__dict__` and the like are refused. A data result too large for one
-  frame comes back as a handle to the value already computed. Worker
-  exceptions cross as class names only and are raised as local stand-in
-  classes that always derive from `Exception`, so
-  `pytest.raises(pkg.Error)` matches without a worker ever raising
-  `BaseException`, `SystemExit` or `KeyboardInterrupt` in the evaluator.
-  A worker-reported name resolves to an evaluator class only for
-  builtins and standard-library modules (never the runner's own):
-  a class of an installed package or a test helper gets an inert
-  stand-in, so no hook of it runs with worker-chosen arguments. Handles
+  frame comes back as a handle to the value already computed. A worker
+  exception crosses as data: its class chain by name, a bounded message
+  and, when encodable, its args, which the evaluator uses to build the
+  local exception. It is raised as a local stand-in class that always
+  derives from `Exception`, so `pytest.raises(pkg.Error)` matches
+  without a worker ever raising `BaseException`, `SystemExit` or
+  `KeyboardInterrupt` in the evaluator. A worker-reported name resolves
+  to an evaluator class only if it is a builtin exception or one of a
+  fixed, reviewed set of standard-library exceptions recorded by
+  identity when the bootstrap starts (before any test code runs) and
+  looked up by name without walking any namespace. Every other class,
+  including those of installed packages, of test helpers, and aliases or
+  spoofs of standard-library names, gets an inert stand-in, so no hook
+  of it runs with worker-chosen arguments. Handles
   are released when the evaluator's last reference to one is collected
   (a counted lease per handle; the release rides on the next request),
   so `MAX_HANDLES` bounds live handles only; a malformed release is

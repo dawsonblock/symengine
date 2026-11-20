@@ -1459,6 +1459,44 @@ class SplitExceptionTests(SplitHarness):
             ),
         })
 
+    def test_a_bound_builtin_hook_never_runs(self):
+        # __init_subclass__ = MARKS.clear is a bound builtin method: it
+        # looks like a builtin descriptor. Only reviewed class identities
+        # resolve, so a stand-in never derives from this helper class.
+        self.write("claims.py", (
+            "class Hooked(Exception):\n"
+            "    pass\n"
+            "Hooked.__module__ = 'json'\n"
+            "class Child(Hooked):\n"
+            "    pass\n"
+            "def child():\n"
+            "    raise Child('derived')\n"
+            "def decode():\n"
+            "    import json\n"
+            "    json.loads('{')\n"))
+        self.assertPasses({
+            "bound_helper.py": (
+                "import json\n"
+                "MARKS = ['untouched']\n"
+                "class Hooked(Exception):\n"
+                "    __init_subclass__ = MARKS.clear\n"
+                "Hooked.__module__ = 'json'\n"
+                "json.Hooked = Hooked\n"),
+            "test_hidden.py": (
+                "import json\n"
+                "import pytest\n"
+                "import bound_helper\n"
+                "import claims\n"
+                "def test_bound_hook_is_inert():\n"
+                "    with pytest.raises(Exception, match='derived') as info:\n"
+                "        claims.child()\n"
+                "    assert not isinstance(info.value, bound_helper.Hooked)\n"
+                "    assert bound_helper.MARKS == ['untouched']\n"
+                "    with pytest.raises(json.JSONDecodeError):\n"
+                "        claims.decode()\n"
+            ),
+        })
+
     def test_a_cached_stand_in_gains_the_path_read_later(self):
         # A factory-made class has no importable qualified name, so the
         # stand-in built when it is first raised has no path. Reading the
