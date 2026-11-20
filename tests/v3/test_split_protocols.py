@@ -1367,6 +1367,46 @@ class SplitSupportFileTests(SplitHarness):
             "    assert type(helpers).__name__ == 'ProxyModule'\n"
             "    assert helpers.WHO == 'workspace'\n")})
 
+    def test_a_trusted_name_loads_from_the_trusted_path_only(self):
+        # The workspace first on sys.path, and names it shares with the
+        # evaluator: a private helper and standard-library modules the
+        # run has not imported yet. Only the evaluator's copies may load,
+        # through the finder and through any later lookup on sys.path.
+        shadow = self.root / "WORKSPACE_SHADOW_RAN"
+        for name in ("shared", "netrc", "tabnanny", "pyclbr"):
+            self.write(f"{name}.py", (
+                f"open({str(shadow)!r}, 'a').write({name!r})\n"
+                "WHO = 'workspace'\n"))
+        self.write("only_here.py", "WHO = 'workspace only'\n")
+        self.assertPasses({
+            "tests/shared.py": "WHO = 'private'\n",
+            "tests/test_shadow.py": (
+                "import importlib.machinery\n"
+                "import os\n"
+                "import sys\n"
+                f"WORKSPACE = os.path.realpath({str(self.workspace)!r})\n"
+                "sys.path[:0] = [WORKSPACE, '.', '']\n"
+                "import shared\n"
+                "import netrc, tabnanny, pyclbr\n"
+                "import only_here\n"
+                "def outside(module):\n"
+                "    return not os.path.realpath(module.__file__).startswith("
+                "WORKSPACE + os.sep)\n"
+                "def test_trusted_copies():\n"
+                "    assert shared.WHO == 'private' and outside(shared)\n"
+                "    for module in (netrc, tabnanny, pyclbr):\n"
+                "        assert not hasattr(module, 'WHO') and outside(module)\n"
+                "    assert type(only_here).__name__ == 'ProxyModule'\n"
+                "    assert only_here.WHO == 'workspace only'\n"
+                "def test_no_later_lookup_sees_the_workspace():\n"
+                "    for name in ('shared', 'netrc', 'only_here'):\n"
+                "        spec = importlib.machinery.PathFinder.find_spec(\n"
+                "            name, sys.path)\n"
+                "        assert spec is None or not os.path.realpath(\n"
+                "            spec.origin).startswith(WORKSPACE + os.sep), name\n"),
+        })
+        self.assertFalse(shadow.exists())
+
     def test_without_support_files_the_workspace_package_stays_proxied(self):
         # A test package the evaluator did not register is the
         # submission's: it is reached through the proxy, in the worker.

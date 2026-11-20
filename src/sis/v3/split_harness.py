@@ -28,10 +28,16 @@ beside the tests): a workspace cannot shadow a library the tests import,
 nor the test's own package (``from tests import helpers``). "Beside the
 tests" is read from ``sys.path`` at each import, without any entry in
 the workspace, because pytest adds the test's root directory in the
-private material only while it collects.
+private material only while it collects. A trusted name is imported
+from the spec found on that filtered path, by the finder itself, and a
+path-entry hook makes every ``sys.path`` entry in the workspace find
+nothing: whatever puts the workspace on ``sys.path``, no later finder
+(pytest's assertion rewriter included) loads a workspace file in the
+evaluator. A standard-library name the evaluator lacks is missing, never
+the workspace's.
 They are found in the workspace root and, for a src-layout project, in
 ``<workspace>/src`` (unless ``src`` is itself a package), in that order
-in both processes.
+in both processes, with namespace packages spanning both.
 
 What crosses the socket. The codec is JSON over a closed type set:
 submission-produced bytes are never unpickled or evaluated in the
@@ -1795,6 +1801,39 @@ STDLIB = frozenset(getattr(sys, "stdlib_module_names", ())) | frozenset(
     sys.builtin_module_names)
 
 
+def in_workspace(entry):
+    """True when a path entry resolves to the workspace or inside it."""
+    try:
+        # Resolved, so no link (or ``.``, the workspace cwd) leads in.
+        path = os.path.realpath(entry or os.getcwd())
+    except Exception:
+        return True
+    return path == _workspace_real or path.startswith(_workspace_prefix)
+
+
+class WorkspaceEntry:
+    """The path-entry finder of a ``sys.path`` entry in the workspace.
+
+    It finds nothing. Whatever puts the workspace on ``sys.path`` (a test,
+    a ``.pth`` file, ``''`` for the cwd), no lookup on that path in the
+    evaluator (the standard PathFinder, pytest's assertion-rewriting hook,
+    any later finder) can load a module from it. Workspace modules are
+    reached only through :class:`WorkspaceFinder`, which proxies them.
+    """
+
+    def find_spec(self, fullname, target=None):
+        return None
+
+    def invalidate_caches(self):
+        return None
+
+
+def workspace_entry_hook(entry):
+    if isinstance(entry, str) and in_workspace(entry):
+        return WorkspaceEntry()
+    raise ImportError("not a workspace path entry")
+
+
 def trusted_path():
     """The evaluator's own import path: ``sys.path`` without the workspace.
 
@@ -1804,20 +1843,12 @@ def trusted_path():
     package), and a helper module there is evaluator material. Nothing
     in or under the workspace is ever trusted.
     """
-    trusted = []
-    for entry in sys.path:
-        if not isinstance(entry, str) or not entry:
-            continue
-        # Resolved, so no link (or ``.``, the workspace cwd) leads in.
-        path = os.path.realpath(entry)
-        if path == _workspace_real or path.startswith(_workspace_prefix):
-            continue
-        trusted.append(entry)
-    return trusted
+    return [entry for entry in sys.path
+            if isinstance(entry, str) and entry and not in_workspace(entry)]
 
 
-def trusted_module(name):
-    """True when the evaluator's own environment provides ``name``.
+def trusted_spec(name):
+    """The evaluator's own spec for top-level ``name``, or None.
 
     The standard library, builtins, installed packages and modules beside
     the acceptance tests (the registered test, its ``conftest.py``,
@@ -1826,14 +1857,43 @@ def trusted_module(name):
     tests import later (``numpy``, ``decimal``, ``hypothesis``) or the
     test's own package (``from tests import helpers``): the test would
     then run code or compare against values the submission controls.
+    The spec found on :func:`trusted_path` is the one the import uses,
+    not a probe a later finder could answer differently.
     """
-    if name in STDLIB:
-        return True
-    try:
-        return importlib.machinery.PathFinder.find_spec(
-            name, trusted_path()) is not None
-    except Exception:
-        return True
+    return importlib.machinery.PathFinder.find_spec(name, trusted_path())
+
+
+#: How a workspace directory is searched: the import system's own file
+#: loaders, applied directly (PathFinder cannot see workspace entries).
+FILE_LOADERS = importlib._bootstrap_external._get_supported_file_loaders()
+
+
+def workspace_lookup(fullname, locations):
+    """Where the worker's import system finds ``fullname`` in ``locations``.
+
+    As PathFinder does over the same ordered locations: the first module
+    or regular package wins, and namespace-package directories otherwise
+    all become portions of one package. Nothing is loaded; the spec only
+    says what the worker will import.
+    """
+    portions = []
+    for entry in locations:
+        try:
+            spec = importlib.machinery.FileFinder(
+                entry, *FILE_LOADERS).find_spec(fullname)
+        except Exception:
+            continue
+        if spec is None:
+            continue
+        if spec.loader is not None:
+            return spec
+        portions.extend(entry for entry in spec.submodule_search_locations
+                        or () if isinstance(entry, str))
+    if not portions:
+        return None
+    spec = importlib.machinery.ModuleSpec(fullname, None, is_package=True)
+    spec.submodule_search_locations = portions
+    return spec
 
 
 class WorkspaceFinder(importlib.abc.MetaPathFinder):
@@ -1848,23 +1908,30 @@ class WorkspaceFinder(importlib.abc.MetaPathFinder):
         elif len(parts) > 1:
             # A submodule of something the evaluator already resolved.
             return None
-        elif trusted_module(root):
+        elif (importlib.machinery.BuiltinImporter.find_spec(root) is not None
+              or importlib.machinery.FrozenImporter.find_spec(root)
+              is not None):
+            # Compiled into the interpreter: never on any path.
             return None
+        else:
+            try:
+                trusted = trusted_spec(root)
+                failed = False
+            except Exception:
+                trusted, failed = None, True
+            if trusted is not None:
+                return trusted
+            if root in STDLIB or failed:
+                # The standard library never comes from the workspace.
+                raise ModuleNotFoundError(
+                    "No module named %r" % (root,), name=root)
         if len(parts) == 1:
             search = WORKSPACE_SEARCH
         else:
             search = PACKAGE_PATHS.get(fullname.rpartition(".")[0])
             if not search:
                 return None
-        # The worker's own lookup over the same ordered locations: the
-        # first module or regular package wins over namespace-package
-        # directories, which otherwise all become portions of one package.
-        # Nothing is loaded; the spec only says where the worker looks.
-        try:
-            spec = importlib.machinery.PathFinder.find_spec(
-                fullname, list(search))
-        except Exception:
-            return None
+        spec = workspace_lookup(fullname, list(search))
         if spec is None:
             return None
         # Workspace packages are proxied too, so a submission laid out as
@@ -1880,6 +1947,17 @@ class WorkspaceFinder(importlib.abc.MetaPathFinder):
         if is_package:
             module_spec.submodule_search_locations = []
         return module_spec
+
+
+def blind_workspace_entries():
+    """Make every ``sys.path`` entry in the workspace find nothing."""
+    sys.path_hooks.insert(0, workspace_entry_hook)
+    for entry in list(sys.path_importer_cache):
+        if isinstance(entry, str) and in_workspace(entry):
+            sys.path_importer_cache.pop(entry, None)
+
+
+blind_workspace_entries()
 
 
 def block_missing_runner():
