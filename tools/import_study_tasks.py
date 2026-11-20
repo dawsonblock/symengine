@@ -9,6 +9,14 @@ Python test file ``T``:
 - ``F``'s version of ``T`` is moved out of the tree into the hidden-test
   directory and becomes the task's evaluator-owned acceptance file
   (``hidden_tests_target`` keeps its original path);
+- the files that test needs beside it are captured from ``F`` too and
+  registered with it as further private files at their repository paths
+  (``acceptance.support_files``: target, stored path and SHA-256 each):
+  ``conftest.py`` of its directory and every directory above, the
+  ``__init__.py`` of each test package up to its test root, and the
+  helper modules it imports from its own test package. Only paths in a
+  ``test``/``tests`` directory qualify as packages or helpers, so a
+  source package is never captured;
 - the prompt is ``F``'s commit message (subject and body), or the issue
   text supplied with ``--prompt-file``;
 - with ``--verify`` the task is graded exactly as the study runner grades
@@ -39,9 +47,11 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import ast
 import hashlib
 import json
 import os
+import posixpath
 import re
 import secrets
 import sys
@@ -53,11 +63,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from sis.v3 import gitquery  # noqa: E402
 from sis.v3.contracts import TaskEnvelopeV1  # noqa: E402
 from sis.v3.evaluation_runtime import EvaluationRuntimeProfile  # noqa: E402
-from sis.v3.runner import (ResourceLimits, repository_execution_digest,  # noqa: E402
+from sis.v3.runner import (MAX_PRIVATE_FILE_BYTES,  # noqa: E402
+                           MAX_PRIVATE_FILES, MAX_PRIVATE_TOTAL_BYTES,
+                           ResourceLimits, repository_execution_digest,
                            tree_digest)
 from sis.v3.study_runtime import (DEFAULT_SPLIT_USER,  # noqa: E402
-                                  StudyRuntimeError, build_study_executor,
-                                  materialize_commit)
+                                  MAX_SUPPORT_FILES, StudyRuntimeError,
+                                  build_study_executor, materialize_commit,
+                                  support_target_allowed)
 from sis.v3.verifier import OutcomeVerifier  # noqa: E402
 
 HEX = re.compile(r"^[0-9a-f]{40}$|^[0-9a-f]{64}$")
@@ -153,9 +166,380 @@ def describe_commit(root: Path, commit: str, *, fix_pattern: re.Pattern
                                  f"{commit}:{test_path}")
     if payload is None:
         raise ImportError_("test_blob_unreadable")
+    notes: list = []
+    support = support_files(root, commit, test_path, payload, notes)
     return {"commit": commit, "parent": parent, "message": message,
             "test_path": test_path, "test_bytes": payload,
+            "support": support, "support_notes": notes,
             "source_files": sorted(path for _, path in sources)}
+
+
+def _blob(root: Path, commit: str, path: str) -> bytes:
+    payload = gitquery.raw_bytes(root, "cat-file", "blob", f"{commit}:{path}")
+    if payload is None:
+        raise ImportError_("support_blob_unreadable:" + path)
+    return payload
+
+
+def _imported_modules(source: bytes) -> list[tuple[int, list[str]]]:
+    """``(level, dotted parts)`` of every module an import statement names.
+
+    ``from .a import b`` names ``a`` and ``a.b`` (``b`` may be a
+    submodule); ``from . import b`` names ``b``. Nothing is executed.
+    """
+    try:
+        tree = ast.parse(source)
+    except (SyntaxError, ValueError):
+        return []
+    names = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            names.extend((0, alias.name.split(".")) for alias in node.names)
+        elif isinstance(node, ast.ImportFrom):
+            base = node.module.split(".") if node.module else []
+            if base:
+                names.append((node.level, base))
+            names.extend((node.level, base + [alias.name])
+                         for alias in node.names if alias.name != "*")
+    return names
+
+
+#: Calls whose consecutive string arguments form one path
+#: (``os.path.join(HERE, 'data', 'x.json')``, ``Path('data', 'x.json')``).
+_PATH_CALLS = frozenset({"join", "joinpath", "Path", "PurePath",
+                         "PurePosixPath"})
+
+
+def _string_paths(source: bytes) -> list[tuple[str, ...]]:
+    """Path fragments a Python file names with string literals.
+
+    Every string literal alone, and every run of two or more consecutive
+    literals that a path join (:data:`_PATH_CALLS`) or the ``/`` operator
+    combines: ``os.path.join(dirname(__file__), 'compliance')`` names
+    ``compliance``, ``HERE / 'data' / 'x.json'`` names ``data/x.json``.
+    Nothing is executed.
+    """
+    try:
+        tree = ast.parse(source)
+    except (SyntaxError, ValueError):
+        return []
+
+    def literal(node):
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            return node.value
+        return None
+
+    def operands(node):
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div):
+            return [*operands(node.left), node.right]
+        return [node]
+
+    found: set[tuple[str, ...]] = set()
+    # A literal followed by another in one join is a path component
+    # (``'fixtures'`` in ``HERE / 'fixtures' / 'one.txt'``), not a
+    # reference to that directory as a whole.
+    components: set[int] = set()
+
+    def runs(nodes):
+        run: list = []
+        for node in [*nodes, None]:
+            if node is not None and literal(node) is not None:
+                run.append(node)
+                continue
+            if len(run) > 1:
+                found.add(tuple(literal(item) for item in run))
+                components.update(id(item) for item in run[:-1])
+            run = []
+
+    def division(node):
+        return isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div)
+
+    nodes = list(ast.walk(tree))
+    # Only a whole ``/`` chain names a path. Its inner chains (``HERE /
+    # 'fixtures' / 'nested'`` in ``... / 'nested' / 'one.txt'``) are
+    # prefixes of it, not references to those directories.
+    inner = {id(node.left) for node in nodes
+             if division(node) and division(node.left)}
+    for node in nodes:
+        if isinstance(node, ast.Call):
+            function = node.func
+            name = (function.attr if isinstance(function, ast.Attribute)
+                    else getattr(function, "id", None))
+            if name in _PATH_CALLS:
+                runs(node.args)
+        elif division(node) and id(node) not in inner:
+            runs(operands(node))
+    for node in nodes:
+        value = literal(node)
+        if value is not None and id(node) not in components:
+            found.add((value,))
+    return sorted(found)
+
+
+def _relative_path(base: PurePosixPath, parts: tuple[str, ...]) -> str | None:
+    """``parts`` joined under ``base``, normalized; None if it leaves it."""
+    joined = "/".join(parts)
+    if (not joined or len(joined) > 512 or "\0" in joined or "\\" in joined
+            or joined.startswith("/") or ":" in joined):
+        return None
+    combined = posixpath.normpath(posixpath.join(base.as_posix(), joined))
+    if combined in (".", "..") or combined.startswith("../"):
+        return None
+    return combined
+
+
+def support_files(root: Path, commit: str, test_path: str,
+                  test_bytes: bytes,
+                  notes: list | None = None) -> dict[str, bytes]:
+    """Files the hidden test needs beside it, read from the fix commit.
+
+    The evaluator captures them at registration exactly like the test
+    itself, never from a submission: the ``conftest.py`` of the test's
+    directory and of every directory above it, the ``__init__.py`` of
+    each package from the test's directory up to its test root, and the
+    modules the test (or a helper it pulls in) imports from its own test
+    package, by relative import (``from . import Mixin``, resolved
+    against the importing file's own package, so a helper in
+    ``tests/sub`` brings its ``.data``) or by the package's name
+    (``from tests import helpers``). A test directory that
+    is not a package contributes the sibling modules it imports by bare
+    name. Only paths under a test directory (``test``/``tests``) qualify
+    as packages or helpers, so a source package (``src/pkg/__init__.py``,
+    or ``pkg.py`` beside a root-level test) is never captured: the
+    submission's code is always the submission's.
+
+    Data files are captured too (:func:`_data_files`): non-Python regular
+    files under the test root that the test or a captured helper names
+    by a string-literal path, and every such file of a test subdirectory
+    it names (``os.path.join(HERE, 'compliance')`` and a ``glob``). A
+    directory that would exceed :data:`MAX_SUPPORT_FILES` or the
+    private-material bounds is captured not at all, never in part, and
+    the reason is appended to ``notes``.
+    """
+    listing = gitquery.raw_bytes(root, "ls-tree", "-r", "-z", commit)
+    if listing is None:
+        raise ImportError_("tree_unreadable")
+    paths = set()
+    for item in listing.split(b"\0"):
+        # "<mode> <type> <object>\t<path>": regular files only, so a
+        # symbolic link or submodule is never captured as a helper.
+        header, _, name = item.partition(b"\t")
+        if header.split(b" ")[0] in (b"100644", b"100755") and name:
+            paths.add(name.decode("utf-8", "replace"))
+    test = PurePosixPath(test_path)
+
+    def in_test_dir(path: str) -> bool:
+        pure = PurePosixPath(path)
+        return any(part in ("test", "tests") for part in pure.parts[:-1])
+
+    found: dict[str, bytes] = {}
+
+    def add(path: str) -> bool:
+        if path == test_path or path not in paths:
+            return False
+        if path not in found:
+            if len(found) >= MAX_SUPPORT_FILES:
+                raise ImportError_("support_files_exceed_the_bound")
+            if not SAFE_REL.fullmatch(path):
+                raise ImportError_("support_path_unsafe")
+            found[path] = _blob(root, commit, path)
+        return True
+
+    def package_chain(directory: PurePosixPath) -> list[PurePosixPath]:
+        """The test packages from ``directory`` up, innermost first."""
+        chain = []
+        while (directory.parts
+               and f"{directory.as_posix()}/__init__.py" in paths
+               and in_test_dir(f"{directory.as_posix()}/__init__.py")):
+            chain.append(directory)
+            directory = directory.parent
+        return chain
+
+    packages = package_chain(test.parent)
+    for package in packages:
+        add(f"{package.as_posix()}/__init__.py")
+    directory = packages[-1].parent if packages else test.parent
+    # Where pytest's rootdir-relative import puts the test root on
+    # sys.path: the first directory above the package chain.
+    basedir = directory if packages else test.parent
+    top = packages[-1].name if packages else None
+    for ancestor in [*reversed(test.parents)]:
+        prefix = "" if not ancestor.parts else ancestor.as_posix() + "/"
+        add(prefix + "conftest.py")
+
+    def module_file(base: PurePosixPath, parts: list[str]) -> str | None:
+        """The module or package file ``parts`` names under ``base``."""
+        if not parts or not all(part.isidentifier() for part in parts):
+            return None
+        stem = base.joinpath(*parts).as_posix()
+        for candidate in (stem + ".py", stem + "/__init__.py"):
+            if candidate in paths and in_test_dir(candidate):
+                return candidate
+        return None
+
+    def resolve(origin: str, level: int, parts: list[str]) -> None:
+        if level:
+            # Against the importing file's own package chain: a helper in
+            # a subpackage (tests/sub/helper.py) brings its ``.data``.
+            package = PurePosixPath(origin).parent
+            for _ in range(level - 1):
+                package = package.parent
+            if package not in package_chain(PurePosixPath(origin).parent):
+                return
+            base, names = package, parts
+        elif top is not None and parts[0] == top:
+            base, names = basedir, parts
+        elif top is None and len(parts) >= 1:
+            base, names = test.parent, parts
+        else:
+            return
+        # Every package on the way is needed too (``tests.sub.helpers``).
+        for depth in range(1, len(names) + 1):
+            path = module_file(base, names[:depth])
+            if path is None:
+                return
+            if add(path) and path not in seen:
+                seen.add(path)
+                queue.append(path)
+
+    # The test, its package __init__ files and conftest files can each
+    # import helpers; so can every helper found.
+    queue = [test_path, *found]
+    seen: set[str] = set(queue)
+    while queue:
+        origin = queue.pop()
+        source = test_bytes if origin == test_path else found[origin]
+        for level, parts in _imported_modules(source):
+            resolve(origin, level, parts)
+    test_root = packages[-1] if packages else test.parent
+    _data_files(root, commit, test_path, test_bytes, found, paths,
+                test_root=test_root, in_test_dir=in_test_dir,
+                notes=notes if notes is not None else [])
+    sizes = [len(test_bytes), *(len(data) for data in found.values())]
+    if (len(sizes) > MAX_PRIVATE_FILES or max(sizes) > MAX_PRIVATE_FILE_BYTES
+            or sum(sizes) > MAX_PRIVATE_TOTAL_BYTES):
+        raise ImportError_("support_files_exceed_the_bound")
+    return dict(sorted(found.items()))
+
+
+def _data_files(root: Path, commit: str, test_path: str, test_bytes: bytes,
+                found: dict[str, bytes], paths: set[str], *,
+                test_root: PurePosixPath, in_test_dir, notes: list) -> None:
+    """Add the data files the test reads beside itself to ``found``.
+
+    jmespath's compliance tests load ``tests/compliance/*.json`` through
+    ``os.path.dirname(__file__)``; without them the staged test fails
+    even on the correct fix. A string literal (or a joined run of them)
+    in the test or a captured ``.py`` helper is resolved against that
+    file's directory and the test's. It names:
+
+    - a data file: a regular file in the fix commit (``paths`` holds
+      regular files only), not ``.py`` and no other code suffix, in a
+      test directory under the test root;
+    - a data directory: a test subdirectory strictly under the test
+      root, not a package, whose data files (recursively) are captured
+      all together or, when they would exceed :data:`MAX_SUPPORT_FILES`
+      or a size bound, not at all, with a note saying why.
+
+    Single files come first, then directories, each in path order, after
+    every Python support file. A named file inside a named directory is
+    captured with that directory, and a directory inside a refused one is
+    refused too (``enclosing_directory_refused``), so no directory the
+    test names is ever staged in part.
+    """
+    root_text = test_root.as_posix()
+    prefix = "" if root_text == "." else root_text + "/"
+    directories = {posixpath.dirname(path) for path in paths}
+    for path in list(directories):
+        while path:
+            path = posixpath.dirname(path)
+            directories.add(path)
+
+    def eligible(path: str) -> bool:
+        return (path.startswith(prefix) and in_test_dir(path)
+                and not path.endswith(".py") and path != test_path)
+
+    def total() -> int:
+        return len(test_bytes) + sum(len(data) for data in found.values())
+
+    sources = {test_path: test_bytes, **{
+        path: data for path, data in found.items() if path.endswith(".py")}}
+    files: set[str] = set()
+    folders: set[str] = set()
+    for origin, source in sources.items():
+        bases = {PurePosixPath(origin).parent, PurePosixPath(test_path).parent}
+        for parts in _string_paths(source):
+            for base in bases:
+                candidate = _relative_path(base, parts)
+                if candidate is None:
+                    continue
+                if candidate in paths and eligible(candidate):
+                    files.add(candidate)
+                elif (candidate in directories and candidate.startswith(prefix)
+                      and candidate != root_text
+                      and in_test_dir(candidate + "/x")
+                      and candidate + "/__init__.py" not in paths):
+                    folders.add(candidate)
+
+    def note(path: str, reason: str, **extra) -> None:
+        notes.append({"path": path, "reason": reason, **extra})
+
+    def grouped(path: str) -> bool:
+        # A file inside a directory the test also names is captured with
+        # that directory, all or none, never ahead of it.
+        return any(path.startswith(folder + "/") for folder in folders)
+
+    for path in sorted(files - set(found)):
+        if grouped(path):
+            continue
+        if not SAFE_REL.fullmatch(path) or not support_target_allowed(path):
+            note(path, "data_path_unsafe")
+        elif len(found) >= MAX_SUPPORT_FILES:
+            note(path, "support_files_cap")
+        else:
+            data = _blob(root, commit, path)
+            if (len(data) > MAX_PRIVATE_FILE_BYTES
+                    or total() + len(data) > MAX_PRIVATE_TOTAL_BYTES):
+                note(path, "private_size_bound")
+            else:
+                found[path] = data
+    refused: list[str] = []
+    # In path order, so a directory comes before the directories in it.
+    for folder in sorted(folders):
+        if any(folder.startswith(other + "/") for other in refused):
+            # Part of a directory refused as a whole: staging it would
+            # leave a partial listing of that directory.
+            note(folder, "enclosing_directory_refused")
+            continue
+        members = sorted(path for path in paths
+                         if path.startswith(folder + "/") and eligible(path)
+                         and support_target_allowed(path)
+                         and path not in found)
+        if not members:
+            continue
+        if any(not SAFE_REL.fullmatch(path) for path in members):
+            note(folder, "data_path_unsafe")
+            refused.append(folder)
+            continue
+        if len(found) + len(members) > MAX_SUPPORT_FILES:
+            note(folder, "support_files_cap", files=len(members),
+                 room=MAX_SUPPORT_FILES - len(found))
+            refused.append(folder)
+            continue
+        payloads = {path: _blob(root, commit, path) for path in members}
+        if (max(len(data) for data in payloads.values())
+                > MAX_PRIVATE_FILE_BYTES
+                or total() + sum(len(data) for data in payloads.values())
+                > MAX_PRIVATE_TOTAL_BYTES):
+            note(folder, "private_size_bound", files=len(members))
+            refused.append(folder)
+            continue
+        found.update(payloads)
+
+
+def private_files(info: dict) -> dict[str, bytes]:
+    """The evaluator-private material of one task: test and support files."""
+    return {info["test_path"]: info["test_bytes"], **info["support"]}
 
 
 def make_prompt(message: str, prompt_text: str | None = None) -> str:
@@ -260,6 +644,7 @@ def import_repository(args, *, executor_factory=None) -> dict:
                 root, max_scan=args.max_scan, explicit=args.commits):
             if args.max_tasks and len(tasks) >= args.max_tasks:
                 break
+            info = {}
             try:
                 info = describe_commit(root, commit, fix_pattern=fix_pattern)
                 if not gitquery.predicate(root, "merge-base", "--is-ancestor",
@@ -276,7 +661,7 @@ def import_repository(args, *, executor_factory=None) -> dict:
                 target = info["test_path"]
                 argv = [python, "-m", "pytest", "-q", "-p", "no:cacheprovider",
                         target]
-                files = {target: info["test_bytes"]}
+                files = private_files(info)
                 verification = None
                 if grader is not None:
                     base_outcome = grader.grade(
@@ -293,6 +678,16 @@ def import_repository(args, *, executor_factory=None) -> dict:
                 hidden_file = hidden_dir / task_id / PurePosixPath(target).name
                 hidden_file.parent.mkdir(parents=True, exist_ok=True)
                 hidden_file.write_bytes(info["test_bytes"])
+                support = []
+                for relative, data in info["support"].items():
+                    # Kept at its repository path under support/, inside
+                    # the hidden-tests directory and so inside its digest.
+                    stored = hidden_dir / task_id / "support" / relative
+                    stored.parent.mkdir(parents=True, exist_ok=True)
+                    stored.write_bytes(data)
+                    support.append({
+                        "target": relative, "path": str(stored),
+                        "digest": hashlib.sha256(data).hexdigest()})
                 task = {
                     "task_id": task_id,
                     "repository_id": args.repository_id,
@@ -306,6 +701,7 @@ def import_repository(args, *, executor_factory=None) -> dict:
                         "hidden_tests_digest": hashlib.sha256(
                             info["test_bytes"]).hexdigest(),
                         "hidden_tests_target": target,
+                        **({"support_files": support} if support else {}),
                     },
                     "source": {
                         "fix_commit": commit,
@@ -316,11 +712,15 @@ def import_repository(args, *, executor_factory=None) -> dict:
                         "base_execution_digest":
                             repository_execution_digest(base_tree),
                         "verification": verification,
+                        **({"support_notes": info["support_notes"]}
+                           if info.get("support_notes") else {}),
                     },
                 }
                 tasks.append(task)
             except ImportError_ as exc:
-                rejected.append({"commit": commit, "reason": str(exc)})
+                rejected.append({"commit": commit, "reason": str(exc),
+                                 **({"support_notes": info["support_notes"]}
+                                    if info.get("support_notes") else {})})
             except Exception as exc:  # noqa: BLE001 - recorded, not fatal
                 rejected.append({"commit": commit,
                                  "reason": f"{type(exc).__name__}: {exc}"})

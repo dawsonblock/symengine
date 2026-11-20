@@ -557,6 +557,29 @@ class TaskRegistryCustodyTests(unittest.TestCase):
         self.assertEqual(
             reloaded.registered_task("split").custody, "split")
 
+    def test_real_size_hidden_tests_register_and_reload(self):
+        # Real acceptance files are kilobytes, not a line: a 40 KB test
+        # (80 KB as hex) must persist and reload byte-identical.
+        body = b"".join(b"def test_%d():\n    assert %d == %d\n" % (i, i, i)
+                        for i in range(1200))
+        self.assertGreater(len(body), 40_000)
+        registered = self.make_verifier().register_task(
+            actor_role="evaluator", task_id="big", criterion_version="v1",
+            argv=(PY, "-m", "pytest", "test_big.py"),
+            files={"test_big.py": body}, custody="split")
+        task = self.make_verifier().registered_task("big")
+        self.assertEqual(task.files["test_big.py"], body)
+        self.assertEqual(task.suite_commitment, registered.suite_commitment)
+
+    def test_a_study_sized_registry_registers_and_reloads(self):
+        # A pilot registers well over 128 tasks in one registry.
+        verifier = self.make_verifier()
+        for index in range(150):
+            self.register_split(verifier, task_id=f"task-{index:03d}")
+        reloaded = self.make_verifier()
+        self.assertEqual(len([t for t in (reloaded.registered_task(
+            f"task-{i:03d}") for i in range(150)) if t is not None]), 150)
+
     def test_a_legacy_row_recovers_split_from_its_commitment(self):
         registered = self.register_split(self.make_verifier())
 

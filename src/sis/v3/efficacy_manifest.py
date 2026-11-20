@@ -35,7 +35,8 @@ from .runner import (RunnerError, repository_execution_digest, tree_digest,
                      verify_repository_digest)
 from .study_runtime import (StudyRuntimeError, commit_exists,
                             commit_is_ancestor, hidden_test_belongs,
-                            hidden_tests_digest, materialize_commit)
+                            hidden_tests_digest, materialize_commit,
+                            support_file_problems)
 
 PLACEHOLDER = re.compile(r"^<[^<>]+>$")
 _HEX40 = re.compile(r"^[0-9a-f]{40}$")
@@ -724,6 +725,26 @@ def _validate_tasks(document, by_id: dict[str, dict], problems: list[str],
                   or not _HEX64.match(digest)):
                 _problem(problems,
                          label + ".acceptance.hidden_tests_digest is invalid")
+        for problem in support_file_problems(acceptance):
+            _problem(problems, f"{label}.acceptance.{problem}")
+        hidden_root = (repository.get("hidden_tests") or {}).get("path") \
+            if repository is not None and isinstance(
+                repository.get("hidden_tests"), Mapping) else None
+        if (not support_file_problems(acceptance)
+                and acceptance.get("support_files")
+                and isinstance(hidden_root, str)
+                and not _placeholder(hidden_root)
+                and Path(hidden_root).is_dir()):
+            # Support files live in the repository's hidden-tests
+            # directory, so its digest (checked with paths) binds them.
+            for entry in acceptance["support_files"]:
+                if (_placeholder(entry["path"])
+                        or not hidden_test_belongs(entry["path"],
+                                                   hidden_root)):
+                    _problem(problems,
+                             f"{label}.acceptance support file"
+                             f" {entry['target']} is not in the"
+                             " repository's hidden_tests directory")
     return tasks
 
 

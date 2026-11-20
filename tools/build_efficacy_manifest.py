@@ -57,7 +57,7 @@ from sis.v3.runner import (RunnerError, external_symlinks,  # noqa: E402
 from sis.v3.study_runtime import (StudyRuntimeError,  # noqa: E402
                                   commit_exists, commit_is_ancestor,
                                   hidden_test_belongs, hidden_tests_digest,
-                                  materialize_commit)
+                                  load_support_files, materialize_commit)
 
 MAX_SPEC_BYTES = 4 << 20
 HEX40 = re.compile(r"^[0-9a-f]{40}$")
@@ -418,6 +418,21 @@ def _acceptance(task: Mapping, repository: Mapping, label: str) -> dict:
     result["hidden_tests_digest"] = digest
     if target is not None:
         result["hidden_tests_target"] = target
+    if acceptance.get("support_files") is not None:
+        # Each support file is read back and checked against its digest
+        # here, as the campaign does again before it registers the task.
+        _require(target is not None,
+                 f"{label}.acceptance.support_files need hidden_tests_target")
+        try:
+            load_support_files(acceptance, expected)
+        except StudyRuntimeError as exc:
+            raise StudySpecError(
+                f"{label}.acceptance.support_files: {exc}") from exc
+        result["support_files"] = [
+            {"target": entry["target"],
+             "path": str(Path(entry["path"]).resolve()),
+             "digest": entry["digest"]}
+            for entry in acceptance["support_files"]]
     return result
 
 

@@ -86,7 +86,7 @@ from sis.v3.candidate_authority import (  # noqa: E402
     CandidateDecisionAuthority, CandidateEvidenceAuthority)
 from sis.v3.candidates import CandidateRegistry, content_digest  # noqa: E402
 from sis.v3.contracts import (CandidateV1, GuidanceV1,  # noqa: E402
-                              TaskEnvelopeV1)
+                              TaskEnvelopeV1, canonical_digest)
 from sis.v3.efficacy_manifest import _git_lineage  # noqa: E402
 from sis.v3.evaluation_runtime import EvaluationRuntimeProfile  # noqa: E402
 from sis.v3.learning import (CandidateTrial, EpisodeEvidence,  # noqa: E402
@@ -269,6 +269,23 @@ def _excluded(exclude: Mapping | None) -> tuple[set[str], set[str], set[str]]:
 # --------------------------------------------------------------------- #
 # execution
 # --------------------------------------------------------------------- #
+def _hidden_digest(acceptance: Mapping, material: Mapping[str, bytes]) -> str:
+    """The task's acceptance contract: its test, and any support files.
+
+    A task without support files keeps its test file's own SHA-256, as
+    before; support files (verified by ``_acceptance_material``) change
+    what the test does, so a task with them binds every file by path.
+    """
+    if not acceptance.get("support_files") and acceptance.get(
+            "hidden_tests_digest"):
+        return acceptance["hidden_tests_digest"]
+    if acceptance.get("support_files"):
+        return canonical_digest("acceptance_material", 1, {
+            name: hashlib.sha256(data).hexdigest()
+            for name, data in sorted(material.items())})
+    return hashlib.sha256(b"".join(material.values())).hexdigest()
+
+
 class LearningRun:
     """Verifier, task trees and harness for the learning and qualification runs."""
 
@@ -347,8 +364,7 @@ class LearningRun:
             "task": dict(task), "tree": tree,
             "repository_id": task["repository_id"],
             "repository_digest": repository["repo_snapshot_digest"],
-            "hidden_digest": task["acceptance"].get("hidden_tests_digest")
-            or hashlib.sha256(b"".join(material.values())).hexdigest(),
+            "hidden_digest": _hidden_digest(task["acceptance"], material),
             "execution": repository_execution_digest(tree),
         }
         return envelope, tree
@@ -562,10 +578,18 @@ def build_bundle(spec: Mapping, *, trust: Mapping, keys: Mapping,
                  rule: str = "net_wins", min_repositories: int = 2,
                  min_support: int = 2, actor_identity: str = "study-operator",
                  agent_factory: Callable | None = None,
-                 executor_factory: Callable | None = None) -> dict:
+                 executor_factory: Callable | None = None,
+                 agent_user: str | None = None,
+                 agent_principal=None,
+                 private_paths=()) -> dict:
     """Run the pipeline; return ``{"bundle": ..., "report": ...}``.
 
     ``bundle`` is ``None`` when some arm has no qualified candidate.
+    ``agent_user`` (or ``agent_principal``) runs the agent CLI as that
+    separate OS user, after checking as that user that it cannot read the
+    state directory, the key directories, the candidate registry, the
+    hidden tests or ``private_paths`` (the trust config); an injected
+    ``agent_factory`` then receives ``principal=``.
     """
     check_keys_trusted(keys, trust)
     repositories = _repositories(spec)
@@ -585,8 +609,15 @@ def build_bundle(spec: Mapping, *, trust: Mapping, keys: Mapping,
     kind = agent_spec["kind"]
     injected = agent_factory is not None
     installed = None
+    try:
+        principal = campaign._resolve_agent_principal(agent_user,
+                                                      agent_principal)
+    except campaign.AgentPrincipalError as exc:
+        raise BundleBuildError(f"agent principal unusable: {exc}") from exc
+    status = None
+    if principal is not None or not injected:
+        status = campaign._agent_status(kind, principal)
     if not injected:
-        status = campaign._agent_status(kind)
         _require(status["available"] and status["authenticated"],
                  f"{kind} is unavailable: {status['reason']}")
         installed = campaign._installed_version(kind, status["binary"])
@@ -621,8 +652,22 @@ def build_bundle(spec: Mapping, *, trust: Mapping, keys: Mapping,
     _require(envelopes["training"] and envelopes["qualification"],
              "both splits need tasks")
     prompts = {task["task_id"]: task["prompt"] for task in tasks}
+    principal_record = {"separated": False}
+    if principal is not None:
+        _require(not str(status.get("reason", "")).startswith(
+            "agent_principal_unavailable"), str(status.get("reason")))
+        private = campaign.agent_private_paths(spec, roots=(
+            state_dir, keys.get("evaluator_key_dir"),
+            keys.get("operator_key_dir"), registry_path,
+            *(private_paths or ())))
+        try:
+            principal_record = campaign.check_agent_principal(
+                principal, private, status.get("binary"))
+        except campaign.AgentPrincipalError as exc:
+            raise BundleBuildError(str(exc)) from exc
     factory = agent_factory or campaign._default_agent_factory(kind)
-    agent = factory(prompts, run.budget, agent_spec.get("model"))
+    agent = campaign.make_agent(factory, prompts, run.budget,
+                                agent_spec.get("model"), principal)
     actions: dict[tuple[str, str], tuple[str, ...]] = {}
 
     def recorded(ctx):
@@ -725,7 +770,8 @@ def build_bundle(spec: Mapping, *, trust: Mapping, keys: Mapping,
         "generated_at": _utcnow(),
         "agent": {"kind": kind, "injected": injected,
                   "cli_version": installed,
-                  "model": agent_spec.get("model")},
+                  "model": agent_spec.get("model"),
+                  "principal": principal_record},
         "selection": {"rule": rule, "min_repositories": min_repositories,
                       "min_support": min_support},
         "training": {"tasks": len(envelopes["training"]),
@@ -894,6 +940,11 @@ def main(argv=None, *, agent_factory=None, executor_factory=None) -> int:
     parser.add_argument("--min-support", type=int, default=2)
     parser.add_argument("--actor-identity", default="study-operator")
     parser.add_argument("--output", "-o", type=Path)
+    parser.add_argument("--agent-user", default=None, metavar="NAME",
+                        help="run the agent CLI as this separate OS user"
+                             " (via sudo -n -u NAME), checked first to be"
+                             " unable to read the keys, registry, state"
+                             " directory, trust config and hidden tests")
     args = parser.parse_args(argv)
     try:
         keys = signing_keys(args.evaluator_key_dir, args.operator_key_dir)
@@ -915,6 +966,7 @@ def main(argv=None, *, agent_factory=None, executor_factory=None) -> int:
     if args.executor == "docker" and args.allow_shared_custody:
         parser.error("--executor docker grades under split custody")
     keys["evaluator_key_dir"] = str(args.evaluator_key_dir)
+    keys["operator_key_dir"] = str(args.operator_key_dir)
     try:
         trust = campaign.load_trust_config(args.trust_config)
         spec = load_learning_spec(args.learning_spec)
@@ -932,7 +984,9 @@ def main(argv=None, *, agent_factory=None, executor_factory=None) -> int:
             require_image_digest=not args.allow_unpinned_image,
             rule=args.rule, min_repositories=args.min_repositories,
             min_support=args.min_support, actor_identity=args.actor_identity,
-            agent_factory=agent_factory, executor_factory=executor_factory)
+            agent_factory=agent_factory, executor_factory=executor_factory,
+            agent_user=args.agent_user,
+            private_paths=(args.trust_config,))
     except (BundleBuildError, ValueError, OSError, RuntimeError) as exc:
         print(f"build_guidance_bundle: {exc}", file=sys.stderr)
         return 1

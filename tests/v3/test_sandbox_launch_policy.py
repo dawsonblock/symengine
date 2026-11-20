@@ -166,7 +166,10 @@ class PolicyRoundTripTests(unittest.TestCase):
         self.assertEqual(len(runs), 1, runs)
         argv = runs[0]
         start = argv.index("--label") + 2
-        end = argv.index("--mount")
+        # The security flags end where the per-container settings begin;
+        # the workspace is streamed in, so nothing is bind-mounted.
+        end = argv.index("--workdir")
+        self.assertNotIn("--mount", argv)
         self.assertEqual(argv[start - 2:start], [
             "--label", f"sis.v3.sandbox={executor.worker_identity}"])
         return argv[start:end]

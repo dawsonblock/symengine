@@ -13,7 +13,7 @@ from unittest import mock
 
 from sis.v3 import docker_sandbox
 from sis.v3.docker_sandbox import CONTAINER_LABEL, DockerSandboxExecutor
-from sis.v3.runner import CommandSpec, ResourceLimits, RunnerError
+from sis.v3.runner import CommandSpec, ResourceLimits
 
 
 class DockerArgvTests(unittest.TestCase):
@@ -49,11 +49,13 @@ class DockerArgvTests(unittest.TestCase):
         label = command[command.index("--label") + 1]
         self.assertEqual(label, f"{CONTAINER_LABEL}={self.executor.worker_identity}")
 
-    def test_a_workspace_path_with_a_comma_fails_closed(self):
-        with self.assertRaisesRegex(RunnerError,
-                                    "workspace_path_unrepresentable"):
-            self.start(self.root / "a,target=/etc")
-        self.assertEqual(self.calls, [])
+    def test_the_workspace_host_path_is_never_mounted(self):
+        # The workspace is streamed in by _copy_in, so a host path that
+        # the --mount grammar could not represent never reaches the argv.
+        path = self.root / "a,target=/etc"
+        command = self.start(path)
+        self.assertNotIn(str(path), " ".join(command))
+        self.assertFalse(any("/submission" in part for part in command))
 
     def test_background_processes_are_stopped_as_each_principal(self):
         with mock.patch.object(docker_sandbox.subprocess, "run",

@@ -1,5 +1,307 @@
 # Changelog
 
+## 2026-11-20 — The coding agent can run as its own OS user (SIS-FEAT-22)
+
+In a real-agent study the campaign process both held the evaluator
+material (hidden tests, verifier registry and keys, `trust.json`, the
+state directory) and launched the coding agent, so the agent ran as the
+evaluator's user and could read all of it. `--agent-user NAME` on
+`tools/five_arm_campaign.py --real-agent` and
+`tools/build_guidance_bundle.py` now runs the agent CLI as a separate,
+unprivileged user (`sis.v3.agent_principal.AgentPrincipal`).
+
+- **Launch.** `sudo -n -u NAME -- /usr/bin/python3 -I -S -c <helper>`;
+  the evaluator stays non-root and needs one sudoers rule,
+  `EVALUATOR ALL=(NAME) NOPASSWD: /usr/bin/python3` (no `SETENV`, no
+  `env_keep`). The CLI's argv, working directory and allowlisted
+  environment, `ANTHROPIC_API_KEY` and proxy/CA variables included,
+  reach the helper as one JSON line on a pipe, never on a command line.
+  `HOME`, `USER` and `LOGNAME` name the agent user; `HOME` is a fresh
+  per-turn directory the agent owns, seeded with its stored CLI
+  credentials if any; `TMPDIR`, `CLAUDE_CONFIG_DIR` and `CODEX_HOME` are
+  dropped unless they lie in the agent's home.
+- **Workspace.** The agent never touches an evaluator-owned tree. The
+  workspace is streamed to the helper and unpacked into a directory the
+  agent owns under `~NAME/sis-work`. After the turn every process of the
+  agent user is killed, the tree is streamed back into a new
+  evaluator-owned directory beside the original with every entry
+  validated (regular files, directories and links stored as links; no
+  device, FIFO, absolute or `..` name; size and count bounded; set-id
+  and sticky bits dropped) and swapped in. What `tree_digest` and the
+  verifier then see is the evaluator's own copy with no agent process
+  left, so the `submission_changed_during_evaluation` guarantee holds.
+  A failed copy-back fails the arm (`real_agent_principal_failed`) and
+  leaves the workspace as staged.
+- **Process control.** A non-root parent cannot signal another user's
+  processes: `killpg` of the sudo group kills `sudo` and leaves the
+  agent running. The adapters' watchdog, `cancel` and `close` now kill
+  as the agent user first (`kill(-1, SIGKILL)`, repeated until `/proc`
+  shows none alive), which also reaches processes that left the group.
+  The agent user must therefore be dedicated to SIS, and `--workers`
+  must be 1.
+- **Fail closed.** Before any agent turn the run checks, as the agent
+  user, that the state directory, keys, registry, journal, candidate
+  registry, trust config and every hidden-test path (each with a sample
+  of its contents) are neither readable nor searchable, that the agent
+  CLI is executable and that the agent's home is its own, and stops with
+  `BLOCKED_AGENT_PRINCIPAL` naming the problem.
+- **Provenance.** `provenance.agent_principal` (also `report.agent_principal`)
+  records whether the agent was separated, the user, uid, mechanism and
+  the preflight; a real run without separation gets a limitation line.
+  The run journal identity binds the principal when one is set, so a
+  resume as another user, or without one, is refused
+  (`journal_identity_mismatch`); journals from earlier runs still resume
+  without one.
+
+## 2026-11-20 — Root hosts, a test-dependency image and repository screening (SIS-FIX-21)
+
+- **The Docker evaluator works on a root host.** The workspace was
+  bind-mounted read-only at `/submission` and copied into the tmpfs by
+  the container user. On a root host that user is 65534, and the
+  prepared tree is root-owned (mode 0700 at its top when it came from a
+  `mkdtemp`), so the copy-in failed with `cp: cannot stat
+  '/submission/.': Permission denied` and split custody with
+  `evaluator_bootstrap_error`. The host process now archives the
+  prepared workspace from its registry path and streams it into the
+  tmpfs (`docker exec -i ... tar -x`), children only, so the tmpfs keeps
+  its own mode. Nothing on the host is chowned or widened, the workspace
+  is no longer bind-mounted at all, and split custody is unchanged: the
+  private material is still installed by the evaluator UID in a 0700
+  directory the worker UID cannot read.
+- **Registry-qualified digest pins.** The digest-pin check rejected a
+  registry host with a port, so the registry-pushed form
+  `localhost:5000/sis-evaluator:3.3.9@sha256:<64 hex>` was refused. It
+  now accepts an optional `host[:port]/` prefix (a first component is a
+  registry only when it is `localhost`, contains a dot or carries a
+  port, as in Docker's grammar); a tag-only, digest-less, short-digest
+  or uppercase-hex reference is still refused.
+- **Test-dependency evaluator image.** `docker/sandbox/Dockerfile.testdeps`
+  builds `sis-evaluator:3.3.9-testdeps`: the same pinned base, user,
+  `HOME` and `/workspace` as the base image and the same pytest lock,
+  plus `requirements-testdeps.lock` (hypothesis 6.170.14, pytest-mock
+  3.17.0, pytest-timeout 2.4.0, freezegun 1.5.5, pyyaml 6.0.3, toml
+  0.10.2, and python-dateutil, six and sortedcontainers), installed with
+  `--require-hashes --only-binary=:all:`. Every version had been out for
+  at least two weeks and every hash matches PyPI. nose is not included.
+  The local build passes the same probe as the base image (14 checks,
+  split identity included), by image ID and by registry digest. Build,
+  pin and probe steps are in `docs/v3/PILOT_RUNBOOK.md` §0.
+- **Repository screening.** `tools/screen_study_repos.py` estimates,
+  before any Docker grading, whether a repository's tasks can pass under
+  split custody. It reads test files through the hardened read-only Git
+  queries and parses them with `ast` (nothing is imported or run), and
+  reports the layout, third-party test imports missing from each image,
+  test-defined callables, classes or instances passed into the package,
+  package decorators on test functions, subclasses of package classes,
+  `pickle`/`copy` of package objects, `monkeypatch`/`mock.patch` on the
+  package, values the split codec cannot carry (`range`, generators,
+  compiled patterns, `datetime`, `partial`, sentinels, builtin
+  callables), expected `SystemExit`-type exceptions, captured output,
+  changed `sys.argv`/environment, evaluator-private temporary files,
+  data files read beside tests, and Python 3.12/pytest 8 removals. Support modules count for the test modules that import them,
+  conftest fixtures for the modules that request them. The coarse
+  verdict rests on the first fix candidates at their fix commits (the
+  importer's own candidate selection), and `--sample N` adds the
+  importer's Docker acceptance rate. On the pilot clones it agrees with
+  the known results: inflection `likely` (Docker 4/6), cachetools and
+  jmespath `unlikely` (Docker 0/8 each); docopt and boltons `unlikely`
+  (Docker 0/6 each), pathspec `likely` (Docker 3/6). The output says it is a
+  heuristic, not a verdict on any task.
+
+## 2026-11-20 — Split custody releases handles and stages test data (SIS-FIX-20)
+
+The boundary is unchanged: nothing is unpickled or evaluated in the
+evaluator, no class or callable crosses except as a handle, and the
+evaluator never raises `BaseException`, `SystemExit`,
+`KeyboardInterrupt` or `unittest.SkipTest` for the worker. Several
+paths are now tighter.
+
+- **Handles are released.** Every handle has one lease in the
+  bootstrap, shared by the `Ref`s, exceptions and stand-in classes that
+  refer to it and counting how often the worker handed it out. When the
+  lease is collected its finalizer queues `[handle, count]` (no lock,
+  no I/O); the next request carries the queue as `"release"`, and the
+  worker drops a handle once every hand-out is released. Malformed,
+  unknown, repeated and non-`#n` entries are ignored and never fail a
+  request. `MAX_HANDLES` now bounds live handles, so a long or threaded
+  test (jmespath's 32 x 4096 calls) no longer exhausts it.
+- **Trusted names import from the trusted path.** A name the evaluator
+  provides is imported from the spec found on `sys.path` without the
+  workspace, by the finder itself; a path-entry hook makes every
+  workspace entry on `sys.path` find nothing for any later finder; a
+  standard-library name the evaluator lacks is missing, never the
+  workspace's. A regression test plants workspace copies of
+  not-yet-imported standard-library modules and checks that none runs
+  and that no `sys.path` entry resolves into the workspace.
+- **Exception names resolve only to builtin and stdlib classes.** A
+  worker-reported class of an installed package or a test helper gets an
+  inert stand-in instead of being built with worker-chosen arguments.
+  Stand-ins are published once across threads, and a factory-made class
+  first raised without a path gains the path when its alias is read.
+- **Protocol fixes.** Namespace packages spanning the workspace root and
+  `src/` keep every portion; a data result too large for a frame comes
+  back as a handle instead of ending the run as `split_worker_lost`;
+  `with x as y` binds the worker's own mutable `__enter__` result;
+  three-argument `pow` is forwarded; the host client keeps a generator's
+  typed return value.
+- **Support files.** The importer captures the data files a hidden test
+  (or a captured helper) names by a string-literal path, and the data
+  files of a test subdirectory it names (jmespath's
+  `tests/compliance/*.json`), all of a directory or, past
+  `MAX_SUPPORT_FILES` or a size bound, none, with a `support_notes`
+  reason. Support targets may be data files (never a loadable-code
+  suffix or an evaluator-staged name), must be fully normalized, and may
+  not take the primary test's staged name even without
+  `hidden_tests_target`. Relative imports of a captured helper resolve
+  against its own package, so `tests/sub/helper.py` brings `.data`.
+- **A response JSON cannot write stays in the worker.** A result such
+  as `frozenset({10**5000})` passes the wire encoder but not
+  `json.dumps` (the int-to-str digit limit); it now takes the same
+  handle fallback as an oversized result instead of ending the worker.
+  A response refused as over the frame bound releases the handle it
+  would have handed out, so refused errors no longer use up
+  `MAX_HANDLES`.
+- **Queued releases survive a request that cannot be sent.** When JSON
+  cannot write a request (an argument past the digit limit), nothing is
+  written and its releases go back on the queue for the next request; a
+  transport failure after the write still ends the run, never replays.
+- **Distinct NaNs stay distinct.** JSON decoding shares one NaN object,
+  so a set with two NaNs, or a mapping with two NaN keys, lost entries
+  on the way across. Each of the three decoders (worker requests,
+  bootstrap and host responses) now builds a fresh float per NaN.
+- **A declined operator tries the local operand.** `ref + Cents(5)`,
+  with `Cents` a test's `int` subclass, crossed as a plain `int`, so the
+  worker's `operator.add` never reached `Cents.__radd__`. Against a
+  local operand, forward and in-place arithmetic now run only the worker
+  object's own method; when it is missing or returns `NotImplemented`
+  the response says so (`{"t": "notimplemented"}`, read only by the
+  operator path) and Python's dispatch continues locally. A `TypeError`
+  the method raises still propagates. Reflected operators and
+  operations between two worker objects keep the worker's full dispatch.
+- **Only whole `/` chains name a path.** `HERE / 'fixtures' / 'nested'
+  / 'one.txt'` names that file and no longer also `fixtures/nested` as
+  a directory, whose unreferenced siblings were captured with it.
+- **Overlapping data references are captured together.** A file the
+  test names inside a directory it also names (`cases/a.json` and
+  `cases`) is captured with that directory, and a directory inside a
+  refused one is refused too, so a directory over a bound leaves none of
+  its files staged.
+
+## 2026-11-20 — Authority verification reads one snapshot (SIS-FIX-19)
+
+`AuthorityDB.verify()` replayed the revision, decision and grant tables
+in autocommit mode, one snapshot per statement, holding only the
+in-process lock. A writer in another process could commit a transition
+(decision and revision together) between two of those statements; the
+replay then saw the decision without its revision, reported
+`decision_without_revision`, and `PromotionController` refused to load a
+valid store. This surfaced as an intermittent macOS failure of
+`test_concurrent_process_writers`. The replay now runs in one read
+transaction (`AuthorityDB._read`), and a deterministic test commits a
+transition from a second connection in the middle of a verify.
+
+## 2026-11-19 — Split custody grades ordinary pytest suites (SIS-FIX-18)
+
+The pilot graded correct upstream fixes under Docker split custody and
+saw them fail on the harness, not the code. The boundary is unchanged:
+the worker still cannot run code in the evaluator, nothing is unpickled
+or evaluated there, and no class or callable crosses except as a handle.
+The release seal is still stale and must be rebuilt before the next
+release.
+
+- **Sets and non-text-key mappings cross as data.** `set`, `frozenset`
+  and mappings whose keys are not text join the closed codec in all
+  three encoders; call arguments may be slices. Elements and keys must
+  decode to something hashable, within `MAX_ITEMS` and `MAX_DEPTH`;
+  anything else stays a handle. inflection's
+  `[(w,) for w in inflection.UNCOUNTABLES]` now works.
+- **Protocols on worker objects.** `len`, `in`, indexing and item
+  assignment, iteration, `reversed`, comparisons in both directions with
+  plain data, arithmetic (plain, reflected, in-place), `bool`, `str`,
+  `repr`, `hash`, `format`, `int`/`float`/`index`/`round`, `with`
+  blocks, `isinstance`/`issubclass` against worker classes and attribute
+  assignment are forwarded through one new worker op, `dunder`, whose
+  names come from a fixed table; every other name is refused there.
+  Iteration streams through a worker-held iterator, one round trip per
+  item. `__name__`, `__qualname__`, `__version__` and `__all__` are the
+  only dunder attributes a test can read.
+- **Submission exception classes.** The worker reports an exception's
+  class chain by name; the bootstrap raises a local stand-in class per
+  (module, qualname), which is also what `pkg.CustomError` resolves to
+  through the proxy. `pytest.raises(pkg.CustomError)`, `except
+  pkg.Base`, `match=` on the worker's message and `excinfo.value.attr`
+  (read through a handle) work. Stand-ins always derive from
+  `Exception`; a forged report cannot raise `BaseException`,
+  `SystemExit` or `KeyboardInterrupt` in the evaluator, and no name
+  resolves to a class of the runner's own modules (`unittest`, `pytest`,
+  `pluggy`, `doctest`): a `unittest.SkipTest` raised by the submission
+  crosses as an ordinary error, not as a skip that would let a failing
+  hidden test exit 0. Worker messages
+  carry up to 8 KiB instead of 400 characters.
+- **src/ layout.** A workspace with a `src/` directory that is not a
+  package is searched at its root and then under `src/`, in the same
+  order by the worker and the evaluator's finder (cachetools). Trusted
+  modules still cannot be shadowed from either place.
+- **Submission state stays in the worker.** A read of a mutable
+  container (`list`, `dict`, `set`, `bytearray`, `deque`, and
+  subclasses) is a handle to the worker's own object instead of a
+  decoded copy: an attribute read of a module or object, an item read
+  with a non-slice key, and an in-place operator that returns its
+  operand. inflection's `inflection.UNCOUNTABLES.add("ors")` now
+  reaches the submission. Method calls run in the worker; `len`, `in`,
+  iteration, `==` both ways, indexing and item assignment go through
+  the `dunder` op, which also forwards `copy.copy`/`copy.deepcopy`.
+  Immutable values, call results, slices and iteration items still
+  cross as data, so a function returning a fresh list still returns a
+  `list`; one returning its module's internal list returns a copy.
+  `isinstance(pkg.UNCOUNTABLES, set)` is now false (a test asserted it
+  and was changed deliberately: mutation decides whether a correct fix
+  passes, `isinstance` of a module-level container is rare in tests).
+- **Test helper files are registered with the test.** The importer
+  captures from the fix commit, never from a submission, the test's
+  `conftest.py` files (its directory and every directory above), the
+  `__init__.py` of each test package up to its test root, and the
+  helper modules it imports from its own test package (`from . import
+  CacheTestMixin`, `from tests import unittest`). Only paths in a
+  `test`/`tests` directory count as packages or helpers, so a source
+  package is never captured. They are registered as further private
+  files at their repository paths (the verifier already took several)
+  and recorded as an optional `acceptance.support_files` list of
+  `{target, path, digest}` beside `hidden_tests_path`, stored inside the
+  hidden-tests directory. The manifest builder, the manifest validator
+  and the five-arm campaign (and so the guidance-bundle builder) check
+  each file and digest wherever the primary test's are checked. In the
+  bootstrap, "beside the tests" follows `sys.path` as pytest changes it
+  (links resolved, nothing in the workspace trusted), so a helper is
+  imported from the private directory and the workspace's file of the
+  same name stays proxied.
+- **Threads.** Requests from several test threads are serialized on the
+  socket; they used to read each other's answers. The worker serves one
+  request at a time, so a race a test provokes with threads does not
+  happen in the submission.
+- **Real repositories.** Re-grading the 22 correct upstream fix commits
+  that were rejected before (6 inflection, 8 cachetools, 8 jmespath)
+  under Docker split custody accepts 4 (inflection), up from 0; each
+  accepted task's base still fails, and deliberately wrong fixes fail.
+  The rest are rejected for reasons outside the harness or at the
+  boundary: two inflection commits change no behaviour (import order,
+  flake8) and their base passes; all 8 cachetools test files apply
+  cachetools decorators to test-defined functions, pass test-defined
+  callables (`getsizeof=`), subclass or pickle a worker class; 5
+  jmespath tests need `nose`/`hypothesis`, absent from the evaluator
+  image; 2 subclass a worker class with test-defined methods; and one
+  (2020) fails on Python 3.12 itself (`assertRaisesRegexp`,
+  `random.sample` of dict keys) and, with 32 threads × 4096 parses,
+  exhausts the worker's 100,000 never-released handles.
+- **Still out of scope**, each because it would need code, class or
+  pickled objects to cross, or the worker to drive evaluator objects:
+  test-defined callables or objects passed to the submission
+  (decorators applied to test functions, `getsizeof=`/`key=`
+  callbacks), subclassing a worker class, pickling a worker object,
+  thread-level concurrency inside the submission, and data files a test
+  reads from beside itself. The remaining proxy limits are listed in
+  the `sis.v3.split_harness` module docstring.
+
 ## 2026-11-19 — Repository cleanup (SIS-CHORE-17)
 
 No behaviour changes for users; every CLI command works as before.

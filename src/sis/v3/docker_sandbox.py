@@ -65,8 +65,20 @@ from .workspace_guard import ManagedWorkspaceRegistry, protected_overlap
 #: Label on every sandbox container, so leaked ones can be listed and
 #: removed: ``docker rm -f $(docker ps -aq --filter label=sis.v3.sandbox)``.
 CONTAINER_LABEL = "sis.v3.sandbox"
+#: A digest-pinned image reference: an optional registry ``host[:port]/``
+#: (``localhost:5000/``, ``registry.example.com:443/``), a lowercase
+#: repository path, an optional tag, and a mandatory lowercase sha256
+#: digest. A tag alone, or a short or uppercase digest, never matches.
+#: As in Docker's grammar, a first component is a registry only when it is
+#: ``localhost``, contains a dot or carries a port; anything else is part
+#: of the (lowercase) repository path.
+_HOST_LABEL = r"[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?"
+_REGISTRY_HOST = (
+    r"(?:(?:localhost|" + _HOST_LABEL + r"(?:\." + _HOST_LABEL + r")+)"
+    r"(?::[0-9]{1,5})?|" + _HOST_LABEL + r":[0-9]{1,5})/")
 _IMAGE_DIGEST = re.compile(
-    r"^[a-z0-9][a-z0-9._/-]*(?::[A-Za-z0-9._-]+)?@sha256:[0-9a-f]{64}$")
+    rf"^(?:{_REGISTRY_HOST})?"
+    r"[a-z0-9][a-z0-9._/-]*(?::[A-Za-z0-9._-]+)?@sha256:[0-9a-f]{64}$")
 _USER = re.compile(r"^([0-9]{1,10})(?::([0-9]{1,10}))?$")
 _READ_CHUNK = 65_536
 _COPY_OUT_SECONDS = 300.0
@@ -686,7 +698,7 @@ class DockerSandboxExecutor:
                 self._live_ws[execution_id] = record.workspace_id
             if self._registry.is_closing(record.workspace_id):
                 raise RunnerError("workspace_is_closing")
-            self._copy_in(container)
+            self._copy_in(container, record)
             if self._registry.is_closing(record.workspace_id):
                 raise RunnerError("workspace_is_closing")
             if split:
@@ -965,12 +977,10 @@ class DockerSandboxExecutor:
         limits: ResourceLimits, memory: int, pids: int, disk: int,
         private_host: Path | None = None, *, split: bool = False,
     ) -> None:
-        # Docker's --mount grammar has no escaping for commas, so a path
-        # that cannot be represented fails closed instead of being
-        # mounted somewhere unintended.
-        submission = str(record.real_path)
-        if "," in submission:
-            raise RunnerError("workspace_path_unrepresentable")
+        # The workspace is not bind-mounted: ``_copy_in`` streams it from
+        # the registry path into the tmpfs, so no host path of the
+        # submission appears in the container and its host ownership and
+        # modes never decide whether the container user can read it.
         command = [
             # --rm and the label: a container leaked by a crashed
             # evaluator stops being kept once it stops, and a running one
@@ -980,8 +990,6 @@ class DockerSandboxExecutor:
             *self.launch_flags(**self._launch_values(
                 memory=memory, pids=pids, disk=disk,
                 cpu_seconds=limits.cpu_seconds, split=split)),
-            "--mount",
-            f"type=bind,source={submission},target=/submission,readonly",
             "--workdir", "/workspace",
             "-e", "HOME=/tmp",
             "-e", "TMPDIR=/tmp",
@@ -1045,19 +1053,52 @@ class DockerSandboxExecutor:
                                 if self._seccomp_path is not None else None),
         }
 
-    def _copy_in(self, container: str) -> None:
-        """Populate the quota-limited workspace from the read-only bind."""
-        try:
-            result = subprocess.run(
-                [self._docker, "exec", "--user", self._user, container,
-                 "sh", "-c", "cp -R /submission/. /workspace/"],
-                capture_output=True, text=True, timeout=120)
-        except (OSError, subprocess.TimeoutExpired) as exc:
-            raise RunnerError(f"workspace_copy_in_failed:{exc}") from exc
+    def _copy_in(self, container: str, record) -> None:
+        """Populate the quota-limited workspace from the registry path.
+
+        The host process archives the prepared workspace and the container
+        user extracts it into ``/workspace``. A read-only bind of the host
+        tree would carry host ownership: on a root host the prepared tree
+        is root-owned (mode 0700 at its top when the source was a
+        ``mkdtemp``), and the unprivileged container user could not read
+        it. Streaming needs no change of host ownership or modes, so no
+        other host principal gains access to the workspace.
+
+        Only the children of the workspace are archived, never its root
+        entry: extracting a root entry would apply the host directory's
+        mode to the tmpfs, and the split worker UID must keep reading it.
+        The archive is spooled under the executor root, which is private.
+        """
+        source = Path(record.real_path)
+
+        def normalize(info: tarfile.TarInfo) -> tarfile.TarInfo:
+            # Ownership is the container user's; tar ignores host names.
+            info.uid, info.gid = self._uid, self._gid
+            info.uname = info.gname = ""
+            return info
+
+        with tempfile.TemporaryFile(dir=self.root) as spool:
+            try:
+                with tarfile.open(fileobj=spool, mode="w") as archive:
+                    for child in sorted(source.iterdir()):
+                        archive.add(child, arcname=child.name,
+                                    filter=normalize)
+            except (OSError, tarfile.TarError) as exc:
+                raise RunnerError(
+                    f"workspace_copy_in_failed:{type(exc).__name__}") from exc
+            spool.seek(0)
+            try:
+                result = subprocess.run(
+                    [self._docker, "exec", "-i", "--user", self._user,
+                     container, "tar", "-x", "-C", "/workspace", "-f", "-"],
+                    stdin=spool, capture_output=True, timeout=120)
+            except (OSError, subprocess.TimeoutExpired) as exc:
+                raise RunnerError(f"workspace_copy_in_failed:{exc}") from exc
         if result.returncode != 0:
             raise RunnerError(
                 "workspace_copy_in_failed:"
-                + (result.stderr or result.stdout).strip()[:200])
+                + (result.stderr or result.stdout).decode(
+                    "utf-8", "replace").strip()[:200])
 
     def _install_split_material(
         self, container: str, material: Path,

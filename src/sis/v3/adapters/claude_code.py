@@ -31,6 +31,15 @@ Permission mode
     the allowed set is denied. Like the Codex CLI's sandbox flag, this
     constrains the agent's tool calls and is not an evaluator security
     boundary.
+
+Agent principal
+    With ``principal`` (:class:`sis.v3.agent_principal.AgentPrincipal`)
+    the CLI runs as that separate OS user: the argv, working directory and
+    allowlisted environment reach it over a pipe, ``HOME``/``USER`` name
+    the agent user, and the watchdog, ``cancel`` and ``close`` kill every
+    process of that user, because the evaluator cannot signal them
+    itself. The workspace passed in is then the agent-side path from
+    :meth:`~sis.v3.agent_principal.AgentPrincipal.checkout`.
 """
 from __future__ import annotations
 
@@ -175,6 +184,7 @@ class ClaudeCodeAdapter:
         env_extra: Mapping[str, str] | None = None,
         permission_mode: str = "acceptEdits",
         allowed_tools: Sequence[str] = DEFAULT_ALLOWED_TOOLS,
+        principal=None,
     ) -> None:
         binary = (str(claude_path) if claude_path is not None
                   else shutil.which("claude"))
@@ -193,12 +203,17 @@ class ClaudeCodeAdapter:
         self._env_extra = dict(env_extra or {})
         self._permission_mode = permission_mode
         self._allowed_tools = tuple(allowed_tools)
+        self._principal = principal
         self._active: dict[str, subprocess.Popen] = {}
         self._lock = threading.Lock()
 
     @property
     def binary(self) -> str:
         return self._binary
+
+    @property
+    def principal(self):
+        return self._principal
 
     def start_task(
         self,
@@ -215,7 +230,7 @@ class ClaudeCodeAdapter:
         allowed set; ``workspace_write`` uses the configured set.
         """
         self._validate_prompt(prompt)
-        root = self._workspace(workspace)
+        root = self._workspace(workspace, self._principal)
         if sandbox not in ("read_only", "workspace_write"):
             raise ValueError("sandbox must be 'read_only' or 'workspace_write'")
         tools = self._allowed_tools
@@ -230,15 +245,19 @@ class ClaudeCodeAdapter:
         thread = thread_id or "ccthr-" + secrets.token_hex(8)
         turn = "ccturn-" + secrets.token_hex(8)
         try:
-            proc = subprocess.Popen(
-                argv, cwd=str(root), env=self._environment(),
-                stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE, start_new_session=True)
-        except OSError as exc:
+            if self._principal is not None:
+                proc = self._principal.launch(
+                    argv, cwd=str(root), env=self._environment())
+            else:
+                proc = subprocess.Popen(
+                    argv, cwd=str(root), env=self._environment(),
+                    stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE, start_new_session=True)
+        except (OSError, RuntimeError) as exc:
             raise ClaudeCodeError(f"failed to launch claude CLI: {exc}") from exc
         timed_out = [False]
         watchdog = threading.Timer(
-            self._wall_seconds, self._expire, args=(proc, timed_out))
+            self._wall_seconds, self._timeout, args=(proc, timed_out))
         watchdog.daemon = True
         watchdog.start()
         with self._lock:
@@ -267,7 +286,7 @@ class ClaudeCodeAdapter:
             proc = self._active.get(turn_id)
         if proc is None:
             raise ClaudeCodeError("turn is not active in this adapter")
-        self._kill_group(proc)
+        self._terminate(proc)
         return {"cancelled": turn_id}
 
     def close(self) -> None:
@@ -275,7 +294,7 @@ class ClaudeCodeAdapter:
             active = list(self._active.values())
             self._active.clear()
         for proc in active:
-            self._kill_group(proc)
+            self._terminate(proc)
 
     def __enter__(self) -> "ClaudeCodeAdapter":
         return self
@@ -346,7 +365,7 @@ class ClaudeCodeAdapter:
             try:
                 proc.wait(timeout=60)
             except subprocess.TimeoutExpired:
-                self._kill_group(proc)
+                self._terminate(proc)
                 try:
                     proc.wait(timeout=5)
                 except subprocess.TimeoutExpired:
@@ -366,8 +385,9 @@ class ClaudeCodeAdapter:
             with self._lock:
                 self._active.pop(turn_id, None)
             # The CLI can exit while commands it started keep running in
-            # its process group; always kill the group.
-            self._kill_group(proc)
+            # its process group; always kill the group (under a principal,
+            # every process of the agent user).
+            self._terminate(proc)
             stderr_thread.join(timeout=5)
             for stream in (proc.stdout, proc.stderr):
                 try:
@@ -434,12 +454,35 @@ class ClaudeCodeAdapter:
                 env[name] = value
         env.setdefault("LANG", "en_US.UTF-8")
         env.update(self._env_extra)
+        if self._principal is not None:
+            env = self._principal.environment(env)
         return env
 
     @staticmethod
     def _expire(proc: subprocess.Popen, timed_out: list[bool]) -> None:
         timed_out[0] = True
         ClaudeCodeAdapter._kill_group(proc)
+
+    def _timeout(self, proc: subprocess.Popen, timed_out: list[bool]) -> None:
+        timed_out[0] = True
+        self._terminate(proc)
+
+    def _terminate(self, proc: subprocess.Popen) -> None:
+        """Kill the turn's processes, as the agent user under a principal.
+
+        A non-root evaluator cannot signal the agent user's processes, so
+        the principal's kill runs first; the group kill then reaches what
+        the evaluator itself owns (``sudo``, or the whole group without a
+        principal). Killing ``sudo`` first would orphan the agent.
+        """
+        if self._principal is not None:
+            try:
+                self._principal.kill_all()
+            except Exception:
+                # Reported by the next kill (checkout always kills again
+                # and fails the turn if processes survive).
+                pass
+        self._kill_group(proc)
 
     @staticmethod
     def _kill_group(proc: subprocess.Popen) -> None:
@@ -457,7 +500,14 @@ class ClaudeCodeAdapter:
             pass
 
     @staticmethod
-    def _workspace(workspace: str | Path) -> Path:
+    def _workspace(workspace: str | Path, principal=None) -> Path:
+        if principal is not None:
+            # The agent-side copy belongs to the agent user; the evaluator
+            # cannot (and must not) look into it.
+            root = Path(workspace)
+            if not root.is_absolute():
+                raise ValueError("workspace must be an absolute path")
+            return root
         try:
             root = Path(workspace).expanduser().resolve(strict=True)
         except (OSError, TypeError, ValueError) as exc:

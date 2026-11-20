@@ -30,12 +30,84 @@ cp docs/v3/pilot_learning_spec_template.json /study/learning.json
   digest needs `--allow-unpinned-image` and is development-only.
 - Once Track C lands the gVisor runtime, add `--docker-runtime runsc`.
 - The evaluator image carries pytest only. Pick repositories whose tests
-  run with the standard library and pytest; importer verification under
-  Docker rejects the rest.
-- The agent runs as your user and can read files outside its workspace.
-  Run the pilot as a user that cannot read `/study/private` and
-  `/study/repos` other than through SIS, or on a host where those paths
-  are not discoverable, and say which in the pilot notes.
+  run with the standard library and pytest, or use the test-dependency
+  variant below; importer verification under Docker rejects the rest.
+- The evaluator may run as root or as a dedicated user. On a root host
+  the container user defaults to 65534:65534; the workspace is streamed
+  into the container, so host ownership does not matter.
+
+### Test-dependency image variant
+
+`docker/sandbox/Dockerfile.testdeps` builds `sis-evaluator:3.3.9-testdeps`:
+the same pinned base, user (65534), `HOME=/tmp` and `/workspace` layout,
+the same pytest lock, plus `docker/sandbox/requirements-testdeps.lock`
+(hypothesis, pytest-mock, pytest-timeout, freezegun, pyyaml, toml and
+their dependencies, installed with `--require-hashes --only-binary=:all:`;
+no nose, which does not import on Python 3.12). Use it only for a study
+whose repositories need those libraries, and use one image for every arm.
+
+```bash
+docker build -f docker/sandbox/Dockerfile.testdeps \
+  -t sis-evaluator:3.3.9-testdeps docker/sandbox
+id="$(docker image inspect --format '{{.Id}}' sis-evaluator:3.3.9-testdeps)"
+echo "sis-evaluator@${id}"          # image-ID pin, works without a registry
+docker tag sis-evaluator:3.3.9-testdeps localhost:5000/sis-evaluator:3.3.9-testdeps
+docker push localhost:5000/sis-evaluator:3.3.9-testdeps
+docker image inspect sis-evaluator:3.3.9-testdeps --format '{{json .RepoDigests}}'
+```
+
+Pass either pin as `--docker-image` everywhere below, for example
+`localhost:5000/sis-evaluator:3.3.9-testdeps@sha256:<digest>` (a registry
+host with a port is accepted). Then probe it once as the user that will
+run the pilot, and keep the JSON with the pilot notes:
+
+```bash
+python3 tools/probe_docker_sandbox.py --image <pinned ref> \
+  --runtime runc --output /study/reports/probe-testdeps.json
+```
+
+Drop `--runtime runc` once gVisor is installed (runsc is the tool's
+default). The probe must report `"ok": true` with the same checks as the
+base image. On a host whose egress goes through a TLS-intercepting proxy, build
+from a scratch copy of `docker/sandbox` whose Dockerfile copies the
+proxy CA to `/tmp/proxy-ca.crt` and runs the `pip install` with
+`PIP_CERT=/tmp/proxy-ca.crt` (`docker build --network host
+--build-arg HTTPS_PROXY=$HTTPS_PROXY`); the `rm -rf /tmp/*` step removes
+it from the final filesystem. Never commit the CA or that Dockerfile.
+To change a pin, resolve the wheels for CPython 3.12 on x86_64 and
+aarch64 with `pip download --only-binary=:all: --python-version 3.12
+--platform manylinux2014_<arch>`, check each `sha256` against PyPI, and
+keep every line hashed.
+- By default the agent runs as your user and can read files outside its
+  workspace. Give it its own OS user instead, with `--agent-user NAME` on
+  `tools/five_arm_campaign.py` and `tools/build_guidance_bundle.py`
+  (real-agent runs only, `--workers 1`):
+
+  ```bash
+  useradd -m sisagent                       # dedicated: nothing else runs as it
+  printf 'sispilot ALL=(sisagent) NOPASSWD: /usr/bin/python3\n' \
+    > /etc/sudoers.d/sis-agent && chmod 0440 /etc/sudoers.d/sis-agent
+  visudo -cf /etc/sudoers.d/sis-agent
+  chmod 700 /study                          # the agent cannot traverse it
+  ```
+
+  Here `sispilot` is the (non-root) user that runs the evaluator. Install
+  the agent CLI where the agent user can run it (not under the
+  evaluator's home), and pass the key as `ANTHROPIC_API_KEY` in the
+  evaluator's environment or store it in `~sisagent/.claude/`. Do not
+  enable sudo `log_input` for this rule: the CLI's environment, with the
+  key, goes over the helper's stdin, never on a command line.
+
+  Each turn's workspace is copied into the agent's home and copied back,
+  validated, before grading, and every process of the agent user is
+  killed when the turn ends. Before the first turn a preflight, run as
+  the agent user, checks that it can read none of the state directory,
+  keys, registry, journal, trust config, candidate registry, hidden
+  tests, support files or repository clones, and that it can run the
+  CLI; any readable path blocks the run (`BLOCKED_AGENT_PRINCIPAL`). The
+  report records the principal (`agent_principal`), and a run without one
+  says so in its limitations. Not covered: the agent user can still leave
+  files in `/tmp` or its home for later turns.
 
 ## 1. Repositories
 
@@ -50,6 +122,48 @@ git -C /study/repos/<id> checkout --detach <frozen commit>
 
 Holdout and induction repositories must be different codebases: no
 shared Git history (the validator compares root commits) and no copies.
+
+Screen the candidates before importing them. Docker grading is slow,
+and many correct upstream fixes are rejected for reasons a static scan
+predicts:
+
+```bash
+python3 tools/screen_study_repos.py --repo /study/repos/<id> \
+  --repo /study/repos/<id2> -o /study/diag/screen.json
+# add an empirical rate on the first N fix candidates (Docker, slow):
+#   --sample 6 --docker-image <pinned ref>
+```
+
+Run it as the user that owns the clones (Git refuses a checkout another
+user owns). For each repository it reports the layout and package
+names, the third-party test imports that the base image and the
+`-testdeps` variant lack, and patterns split custody cannot grade: a
+test-defined function, lambda, class or instance passed into the
+package (`key=`, callbacks), a package decorator on a test function, a
+test class subclassing a package class, `pickle`/`copy` of a package
+object, `monkeypatch.setattr`/`mock.patch` on the package, values the
+split codec cannot carry (`range`, generators, compiled patterns,
+`datetime`, `partial`, `object()` sentinels, `key=str`), expected
+`SystemExit`-type exceptions, captured output, changed `sys.argv` or
+environment, evaluator-private temporary files, data files read beside
+the tests, and APIs Python 3.12 or pytest 8 removed (`assertEquals`,
+`assertRaisesRegexp`, nose `setup`, `yield` tests).
+The verdict (`likely`, `partial`, `unlikely`, for each image) rests on
+the share of the first ten fix candidates (`--candidates`) whose test
+file, at its fix commit, shows none of these, or on the test modules at
+HEAD when there are fewer than three candidates. It is a heuristic, not
+a verdict on any task: only `import_study_tasks.py --verify docker`
+decides. Prefer `likely` repositories, check `partial` ones with
+`--sample`, and record the screen with the pilot notes.
+
+On the pilot clones (2026-11-20) the screen gave inflection `likely`
+(6/6 candidates clean; Docker accepted 4/6), cachetools `unlikely` (0/10
+clean: package decorators on test functions, subclassing, callbacks;
+Docker 0/8) and jmespath `unlikely` (0/10 clean: hypothesis, nose-era
+APIs, subclassing, data files; Docker 0/8). Of the other clones, docopt
+(`SystemExit`-derived errors, `sys.argv`) and boltons (sentinels,
+`range`, data files) are `unlikely` (Docker 0/6 each) and pathspec
+`likely` (Docker 3/6).
 
 ## 2. Tasks
 

@@ -11,6 +11,17 @@ policy):
 docker build --platform linux/arm64 -t sis-evaluator:3.3.9 docker/sandbox
 ```
 
+A variant with common test dependencies (hypothesis, pytest-mock,
+pytest-timeout, freezegun, pyyaml, toml; hash-checked in
+`requirements-testdeps.lock`) builds from `Dockerfile.testdeps` with the
+same base, user and layout; pin and probe it as described in
+`docs/v3/PILOT_RUNBOOK.md` §0:
+
+```bash
+docker build -f docker/sandbox/Dockerfile.testdeps \
+  -t sis-evaluator:3.3.9-testdeps docker/sandbox
+```
+
 Run the containment probe:
 
 ```bash
@@ -41,9 +52,11 @@ quota, CPU-time budget and combined output cap. The tool aborts before
 evaluating if any check fails.
 
 The workspace is a quota-limited tmpfs inside the container. The host
-workspace is mounted read-only at `/submission`, copied into the tmpfs
-before the command runs, and copied back through a filtered tar stream
-afterwards. The copy-out archive is extracted with `filter="data"`, so
+process archives the prepared workspace and streams it into the tmpfs
+before the command runs (the host tree is never bind-mounted, so the
+copy-in works whatever its host ownership, also when the evaluator runs
+as root and the container user is 65534), and it is copied back through
+a filtered tar stream afterwards. The copy-out archive is extracted with `filter="data"`, so
 absolute paths, `..` escapes, device nodes and links that leave the
 workspace are rejected. A run that is stopped by the wall clock, the
 output cap or pids exhaustion reports `fs:workspace_state_unavailable`

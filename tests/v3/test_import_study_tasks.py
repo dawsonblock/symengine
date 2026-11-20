@@ -9,7 +9,7 @@ import unittest
 from pathlib import Path
 
 from sis.v3.efficacy_manifest import validate_manifest
-from tests.v3.study_fixtures import (commit, import_repository,
+from tests.v3.study_fixtures import (commit, git, import_repository,
                                      imported_study, load_tool,
                                      make_bugfix_repository)
 
@@ -180,6 +180,56 @@ class PerTaskBaseCommitTests(unittest.TestCase):
         self.assertTrue(any("is not a commit of its repository" in problem
                             for problem in report["problems"]))
 
+    def test_support_files_are_checked_with_the_task(self):
+        import hashlib
+        document = copy.deepcopy(self.document)
+        task = document["tasks"][0]
+        repository = next(item for item in document["repositories"]
+                          if item["repository_id"] == task["repository_id"])
+        hidden = Path(repository["hidden_tests"]["path"])
+        outside = self.root / "outside_init.py"
+        outside.write_text("x = 1\n")
+        digest = hashlib.sha256(b"x = 1\n").hexdigest()
+        task["acceptance"]["support_files"] = [
+            {"target": "tests/__init__.py", "path": str(outside),
+             "digest": digest},
+            {"target": task["acceptance"]["hidden_tests_target"],
+             "path": str(outside), "digest": "nope"}]
+        report = validate_manifest(document, check_paths=True)
+        problems = "\n".join(report["problems"])
+        self.assertIn("support file target is repeated", problems)
+        # Shape problems are reported first; a sound list is then checked
+        # against the hidden-tests directory.
+        task["acceptance"]["support_files"].pop()
+        report = validate_manifest(document, check_paths=True)
+        self.assertTrue(any("tests/__init__.py is not in the repository's"
+                            " hidden_tests" in problem
+                            for problem in report["problems"]))
+        # The builder reads each file back and checks its digest.
+        with self.assertRaisesRegex(builder.StudySpecError,
+                                    "support_file_outside_hidden_tests"):
+            builder._acceptance(task, repository, "task")
+        inside = Path(task["acceptance"]["hidden_tests_path"]).parent / \
+            "support" / "tests" / "__init__.py"
+        inside.parent.mkdir(parents=True)
+        self.addCleanup(shutil.rmtree, inside.parent.parent)
+        inside.write_text("x = 1\n")
+        task["acceptance"]["support_files"][0]["path"] = str(inside)
+        self.assertIn(hidden.resolve(), inside.resolve().parents)
+        repository = dict(repository, hidden_tests=dict(
+            repository["hidden_tests"],
+            digest=__import__("sis.v3.study_runtime", fromlist=["x"])
+            .hidden_tests_digest(hidden)))
+        result = builder._acceptance(task, repository, "task")
+        self.assertEqual(result["support_files"][0]["target"],
+                         "tests/__init__.py")
+        inside.write_text("x = 2\n")
+        repository["hidden_tests"]["digest"] = __import__(
+            "sis.v3.study_runtime", fromlist=["x"]).hidden_tests_digest(hidden)
+        with self.assertRaisesRegex(builder.StudySpecError,
+                                    "support_file_digest_mismatch"):
+            builder._acceptance(task, repository, "task")
+
     def test_a_changed_hidden_tests_directory_is_refused(self):
         document = copy.deepcopy(self.document)
         hidden = Path(document["repositories"][-1]["hidden_tests"]["path"])
@@ -191,6 +241,457 @@ class PerTaskBaseCommitTests(unittest.TestCase):
             extra.unlink()
         self.assertTrue(any("hidden tests directory does not match" in p
                             for p in report["problems"]))
+
+
+def make_package_test_repository(path: Path) -> dict:
+    """A fix whose test needs files beside it, as cachetools' and jmespath's.
+
+    ``tests/`` is a package: ``tests/__init__.py`` defines a mixin the
+    test imports with ``from . import``; ``tests/helpers.py`` is imported
+    as ``from tests.helpers import``; ``tests/conftest.py`` and the root
+    ``conftest.py`` provide fixtures. ``src/calc/tests/`` is a test
+    package inside a source package, whose ``__init__.py`` must never be
+    captured.
+    """
+    path.mkdir(parents=True)
+    git(path, "init", "-q")
+    (path / "calc.py").write_text("def add(x, y):\n    return x - y\n")
+    tests = path / "tests"
+    tests.mkdir()
+    (tests / "__init__.py").write_text(
+        "import calc\n"
+        "class AddMixin:\n"
+        "    def test_add_zero(self):\n"
+        "        assert calc.add(1, 0) == 1\n")
+    (tests / "helpers.py").write_text(
+        "from .data import PAIRS\n"
+        "def expected(x, y):\n    return x + y\n")
+    (tests / "data.py").write_text("PAIRS = [(1, 2), (3, 4)]\n")
+    (tests / "unused.py").write_text("UNUSED = 1\n")
+    (tests / "conftest.py").write_text(
+        "import pytest\n"
+        "@pytest.fixture\n"
+        "def pairs():\n"
+        "    from tests.helpers import PAIRS\n"
+        "    return PAIRS\n")
+    (path / "conftest.py").write_text("ROOT = True\n")
+    (tests / "test_public.py").write_text(
+        "def test_public():\n    assert True\n")
+    package = path / "src" / "calc2" / "tests"
+    package.mkdir(parents=True)
+    (path / "src" / "calc2" / "__init__.py").write_text("VALUE = 1\n")
+    (package / "__init__.py").write_text("")
+    (package / "helper.py").write_text("HELP = 1\n")
+    (package / "test_calc2.py").write_text(
+        "def test_value():\n    assert True\n")
+    base = commit(path, "Initial layout")
+    (path / "calc.py").write_text("def add(x, y):\n    return x + y\n")
+    (tests / "test_add.py").write_text(
+        "import unittest\n"
+        "import calc\n"
+        "from . import AddMixin\n"
+        "from tests.helpers import expected\n"
+        "class AddTest(unittest.TestCase, AddMixin):\n"
+        "    pass\n"
+        "def test_pairs(pairs):\n"
+        "    for x, y in pairs:\n"
+        "        assert calc.add(x, y) == expected(x, y)\n")
+    fix = commit(path, "Fix add subtracting instead of adding")
+    (path / "src" / "calc2" / "__init__.py").write_text("VALUE = 2\n")
+    (package / "test_calc2.py").write_text(
+        "from . import helper\n"
+        "from .. import VALUE\n"
+        "import calc2\n"
+        "def test_value():\n    assert helper.HELP == 1\n")
+    nested = commit(path, "Fix calc2 value")
+    git(path, "remote", "add", "origin", "https://example.invalid/calc.git")
+    head = git(path, "rev-parse", "HEAD")
+    git(path, "update-ref", "refs/remotes/origin/main", head)
+    return {"path": path, "base": base, "fix": fix, "nested": nested}
+
+
+@unittest.skipUnless(GIT and POSIX, "git and POSIX key custody are required")
+class SupportFileTests(unittest.TestCase):
+    """Files the hidden test imports are registered with it."""
+
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.root = Path(temp.name)
+        self.importer = load_tool("import_study_tasks")
+        self.repo = make_package_test_repository(self.root / "repo")
+
+    def describe(self, commit_id):
+        import re
+        return self.importer.describe_commit(
+            self.repo["path"], commit_id, fix_pattern=re.compile("Fix"))
+
+    def test_the_test_package_conftests_and_helpers_are_captured(self):
+        info = self.describe(self.repo["fix"])
+        self.assertEqual(info["test_path"], "tests/test_add.py")
+        self.assertEqual(sorted(info["support"]), [
+            "conftest.py", "tests/__init__.py", "tests/conftest.py",
+            "tests/data.py", "tests/helpers.py"])
+        # Bytes come from the fix commit.
+        self.assertIn(b"def expected", info["support"]["tests/helpers.py"])
+        self.assertEqual(
+            sorted(self.importer.private_files(info)),
+            sorted([*info["support"], "tests/test_add.py"]))
+
+    def test_a_source_package_above_the_tests_is_never_captured(self):
+        info = self.describe(self.repo["nested"])
+        self.assertEqual(info["test_path"], "src/calc2/tests/test_calc2.py")
+        # ``from .. import VALUE`` names the source package: the
+        # submission's, not evaluator material.
+        self.assertEqual(sorted(info["support"]), [
+            "conftest.py", "src/calc2/tests/__init__.py",
+            "src/calc2/tests/helper.py"])
+
+    def test_links_are_never_captured(self):
+        path = self.repo["path"]
+        (path / "tests" / "linked.py").symlink_to("data.py")
+        commit(path, "Add a link")
+        (path / "calc.py").write_text("def add(x, y):\n    return y + x\n")
+        (path / "tests" / "test_add.py").write_text(
+            "from tests import linked, data\n"
+            "def test_link():\n    assert linked.PAIRS == data.PAIRS\n")
+        fix = commit(path, "Fix add argument order")
+        info = self.describe(fix)
+        self.assertIn("tests/data.py", info["support"])
+        self.assertNotIn("tests/linked.py", info["support"])
+
+    def test_helpers_in_subpackages_bring_their_relative_imports(self):
+        # A helper reached as ``tests.sub.helper`` resolves its own
+        # relative imports against its own package chain, recursively.
+        path = self.repo["path"]
+        sub = path / "tests" / "sub"
+        (sub / "deeper").mkdir(parents=True)
+        (sub / "__init__.py").write_text("")
+        (sub / "helper.py").write_text(
+            "from .data import VALUE\n"
+            "from ..data import PAIRS\n"
+            "from .deeper import leaf\n")
+        (sub / "data.py").write_text("from .deeper.leaf import LEAF\n"
+                                     "VALUE = 3\n")
+        (sub / "deeper" / "__init__.py").write_text("")
+        (sub / "deeper" / "leaf.py").write_text("from ... import unused\n"
+                                                "LEAF = 4\n")
+        (sub / "stray.py").write_text("STRAY = 1\n")
+        commit(path, "Add sub helpers")
+        (path / "calc.py").write_text("def add(x, y):\n    return y + x\n")
+        (path / "tests" / "test_sub.py").write_text(
+            "import tests.sub.helper as helper\n"
+            "def test_sub():\n    assert helper.VALUE == 3\n")
+        info = self.describe(commit(path, "Fix add operand order"))
+        self.assertEqual(sorted(info["support"]), [
+            "conftest.py", "tests/__init__.py", "tests/conftest.py",
+            "tests/data.py", "tests/helpers.py", "tests/sub/__init__.py",
+            "tests/sub/data.py", "tests/sub/deeper/__init__.py",
+            "tests/sub/deeper/leaf.py", "tests/sub/helper.py",
+            "tests/unused.py"])
+
+    def add_data(self, files: dict[str, str], links: dict[str, str] = ()):
+        path = self.repo["path"]
+        for relative, text in files.items():
+            target = path / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(text)
+        for relative, source in dict(links).items():
+            (path / relative).symlink_to(source)
+        commit(path, "Add test data")
+
+    def fix_with_test(self, name: str, text: str) -> str:
+        path = self.repo["path"]
+        (path / "calc.py").write_text("def add(x, y):\n    return y + x\n")
+        (path / "tests" / name).write_text(text)
+        return commit(path, "Fix add operand order")
+
+    #: jmespath's compliance test: a data directory named by a joined
+    #: literal and listed at run time.
+    DATA_TEST = (
+        "import glob\n"
+        "import json\n"
+        "import os\n"
+        "from pathlib import Path\n"
+        "import calc\n"
+        "from tests.reader import load\n"
+        "HERE = os.path.dirname(os.path.abspath(__file__))\n"
+        "CASES = os.path.join(HERE, 'compliance')\n"
+        "def test_cases():\n"
+        "    names = sorted(glob.glob(os.path.join(CASES, '*.json')))\n"
+        "    assert [os.path.basename(n) for n in names] == ["
+        "'a.json', 'b.json']\n"
+        "    for name in names:\n"
+        "        for x, y, total in json.load(open(name)):\n"
+        "            assert calc.add(x, y) == total\n"
+        "    assert (Path(__file__).parent / 'fixtures' / 'one.txt')"
+        ".read_text() == 'one'\n"
+        "    assert load() == 'helper data'\n")
+
+    def data_repository(self, links: bool = True, **extra) -> str:
+        self.add_data({
+            # Broken again, so the fix's base fails the new test.
+            "calc.py": "def add(x, y):\n    return x - y\n",
+            "tests/compliance/a.json": "[[1, 2, 3]]",
+            "tests/compliance/b.json": "[[2, 2, 4]]",
+            "tests/compliance/nested/c.txt": "nested",
+            "tests/compliance/skip.py": "RAN = 1\n",
+            "tests/compliance/cache.pyc": "",
+            "tests/fixtures/one.txt": "one",
+            "tests/fixtures/other.txt": "other",
+            "tests/helper_data.txt": "helper data",
+            "tests/reader.py": (
+                "import os\n"
+                "def load():\n"
+                "    here = os.path.dirname(__file__)\n"
+                "    return open(os.path.join(here, 'helper_data.txt'))"
+                ".read()\n"),
+            "tests/sub/__init__.py": "",
+            "tests/sub/notes.txt": "a package, not a data folder",
+            "README.txt": "outside the test root",
+            **extra,
+        }, links={"tests/compliance/linked.json": "a.json"} if links else {})
+        return self.fix_with_test("test_data.py", self.DATA_TEST + (
+            "def test_other_literals():\n"
+            "    assert '../README.txt' and 'sub' and 'fixtures/none.txt'\n"
+            "    assert '/etc/passwd' and 'compliance/skip.py'\n"))
+
+    def test_data_files_beside_the_test_are_captured(self):
+        info = self.describe(self.data_repository())
+        data = sorted(path for path in info["support"]
+                      if not path.endswith(".py"))
+        self.assertEqual(data, [
+            "tests/compliance/a.json", "tests/compliance/b.json",
+            "tests/compliance/nested/c.txt", "tests/fixtures/one.txt",
+            "tests/helper_data.txt"])
+        self.assertIn("tests/reader.py", info["support"])
+        self.assertEqual(info["support"]["tests/compliance/a.json"],
+                         b"[[1, 2, 3]]")
+        self.assertEqual(info["support_notes"], [])
+
+    def test_a_data_directory_over_the_cap_is_not_captured_in_part(self):
+        fix = self.data_repository(**{
+            f"tests/compliance/extra{index}.json": "[]"
+            for index in range(8)})
+        original = self.importer.MAX_SUPPORT_FILES
+        # The Python support files (6) and the two single data files
+        # fit; the eleven files of tests/compliance do not.
+        self.importer.MAX_SUPPORT_FILES = 12
+        self.addCleanup(setattr, self.importer, "MAX_SUPPORT_FILES",
+                        original)
+        info = self.describe(fix)
+        self.assertFalse(any(path.startswith("tests/compliance/")
+                             for path in info["support"]))
+        self.assertIn("tests/fixtures/one.txt", info["support"])
+        self.assertEqual(info["support_notes"], [{
+            "path": "tests/compliance", "reason": "support_files_cap",
+            "files": 11, "room": 4}])
+
+    def test_only_whole_division_chains_name_a_path(self):
+        # ``HERE / 'fixtures' / 'nested' / 'one.txt'`` names one file. Its
+        # inner chain ``HERE / 'fixtures' / 'nested'`` is part of that
+        # path, not a reference to the directory, whose siblings would
+        # otherwise be captured (and could crowd out required material).
+        found = self.importer._string_paths(
+            b"x = HERE / 'fixtures' / 'nested' / 'one.txt'\n")
+        self.assertIn(("fixtures", "nested", "one.txt"), found)
+        self.assertNotIn(("fixtures", "nested"), found)
+        # A directory the chain names as a whole is still a reference.
+        self.assertIn(("fixtures", "nested"), self.importer._string_paths(
+            b"x = HERE / 'fixtures' / 'nested'\n"))
+        self.add_data({"tests/fixtures/nested/one.txt": "one",
+                       "tests/fixtures/nested/sibling.txt": "sibling"})
+        info = self.describe(self.fix_with_test("test_nested.py", (
+            "from pathlib import Path\n"
+            "HERE = Path(__file__).parent\n"
+            "def test_nested():\n"
+            "    assert (HERE / 'fixtures' / 'nested' / 'one.txt')"
+            ".read_text() == 'one'\n")))
+        data = sorted(path for path in info["support"]
+                      if not path.endswith(".py"))
+        self.assertEqual(data, ["tests/fixtures/nested/one.txt"])
+
+    def test_a_file_inside_a_refused_directory_is_not_kept(self):
+        # The test names the directory and one of its files. When the
+        # directory is over the cap, none of it is staged: a test that
+        # lists ``cases`` must not silently run the one file kept.
+        self.add_data({f"tests/cases/{name}.json": "[]"
+                       for name in ("a", "b", "c", "d", "e")}
+                      | {"tests/cases/deeper/f.json": "[]"})
+        fix = self.fix_with_test("test_cases.py", (
+            "import os\n"
+            "HERE = os.path.dirname(__file__)\n"
+            "def test_cases():\n"
+            "    assert os.listdir(os.path.join(HERE, 'cases'))\n"
+            "    assert open(os.path.join(HERE, 'cases/a.json')).read()\n"
+            "    assert os.listdir(os.path.join(HERE, 'cases', 'deeper'))\n"))
+        full = self.describe(fix)
+        cases = sorted(path for path in full["support"]
+                       if path.startswith("tests/cases/"))
+        self.assertEqual(len(cases), 6)
+        code = len(full["support"]) - len(cases)
+        original = self.importer.MAX_SUPPORT_FILES
+        # Room for the single file and for ``cases/deeper`` alone, not
+        # for the whole directory.
+        self.importer.MAX_SUPPORT_FILES = code + 3
+        self.addCleanup(setattr, self.importer, "MAX_SUPPORT_FILES",
+                        original)
+        info = self.describe(fix)
+        self.assertEqual([path for path in info["support"]
+                          if path.startswith("tests/cases/")], [])
+        self.assertEqual([note["path"] for note in info["support_notes"]],
+                         ["tests/cases", "tests/cases/deeper"])
+        self.assertEqual(info["support_notes"][0]["reason"],
+                         "support_files_cap")
+
+    def test_a_data_file_over_the_size_bound_is_noted(self):
+        original = self.importer.MAX_PRIVATE_FILE_BYTES
+        self.importer.MAX_PRIVATE_FILE_BYTES = 4096
+        self.addCleanup(setattr, self.importer, "MAX_PRIVATE_FILE_BYTES",
+                        original)
+        self.add_data({"tests/big.txt": "x" * 4097})
+        info = self.describe(self.fix_with_test(
+            "test_big.py", "def test_big():\n    assert 'big.txt'\n"))
+        self.assertNotIn("tests/big.txt", info["support"])
+        self.assertEqual(info["support_notes"], [
+            {"path": "tests/big.txt", "reason": "private_size_bound"}])
+
+    def test_imported_data_files_are_verified_and_staged(self):
+        # No link: a task tree with one is unusable.
+        fix = self.data_repository(links=False)
+        output = self.root / "fragment.json"
+        hidden_dir = self.root / "private"
+        import_repository(
+            self.importer, self.repo["path"], "calc", partition="holdout",
+            hidden_dir=hidden_dir, output=output)
+        fragment = json.loads(output.read_text())
+        task = next((item for item in fragment["tasks"]
+                     if item["source"]["fix_commit"] == fix), None)
+        self.assertIsNotNone(task, fragment["rejected"])
+        self.assertEqual(task["source"]["verification"],
+                         {"base": "fail", "fix": "pass"})
+        targets = {entry["target"]
+                   for entry in task["acceptance"]["support_files"]}
+        self.assertIn("tests/compliance/b.json", targets)
+        campaign = load_tool("five_arm_campaign")
+        from sis.v3.study_runtime import hidden_tests_digest
+        repository = {"hidden_tests": {
+            "path": str(hidden_dir.resolve()),
+            "digest": hidden_tests_digest(hidden_dir)}}
+        material = campaign._acceptance_material(task, repository)
+        self.assertEqual(material["tests/compliance/a.json"], b"[[1, 2, 3]]")
+
+    def test_support_files_are_bounded(self):
+        original = self.importer.MAX_SUPPORT_FILES
+        self.importer.MAX_SUPPORT_FILES = 2
+        self.addCleanup(setattr, self.importer, "MAX_SUPPORT_FILES",
+                        original)
+        with self.assertRaisesRegex(self.importer.ImportError_,
+                                    "support_files_exceed_the_bound"):
+            self.describe(self.repo["fix"])
+
+    def test_imported_tasks_record_and_verify_support_files(self):
+        output = self.root / "fragment.json"
+        hidden_dir = self.root / "private"
+        code = import_repository(
+            self.importer, self.repo["path"], "calc", partition="holdout",
+            hidden_dir=hidden_dir, output=output)
+        fragment = json.loads(output.read_text())
+        self.assertEqual(code, 0, fragment["rejected"])
+        task = next(item for item in fragment["tasks"]
+                    if item["source"]["fix_commit"] == self.repo["fix"])
+        self.assertEqual(task["source"]["verification"],
+                         {"base": "fail", "fix": "pass"})
+        acceptance = task["acceptance"]
+        support = {entry["target"]: entry
+                   for entry in acceptance["support_files"]}
+        self.assertEqual(sorted(support), [
+            "conftest.py", "tests/__init__.py", "tests/conftest.py",
+            "tests/data.py", "tests/helpers.py"])
+        for target, entry in support.items():
+            stored = Path(entry["path"])
+            self.assertIn(hidden_dir.resolve(), stored.resolve().parents)
+            self.assertEqual(stored.read_bytes(), (
+                self.repo["path"] / target).read_bytes())
+        campaign = load_tool("five_arm_campaign")
+        repository = {"hidden_tests": {
+            "path": str(hidden_dir.resolve()),
+            "digest": __import__("sis.v3.study_runtime", fromlist=["x"])
+            .hidden_tests_digest(hidden_dir)}}
+        material = campaign._acceptance_material(task, repository)
+        self.assertEqual(sorted(material),
+                         sorted([*support, "tests/test_add.py"]))
+        # A support file changed after import is refused, as the primary
+        # test file is.
+        stored = Path(support["tests/helpers.py"]["path"])
+        stored.write_text("def expected(x, y):\n    return x - y\n")
+        repository["hidden_tests"]["digest"] = __import__(
+            "sis.v3.study_runtime", fromlist=["x"]).hidden_tests_digest(
+                hidden_dir)
+        with self.assertRaisesRegex(ValueError, "support_file_digest"):
+            campaign._acceptance_material(task, repository)
+
+    def test_support_file_entries_are_validated(self):
+        from sis.v3.study_runtime import (StudyRuntimeError,
+                                          load_support_files,
+                                          support_file_problems)
+        hidden = self.root / "hidden"
+        hidden.mkdir()
+        good = hidden / "init.py"
+        good.write_text("x = 1\n")
+        outside = self.root / "outside.py"
+        outside.write_text("x = 1\n")
+        import hashlib
+        digest = hashlib.sha256(b"x = 1\n").hexdigest()
+        base = {"hidden_tests_path": "t.py",
+                "hidden_tests_target": "tests/test_x.py"}
+
+        def entry(**changes):
+            item = {"target": "tests/__init__.py", "path": str(good),
+                    "digest": digest}
+            item.update(changes)
+            return dict(base, support_files=[item])
+
+        self.assertEqual(support_file_problems(entry()), [])
+        # A data file the test reads beside itself is a target too.
+        self.assertEqual(support_file_problems(
+            entry(target="tests/compliance/basic.json")), [])
+        self.assertEqual(support_file_problems(
+            entry(target="tests/data/README")), [])
+        self.assertEqual(load_support_files(entry(), hidden),
+                         {"tests/__init__.py": b"x = 1\n"})
+        for bad in (entry(target="../x.py"), entry(target="/etc/x.py"),
+                    entry(target="tests/test_x.py"), entry(target="a.pyc"),
+                    entry(target="tests/lib.so"), entry(target="x.pth"),
+                    entry(target="pytest.ini"),
+                    entry(target="_sis_split_bootstrap.py"),
+                    entry(target="./a.py"), entry(digest="0" * 63),
+                    entry(target="tests//x.py"), entry(target="tests/x.py/"),
+                    entry(target="tests/./x.py"), entry(target="tests/"),
+                    dict(base, support_files="x"),
+                    {"support_files": []}):
+            self.assertTrue(support_file_problems(bad), bad)
+            with self.assertRaises(StudyRuntimeError):
+                load_support_files(bad, hidden)
+        # Without hidden_tests_target the primary test is staged under its
+        # file name, as the campaign does: no support file may take it.
+        untargeted = {"hidden_tests_path": str(hidden / "test_x.py"),
+                      "support_files": [{"target": "test_x.py",
+                                         "path": str(good),
+                                         "digest": digest}]}
+        self.assertTrue(support_file_problems(untargeted))
+        with self.assertRaisesRegex(StudyRuntimeError, "repeated"):
+            load_support_files(untargeted, hidden)
+        with self.assertRaisesRegex(StudyRuntimeError, "outside_hidden"):
+            load_support_files(entry(path=str(outside)), hidden)
+        with self.assertRaisesRegex(StudyRuntimeError, "digest_mismatch"):
+            load_support_files(entry(digest="0" * 64), hidden)
+        link = hidden / "link.py"
+        link.symlink_to(good)
+        with self.assertRaisesRegex(StudyRuntimeError, "regular_file"):
+            load_support_files(entry(path=str(link)), hidden)
+        with self.assertRaisesRegex(StudyRuntimeError, "hidden_tests_dir"):
+            load_support_files(entry(), None)
 
 
 if __name__ == "__main__":

@@ -9,6 +9,11 @@ output text, file paths, diffs, and message content are never recorded.
 The CLI's own sandbox flag (``read-only``/``workspace-write``) constrains the
 agent's tool calls; it is not an evaluator security boundary and is recorded
 as-is. ``danger-full-access`` is not offered.
+
+With ``principal`` (:class:`sis.v3.agent_principal.AgentPrincipal`) the CLI
+runs as that separate OS user, exactly as the Claude Code adapter does: the
+request travels over a pipe, ``HOME`` is the agent's, and every kill runs as
+the agent user.
 """
 from __future__ import annotations
 
@@ -64,6 +69,7 @@ class CodexCliAdapter:
         codex_path: str | Path | None = None,
         wall_seconds: int = _DEFAULT_WALL_SECONDS,
         env_extra: Mapping[str, str] | None = None,
+        principal=None,
     ) -> None:
         binary = str(codex_path) if codex_path is not None else shutil.which("codex")
         if not binary:
@@ -76,6 +82,7 @@ class CodexCliAdapter:
         self._binary = str(resolved)
         self._wall_seconds = wall_seconds
         self._env_extra = dict(env_extra or {})
+        self._principal = principal
         self._active: dict[str, _ActiveProcess] = {}
         self._lock = threading.Lock()
 
@@ -90,7 +97,7 @@ class CodexCliAdapter:
     ) -> AgentTurn:
         """Launch ``codex exec`` and stream normalized observation events."""
         self._validate_prompt(prompt)
-        root = self._workspace(workspace)
+        root = self._workspace(workspace, self._principal)
         if sandbox not in _CLI_SANDBOXES:
             raise ValueError("sandbox must be 'read_only' or 'workspace_write'")
         argv = [
@@ -109,20 +116,24 @@ class CodexCliAdapter:
         thread = thread_id or "clithr-" + secrets.token_hex(8)
         turn = "cliturn-" + secrets.token_hex(8)
         try:
-            proc = subprocess.Popen(
-                argv,
-                cwd=str(root),
-                env=self._environment(),
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                start_new_session=True,
-            )
-        except OSError as exc:
+            if self._principal is not None:
+                proc = self._principal.launch(
+                    argv, cwd=str(root), env=self._environment())
+            else:
+                proc = subprocess.Popen(
+                    argv,
+                    cwd=str(root),
+                    env=self._environment(),
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    start_new_session=True,
+                )
+        except (OSError, RuntimeError) as exc:
             raise CodexCliError(f"failed to launch codex CLI: {exc}") from exc
 
         timed_out = [False]
-        watchdog = threading.Timer(self._wall_seconds, self._expire, args=(proc, timed_out))
+        watchdog = threading.Timer(self._wall_seconds, self._timeout, args=(proc, timed_out))
         watchdog.daemon = True
         watchdog.start()
         with self._lock:
@@ -148,7 +159,7 @@ class CodexCliAdapter:
             active = self._active.get(turn_id)
         if active is None:
             raise CodexCliError("turn is not active in this adapter")
-        self._kill_group(active.proc)
+        self._terminate(active.proc)
         return {"cancelled": turn_id}
 
     def close(self) -> None:
@@ -156,7 +167,7 @@ class CodexCliAdapter:
             active = list(self._active.values())
             self._active.clear()
         for item in active:
-            self._kill_group(item.proc)
+            self._terminate(item.proc)
 
     def __enter__(self) -> "CodexCliAdapter":
         return self
@@ -237,7 +248,7 @@ class CodexCliAdapter:
             except subprocess.TimeoutExpired:
                 # The child outlived its output stream; stop it rather than
                 # letting a stuck process hold the turn open.
-                self._kill_group(proc)
+                self._terminate(proc)
                 try:
                     proc.wait(timeout=5)
                 except subprocess.TimeoutExpired:
@@ -263,7 +274,8 @@ class CodexCliAdapter:
             # exit while commands it started keep running in its group.
             # The group id is the leader's pid (start_new_session), which
             # still names the group after the leader has been reaped.
-            self._kill_group(proc)
+            # Under a principal every process of the agent user is killed.
+            self._terminate(proc)
             stderr_thread.join(timeout=5)
             for stream in (proc.stdout, proc.stderr):
                 try:
@@ -389,12 +401,27 @@ class CodexCliAdapter:
                 env[name] = value
         env.setdefault("LANG", "en_US.UTF-8")
         env.update(self._env_extra)
+        if self._principal is not None:
+            env = self._principal.environment(env)
         return env
 
     @staticmethod
     def _expire(proc: subprocess.Popen, timed_out: list[bool]) -> None:
         timed_out[0] = True
         CodexCliAdapter._kill_group(proc)
+
+    def _timeout(self, proc: subprocess.Popen, timed_out: list[bool]) -> None:
+        timed_out[0] = True
+        self._terminate(proc)
+
+    def _terminate(self, proc: subprocess.Popen) -> None:
+        """Kill as the agent user first (see ClaudeCodeAdapter._terminate)."""
+        if self._principal is not None:
+            try:
+                self._principal.kill_all()
+            except Exception:
+                pass
+        self._kill_group(proc)
 
     @staticmethod
     def _kill_group(proc: subprocess.Popen) -> None:
@@ -415,7 +442,12 @@ class CodexCliAdapter:
             pass
 
     @staticmethod
-    def _workspace(workspace: str | Path) -> Path:
+    def _workspace(workspace: str | Path, principal=None) -> Path:
+        if principal is not None:
+            root = Path(workspace)
+            if not root.is_absolute():
+                raise ValueError("workspace must be an absolute path")
+            return root
         try:
             root = Path(workspace).expanduser().resolve(strict=True)
         except (OSError, TypeError, ValueError) as exc:
