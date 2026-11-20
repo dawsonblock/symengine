@@ -55,8 +55,9 @@ handle.
   (``list``, ``dict``, ``set``, ``bytearray``, ``deque`` and their
   subclasses) is a handle to the worker's own object, never a copy:
   an attribute read of a module or object (``pkg.REGISTRY``,
-  ``obj.items``), an item read with a non-slice key (``pkg.TABLE["a"]``)
-  and an in-place operator that returns its operand (``ref += [x]``).
+  ``obj.items``), an item read with a non-slice key (``pkg.TABLE["a"]``),
+  an in-place operator that returns its operand (``ref += [x]``) and
+  what ``__enter__`` returns (``with ref as log``).
   ``pkg.UNCOUNTABLES.add(x)`` therefore changes the set the submission
   reads, and ``len``/``in``/iteration/``==``/indexing on the handle go
   through the ``dunder`` op. One handle per object, so ``old =
@@ -72,8 +73,8 @@ handle.
   from a fixed table in the worker: ``len``, ``in``, item get/set/delete,
   iteration, ``reversed``, ``bool``/``str``/``repr``/``hash``/``format``,
   ``int``/``float``/``index``/``round``, comparisons, arithmetic
-  (plain, reflected and in-place), unary operators, ``with`` blocks,
-  ``copy.copy``/``copy.deepcopy``,
+  (plain, reflected and in-place, and three-argument ``pow``), unary
+  operators, ``with`` blocks, ``copy.copy``/``copy.deepcopy``,
   ``isinstance``/``issubclass`` against a worker class, and attribute
   assignment and deletion. The worker refuses every other name, and no
   attribute path may name a dunder outside ``__name__``,
@@ -899,8 +900,15 @@ def exit_value(arg):
 
 
 def dunder(obj, name, args):
+    if name == "__enter__" and not args:
+        # ``with x as y`` binds what __enter__ returned: state, so a
+        # mutable result is the worker's own object, as an item read is.
+        return state(UNARY[name](obj))
     if name in UNARY and not args:
         return result(UNARY[name](obj), force_ref=name == "__iter__")
+    if name == "__pow__" and len(args) == 2:
+        # Three-argument pow(x, exponent, modulus).
+        return result(pow(obj, args[0], args[1]))
     if name in BINARY and len(args) == 1:
         value = BINARY[name](obj, args[0])
         if name in INPLACE and value is obj:

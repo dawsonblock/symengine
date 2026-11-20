@@ -837,6 +837,37 @@ class SplitProtocolTests(SplitHarness):
             "                          'exit:ValueError:quiet']\n"
         )})
 
+    def test_enter_state_and_modular_pow(self):
+        self.write("more.py", (
+            "class Recorder:\n"
+            "    def __init__(self):\n"
+            "        self.log = []\n"
+            "    def __enter__(self):\n"
+            "        return self.log\n"
+            "    def __exit__(self, *exc):\n"
+            "        self.closed = list(self.log)\n"
+            "        return False\n"
+            "class Number:\n"
+            "    def __init__(self, value):\n"
+            "        self.value = value\n"
+            "    def __pow__(self, exponent, modulus=None):\n"
+            "        return pow(self.value, exponent, modulus)\n"))
+        self.assertPasses({"test_hidden.py": (
+            "import more\n"
+            "def test_enter_and_pow():\n"
+            # ``with x as y`` binds what __enter__ returned: the worker's
+            # own list, so __exit__ sees the body's changes.
+            "    recorder = more.Recorder()\n"
+            "    with recorder as log:\n"
+            "        log.append(1)\n"
+            "    assert recorder.closed == [1]\n"
+            "    assert pow(more.Number(3), 3, 5) == 2\n"
+            "    assert more.Number(3) ** 2 == 9\n"
+        )})
+        client = self.host_client()
+        number = client.call(["more", "Number"], (3,), {})
+        self.assertEqual(pow(number, 3, 5), 2)
+
     def test_isinstance_and_issubclass_ask_the_worker(self):
         self.assertPasses({"test_hidden.py": (
             "import shop\n"
