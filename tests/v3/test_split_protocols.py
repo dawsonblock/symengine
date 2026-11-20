@@ -1232,6 +1232,73 @@ class SplitExceptionTests(SplitHarness):
         })
         self.assertFalse(marker.exists())
 
+    def test_a_cached_stand_in_gains_the_path_read_later(self):
+        # A factory-made class has no importable qualified name, so the
+        # stand-in built when it is first raised has no path. Reading the
+        # alias later supplies one; the same class keeps working.
+        self.write("made.py", (
+            "def factory():\n"
+            "    class Error(Exception):\n"
+            "        code = 5\n"
+            "    return Error\n"
+            "Error = factory()\n"
+            "def boom():\n"
+            "    raise Error('made')\n"
+            "def is_error(cls):\n"
+            "    return cls is Error\n"))
+        self.assertPasses({"test_hidden.py": (
+            "import pytest\n"
+            "import made\n"
+            "def test_alias_after_raise():\n"
+            "    with pytest.raises(Exception, match='made') as info:\n"
+            "        made.boom()\n"
+            "    cls = made.Error\n"
+            "    assert type(info.value) is cls\n"
+            "    assert cls.code == 5\n"
+            "    assert made.is_error(cls)\n"
+        )})
+
+    def test_threads_share_one_stand_in_per_class(self):
+        # Exception classes are rebuilt outside the request lock; two
+        # threads missing the cache at once must still end up with one
+        # class, or a later raise fails to match the other's.
+        self.write("many.py", (
+            "NAMES = ['E%d' % index for index in range(40)]\n"
+            "for _name in NAMES:\n"
+            "    globals()[_name] = type(_name, (Exception,), {})\n"
+            "def boom(index):\n"
+            "    raise globals()['E%d' % index](index)\n"))
+        self.assertPasses({"test_hidden.py": (
+            "import threading\n"
+            "import time\n"
+            "import many\n"
+            # White-box: widen the window between the cache miss and the
+            # publication, by slowing the bootstrap's stand-in metaclass.
+            "BOOT = type(many.NAMES).__getattr__.__globals__\n"
+            "class Slow(BOOT['RemoteExceptionMeta']):\n"
+            "    def __new__(mcls, *args):\n"
+            "        time.sleep(0.002)\n"
+            "        return super().__new__(mcls, *args)\n"
+            "def test_one_class(monkeypatch):\n"
+            "    monkeypatch.setitem(BOOT, 'RemoteExceptionMeta', Slow)\n"
+            "    seen = {}\n"
+            "    barrier = threading.Barrier(8)\n"
+            "    def work():\n"
+            "        barrier.wait()\n"
+            "        for index in range(40):\n"
+            "            try:\n"
+            "                many.boom(index)\n"
+            "            except Exception as exc:\n"
+            "                seen.setdefault(index, set()).add(type(exc))\n"
+            "    threads = [threading.Thread(target=work) for _ in range(8)]\n"
+            "    for thread in threads:\n"
+            "        thread.start()\n"
+            "    for thread in threads:\n"
+            "        thread.join()\n"
+            "    assert len(seen) == 40\n"
+            "    assert all(len(kinds) == 1 for kinds in seen.values())\n"
+        )})
+
     SKIPPING = (
         "import unittest\n"
         "class Mine(unittest.SkipTest):\n"

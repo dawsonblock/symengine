@@ -1156,6 +1156,7 @@ MAX_STAND_INS = 4096
 RUNNER_MODULES = ("unittest", "pytest", "_pytest", "pluggy", "doctest")
 # Local stand-ins for worker exception classes, by (module, qualname).
 STAND_INS = {}
+STAND_IN_LOCK = threading.RLock()
 
 mode, target, workspace = sys.argv[1], sys.argv[2], sys.argv[3]
 command = sys.argv[4:]
@@ -1422,29 +1423,44 @@ def trusted_class(module, qualname):
 
 def stand_in(module, qualname, bases, path, lease=None):
     key = (module, qualname)
-    cls = STAND_INS.get(key)
-    if cls is not None or len(STAND_INS) >= MAX_STAND_INS:
-        return cls
-    parts = qualname.split(".")
-    if path is None and module and all(part.isidentifier() for part in parts):
-        path, lease = [module, *parts], None
-    # A cached stand-in keeps the handle its path names (``_sis_lease``).
-    namespace = {"__module__": module, "__qualname__": qualname,
-                 "__doc__": None, "_sis_remote": key, "_sis_path": path,
-                 "_sis_lease": lease,
-                 "__str__": stand_in_str, "__getattr__": stand_in_getattr}
-    for candidate in (bases, (Exception,)):
-        try:
-            cls = RemoteExceptionMeta(parts[-1], candidate, dict(namespace))
-        except (TypeError, ValueError):
-            continue
-        # Only ordinary exceptions exist on this side: never a
-        # BaseException a test cannot catch, SystemExit or
-        # KeyboardInterrupt.
-        if issubclass(cls, Exception):
-            STAND_INS[key] = cls
+    # Built and published under one lock: test threads rebuild classes
+    # after the request lock, and two that miss the cache together must
+    # still get one class, or a later raise would not match the other's.
+    with STAND_IN_LOCK:
+        cls = STAND_INS.get(key)
+        if cls is not None:
+            if path is not None and cls.__dict__.get("_sis_path") is None:
+                # First raised under a name with no import path (a
+                # factory's ``<locals>`` class), now read by its alias:
+                # the same class gains the path, and keeps its identity.
+                type.__setattr__(cls, "_sis_path", list(path))
+                type.__setattr__(cls, "_sis_lease", lease)
             return cls
-    return None
+        if len(STAND_INS) >= MAX_STAND_INS:
+            return None
+        parts = qualname.split(".")
+        if (path is None and module
+                and all(part.isidentifier() for part in parts)):
+            path, lease = [module, *parts], None
+        # A cached stand-in keeps the handle its path names.
+        namespace = {"__module__": module, "__qualname__": qualname,
+                     "__doc__": None, "_sis_remote": key, "_sis_path": path,
+                     "_sis_lease": lease,
+                     "__str__": stand_in_str,
+                     "__getattr__": stand_in_getattr}
+        for candidate in (bases, (Exception,)):
+            try:
+                cls = RemoteExceptionMeta(
+                    parts[-1], candidate, dict(namespace))
+            except (TypeError, ValueError):
+                continue
+            # Only ordinary exceptions exist on this side: never a
+            # BaseException a test cannot catch, SystemExit or
+            # KeyboardInterrupt.
+            if issubclass(cls, Exception):
+                STAND_INS[key] = cls
+                return cls
+        return None
 
 
 def exception_class(classes, path=None, lease=None):
