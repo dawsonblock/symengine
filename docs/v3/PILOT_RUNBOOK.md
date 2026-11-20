@@ -97,6 +97,41 @@ git -C /study/repos/<id> checkout --detach <frozen commit>
 Holdout and induction repositories must be different codebases: no
 shared Git history (the validator compares root commits) and no copies.
 
+Screen the candidates before importing them. Docker grading is slow,
+and many correct upstream fixes are rejected for reasons a static scan
+predicts:
+
+```bash
+python3 tools/screen_study_repos.py --repo /study/repos/<id> \
+  --repo /study/repos/<id2> -o /study/diag/screen.json
+# add an empirical rate on the first N fix candidates (Docker, slow):
+#   --sample 6 --docker-image <pinned ref>
+```
+
+Run it as the user that owns the clones (Git refuses a checkout another
+user owns). For each repository it reports the layout and package
+names, the third-party test imports that the base image and the
+`-testdeps` variant lack, and patterns split custody cannot grade: a
+test-defined function, lambda, class or instance passed into the
+package (`key=`, callbacks), a package decorator on a test function, a
+test class subclassing a package class, `pickle`/`copy` of a package
+object, `monkeypatch.setattr`/`mock.patch` on the package, data files
+read beside the tests, and APIs Python 3.12 or pytest 8 removed
+(`assertEquals`, `assertRaisesRegexp`, nose `setup`, `yield` tests).
+The verdict (`likely`, `partial`, `unlikely`, for each image) rests on
+the share of the first ten fix candidates (`--candidates`) whose test
+file, at its fix commit, shows none of these, or on the test modules at
+HEAD when there are fewer than three candidates. It is a heuristic, not
+a verdict on any task: only `import_study_tasks.py --verify docker`
+decides. Prefer `likely` repositories, check `partial` ones with
+`--sample`, and record the screen with the pilot notes.
+
+On the pilot clones (2026-11-20) the screen gave inflection `likely`
+(6/6 candidates clean; Docker accepted 4/6), cachetools `unlikely` (0/10
+clean: package decorators on test functions, subclassing, callbacks;
+Docker 0/8) and jmespath `unlikely` (1/10 clean: hypothesis, nose-era
+APIs, subclassing, data files; Docker 0/8).
+
 ## 2. Tasks
 
 Holdout tasks (about 12–15 per holdout repository, into the study spec):

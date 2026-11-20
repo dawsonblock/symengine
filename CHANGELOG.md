@@ -33,6 +33,23 @@
   The local build passes the same probe as the base image (14 checks,
   split identity included), by image ID and by registry digest. Build,
   pin and probe steps are in `docs/v3/PILOT_RUNBOOK.md` §0.
+- **Repository screening.** `tools/screen_study_repos.py` estimates,
+  before any Docker grading, whether a repository's tasks can pass under
+  split custody. It reads test files through the hardened read-only Git
+  queries and parses them with `ast` (nothing is imported or run), and
+  reports the layout, third-party test imports missing from each image,
+  test-defined callables, classes or instances passed into the package,
+  package decorators on test functions, subclasses of package classes,
+  `pickle`/`copy` of package objects, `monkeypatch`/`mock.patch` on the
+  package, data files read beside tests, and Python 3.12/pytest 8
+  removals. Support modules count for the test modules that import them,
+  conftest fixtures for the modules that request them. The coarse
+  verdict rests on the first fix candidates at their fix commits (the
+  importer's own candidate selection), and `--sample N` adds the
+  importer's Docker acceptance rate. On the pilot clones it agrees with
+  the known results: inflection `likely` (Docker 4/6), cachetools and
+  jmespath `unlikely` (Docker 0/8 each). The output says it is a
+  heuristic, not a verdict on any task.
 
 ## 2026-11-20 — Split custody releases handles and stages test data (SIS-FIX-20)
 
