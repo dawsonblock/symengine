@@ -282,20 +282,36 @@
   interprocess sandbox. Workspace modules — including packages and their
   submodules — are proxied, except names the evaluator's environment
   provides (standard library, installed packages, modules beside the
-  tests): a workspace cannot shadow a library the tests import. A
+  tests): a workspace cannot shadow a library the tests import. The
+  bootstrap imports such a name from the spec it found on the trusted
+  path itself, a standard-library name the evaluator lacks is missing
+  rather than the workspace's, and a path-entry hook makes every
+  `sys.path` entry inside the workspace find nothing, so no later
+  finder (pytest's assertion rewriter included) can load a workspace
+  file in the evaluator whatever puts the workspace on `sys.path`. A
   src-layout workspace is searched at its root and then under `src/`, in
-  the same order in both processes. Only data crosses the socket as
+  the same order in both processes; a namespace package spanning both
+  keeps every portion, in that order. Only data crosses the socket as
   values (scalars, bytes, and bounded lists, tuples, sets, frozensets
   and mappings of data); every other object stays in the worker behind
   a handle. Protocols on a handle (`len`, `in`, indexing, iteration,
   comparisons, arithmetic, `bool`/`str`/`repr`/`hash`, `with`,
   `isinstance`) go through one worker op restricted to a fixed table of
   dunder names; `__getattribute__`, `__reduce__`, `__class__`,
-  `__dict__` and the like are refused. Worker exceptions cross as class
-  names only and are raised as local stand-in classes that always derive
-  from `Exception`, so `pytest.raises(pkg.Error)` matches without a
-  worker ever raising `BaseException`, `SystemExit` or
-  `KeyboardInterrupt` in the evaluator. The module docstring of
+  `__dict__` and the like are refused. A data result too large for one
+  frame comes back as a handle to the value already computed. Worker
+  exceptions cross as class names only and are raised as local stand-in
+  classes that always derive from `Exception`, so
+  `pytest.raises(pkg.Error)` matches without a worker ever raising
+  `BaseException`, `SystemExit` or `KeyboardInterrupt` in the evaluator.
+  A worker-reported name resolves to an evaluator class only for
+  builtins and standard-library modules (never the runner's own):
+  a class of an installed package or a test helper gets an inert
+  stand-in, so no hook of it runs with worker-chosen arguments. Handles
+  are released when the evaluator's last reference to one is collected
+  (a counted lease per handle; the release rides on the next request),
+  so `MAX_HANDLES` bounds live handles only; a malformed release is
+  ignored by the worker. The module docstring of
   `sis.v3.split_harness` lists what this cannot cover (local callbacks
   passed to the submission, `type()` identity, subclassing a worker
   class, mutation through returned data). A test that deliberately
@@ -306,7 +322,16 @@
   `conftest.py` of the test's directory and of every directory above
   it, the `__init__.py` of each test package up to its test root, and
   the modules the test (or a captured helper) imports from its own test
-  package. The importer reads them from the fix commit at registration
+  package, each relative import resolved against the importing file's
+  own package, and the data files the test or a captured helper names
+  by a string-literal path: a non-Python regular file in a test
+  directory under the test root, or every data file of a test
+  subdirectory it names (`os.path.join(HERE, 'compliance')`), all of
+  them or, past `MAX_SUPPORT_FILES` or a size bound, none, with a
+  recorded reason. Data files are staged at their repository paths, so
+  `dirname(__file__)` finds them; no support target has a loadable-code
+  suffix (`.pyc`, `.so`, `.pth`, ...) other than `.py`. The importer
+  reads them from the fix commit at registration
   time, never from a submission, so they are as trusted as the test,
   and like the test they run in the evaluator process. Only paths in a
   `test`/`tests` directory count as packages or helpers: a source
@@ -318,14 +343,21 @@
   five-arm campaign read each back and check its digest before
   registration, as they do for the primary test, and the test plus its
   support files stay within the private-material bounds
-  (`normalize_private_files`). Pytest's rootdir is the private
-  directory, so the test is collected inside its package
-  (`tests.test_x`). The bootstrap trusts a module found on the current
-  `sys.path` with every entry in the workspace removed (compared after
-  resolving links), so a helper pytest made importable is evaluator
-  material while a same-named workspace module stays proxied. Data
-  files a test reads from beside itself (jmespath's compliance JSON) are
-  not registered.
+  (`normalize_private_files`). Two separate things place the test.
+  `-c <private>/pytest.ini` makes the private directory pytest's
+  rootdir and configuration, which keeps workspace configuration and
+  conftest files out; it does not change `sys.path` or the test's
+  module name. The staged layout and pytest's import mode do: with the
+  support files at their repository paths, the default `prepend` mode
+  finds the test's package chain (`tests/__init__.py`), imports it as
+  `tests.test_x` and puts that chain's parent, inside the private
+  directory, on `sys.path`. The bootstrap trusts a module found on the
+  current `sys.path` with every entry in the workspace removed
+  (compared after resolving links), so a helper pytest made importable
+  is evaluator material while a same-named workspace module stays
+  proxied. A test that names its own package through the source
+  package (`from calc2.tests import helper` in `src/calc2/tests/`)
+  reaches the workspace's copy through the proxied `calc2`.
 - Reads of mutable submission state (a module or object attribute, or an
   item, that is a `list`, `dict`, `set`, `bytearray` or `deque`) return
   a handle to the worker's object, so a test's mutation reaches the

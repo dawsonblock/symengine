@@ -1,5 +1,52 @@
 # Changelog
 
+## 2026-11-20 — Split custody releases handles and stages test data (SIS-FIX-20)
+
+The boundary is unchanged: nothing is unpickled or evaluated in the
+evaluator, no class or callable crosses except as a handle, and the
+evaluator never raises `BaseException`, `SystemExit`,
+`KeyboardInterrupt` or `unittest.SkipTest` for the worker. Several
+paths are now tighter.
+
+- **Handles are released.** Every handle has one lease in the
+  bootstrap, shared by the `Ref`s, exceptions and stand-in classes that
+  refer to it and counting how often the worker handed it out. When the
+  lease is collected its finalizer queues `[handle, count]` (no lock,
+  no I/O); the next request carries the queue as `"release"`, and the
+  worker drops a handle once every hand-out is released. Malformed,
+  unknown, repeated and non-`#n` entries are ignored and never fail a
+  request. `MAX_HANDLES` now bounds live handles, so a long or threaded
+  test (jmespath's 32 x 4096 calls) no longer exhausts it.
+- **Trusted names import from the trusted path.** A name the evaluator
+  provides is imported from the spec found on `sys.path` without the
+  workspace, by the finder itself; a path-entry hook makes every
+  workspace entry on `sys.path` find nothing for any later finder; a
+  standard-library name the evaluator lacks is missing, never the
+  workspace's. A regression test plants workspace copies of
+  not-yet-imported standard-library modules and checks that none runs
+  and that no `sys.path` entry resolves into the workspace.
+- **Exception names resolve only to builtin and stdlib classes.** A
+  worker-reported class of an installed package or a test helper gets an
+  inert stand-in instead of being built with worker-chosen arguments.
+  Stand-ins are published once across threads, and a factory-made class
+  first raised without a path gains the path when its alias is read.
+- **Protocol fixes.** Namespace packages spanning the workspace root and
+  `src/` keep every portion; a data result too large for a frame comes
+  back as a handle instead of ending the run as `split_worker_lost`;
+  `with x as y` binds the worker's own mutable `__enter__` result;
+  three-argument `pow` is forwarded; the host client keeps a generator's
+  typed return value.
+- **Support files.** The importer captures the data files a hidden test
+  (or a captured helper) names by a string-literal path, and the data
+  files of a test subdirectory it names (jmespath's
+  `tests/compliance/*.json`), all of a directory or, past
+  `MAX_SUPPORT_FILES` or a size bound, none, with a `support_notes`
+  reason. Support targets may be data files (never a loadable-code
+  suffix or an evaluator-staged name), must be fully normalized, and may
+  not take the primary test's staged name even without
+  `hidden_tests_target`. Relative imports of a captured helper resolve
+  against its own package, so `tests/sub/helper.py` brings `.data`.
+
 ## 2026-11-20 — Authority verification reads one snapshot (SIS-FIX-19)
 
 `AuthorityDB.verify()` replayed the revision, decision and grant tables

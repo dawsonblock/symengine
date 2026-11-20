@@ -147,10 +147,15 @@ Known limits, each because it would need code or class objects to cross:
 * Only files the evaluator registered are private material. The study
   importer registers, beside the test and at their repository paths, its
   ``conftest.py`` files, the ``__init__.py`` of each package up to its
-  test root and the helper modules it imports from its own test package,
-  all from the fix commit (see docs/v3/SECURITY_BOUNDARIES_V3_3.md).
-  They run in the evaluator like the test. Data files a test reads from
-  beside itself (JSON fixtures) are not registered.
+  test root, the helper modules it imports from its own test package and
+  the data files it names by a string-literal path (a file, or a test
+  subdirectory such as jmespath's ``tests/compliance``), all from the
+  fix commit (see docs/v3/SECURITY_BOUNDARIES_V3_3.md). They run, or are
+  read, in the evaluator like the test. A data file the test finds only
+  by listing its own directory, never by name, is not registered, nor is
+  a data directory over ``MAX_SUPPORT_FILES``. A test that imports its
+  helper through the source package (``calc2.tests.helper``) gets the
+  workspace's copy through the proxy.
 
 The host-side :class:`SplitClient` forwards the same data and protocols
 but maps worker exceptions only to builtins (else :class:`RemoteError`).
