@@ -1594,6 +1594,9 @@ class SplitExceptionTests(SplitHarness):
             "        thread.join()\n"
             "    assert len(seen) == 40\n"
             "    assert all(len(kinds) == 1 for kinds in seen.values())\n"
+            # The proxied class itself, not a common fallback type.
+            "    for index, kinds in seen.items():\n"
+            "        assert kinds == {getattr(many, 'E%d' % index)}, index\n"
         )})
 
     SKIPPING = (
