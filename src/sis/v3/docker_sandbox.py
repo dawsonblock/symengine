@@ -65,8 +65,20 @@ from .workspace_guard import ManagedWorkspaceRegistry, protected_overlap
 #: Label on every sandbox container, so leaked ones can be listed and
 #: removed: ``docker rm -f $(docker ps -aq --filter label=sis.v3.sandbox)``.
 CONTAINER_LABEL = "sis.v3.sandbox"
+#: A digest-pinned image reference: an optional registry ``host[:port]/``
+#: (``localhost:5000/``, ``registry.example.com:443/``), a lowercase
+#: repository path, an optional tag, and a mandatory lowercase sha256
+#: digest. A tag alone, or a short or uppercase digest, never matches.
+#: As in Docker's grammar, a first component is a registry only when it is
+#: ``localhost``, contains a dot or carries a port; anything else is part
+#: of the (lowercase) repository path.
+_HOST_LABEL = r"[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?"
+_REGISTRY_HOST = (
+    r"(?:(?:localhost|" + _HOST_LABEL + r"(?:\." + _HOST_LABEL + r")+)"
+    r"(?::[0-9]{1,5})?|" + _HOST_LABEL + r":[0-9]{1,5})/")
 _IMAGE_DIGEST = re.compile(
-    r"^[a-z0-9][a-z0-9._/-]*(?::[A-Za-z0-9._-]+)?@sha256:[0-9a-f]{64}$")
+    rf"^(?:{_REGISTRY_HOST})?"
+    r"[a-z0-9][a-z0-9._/-]*(?::[A-Za-z0-9._-]+)?@sha256:[0-9a-f]{64}$")
 _USER = re.compile(r"^([0-9]{1,10})(?::([0-9]{1,10}))?$")
 _READ_CHUNK = 65_536
 _COPY_OUT_SECONDS = 300.0

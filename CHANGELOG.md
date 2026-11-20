@@ -15,6 +15,13 @@
   is no longer bind-mounted at all, and split custody is unchanged: the
   private material is still installed by the evaluator UID in a 0700
   directory the worker UID cannot read.
+- **Registry-qualified digest pins.** The digest-pin check rejected a
+  registry host with a port, so the registry-pushed form
+  `localhost:5000/sis-evaluator:3.3.9@sha256:<64 hex>` was refused. It
+  now accepts an optional `host[:port]/` prefix (a first component is a
+  registry only when it is `localhost`, contains a dot or carries a
+  port, as in Docker's grammar); a tag-only, digest-less, short-digest
+  or uppercase-hex reference is still refused.
 
 ## 2026-11-20 — Split custody releases handles and stages test data (SIS-FIX-20)
 

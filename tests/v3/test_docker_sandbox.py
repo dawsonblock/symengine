@@ -12,6 +12,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from sis.v3.contracts import ContractError
 from sis.v3.docker_sandbox import DockerSandboxExecutor
@@ -49,6 +50,34 @@ class ConstructionTests(unittest.TestCase):
         with self.assertRaises(ContractError):
             DockerSandboxExecutor(image="sis-evaluator:3.3.9",
                                   production=True)
+
+    def test_digest_pinned_references_with_a_registry_are_accepted(self):
+        digest = "@sha256:" + "a" * 64
+        for image in ("localhost:5000/x" + digest,
+                      "localhost:5000/sis-evaluator:3.3.9" + digest,
+                      "registry.example.com:443/org/x:tag" + digest,
+                      "registry.example.com/org/x" + digest,
+                      "x" + digest, "sis-evaluator:3.3.9" + digest):
+            with self.subTest(image=image):
+                with mock.patch.object(DockerSandboxExecutor,
+                                       "_require_docker", return_value="t"):
+                    executor = DockerSandboxExecutor(image=image)
+                self.assertEqual(
+                    executor.launch_policy()["image_digest"], "a" * 64)
+
+    def test_unpinned_or_malformed_references_are_rejected(self):
+        for image in ("x:tag", "localhost:5000/x:tag", "localhost:5000/x",
+                      "x@sha256:short", "x@sha256:" + "A" * 64,
+                      "localhost:5000/x@sha256:" + "A" * 64,
+                      "Upper/x@sha256:" + "a" * 64,
+                      "localhost:/x@sha256:" + "a" * 64,
+                      "x@sha256:" + "a" * 64 + "\n"):
+            with self.subTest(image=image):
+                with mock.patch.object(DockerSandboxExecutor,
+                                       "_require_docker", return_value="t"):
+                    with self.assertRaisesRegex(
+                            ContractError, "digest-pinned"):
+                        DockerSandboxExecutor(image=image)
 
     def test_empty_image_rejected(self):
         with self.assertRaises(ContractError):
