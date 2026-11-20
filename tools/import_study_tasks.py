@@ -209,8 +209,10 @@ def support_files(root: Path, commit: str, test_path: str,
     directory and of every directory above it, the ``__init__.py`` of
     each package from the test's directory up to its test root, and the
     modules the test (or a helper it pulls in) imports from its own test
-    package, by relative import (``from . import Mixin``) or by the
-    package's name (``from tests import helpers``). A test directory that
+    package, by relative import (``from . import Mixin``, resolved
+    against the importing file's own package, so a helper in
+    ``tests/sub`` brings its ``.data``) or by the package's name
+    (``from tests import helpers``). A test directory that
     is not a package contributes the sibling modules it imports by bare
     name. Only paths under a test directory (``test``/``tests``) qualify
     as packages or helpers, so a source package (``src/pkg/__init__.py``,
@@ -246,14 +248,20 @@ def support_files(root: Path, commit: str, test_path: str,
             found[path] = _blob(root, commit, path)
         return True
 
-    directory = test.parent
-    packages = []
-    while (directory.parts
-           and f"{directory.as_posix()}/__init__.py" in paths
-           and in_test_dir(f"{directory.as_posix()}/__init__.py")):
-        packages.append(directory)
-        add(f"{directory.as_posix()}/__init__.py")
-        directory = directory.parent
+    def package_chain(directory: PurePosixPath) -> list[PurePosixPath]:
+        """The test packages from ``directory`` up, innermost first."""
+        chain = []
+        while (directory.parts
+               and f"{directory.as_posix()}/__init__.py" in paths
+               and in_test_dir(f"{directory.as_posix()}/__init__.py")):
+            chain.append(directory)
+            directory = directory.parent
+        return chain
+
+    packages = package_chain(test.parent)
+    for package in packages:
+        add(f"{package.as_posix()}/__init__.py")
+    directory = packages[-1].parent if packages else test.parent
     # Where pytest's rootdir-relative import puts the test root on
     # sys.path: the first directory above the package chain.
     basedir = directory if packages else test.parent
@@ -274,10 +282,12 @@ def support_files(root: Path, commit: str, test_path: str,
 
     def resolve(origin: str, level: int, parts: list[str]) -> None:
         if level:
+            # Against the importing file's own package chain: a helper in
+            # a subpackage (tests/sub/helper.py) brings its ``.data``.
             package = PurePosixPath(origin).parent
             for _ in range(level - 1):
                 package = package.parent
-            if package not in packages:
+            if package not in package_chain(PurePosixPath(origin).parent):
                 return
             base, names = package, parts
         elif top is not None and parts[0] == top:

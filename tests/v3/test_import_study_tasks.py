@@ -360,6 +360,36 @@ class SupportFileTests(unittest.TestCase):
         self.assertIn("tests/data.py", info["support"])
         self.assertNotIn("tests/linked.py", info["support"])
 
+    def test_helpers_in_subpackages_bring_their_relative_imports(self):
+        # A helper reached as ``tests.sub.helper`` resolves its own
+        # relative imports against its own package chain, recursively.
+        path = self.repo["path"]
+        sub = path / "tests" / "sub"
+        (sub / "deeper").mkdir(parents=True)
+        (sub / "__init__.py").write_text("")
+        (sub / "helper.py").write_text(
+            "from .data import VALUE\n"
+            "from ..data import PAIRS\n"
+            "from .deeper import leaf\n")
+        (sub / "data.py").write_text("from .deeper.leaf import LEAF\n"
+                                     "VALUE = 3\n")
+        (sub / "deeper" / "__init__.py").write_text("")
+        (sub / "deeper" / "leaf.py").write_text("from ... import unused\n"
+                                                "LEAF = 4\n")
+        (sub / "stray.py").write_text("STRAY = 1\n")
+        commit(path, "Add sub helpers")
+        (path / "calc.py").write_text("def add(x, y):\n    return y + x\n")
+        (path / "tests" / "test_sub.py").write_text(
+            "import tests.sub.helper as helper\n"
+            "def test_sub():\n    assert helper.VALUE == 3\n")
+        info = self.describe(commit(path, "Fix add operand order"))
+        self.assertEqual(sorted(info["support"]), [
+            "conftest.py", "tests/__init__.py", "tests/conftest.py",
+            "tests/data.py", "tests/helpers.py", "tests/sub/__init__.py",
+            "tests/sub/data.py", "tests/sub/deeper/__init__.py",
+            "tests/sub/deeper/leaf.py", "tests/sub/helper.py",
+            "tests/unused.py"])
+
     def test_support_files_are_bounded(self):
         original = self.importer.MAX_SUPPORT_FILES
         self.importer.MAX_SUPPORT_FILES = 2
