@@ -84,9 +84,12 @@ handle.
   in both directions.
 * Exceptions cross as names only. The worker reports the class chain
   (module and qualified name of each MRO entry, with base indices); the
-  bootstrap maps each entry to the builtin, to a class of a module the
-  evaluator itself already imported (static lookup, nothing imported),
-  or to a local stand-in class cached by (module, qualname). A worker
+  bootstrap maps each entry to the builtin, to a class of a
+  standard-library module the evaluator itself already imported (static
+  lookup, nothing imported), or to a local stand-in class cached by
+  (module, qualname). Classes of installed packages and of the tests'
+  own helpers always get a stand-in: the worker chooses the name and
+  the arguments, so no hook of theirs runs for it. A worker
   exception class read through the proxy is that same stand-in, so
   ``pytest.raises(pkg.Error)`` and ``except pkg.Base`` match what the
   worker raises. Every stand-in derives from ``Exception``: the
@@ -120,9 +123,12 @@ Known limits, each because it would need code or class objects to cross:
   name and its args. A builtin raised in the worker is
   rebuilt from its args, or from its message when the args do not
   reproduce it (``OSError.filename``); ``__cause__`` and the worker
-  traceback do not cross. A stand-in based on a class the evaluator
-  imported runs that class's own ``__init_subclass__`` and metaclass,
-  which are evaluator-environment code, never submission code.
+  traceback do not cross. A stand-in based on a builtin or
+  standard-library class runs that class's own ``__init_subclass__``
+  and metaclass, which are evaluator-environment code, never submission
+  code. An exception of a test helper or installed package raised in
+  the worker is a stand-in, not that class (``pytest.raises`` of it
+  does not match).
 * No async protocols, and every protocol call is one round trip.
   ``MAX_HANDLES`` bounds the worker's *live* handles. The bootstrap
   releases a handle when its last local holder (``Ref``, exception or
@@ -1327,11 +1333,17 @@ def class_entries(classes):
 def trusted_class(module, qualname):
     """An Exception class the evaluator already has under this name.
 
-    Builtins, and classes of modules the evaluator itself imported (never
-    a proxied workspace module). The lookup is static: nothing is
-    imported and no attribute hook runs.
+    Builtins, and classes of standard-library modules the evaluator
+    itself imported (never a proxied workspace module). The worker picks
+    the name and the arguments the class is built with, so nothing else
+    qualifies: a class of an installed package or of the tests' own
+    helpers would run its ``__init__``, metaclass or ``__init_subclass__``
+    (as a stand-in base) on the worker's behalf; it gets an inert
+    stand-in instead. The lookup is static: nothing is imported and no
+    attribute hook runs.
     """
-    if module.split(".")[0] in RUNNER_MODULES:
+    root_name = module.split(".")[0]
+    if root_name in RUNNER_MODULES or root_name not in STDLIB:
         return None
     if module == "builtins":
         candidate = vars(builtins).get(qualname)

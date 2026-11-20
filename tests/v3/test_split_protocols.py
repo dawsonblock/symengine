@@ -1091,6 +1091,61 @@ class SplitExceptionTests(SplitHarness):
             "    assert not isinstance(claimed, type)\n"
         )})
 
+    def test_a_worker_name_never_selects_a_non_stdlib_class(self):
+        # A private helper the test imported defines an exception with
+        # evaluator-side hooks. A worker naming that class (or deriving
+        # from it by name) must get an inert stand-in: the hooks never
+        # run with worker-chosen arguments, here or as a stand-in base.
+        marker = self.root / "EVALUATOR_HOOK_RAN"
+        self.write("claims.py", (
+            "class Hooked(Exception):\n"
+            "    pass\n"
+            "Hooked.__module__ = 'hooked_helper'\n"
+            "class Child(Hooked):\n"
+            "    pass\n"
+            "Child.__module__ = 'claims'\n"
+            "def hooked():\n"
+            "    raise Hooked('chosen by the worker')\n"
+            "def child():\n"
+            "    raise Child('derived')\n"
+            "def decode():\n"
+            "    import json\n"
+            "    json.loads('{')\n"))
+        self.assertPasses({
+            "hooked_helper.py": (
+                f"MARK = {str(marker)!r}\n"
+                "class Meta(type):\n"
+                "    def __call__(cls, *args):\n"
+                "        open(MARK, 'a').write('meta')\n"
+                "        return super().__call__(*args)\n"
+                "class Hooked(Exception, metaclass=Meta):\n"
+                "    def __init__(self, *args):\n"
+                "        open(MARK, 'a').write('init')\n"
+                "        super().__init__(*args)\n"
+                "    def __init_subclass__(cls, **kwargs):\n"
+                "        open(MARK, 'a').write('subclass')\n"),
+            "test_hidden.py": (
+                "import json\n"
+                "import pytest\n"
+                "import hooked_helper\n"
+                "import claims\n"
+                "def test_inert():\n"
+                "    with pytest.raises(Exception, match='chosen') as info:\n"
+                "        claims.hooked()\n"
+                "    assert not isinstance(info.value, hooked_helper.Hooked)\n"
+                "    assert type(info.value).__qualname__ == 'Hooked'\n"
+                "    with pytest.raises(Exception, match='derived') as info:\n"
+                "        claims.child()\n"
+                "    assert not isinstance(info.value, hooked_helper.Hooked)\n"
+                "    assert isinstance(info.value, type(\n"
+                "        pytest.raises(Exception, claims.hooked).value))\n"
+                # The standard library still resolves to its own class.
+                "    with pytest.raises(json.JSONDecodeError):\n"
+                "        claims.decode()\n"
+            ),
+        })
+        self.assertFalse(marker.exists())
+
     SKIPPING = (
         "import unittest\n"
         "class Mine(unittest.SkipTest):\n"
