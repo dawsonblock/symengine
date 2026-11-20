@@ -307,6 +307,13 @@ def _decode(payload: Any, depth: int = 0) -> Any:
     raise SplitProtocolError(f"unknown payload type: {kind!r}")
 
 
+#: Builtin exceptions recorded at import, so a later ``builtins.X = Y``
+#: cannot choose what a worker-reported name builds on the host.
+_HOST_BUILTIN_EXCEPTIONS = {
+    name: value for name, value in vars(builtins).items()
+    if isinstance(value, type) and issubclass(value, Exception)}
+
+
 def _raise_remote(error: Any) -> None:
     if not isinstance(error, dict):
         raise RemoteError("worker reported an untyped failure")
@@ -315,7 +322,7 @@ def _raise_remote(error: Any) -> None:
     if not isinstance(message, str):
         message = ""
     if isinstance(name, str):
-        candidate = getattr(builtins, name, None)
+        candidate = _HOST_BUILTIN_EXCEPTIONS.get(name)
         # Only ordinary exceptions cross the boundary: a worker must not be
         # able to raise SystemExit or KeyboardInterrupt in the evaluator.
         if (isinstance(candidate, type)
@@ -1634,9 +1641,9 @@ def raise_remote(error):
     except Exception:
         cls = None
     if cls is None:
-        candidate = vars(builtins).get(name)
-        if isinstance(candidate, type) and issubclass(candidate, Exception):
-            cls = candidate
+        # The builtin identities recorded at startup, never the live
+        # builtins namespace: a helper may have assigned builtins.X later.
+        cls = REVIEWED_CLASSES.get(("builtins", name))
     # Only ordinary exceptions cross the boundary: a worker must not be
     # able to raise SystemExit or KeyboardInterrupt in the evaluator, nor
     # an exception the runner reads as a skip.

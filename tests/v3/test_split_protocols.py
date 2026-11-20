@@ -1497,6 +1497,38 @@ class SplitExceptionTests(SplitHarness):
             ),
         })
 
+    def test_a_helper_assigned_to_builtins_is_not_built(self):
+        # builtins.Hooked = Helper after startup: the fallback for an
+        # unresolved name must use the builtin identities recorded at
+        # startup, never the live builtins namespace.
+        marker = self.root / "EVALUATOR_HOOK_RAN"
+        self.write("claims.py", (
+            "class Hooked(Exception):\n"
+            "    pass\n"
+            "Hooked.__module__ = 'builtins'\n"
+            "def hooked():\n"
+            "    raise Hooked('chosen by the worker')\n"))
+        self.assertPasses({
+            "builtins_helper.py": (
+                "import builtins\n"
+                f"MARK = {str(marker)!r}\n"
+                "class Helper(Exception):\n"
+                "    def __init__(self, *args):\n"
+                "        open(MARK, 'a').write('init')\n"
+                "        super().__init__(*args)\n"
+                "builtins.Hooked = Helper\n"),
+            "test_hidden.py": (
+                "import pytest\n"
+                "import builtins_helper\n"
+                "import claims\n"
+                "def test_live_builtins_are_not_consulted():\n"
+                "    with pytest.raises(Exception, match='chosen') as info:\n"
+                "        claims.hooked()\n"
+                "    assert not isinstance(info.value, builtins_helper.Helper)\n"
+            ),
+        })
+        self.assertFalse(marker.exists())
+
     def test_a_cached_stand_in_gains_the_path_read_later(self):
         # A factory-made class has no importable qualified name, so the
         # stand-in built when it is first raised has no path. Reading the
