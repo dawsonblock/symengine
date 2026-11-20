@@ -93,6 +93,28 @@ class CampaignPrincipalTests(unittest.TestCase):
         self.assertEqual(report["learning_qualification"][
             "decisive_contrast"]["wins"], 9)
 
+    def test_repositories_and_support_files_are_checked(self):
+        # A clone's history holds the fix commit and a support file is
+        # hidden material too: the agent must be unable to read either.
+        document = {
+            "repositories": [
+                {"repository_id": "pkg", "path": "/study/repos/pkg",
+                 "hidden_tests": {"path": "/study/private/pkg"}}],
+            "tasks": [{"acceptance": {
+                "hidden_tests_path": "/study/private/pkg/t1/test_x.py",
+                "support_files": [
+                    {"target": "tests/conftest.py",
+                     "path": "/study/private/pkg/t1/support/tests/conftest.py",
+                     "digest": "0" * 64}]}}],
+        }
+        checked = {str(path) for path in
+                   self.tool.agent_private_paths(document)}
+        self.assertIn("/study/repos/pkg", checked)
+        self.assertIn("/study/private/pkg", checked)
+        self.assertIn("/study/private/pkg/t1/test_x.py", checked)
+        self.assertIn(
+            "/study/private/pkg/t1/support/tests/conftest.py", checked)
+
     def test_an_unseparated_run_discloses_it(self):
         output = self.root / "report.json"
         self.tool.run_real(output, self.manifest, allow_shared_custody=True,

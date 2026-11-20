@@ -78,10 +78,36 @@ To change a pin, resolve the wheels for CPython 3.12 on x86_64 and
 aarch64 with `pip download --only-binary=:all: --python-version 3.12
 --platform manylinux2014_<arch>`, check each `sha256` against PyPI, and
 keep every line hashed.
-- The agent runs as your user and can read files outside its workspace.
-  Run the pilot as a user that cannot read `/study/private` and
-  `/study/repos` other than through SIS, or on a host where those paths
-  are not discoverable, and say which in the pilot notes.
+- By default the agent runs as your user and can read files outside its
+  workspace. Give it its own OS user instead, with `--agent-user NAME` on
+  `tools/five_arm_campaign.py` and `tools/build_guidance_bundle.py`
+  (real-agent runs only, `--workers 1`):
+
+  ```bash
+  useradd -m sisagent                       # dedicated: nothing else runs as it
+  printf 'sispilot ALL=(sisagent) NOPASSWD: /usr/bin/python3\n' \
+    > /etc/sudoers.d/sis-agent && chmod 0440 /etc/sudoers.d/sis-agent
+  visudo -cf /etc/sudoers.d/sis-agent
+  chmod 700 /study                          # the agent cannot traverse it
+  ```
+
+  Here `sispilot` is the (non-root) user that runs the evaluator. Install
+  the agent CLI where the agent user can run it (not under the
+  evaluator's home), and pass the key as `ANTHROPIC_API_KEY` in the
+  evaluator's environment or store it in `~sisagent/.claude/`. Do not
+  enable sudo `log_input` for this rule: the CLI's environment, with the
+  key, goes over the helper's stdin, never on a command line.
+
+  Each turn's workspace is copied into the agent's home and copied back,
+  validated, before grading, and every process of the agent user is
+  killed when the turn ends. Before the first turn a preflight, run as
+  the agent user, checks that it can read none of the state directory,
+  keys, registry, journal, trust config, candidate registry, hidden
+  tests, support files or repository clones, and that it can run the
+  CLI; any readable path blocks the run (`BLOCKED_AGENT_PRINCIPAL`). The
+  report records the principal (`agent_principal`), and a run without one
+  says so in its limitations. Not covered: the agent user can still leave
+  files in `/tmp` or its home for later turns.
 
 ## 1. Repositories
 

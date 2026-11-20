@@ -337,13 +337,17 @@ def agent_private_paths(document: Mapping | None, *, roots=()) -> list[Path]:
 
     ``roots`` are the run's own private paths (state directory, keys,
     registry, journal, trust config, candidate registry); the manifest or
-    learning spec adds every hidden-test file and hidden-test directory.
+    learning spec adds every hidden-test file and hidden-test directory,
+    every support file, and every repository clone (its history holds the
+    fix commits the tasks were made from).
     """
     paths: list[Path] = [Path(root) for root in roots if root is not None]
     document = document if isinstance(document, Mapping) else {}
     for repository in document.get("repositories") or ():
         if not isinstance(repository, Mapping):
             continue
+        if isinstance(repository.get("path"), str):
+            paths.append(Path(repository["path"]))
         hidden = repository.get("hidden_tests")
         if isinstance(hidden, Mapping) and isinstance(hidden.get("path"),
                                                       str):
@@ -351,9 +355,14 @@ def agent_private_paths(document: Mapping | None, *, roots=()) -> list[Path]:
     for task in document.get("tasks") or ():
         acceptance = task.get("acceptance") if isinstance(task, Mapping) \
             else None
-        if isinstance(acceptance, Mapping) and isinstance(
-                acceptance.get("hidden_tests_path"), str):
+        if not isinstance(acceptance, Mapping):
+            continue
+        if isinstance(acceptance.get("hidden_tests_path"), str):
             paths.append(Path(acceptance["hidden_tests_path"]))
+        for entry in acceptance.get("support_files") or ():
+            if isinstance(entry, Mapping) and isinstance(
+                    entry.get("path"), str):
+                paths.append(Path(entry["path"]))
     unique: dict[str, Path] = {}
     for path in paths:
         unique.setdefault(str(path), path)
