@@ -1283,8 +1283,17 @@ def drain_releases():
     return [[handle, count] for handle, count in counts.items() if count]
 
 
-def exchange(payload):
-    stream.write(json.dumps(payload).encode("utf-8") + b"\n")
+def exchange(payload, released):
+    """Send one request carrying ``released`` and read its response."""
+    try:
+        data = json.dumps(payload).encode("utf-8")
+    except Exception:
+        # JSON cannot write it (an int past the digit limit) and nothing
+        # was written: its releases stay queued for the next request.
+        # A transport failure after the write is fatal, never replayed.
+        PENDING.extendleft((handle, [count]) for handle, count in released)
+        raise
+    stream.write(data + b"\n")
     stream.flush()
     return stream.readline(MAX_FRAME + 1)
 
@@ -1295,11 +1304,12 @@ def request(payload):
             while len(PENDING) > RELEASE_BATCH:
                 # A long queue goes ahead in release-only requests, so no
                 # frame grows with it.
-                exchange({"op": "release", "release": drain_releases()})
+                batch = drain_releases()
+                exchange({"op": "release", "release": batch}, batch)
             released = drain_releases()
             if released:
                 payload = dict(payload, release=released)
-            line = exchange(payload)
+            line = exchange(payload, released)
     except OSError:
         fail(SPLIT_LOST_EXIT, "evaluation_split_worker_lost")
     if not line or len(line) > MAX_FRAME:

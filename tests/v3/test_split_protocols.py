@@ -620,6 +620,33 @@ class SplitHandleTests(SplitHarness):
             "    assert len(second) == 1\n"
         )})
 
+    def test_releases_wait_for_a_request_that_can_be_sent(self):
+        # A request JSON cannot write (an int past the digit limit) fails
+        # before anything is written; the releases queued for it must
+        # ride on the next request instead of being dropped.
+        self.write("live.py", (
+            "def count():\n"
+            "    import __main__\n"
+            "    return len(__main__.HANDLES)\n"))
+        self.assertPasses({"test_hidden.py": (
+            "import gc\n"
+            "import pytest\n"
+            "import handles\n"
+            "import live\n"
+            "def test_release():\n"
+            "    count, make = live.count, handles.make\n"
+            "    base = count()\n"
+            "    box = make(1)\n"
+            "    assert count() == base + 1\n"
+            "    del box\n"
+            "    gc.collect()\n"
+            # The failing call is the first request after the release.
+            "    with pytest.raises(ValueError):\n"
+            "        make(10 ** 5000)\n"
+            "    assert count() == base\n"
+            "    assert handles.make(2).n == 2\n"
+        )})
+
     def release(self, client, entries, op="release"):
         response = client.request({"op": op, "release": entries})
         self.assertTrue(response.get("ok"), response)

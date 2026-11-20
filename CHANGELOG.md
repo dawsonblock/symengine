@@ -161,6 +161,10 @@ paths are now tighter.
   A response refused as over the frame bound releases the handle it
   would have handed out, so refused errors no longer use up
   `MAX_HANDLES`.
+- **Queued releases survive a request that cannot be sent.** When JSON
+  cannot write a request (an argument past the digit limit), nothing is
+  written and its releases go back on the queue for the next request; a
+  transport failure after the write still ends the run, never replays.
 - **Only whole `/` chains name a path.** `HERE / 'fixtures' / 'nested'
   / 'one.txt'` names that file and no longer also `fixtures/nested` as
   a directory, whose unreferenced siblings were captured with it.
