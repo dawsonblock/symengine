@@ -1299,6 +1299,88 @@ class SplitExceptionTests(SplitHarness):
         })
         self.assertFalse(marker.exists())
 
+    def test_a_spoofed_stdlib_class_with_hooks_is_not_trusted(self):
+        # The helper claims to live in json (__module__ = 'json') and is
+        # exposed as json.Spoofed, so its name leads back to itself. Its
+        # hooks are still test-helper code: trusted only if every hook
+        # is standard-library code.
+        marker = self.root / "EVALUATOR_HOOK_RAN"
+        self.write("claims.py", (
+            "class Spoofed(Exception):\n"
+            "    pass\n"
+            "Spoofed.__module__ = 'json'\n"
+            "class Child(Spoofed):\n"
+            "    pass\n"
+            "def spoofed():\n"
+            "    raise Spoofed('chosen by the worker')\n"
+            "def child():\n"
+            "    raise Child('derived')\n"))
+        self.assertPasses({
+            "spoof_helper.py": (
+                "import json\n"
+                f"MARK = {str(marker)!r}\n"
+                "class Spoofed(Exception):\n"
+                "    def __init__(self, *args):\n"
+                "        open(MARK, 'a').write('init')\n"
+                "        super().__init__(*args)\n"
+                "    def __init_subclass__(cls, **kwargs):\n"
+                "        open(MARK, 'a').write('subclass')\n"
+                "Spoofed.__module__ = 'json'\n"
+                "json.Spoofed = Spoofed\n"),
+            "test_hidden.py": (
+                "import json\n"
+                "import pytest\n"
+                "import spoof_helper\n"
+                "import claims\n"
+                "def test_spoof_is_inert():\n"
+                "    assert json.Spoofed.__module__ == 'json'\n"
+                "    with pytest.raises(Exception, match='chosen') as info:\n"
+                "        claims.spoofed()\n"
+                "    assert not isinstance(info.value, spoof_helper.Spoofed)\n"
+                "    with pytest.raises(Exception, match='derived') as info:\n"
+                "        claims.child()\n"
+                "    assert not isinstance(info.value, spoof_helper.Spoofed)\n"
+            ),
+        })
+        self.assertFalse(marker.exists())
+
+    def test_the_name_walk_runs_no_metaclass_hook(self):
+        # A worker reports json.Hooked.missing: walking that name must read
+        # each namespace statically, never through the helper metaclass.
+        marker = self.root / "EVALUATOR_HOOK_RAN"
+        self.write("claims.py", (
+            "class Missing(Exception):\n"
+            "    pass\n"
+            "Missing.__module__ = 'json'\n"
+            "Missing.__qualname__ = 'Hooked.missing'\n"
+            "def raise_it():\n"
+            "    raise Missing('walked')\n"))
+        self.assertPasses({
+            "walk_helper.py": (
+                "import json\n"
+                f"MARK = {str(marker)!r}\n"
+                "class Meta(type):\n"
+                "    def __getattribute__(cls, name):\n"
+                "        open(MARK, 'a').write('getattribute:' + name)\n"
+                "        return super().__getattribute__(name)\n"
+                "class Hooked(Exception, metaclass=Meta):\n"
+                "    pass\n"
+                "json.Hooked = Hooked\n"),
+            "test_hidden.py": (
+                "import os\n"
+                "import pytest\n"
+                "import walk_helper\n"
+                "import claims\n"
+                f"MARK = {str(marker)!r}\n"
+                "def test_walk_is_static():\n"
+                "    if os.path.exists(MARK):\n"
+                "        os.unlink(MARK)\n"
+                "    with pytest.raises(Exception, match='walked'):\n"
+                "        claims.raise_it()\n"
+                "    assert not os.path.exists(MARK)\n"
+            ),
+        })
+
     def test_a_cached_stand_in_gains_the_path_read_later(self):
         # A factory-made class has no importable qualified name, so the
         # stand-in built when it is first raised has no path. Reading the

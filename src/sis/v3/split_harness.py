@@ -1394,6 +1394,105 @@ def class_entries(classes):
 
 TYPE_MODULE = type.__dict__["__module__"]
 TYPE_QUALNAME = type.__dict__["__qualname__"]
+TYPE_DICT = type.__dict__["__dict__"]
+TYPE_MRO = type.__dict__["__mro__"]
+MODULE_DICT = types.ModuleType.__dict__["__dict__"]
+BUILTIN_CLASSES = frozenset(
+    id(value) for value in vars(builtins).values() if isinstance(value, type))
+
+
+def _stdlib_roots():
+    import sysconfig
+    paths = sysconfig.get_paths()
+    std = {os.path.realpath(paths[key]) for key in ("stdlib", "platstdlib")
+           if paths.get(key)}
+    site = {os.path.realpath(paths[key]) for key in ("purelib", "platlib")
+            if paths.get(key)}
+    return (tuple(os.path.join(entry, "") for entry in std),
+            tuple(os.path.join(entry, "") for entry in site))
+
+
+STDLIB_DIRS, SITE_DIRS = _stdlib_roots()
+
+
+def static_namespace(value):
+    """The namespace of a plain module or class, read without any hook."""
+    if type(value) is types.ModuleType:
+        return MODULE_DICT.__get__(value)
+    if isinstance(value, type):
+        return TYPE_DICT.__get__(value, type)
+    return None
+
+
+def static_lookup(root, dotted):
+    """Walk a dotted name through namespaces only; no attribute hook runs."""
+    candidate = root
+    for part in dotted.split("."):
+        namespace = static_namespace(candidate)
+        if namespace is None:
+            return None
+        candidate = namespace.get(part)
+    return candidate
+
+
+def stdlib_code(function):
+    try:
+        filename = os.path.realpath(function.__code__.co_filename)
+    except Exception:
+        return False
+    if any(filename.startswith(entry) for entry in SITE_DIRS):
+        return False
+    return any(filename.startswith(entry) for entry in STDLIB_DIRS)
+
+
+SAFE_DESCRIPTORS = (
+    types.BuiltinFunctionType, types.WrapperDescriptorType,
+    types.MethodDescriptorType, types.GetSetDescriptorType,
+    types.MemberDescriptorType, types.ClassMethodDescriptorType,
+    types.MethodWrapperType)
+
+
+def runs_only_stdlib_code(cls):
+    """True when building ``cls``, or deriving from it, runs no other code.
+
+    Every class of its MRO must use the plain ``type`` metaclass, and
+    every callable it defines must be builtin or standard-library Python
+    (site-packages excluded). A class defined in a test helper fails
+    even if it claims a standard-library ``__module__``; one that
+    defines nothing at all runs only builtin code and passes.
+    """
+    try:
+        mro = TYPE_MRO.__get__(cls, type)
+    except Exception:
+        return False
+    for klass in mro:
+        if id(klass) in BUILTIN_CLASSES:
+            continue
+        if type(klass) is not type:
+            return False
+        for value in TYPE_DICT.__get__(klass, type).values():
+            if isinstance(value, (staticmethod, classmethod)):
+                value = value.__func__
+            if isinstance(value, property):
+                parts = [value.fget, value.fset, value.fdel]
+            else:
+                parts = [value]
+            for part in parts:
+                if part is None or isinstance(part, SAFE_DESCRIPTORS):
+                    continue
+                if isinstance(part, types.FunctionType):
+                    if not stdlib_code(part):
+                        return False
+                    continue
+                if isinstance(part, (str, bytes, int, float, bool, tuple,
+                                     frozenset, type(None))):
+                    continue
+                if isinstance(part, dict) or isinstance(part, type):
+                    continue
+                # Any other object could be a descriptor or callable
+                # defined elsewhere.
+                return False
+    return True
 
 
 def trusted_class(module, qualname):
@@ -1405,8 +1504,11 @@ def trusted_class(module, qualname):
     qualifies: a class of an installed package or of the tests' own
     helpers would run its ``__init__``, metaclass or ``__init_subclass__``
     (as a stand-in base) on the worker's behalf; it gets an inert
-    stand-in instead. The lookup is static: nothing is imported and no
-    attribute hook runs.
+    stand-in instead. Every lookup is static (namespaces read through
+    the type and module slot descriptors), the class must be defined
+    where its own name says, and it must run only builtin or
+    standard-library code: an alias such as ``json.Hooked = Helper`` or a
+    helper claiming ``__module__ = 'json'`` does not qualify.
     """
     root_name = module.split(".")[0]
     if root_name in RUNNER_MODULES or root_name not in STDLIB:
@@ -1415,25 +1517,12 @@ def trusted_class(module, qualname):
         candidate = vars(builtins).get(qualname)
     else:
         loaded = sys.modules.get(module)
-        root = sys.modules.get(module.split(".")[0])
-        if (loaded is None or isinstance(loaded, ProxyModule)
-                or isinstance(root, ProxyModule)):
+        if type(loaded) is not types.ModuleType:
             return None
-        candidate = loaded
-        for part in qualname.split("."):
-            namespace = getattr(candidate, "__dict__", None)
-            if not isinstance(namespace, (dict, types.MappingProxyType)):
-                return None
-            candidate = namespace.get(part)
+        candidate = static_lookup(loaded, qualname)
     if not (isinstance(candidate, type) and issubclass(candidate, Exception)):
         return None
-    # The name must be where the class is defined, not an alias: a test
-    # helper can attach its own class to a standard-library module
-    # (``json.Hooked = Hooked``), and that class must not be built with
-    # worker-chosen arguments. Its own module and qualified name must be
-    # standard library and lead back to this very object.
-    # Read through type's own slot descriptors: works for builtin types
-    # and runs no metaclass property or __getattr__.
+    # The name must be where the class is defined, not an alias.
     try:
         home = TYPE_MODULE.__get__(candidate, type)
         own_name = TYPE_QUALNAME.__get__(candidate, type)
@@ -1447,15 +1536,13 @@ def trusted_class(module, qualname):
     if home == "builtins":
         defined = vars(builtins).get(own_name)
     else:
-        defined = sys.modules.get(home)
-        if defined is None or isinstance(defined, ProxyModule):
+        home_module = sys.modules.get(home)
+        if type(home_module) is not types.ModuleType:
             return None
-        for part in own_name.split("."):
-            namespace = getattr(defined, "__dict__", None)
-            if not isinstance(namespace, (dict, types.MappingProxyType)):
-                return None
-            defined = namespace.get(part)
+        defined = static_lookup(home_module, own_name)
     if defined is not candidate:
+        return None
+    if not runs_only_stdlib_code(candidate):
         return None
     return candidate
 
