@@ -437,11 +437,22 @@ class SupportFileTests(unittest.TestCase):
         for bad in (entry(target="../x.py"), entry(target="/etc/x.py"),
                     entry(target="tests/test_x.py"), entry(target="a.txt"),
                     entry(target="./a.py"), entry(digest="0" * 63),
+                    entry(target="tests//x.py"), entry(target="tests/x.py/"),
+                    entry(target="tests/./x.py"), entry(target="tests/"),
                     dict(base, support_files="x"),
                     {"support_files": []}):
             self.assertTrue(support_file_problems(bad), bad)
             with self.assertRaises(StudyRuntimeError):
                 load_support_files(bad, hidden)
+        # Without hidden_tests_target the primary test is staged under its
+        # file name, as the campaign does: no support file may take it.
+        untargeted = {"hidden_tests_path": str(hidden / "test_x.py"),
+                      "support_files": [{"target": "test_x.py",
+                                         "path": str(good),
+                                         "digest": digest}]}
+        self.assertTrue(support_file_problems(untargeted))
+        with self.assertRaisesRegex(StudyRuntimeError, "repeated"):
+            load_support_files(untargeted, hidden)
         with self.assertRaisesRegex(StudyRuntimeError, "outside_hidden"):
             load_support_files(entry(path=str(outside)), hidden)
         with self.assertRaisesRegex(StudyRuntimeError, "digest_mismatch"):

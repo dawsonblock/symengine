@@ -280,8 +280,27 @@ def hidden_test_belongs(task_file: str | Path, hidden_root: str | Path) -> bool:
 #: executor's own bounds on private material (file count, per-file and
 #: total bytes) still apply to the test and its support files together.
 MAX_SUPPORT_FILES = 32
+# A normalized relative path: no leading or trailing ``/``, no empty,
+# ``.`` or ``..`` component, as ``normalize_private_files`` requires.
 _SUPPORT_TARGET = re.compile(
-    r"^(?!/)(?![A-Za-z]:)(?!.*(?:^|/)\.\.?(?:/|$))[A-Za-z0-9_.@/-]{1,512}$")
+    r"^(?!/)(?![A-Za-z]:)(?!.*//)(?!.*/$)(?!.*(?:^|/)\.\.?(?:/|$))"
+    r"[A-Za-z0-9_.@/-]{1,512}$")
+
+
+def primary_target(acceptance: Mapping) -> str | None:
+    """Where the primary hidden test is staged: its target, else its name.
+
+    The campaign falls back to the hidden file's name when the record has
+    no ``hidden_tests_target``; support targets are checked against the
+    same name, so none can replace the verified test.
+    """
+    target = acceptance.get("hidden_tests_target")
+    if target:
+        return target
+    path = acceptance.get("hidden_tests_path")
+    if isinstance(path, str) and path:
+        return Path(path).name
+    return None
 
 
 def support_file_problems(acceptance: Mapping) -> list[str]:
@@ -290,7 +309,8 @@ def support_file_problems(acceptance: Mapping) -> list[str]:
     The field is optional. When present it is a list of at most
     :data:`MAX_SUPPORT_FILES` objects ``{"target", "path", "digest"}``:
     a normalized relative ``.py`` target, distinct from the primary
-    ``hidden_tests_target`` and from every other entry; an evaluator-side
+    test's staged target (:func:`primary_target`) and from every other
+    entry; an evaluator-side
     path; and the file's lowercase SHA-256.
     """
     entries = acceptance.get("support_files")
@@ -302,7 +322,7 @@ def support_file_problems(acceptance: Mapping) -> list[str]:
     if acceptance.get("hidden_tests_path") is None:
         return ["support_files need a hidden_tests_path"]
     problems = []
-    seen = {acceptance.get("hidden_tests_target")}
+    seen = {primary_target(acceptance)}
     for entry in entries:
         if not isinstance(entry, Mapping):
             problems.append("support_files entries must be objects")
@@ -509,4 +529,5 @@ __all__ = ["DEFAULT_SPLIT_USER", "DEFAULT_STUDY_IMAGE", "EXECUTOR_KINDS",
            "RunJournal", "StudyRuntimeError", "build_study_executor",
            "commit_exists", "commit_is_ancestor", "executor_description",
            "MAX_SUPPORT_FILES", "hidden_test_belongs", "hidden_tests_digest",
-           "load_support_files", "materialize_commit", "support_file_problems"]
+           "load_support_files", "materialize_commit", "primary_target",
+           "support_file_problems"]
