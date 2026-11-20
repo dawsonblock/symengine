@@ -1,5 +1,21 @@
 # Changelog
 
+## 2026-11-20 — Root hosts, a test-dependency image and repository screening (SIS-FIX-21)
+
+- **The Docker evaluator works on a root host.** The workspace was
+  bind-mounted read-only at `/submission` and copied into the tmpfs by
+  the container user. On a root host that user is 65534, and the
+  prepared tree is root-owned (mode 0700 at its top when it came from a
+  `mkdtemp`), so the copy-in failed with `cp: cannot stat
+  '/submission/.': Permission denied` and split custody with
+  `evaluator_bootstrap_error`. The host process now archives the
+  prepared workspace from its registry path and streams it into the
+  tmpfs (`docker exec -i ... tar -x`), children only, so the tmpfs keeps
+  its own mode. Nothing on the host is chowned or widened, the workspace
+  is no longer bind-mounted at all, and split custody is unchanged: the
+  private material is still installed by the evaluator UID in a 0700
+  directory the worker UID cannot read.
+
 ## 2026-11-20 — Split custody releases handles and stages test data (SIS-FIX-20)
 
 The boundary is unchanged: nothing is unpickled or evaluated in the

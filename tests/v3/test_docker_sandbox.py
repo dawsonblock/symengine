@@ -297,6 +297,21 @@ class ContainerIntegrationTests(unittest.TestCase):
                 b"sys.exit(3)\n")})
         self.assertEqual(receipt.exit_status, 0)
 
+    def test_copy_in_does_not_depend_on_host_ownership(self):
+        # A private (0700/0600) tree whose host owner is not the container
+        # user, as on a root host where the default container user is
+        # 65534. The copy-in streams it, so the container reads it without
+        # any change to host ownership or modes.
+        os.chmod(self.base, 0o700)
+        os.chmod(self.base / "calc.py", 0o600)
+        executor = self.make_executor(user="2003:2003")
+        receipt, (stdout, stderr), workspace = self.run_argv(
+            ("python3", "-c", "print(open('calc.py').read().strip())"),
+            executor=executor)
+        self.assertEqual(receipt.exit_status, 0, stderr)
+        self.assertEqual(stdout.decode().strip(), "x = 1")
+        self.assertEqual(os.stat(workspace.path).st_uid, os.getuid())
+
     def test_probe_reports_every_check(self):
         report = self.executor.probe()
         self.assertTrue(report["ok"], report)

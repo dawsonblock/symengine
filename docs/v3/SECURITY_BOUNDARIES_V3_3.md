@@ -46,8 +46,9 @@
   section; a removal that cannot be verified raises
   `workspace_remove_failed`. Repeated destruction is a no-op.
 - **Docker workspaces are collected through a filtered, budgeted archive**
-  — the host tree is mounted read-only at `/submission` and copied into a
-  quota-limited tmpfs. The copy-out tar is extracted with
+  — the host process streams the prepared tree as an archive into a
+  quota-limited tmpfs (no host bind of the workspace, so the copy-in
+  does not depend on host ownership, including on a root host). The copy-out tar is extracted with
   `filter="data"`, so absolute paths, `..` escapes, device nodes and
   links that leave the workspace are rejected instead of materializing
   on the host. The declared `disk_bytes` and file-count bound are

@@ -377,15 +377,48 @@ class DockerOwnershipTests(Fixture):
         self.addCleanup(executor.destroy, workspace)
         return executor.run(workspace, self.spec), workspace
 
-    def test_mount_uses_the_registry_path_not_the_handle(self):
-        receipt = self.executor.run(self.workspace, self.spec)
+    def test_copy_in_streams_the_registry_tree_and_mounts_no_workspace(self):
+        # The workspace reaches the container as an archive the host
+        # builds from the registry path; no bind of the host tree exists,
+        # so its host ownership never decides what the container can read.
+        received = self.root / "copy-in.tar"
+        fake = self.root / "capture-docker"
+        fake.write_text(
+            "#!/bin/sh\n"
+            f"printf '%s\\n' \"$@\" >> {shlex.quote(str(self.log))}\n"
+            "case \"$1\" in\n"
+            "  inspect) echo true ;;\n"
+            "  exec)\n"
+            "    case \" $* \" in\n"
+            f"      *\" -x \"*) cat > {shlex.quote(str(received))} ;;\n"
+            f"      *\" tar \"*) cat {shlex.quote(str(self.payload))} ;;\n"
+            "    esac\n"
+            "    ;;\n"
+            "esac\n"
+            "exit 0\n",
+            encoding="utf-8")
+        fake.chmod(0o755)
+        (self.base / "pkg").mkdir()
+        (self.base / "pkg" / "mod.py").write_text("y = 2\n", encoding="utf-8")
+        executor = self.make_executor(docker_binary=str(fake))
+        workspace = executor.prepare(self.base)
+        self.addCleanup(executor.destroy, workspace)
+        os.chmod(workspace.path, 0o700)
+        receipt = executor.run(workspace, self.spec)
         self.assertEqual(receipt.exit_status, 0)
         argv = self.log.read_text(encoding="utf-8").splitlines()
-        mount = argv[argv.index("--mount") + 1]
-        self.assertEqual(
-            mount,
-            f"type=bind,source={self.workspace.path.resolve()},"
-            "target=/submission,readonly")
+        self.assertNotIn("--mount", argv)
+        self.assertFalse(any("/submission" in line for line in argv))
+        with tarfile.open(received) as archive:
+            names = sorted(archive.getnames())
+            self.assertEqual(names, ["calc.py", "pkg", "pkg/mod.py"])
+            self.assertEqual(
+                archive.extractfile("pkg/mod.py").read(), b"y = 2\n")
+            # The root entry is never sent, so the tmpfs keeps its mode.
+            self.assertNotIn(".", names)
+            uid, gid = (int(part) for part in executor._user.split(":"))
+            for member in archive.getmembers():
+                self.assertEqual((member.uid, member.gid), (uid, gid))
 
     def test_copy_out_replaces_the_workspace_with_the_payload(self):
         info = tarfile.TarInfo("copied.txt")
