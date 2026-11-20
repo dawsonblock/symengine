@@ -942,6 +942,26 @@ class SplitProtocolTests(SplitHarness):
         self.assertNotEqual(version, object())
         self.assertEqual(str(bag), "bag of 2")
 
+    def test_host_client_keeps_a_generator_return_value(self):
+        self.write("gens.py", (
+            "def counted():\n"
+            "    yield 1\n"
+            "    return 7\n"
+            "def plain():\n"
+            "    yield 1\n"
+            "def texted():\n"
+            "    yield 1\n"
+            "    return '7'\n"))
+        client = self.host_client()
+        for name, expected in (("counted", 7), ("plain", None),
+                               ("texted", "7")):
+            generator = client.call(["gens", name], (), {})
+            self.assertEqual(next(generator), 1)
+            with self.assertRaises(StopIteration) as info:
+                next(generator)
+            self.assertEqual(info.exception.value, expected, name)
+            self.assertIs(type(info.exception.value), type(expected))
+
 
 ERRORS_MODULE = """
 class BaseError(Exception):

@@ -310,6 +310,16 @@ def _raise_remote(error: Any) -> None:
         # able to raise SystemExit or KeyboardInterrupt in the evaluator.
         if (isinstance(candidate, type)
                 and issubclass(candidate, Exception)):
+            if candidate is StopIteration:
+                # A generator's return value keeps its type
+                # (``StopIteration.value``), and none stays None.
+                args = error.get("args")
+                try:
+                    decoded = _decode(args) if args is not None else None
+                except (SplitProtocolError, ValueError):
+                    decoded = None
+                if isinstance(decoded, tuple):
+                    raise StopIteration(*decoded)
             raise candidate(message)
     raise RemoteError(f"{name}: {message}")
 
