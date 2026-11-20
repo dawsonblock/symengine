@@ -1,0 +1,31 @@
+# Evaluator sandbox image variant with common test dependencies.
+#
+# Same base, user and layout as docker/sandbox/Dockerfile; it adds a
+# pinned, hash-checked set of test libraries that real repositories'
+# suites import (hypothesis, pytest-mock, pytest-timeout, freezegun,
+# pyyaml, toml) on top of the same pytest runner lock. Build with an
+# explicit variant tag, never as the base tag:
+#
+#   docker build -f docker/sandbox/Dockerfile.testdeps \
+#     -t sis-evaluator:3.3.9-testdeps docker/sandbox
+#
+# Pin the result by image ID or registry digest before use
+# (docs/v3/PILOT_RUNBOOK.md); the tag alone is refused by the executor.
+FROM python:3.12-slim@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
+
+COPY requirements.lock requirements-testdeps.lock /tmp/
+RUN pip install --no-cache-dir --require-hashes --only-binary=:all: \
+        -r /tmp/requirements.lock \
+        -r /tmp/requirements-testdeps.lock \
+    && rm -f /tmp/requirements.lock /tmp/requirements-testdeps.lock \
+    && rm -rf /root/.cache /tmp/*
+
+# The base image already has nobody at 65534; reuse it and keep HOME in
+# the tmpfs at runtime.
+USER 65534:65534
+ENV HOME=/tmp
+WORKDIR /workspace

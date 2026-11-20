@@ -11,6 +11,17 @@ policy):
 docker build --platform linux/arm64 -t sis-evaluator:3.3.9 docker/sandbox
 ```
 
+A variant with common test dependencies (hypothesis, pytest-mock,
+pytest-timeout, freezegun, pyyaml, toml; hash-checked in
+`requirements-testdeps.lock`) builds from `Dockerfile.testdeps` with the
+same base, user and layout; pin and probe it as described in
+`docs/v3/PILOT_RUNBOOK.md` §0:
+
+```bash
+docker build -f docker/sandbox/Dockerfile.testdeps \
+  -t sis-evaluator:3.3.9-testdeps docker/sandbox
+```
+
 Run the containment probe:
 
 ```bash

@@ -30,8 +30,54 @@ cp docs/v3/pilot_learning_spec_template.json /study/learning.json
   digest needs `--allow-unpinned-image` and is development-only.
 - Once Track C lands the gVisor runtime, add `--docker-runtime runsc`.
 - The evaluator image carries pytest only. Pick repositories whose tests
-  run with the standard library and pytest; importer verification under
-  Docker rejects the rest.
+  run with the standard library and pytest, or use the test-dependency
+  variant below; importer verification under Docker rejects the rest.
+- The evaluator may run as root or as a dedicated user. On a root host
+  the container user defaults to 65534:65534; the workspace is streamed
+  into the container, so host ownership does not matter.
+
+### Test-dependency image variant
+
+`docker/sandbox/Dockerfile.testdeps` builds `sis-evaluator:3.3.9-testdeps`:
+the same pinned base, user (65534), `HOME=/tmp` and `/workspace` layout,
+the same pytest lock, plus `docker/sandbox/requirements-testdeps.lock`
+(hypothesis, pytest-mock, pytest-timeout, freezegun, pyyaml, toml and
+their dependencies, installed with `--require-hashes --only-binary=:all:`;
+no nose, which does not import on Python 3.12). Use it only for a study
+whose repositories need those libraries, and use one image for every arm.
+
+```bash
+docker build -f docker/sandbox/Dockerfile.testdeps \
+  -t sis-evaluator:3.3.9-testdeps docker/sandbox
+id="$(docker image inspect --format '{{.Id}}' sis-evaluator:3.3.9-testdeps)"
+echo "sis-evaluator@${id}"          # image-ID pin, works without a registry
+docker tag sis-evaluator:3.3.9-testdeps localhost:5000/sis-evaluator:3.3.9-testdeps
+docker push localhost:5000/sis-evaluator:3.3.9-testdeps
+docker image inspect sis-evaluator:3.3.9-testdeps --format '{{json .RepoDigests}}'
+```
+
+Pass either pin as `--docker-image` everywhere below, for example
+`localhost:5000/sis-evaluator:3.3.9-testdeps@sha256:<digest>` (a registry
+host with a port is accepted). Then probe it once as the user that will
+run the pilot, and keep the JSON with the pilot notes:
+
+```bash
+python3 tools/probe_docker_sandbox.py --image <pinned ref> \
+  --runtime runc --output /study/reports/probe-testdeps.json
+```
+
+Drop `--runtime runc` once gVisor is installed (runsc is the tool's
+default). The probe must report `"ok": true` with the same checks as the
+base image. On a host whose egress goes through a TLS-intercepting proxy, build
+from a scratch copy of `docker/sandbox` whose Dockerfile copies the
+proxy CA to `/tmp/proxy-ca.crt` and runs the `pip install` with
+`PIP_CERT=/tmp/proxy-ca.crt` (`docker build --network host
+--build-arg HTTPS_PROXY=$HTTPS_PROXY`); the `rm -rf /tmp/*` step removes
+it from the final filesystem. Never commit the CA or that Dockerfile.
+To change a pin, resolve the wheels for CPython 3.12 on x86_64 and
+aarch64 with `pip download --only-binary=:all: --python-version 3.12
+--platform manylinux2014_<arch>`, check each `sha256` against PyPI, and
+keep every line hashed.
 - The agent runs as your user and can read files outside its workspace.
   Run the pilot as a user that cannot read `/study/private` and
   `/study/repos` other than through SIS, or on a host where those paths

@@ -22,6 +22,17 @@
   registry only when it is `localhost`, contains a dot or carries a
   port, as in Docker's grammar); a tag-only, digest-less, short-digest
   or uppercase-hex reference is still refused.
+- **Test-dependency evaluator image.** `docker/sandbox/Dockerfile.testdeps`
+  builds `sis-evaluator:3.3.9-testdeps`: the same pinned base, user,
+  `HOME` and `/workspace` as the base image and the same pytest lock,
+  plus `requirements-testdeps.lock` (hypothesis 6.170.14, pytest-mock
+  3.17.0, pytest-timeout 2.4.0, freezegun 1.5.5, pyyaml 6.0.3, toml
+  0.10.2, and python-dateutil, six and sortedcontainers), installed with
+  `--require-hashes --only-binary=:all:`. Every version had been out for
+  at least two weeks and every hash matches PyPI. nose is not included.
+  The local build passes the same probe as the base image (14 checks,
+  split identity included), by image ID and by registry digest. Build,
+  pin and probe steps are in `docs/v3/PILOT_RUNBOOK.md` §0.
 
 ## 2026-11-20 — Split custody releases handles and stages test data (SIS-FIX-20)
 
