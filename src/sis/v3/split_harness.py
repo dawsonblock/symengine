@@ -1415,11 +1415,16 @@ def _stdlib_roots():
 STDLIB_DIRS, SITE_DIRS = _stdlib_roots()
 
 
+def is_class(value):
+    """True for a class, decided from its real type: no __class__ hook."""
+    return issubclass(type(value), type)
+
+
 def static_namespace(value):
     """The namespace of a plain module or class, read without any hook."""
     if type(value) is types.ModuleType:
         return MODULE_DICT.__get__(value)
-    if isinstance(value, type):
+    if is_class(value):
         return TYPE_DICT.__get__(value, type)
     return None
 
@@ -1445,11 +1450,15 @@ def stdlib_code(function):
     return any(filename.startswith(entry) for entry in STDLIB_DIRS)
 
 
-SAFE_DESCRIPTORS = (
+SAFE_DESCRIPTORS = frozenset((
     types.BuiltinFunctionType, types.WrapperDescriptorType,
     types.MethodDescriptorType, types.GetSetDescriptorType,
     types.MemberDescriptorType, types.ClassMethodDescriptorType,
-    types.MethodWrapperType)
+    types.MethodWrapperType))
+# Exact types only: a subclass of str (or of any of these) can define
+# __get__ and run when the attribute is read.
+INERT_DATA = frozenset((str, bytes, int, float, bool, tuple, frozenset,
+                        dict, type(None)))
 
 
 def runs_only_stdlib_code(cls):
@@ -1471,23 +1480,24 @@ def runs_only_stdlib_code(cls):
         if type(klass) is not type:
             return False
         for value in TYPE_DICT.__get__(klass, type).values():
-            if isinstance(value, (staticmethod, classmethod)):
+            kind = type(value)
+            if kind is staticmethod or kind is classmethod:
                 value = value.__func__
-            if isinstance(value, property):
+                kind = type(value)
+            if kind is property:
                 parts = [value.fget, value.fset, value.fdel]
             else:
                 parts = [value]
             for part in parts:
-                if part is None or isinstance(part, SAFE_DESCRIPTORS):
+                kind = type(part)
+                if kind in SAFE_DESCRIPTORS or kind in INERT_DATA:
                     continue
-                if isinstance(part, types.FunctionType):
+                if kind is types.FunctionType:
                     if not stdlib_code(part):
                         return False
                     continue
-                if isinstance(part, (str, bytes, int, float, bool, tuple,
-                                     frozenset, type(None))):
-                    continue
-                if isinstance(part, dict) or isinstance(part, type):
+                if kind is type:
+                    # A nested plain class: reading it runs no hook.
                     continue
                 # Any other object could be a descriptor or callable
                 # defined elsewhere.
@@ -1520,7 +1530,7 @@ def trusted_class(module, qualname):
         if type(loaded) is not types.ModuleType:
             return None
         candidate = static_lookup(loaded, qualname)
-    if not (isinstance(candidate, type) and issubclass(candidate, Exception)):
+    if not (is_class(candidate) and issubclass(candidate, Exception)):
         return None
     # The name must be where the class is defined, not an alias.
     try:

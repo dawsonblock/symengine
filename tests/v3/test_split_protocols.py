@@ -1381,6 +1381,84 @@ class SplitExceptionTests(SplitHarness):
             ),
         })
 
+    def test_a_data_subclass_descriptor_disqualifies_a_class(self):
+        # A str subclass with __get__ looks like inert data. Set as
+        # __init_subclass__ on a class claiming to be json's, it would run
+        # when a stand-in derives from that class: only exact data types
+        # count as inert.
+        marker = self.root / "EVALUATOR_HOOK_RAN"
+        self.write("claims.py", (
+            "class Sneaky(Exception):\n"
+            "    pass\n"
+            "Sneaky.__module__ = 'json'\n"
+            "class Child(Sneaky):\n"
+            "    pass\n"
+            "def child():\n"
+            "    raise Child('derived')\n"))
+        self.assertPasses({
+            "sneaky_helper.py": (
+                "import json\n"
+                f"MARK = {str(marker)!r}\n"
+                "class Hook(str):\n"
+                "    def __get__(self, obj, owner):\n"
+                "        open(MARK, 'a').write('descriptor')\n"
+                "        return lambda **kwargs: None\n"
+                "class Sneaky(Exception):\n"
+                "    __init_subclass__ = Hook('inert-looking')\n"
+                "Sneaky.__module__ = 'json'\n"
+                "json.Sneaky = Sneaky\n"),
+            "test_hidden.py": (
+                "import os\n"
+                "import pytest\n"
+                "import sneaky_helper\n"
+                "import claims\n"
+                f"MARK = {str(marker)!r}\n"
+                "def test_descriptor_never_runs():\n"
+                "    if os.path.exists(MARK):\n"
+                "        os.unlink(MARK)\n"
+                "    with pytest.raises(Exception, match='derived') as info:\n"
+                "        claims.child()\n"
+                "    assert not isinstance(info.value, sneaky_helper.Sneaky)\n"
+                "    assert not os.path.exists(MARK)\n"
+            ),
+        })
+
+    def test_the_name_walk_never_asks_an_object_for_its_class(self):
+        # A non-class object on a stdlib module with a custom __class__
+        # property: walking json.Lying.x must not run that property.
+        marker = self.root / "EVALUATOR_HOOK_RAN"
+        self.write("claims.py", (
+            "class Lying(Exception):\n"
+            "    pass\n"
+            "Lying.__module__ = 'json'\n"
+            "Lying.__qualname__ = 'Lying.x'\n"
+            "def raise_it():\n"
+            "    raise Lying('walked')\n"))
+        self.assertPasses({
+            "lying_helper.py": (
+                "import json\n"
+                f"MARK = {str(marker)!r}\n"
+                "class Lying:\n"
+                "    @property\n"
+                "    def __class__(self):\n"
+                "        open(MARK, 'a').write('class-property')\n"
+                "        return type\n"
+                "json.Lying = Lying()\n"),
+            "test_hidden.py": (
+                "import os\n"
+                "import pytest\n"
+                "import lying_helper\n"
+                "import claims\n"
+                f"MARK = {str(marker)!r}\n"
+                "def test_walk_is_static():\n"
+                "    if os.path.exists(MARK):\n"
+                "        os.unlink(MARK)\n"
+                "    with pytest.raises(Exception, match='walked'):\n"
+                "        claims.raise_it()\n"
+                "    assert not os.path.exists(MARK)\n"
+            ),
+        })
+
     def test_a_cached_stand_in_gains_the_path_read_later(self):
         # A factory-made class has no importable qualified name, so the
         # stand-in built when it is first raised has no path. Reading the
