@@ -1784,8 +1784,11 @@ def source_root(workspace):
 # the workspace root first, so it shadows a same-named module under src/.
 WORKSPACE_SEARCH = [workspace] + [
     entry for entry in (source_root(workspace),) if entry is not None]
-# The workspace directory a proxied top-level module was found in.
-WORKSPACE_ROOTS = {}
+# The directories each proxied workspace package spans: the __path__ the
+# worker's import system gives it. A regular package has its own
+# directory; a namespace package every portion, in search order (one
+# under the workspace root and one under src/, say).
+PACKAGE_PATHS = {}
 _workspace_real = os.path.realpath(workspace)
 _workspace_prefix = os.path.join(_workspace_real, "")
 STDLIB = frozenset(getattr(sys, "stdlib_module_names", ())) | frozenset(
@@ -1848,29 +1851,29 @@ class WorkspaceFinder(importlib.abc.MetaPathFinder):
         elif trusted_module(root):
             return None
         if len(parts) == 1:
-            bases = WORKSPACE_SEARCH
+            search = WORKSPACE_SEARCH
         else:
-            bases = [WORKSPACE_ROOTS.get(root, workspace)]
-        found = []
-        for base in bases:
-            search = [os.path.join(base, *parts[:-1])]
-            try:
-                candidate = importlib.machinery.PathFinder.find_spec(
-                    fullname, search)
-            except Exception:
+            search = PACKAGE_PATHS.get(fullname.rpartition(".")[0])
+            if not search:
                 return None
-            if candidate is not None:
-                found.append((candidate.origin is None, base, candidate))
-        if not found:
+        # The worker's own lookup over the same ordered locations: the
+        # first module or regular package wins over namespace-package
+        # directories, which otherwise all become portions of one package.
+        # Nothing is loaded; the spec only says where the worker looks.
+        try:
+            spec = importlib.machinery.PathFinder.find_spec(
+                fullname, list(search))
+        except Exception:
             return None
-        # As the worker's import system does: a regular module or package
-        # anywhere on the path wins over a namespace-package directory.
-        _namespace, base, spec = min(found, key=lambda item: item[0])
-        if len(parts) == 1:
-            WORKSPACE_ROOTS[root] = base
+        if spec is None:
+            return None
         # Workspace packages are proxied too, so a submission laid out as
         # a package keeps its submodules; the proxy never holds their code.
         is_package = spec.submodule_search_locations is not None
+        if is_package:
+            PACKAGE_PATHS[fullname] = [
+                entry for entry in spec.submodule_search_locations
+                if isinstance(entry, str)]
         module_spec = importlib.util.spec_from_loader(
             fullname, WorkspaceLoader(fullname, is_package),
             origin=spec.origin)

@@ -1170,6 +1170,41 @@ class SplitSourceLayoutTests(SplitHarness):
             "    assert data.WHERE == 'src package'\n"
         )})
 
+    def test_a_namespace_package_spans_the_root_and_src(self):
+        # No acme/__init__.py: the worker's acme is a namespace package
+        # over <ws>/acme and <ws>/src/acme, in that order, and the
+        # evaluator must find its submodules in both.
+        self.write("acme/rootmod.py", "WHERE = 'root'\n")
+        self.write("acme/both.py", "WHERE = 'root'\n")
+        self.write("src/acme/both.py", "WHERE = 'src'\n")
+        self.write("src/acme/srcmod.py", "WHERE = 'src'\n")
+        # A regular package still wins over a namespace directory, and
+        # its own directory is then the only place its submodules live.
+        self.write("acme/sub/stray.py", "WHERE = 'root namespace'\n")
+        self.write("src/acme/sub/__init__.py", "WHERE = 'src package'\n")
+        self.write("src/acme/sub/inner.py", "WHERE = 'src inner'\n")
+        self.write("acme/deep/ns/one.py", "WHERE = 'root deep'\n")
+        self.write("src/acme/deep/ns/two.py", "WHERE = 'src deep'\n")
+        self.assertPasses({"test_hidden.py": (
+            "import importlib\n"
+            "import pytest\n"
+            "import acme.rootmod\n"
+            "import acme.srcmod\n"
+            "import acme.both\n"
+            "from acme import sub\n"
+            "from acme.sub import inner\n"
+            "from acme.deep.ns import one, two\n"
+            "def test_namespace():\n"
+            "    assert acme.rootmod.WHERE == 'root'\n"
+            "    assert acme.srcmod.WHERE == 'src'\n"
+            "    assert acme.both.WHERE == 'root'\n"
+            "    assert sub.WHERE == 'src package'\n"
+            "    assert inner.WHERE == 'src inner'\n"
+            "    assert (one.WHERE, two.WHERE) == ('root deep', 'src deep')\n"
+            "    with pytest.raises(ImportError):\n"
+            "        importlib.import_module('acme.sub.stray')\n"
+        )})
+
     def test_a_src_package_is_not_a_source_root(self):
         self.write("src/__init__.py", "")
         self.write("src/thing.py", "VALUE = 3\n")
