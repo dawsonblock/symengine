@@ -487,6 +487,30 @@ class SupportFileTests(unittest.TestCase):
             "path": "tests/compliance", "reason": "support_files_cap",
             "files": 11, "room": 4}])
 
+    def test_only_whole_division_chains_name_a_path(self):
+        # ``HERE / 'fixtures' / 'nested' / 'one.txt'`` names one file. Its
+        # inner chain ``HERE / 'fixtures' / 'nested'`` is part of that
+        # path, not a reference to the directory, whose siblings would
+        # otherwise be captured (and could crowd out required material).
+        found = self.importer._string_paths(
+            b"x = HERE / 'fixtures' / 'nested' / 'one.txt'\n")
+        self.assertIn(("fixtures", "nested", "one.txt"), found)
+        self.assertNotIn(("fixtures", "nested"), found)
+        # A directory the chain names as a whole is still a reference.
+        self.assertIn(("fixtures", "nested"), self.importer._string_paths(
+            b"x = HERE / 'fixtures' / 'nested'\n"))
+        self.add_data({"tests/fixtures/nested/one.txt": "one",
+                       "tests/fixtures/nested/sibling.txt": "sibling"})
+        info = self.describe(self.fix_with_test("test_nested.py", (
+            "from pathlib import Path\n"
+            "HERE = Path(__file__).parent\n"
+            "def test_nested():\n"
+            "    assert (HERE / 'fixtures' / 'nested' / 'one.txt')"
+            ".read_text() == 'one'\n")))
+        data = sorted(path for path in info["support"]
+                      if not path.endswith(".py"))
+        self.assertEqual(data, ["tests/fixtures/nested/one.txt"])
+
     def test_a_data_file_over_the_size_bound_is_noted(self):
         original = self.importer.MAX_PRIVATE_FILE_BYTES
         self.importer.MAX_PRIVATE_FILE_BYTES = 4096

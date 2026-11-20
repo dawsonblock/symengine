@@ -154,6 +154,9 @@ paths are now tighter.
   not take the primary test's staged name even without
   `hidden_tests_target`. Relative imports of a captured helper resolve
   against its own package, so `tests/sub/helper.py` brings `.data`.
+- **Only whole `/` chains name a path.** `HERE / 'fixtures' / 'nested'
+  / 'one.txt'` names that file and no longer also `fixtures/nested` as
+  a directory, whose unreferenced siblings were captured with it.
 
 ## 2026-11-20 — Authority verification reads one snapshot (SIS-FIX-19)
 

@@ -251,7 +251,15 @@ def _string_paths(source: bytes) -> list[tuple[str, ...]]:
                 components.update(id(item) for item in run[:-1])
             run = []
 
+    def division(node):
+        return isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div)
+
     nodes = list(ast.walk(tree))
+    # Only a whole ``/`` chain names a path. Its inner chains (``HERE /
+    # 'fixtures' / 'nested'`` in ``... / 'nested' / 'one.txt'``) are
+    # prefixes of it, not references to those directories.
+    inner = {id(node.left) for node in nodes
+             if division(node) and division(node.left)}
     for node in nodes:
         if isinstance(node, ast.Call):
             function = node.func
@@ -259,7 +267,7 @@ def _string_paths(source: bytes) -> list[tuple[str, ...]]:
                     else getattr(function, "id", None))
             if name in _PATH_CALLS:
                 runs(node.args)
-        elif isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div):
+        elif division(node) and id(node) not in inner:
             runs(operands(node))
     for node in nodes:
         value = literal(node)
