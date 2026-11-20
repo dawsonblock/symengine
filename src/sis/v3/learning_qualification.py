@@ -28,6 +28,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Mapping, Sequence
 
+from .agent_principal import (AgentPrincipal, AgentPrincipalError,
+                              agent_workspace, resolve_principal)
 from .benchmark import BenchmarkHarness, BudgetCaps
 from .contracts import ContractError, GuidanceV1, TaskEnvelopeV1, canonical_digest
 from .runner import tree_digest
@@ -769,6 +771,14 @@ def analyze_report(
             "protocol did not conform: "
             + ", ".join(conformance.get("mismatches", [])))
     limitations.extend(provenance_gaps)
+    principal = provenance.get("agent_principal")
+    if real_agent and isinstance(principal, Mapping) \
+            and principal.get("separated") is False:
+        limitations.append(
+            "agent principal not separated: the coding agent ran as the "
+            "evaluator's OS user and could read evaluator material (hidden "
+            "tests, keys, registry, state directory); run with --agent-user"
+            " to separate it")
     if transfer["material"]:
         limitations.append(
             f"material negative transfer: E lost {transfer['paired_losses']}"
@@ -971,23 +981,46 @@ def build_context_provider(
 # --------------------------------------------------------------------- #
 # real-agent gate
 # --------------------------------------------------------------------- #
-def codex_agent_status() -> dict:
-    """Report whether a real Codex CLI agent can be used, without calling it."""
+def _principal_credentials(principal: AgentPrincipal
+                           ) -> tuple[dict[str, bool], str | None]:
+    """Credential files in the agent user's own home, or why unknown."""
+    try:
+        return principal.credentials(), None
+    except AgentPrincipalError as exc:
+        return {}, f"agent_principal_unavailable:{exc}"
+
+
+def codex_agent_status(principal: AgentPrincipal | None = None) -> dict:
+    """Report whether a real Codex CLI agent can be used, without calling it.
+
+    Under an agent ``principal`` the stored credentials are looked up in
+    that user's home (as that user), not the evaluator's.
+    """
     binary = shutil.which("codex")
-    auth_path = Path.home() / ".codex" / "auth.json"
-    authenticated = bool(os.environ.get("OPENAI_API_KEY")) or auth_path.exists()
+    failure = None
+    if principal is None:
+        stored = (Path.home() / ".codex" / "auth.json").exists()
+    else:
+        found, failure = _principal_credentials(principal)
+        stored = bool(found.get(".codex/auth.json"))
+    authenticated = bool(os.environ.get("OPENAI_API_KEY")) or stored
     reason = "ok"
     if binary is None:
         reason = "codex_cli_not_found"
+    elif failure is not None:
+        reason = failure
     elif not authenticated:
         reason = "codex_not_authenticated"
-    return {
+    status = {
         "agent": "codex-cli",
-        "available": binary is not None,
+        "available": binary is not None and failure is None,
         "authenticated": authenticated,
         "binary": binary,
         "reason": reason,
     }
+    if principal is not None:
+        status["agent_user"] = principal.user
+    return status
 
 
 _CODEX_ACTION_NAMES = {
@@ -1016,14 +1049,27 @@ class CodexCliAgent:
 
     def __init__(self, *, model: str | None = None,
                  wall_seconds: int = 600,
-                 prompts: Mapping[str, str] | None = None) -> None:
-        status = codex_agent_status()
-        if not status["available"] or not status["authenticated"]:
-            raise RuntimeError("real_agent_unavailable:" + status["reason"])
-        from .adapters.codex_cli import CodexCliAdapter
-        self._adapter = CodexCliAdapter(wall_seconds=wall_seconds)
+                 prompts: Mapping[str, str] | None = None,
+                 agent_user: str | None = None,
+                 principal: AgentPrincipal | None = None,
+                 adapter=None) -> None:
+        principal = resolve_principal(agent_user, principal)
+        if adapter is None:
+            status = codex_agent_status(principal)
+            if not status["available"] or not status["authenticated"]:
+                raise RuntimeError(
+                    "real_agent_unavailable:" + status["reason"])
+            from .adapters.codex_cli import CodexCliAdapter
+            adapter = CodexCliAdapter(wall_seconds=wall_seconds,
+                                      principal=principal)
+        self._adapter = adapter
+        self._principal = principal
         self._model = model
         self._prompts = dict(prompts or {})
+
+    @property
+    def principal(self) -> AgentPrincipal | None:
+        return getattr(self, "_principal", None)
 
     def __call__(self, ctx):
         prompt = self._prompts.get(ctx.task.task_id)
@@ -1033,9 +1079,36 @@ class CodexCliAgent:
                 + ctx.task.task_id)
         prompt = _guided_prompt(prompt, ctx.guidance)
         before = tree_digest(ctx.workspace)
+        outcome = None
+        try:
+            with agent_workspace(self.principal, ctx.workspace) as workspace:
+                outcome = self._turn(ctx, prompt, workspace)
+        except AgentPrincipalError as exc:
+            _record_principal_tokens(
+                ctx, outcome[2] if outcome is not None else 0)
+            raise RuntimeError(f"real_agent_principal_failed:{exc}") from exc
+        tools, actions, tokens, tokens_seen, fail = outcome
+        if tools == 0 or tree_digest(ctx.workspace) == before:
+            raise fail("real_agent_no_action")
+        if tokens_seen and ctx.usage_meter is not None:
+            ctx.usage_meter.record_tokens(tokens)
+        # The observed action sequence, as ClaudeCodeAgent reports it, so
+        # strategy induction (arm C) works for Codex-backed builds too.
+        # The adapter redacts command text, so actions are item types.
+        return {"tokens_used": tokens if tokens_seen else None,
+                "tools_used": tools, "actions": actions[:256]}
+
+    def _turn(self, ctx, prompt: str, workspace: str):
+        """Run one CLI turn in ``workspace`` (the agent's path)."""
         turn = self._adapter.start_task(
-            prompt, ctx.workspace, model=self._model,
+            prompt, workspace, model=self._model,
             sandbox="workspace_write")
+        try:
+            return self._consume(ctx, turn)
+        finally:
+            _close_turn(turn)
+
+    def _consume(self, ctx, turn):
         supervisor = getattr(ctx, "supervisor", None)
         if supervisor is not None:
             supervisor.register_terminator(
@@ -1115,15 +1188,7 @@ class CodexCliAgent:
             raise fail(f"real_agent_cli_exit:{exit_status}")
         if not turn_completed:
             raise fail("real_agent_turn_incomplete")
-        if tools == 0 or tree_digest(ctx.workspace) == before:
-            raise fail("real_agent_no_action")
-        if tokens_seen and ctx.usage_meter is not None:
-            ctx.usage_meter.record_tokens(tokens)
-        # The observed action sequence, as ClaudeCodeAgent reports it, so
-        # strategy induction (arm C) works for Codex-backed builds too.
-        # The adapter redacts command text, so actions are item types.
-        return {"tokens_used": tokens if tokens_seen else None,
-                "tools_used": tools, "actions": actions[:256]}
+        return tools, actions, tokens, tokens_seen, fail
 
     def _cancel(self, turn_id: str) -> None:
         """Terminate the active CLI turn when the harness aborts the arm."""
@@ -1150,7 +1215,7 @@ def _guided_prompt(prompt: str, guidance) -> str:
     return prompt
 
 
-def claude_code_agent_status() -> dict:
+def claude_code_agent_status(principal: AgentPrincipal | None = None) -> dict:
     """Report whether a real Claude Code agent can be used, without calling it.
 
     Authentication is detected from an API key or OAuth token in the
@@ -1158,8 +1223,23 @@ def claude_code_agent_status() -> dict:
     (``~/.claude/.credentials.json``, or ``~/.claude.json`` naming an
     ``oauthAccount`` when the secret lives in the macOS keychain). A false
     negative only blocks the run; it never substitutes a scripted agent.
+    Under an agent ``principal`` the stored credentials are those in that
+    user's home (``.claude/.credentials.json``, checked as that user).
     """
     binary = shutil.which("claude")
+    if principal is not None:
+        found, failure = _principal_credentials(principal)
+        authenticated = any(os.environ.get(name) for name in (
+            "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN",
+            "CLAUDE_CODE_OAUTH_TOKEN")) or bool(
+                found.get(".claude/.credentials.json"))
+        reason = ("claude_cli_not_found" if binary is None
+                  else failure if failure is not None
+                  else "ok" if authenticated else "claude_not_authenticated")
+        return {"agent": "claude-code",
+                "available": binary is not None and failure is None,
+                "authenticated": authenticated, "binary": binary,
+                "reason": reason, "agent_user": principal.user}
     try:
         home: Path | None = Path.home()
     except RuntimeError:
@@ -1197,12 +1277,12 @@ def claude_code_agent_status() -> dict:
     }
 
 
-def agent_status(kind: str) -> dict:
+def agent_status(kind: str, principal: AgentPrincipal | None = None) -> dict:
     """Availability of the pinned agent kind (``codex-cli``/``claude-code``)."""
     if kind == "claude-code":
-        return claude_code_agent_status()
+        return claude_code_agent_status(principal)
     if kind == "codex-cli":
-        return codex_agent_status()
+        return codex_agent_status(principal)
     return {"agent": kind, "available": False, "authenticated": False,
             "binary": None, "reason": "unknown_agent_kind"}
 
@@ -1224,24 +1304,39 @@ class ClaudeCodeAgent:
     exceeds the budget, so the harness marks the row budget-exceeded and
     the analysis scores it as an attested failure, exactly like an
     overrun detected after the run.
+
+    With ``agent_user`` (or ``principal``) the CLI runs as that separate OS
+    user in its own copy of the workspace
+    (:meth:`sis.v3.agent_principal.AgentPrincipal.checkout`); the copy is
+    back in ``ctx.workspace`` before the no-action check and before the
+    harness digests and grades it.
     """
 
     def __init__(self, *, model: str | None = None,
                  wall_seconds: int = 600,
                  prompts: Mapping[str, str] | None = None,
                  adapter=None,
-                 enforce_budget: bool = True) -> None:
+                 enforce_budget: bool = True,
+                 agent_user: str | None = None,
+                 principal: AgentPrincipal | None = None) -> None:
+        principal = resolve_principal(agent_user, principal)
         if adapter is None:
-            status = claude_code_agent_status()
+            status = claude_code_agent_status(principal)
             if not status["available"] or not status["authenticated"]:
                 raise RuntimeError(
                     "real_agent_unavailable:" + status["reason"])
             from .adapters.claude_code import ClaudeCodeAdapter
-            adapter = ClaudeCodeAdapter(wall_seconds=wall_seconds)
+            adapter = ClaudeCodeAdapter(wall_seconds=wall_seconds,
+                                        principal=principal)
         self._adapter = adapter
+        self._principal = principal
         self._model = model
         self._prompts = dict(prompts or {})
         self._enforce = bool(enforce_budget)
+
+    @property
+    def principal(self) -> AgentPrincipal | None:
+        return getattr(self, "_principal", None)
 
     def __call__(self, ctx):
         prompt = self._prompts.get(ctx.task.task_id)
@@ -1250,9 +1345,34 @@ class ClaudeCodeAgent:
                 "missing task prompt for real-agent task " + ctx.task.task_id)
         prompt = _guided_prompt(prompt, ctx.guidance)
         before = tree_digest(ctx.workspace)
+        outcome = None
+        try:
+            with agent_workspace(self.principal, ctx.workspace) as workspace:
+                outcome = self._turn(ctx, prompt, workspace)
+        except AgentPrincipalError as exc:
+            if outcome is not None:
+                outcome[1]()  # settle: meter what the stream reported
+            else:
+                _record_principal_tokens(ctx, 0)
+            raise RuntimeError(f"real_agent_principal_failed:{exc}") from exc
+        tools, settle, fail = outcome
+        if not tools or tree_digest(ctx.workspace) == before:
+            raise fail("real_agent_no_action")
+        tokens = settle()
+        return {"tokens_used": tokens, "tools_used": len(tools),
+                "actions": tools[:256]}
+
+    def _turn(self, ctx, prompt: str, workspace: str):
+        """Run one CLI turn in ``workspace`` (the agent's path)."""
         turn = self._adapter.start_task(
-            prompt, ctx.workspace, model=self._model,
+            prompt, workspace, model=self._model,
             sandbox="workspace_write")
+        try:
+            return self._consume(ctx, turn)
+        finally:
+            _close_turn(turn)
+
+    def _consume(self, ctx, turn):
         supervisor = getattr(ctx, "supervisor", None)
         if supervisor is not None:
             supervisor.register_terminator(
@@ -1345,11 +1465,7 @@ class ClaudeCodeAgent:
             raise fail("real_agent_missing_exit_status")
         if exit_status != 0:
             raise fail(f"real_agent_cli_exit:{exit_status}")
-        if not tools or tree_digest(ctx.workspace) == before:
-            raise fail("real_agent_no_action")
-        tokens = settle()
-        return {"tokens_used": tokens, "tools_used": len(tools),
-                "actions": tools[:256]}
+        return tools, settle, fail
 
     def _cancel(self, turn_id: str) -> None:
         """Terminate the active CLI turn (harness abort or budget stop)."""
@@ -1361,6 +1477,24 @@ class ClaudeCodeAgent:
 
     def close(self) -> None:
         self._adapter.close()
+
+
+def _close_turn(turn) -> None:
+    """Finish the adapter's event stream now (watchdog, kills, pipes).
+
+    Under a principal the workspace is copied back right after the turn,
+    so the adapter's cleanup must run first, not whenever the generator
+    happens to be collected.
+    """
+    close = getattr(getattr(turn, "events", turn), "close", None)
+    if callable(close):
+        close()
+
+
+def _record_principal_tokens(ctx, tokens: int) -> None:
+    """A principal failure is an ordinary failure with attested usage."""
+    if getattr(ctx, "usage_meter", None) is not None:
+        ctx.usage_meter.record_tokens(tokens)
 
 
 def write_report(report: Mapping, path: str | Path) -> Path:
