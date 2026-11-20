@@ -51,6 +51,7 @@ import ast
 import hashlib
 import json
 import os
+import posixpath
 import re
 import secrets
 import sys
@@ -68,7 +69,8 @@ from sis.v3.runner import (MAX_PRIVATE_FILE_BYTES,  # noqa: E402
                            tree_digest)
 from sis.v3.study_runtime import (DEFAULT_SPLIT_USER,  # noqa: E402
                                   MAX_SUPPORT_FILES, StudyRuntimeError,
-                                  build_study_executor, materialize_commit)
+                                  build_study_executor, materialize_commit,
+                                  support_target_allowed)
 from sis.v3.verifier import OutcomeVerifier  # noqa: E402
 
 HEX = re.compile(r"^[0-9a-f]{40}$|^[0-9a-f]{64}$")
@@ -164,9 +166,11 @@ def describe_commit(root: Path, commit: str, *, fix_pattern: re.Pattern
                                  f"{commit}:{test_path}")
     if payload is None:
         raise ImportError_("test_blob_unreadable")
+    notes: list = []
+    support = support_files(root, commit, test_path, payload, notes)
     return {"commit": commit, "parent": parent, "message": message,
             "test_path": test_path, "test_bytes": payload,
-            "support": support_files(root, commit, test_path, payload),
+            "support": support, "support_notes": notes,
             "source_files": sorted(path for _, path in sources)}
 
 
@@ -200,8 +204,85 @@ def _imported_modules(source: bytes) -> list[tuple[int, list[str]]]:
     return names
 
 
+#: Calls whose consecutive string arguments form one path
+#: (``os.path.join(HERE, 'data', 'x.json')``, ``Path('data', 'x.json')``).
+_PATH_CALLS = frozenset({"join", "joinpath", "Path", "PurePath",
+                         "PurePosixPath"})
+
+
+def _string_paths(source: bytes) -> list[tuple[str, ...]]:
+    """Path fragments a Python file names with string literals.
+
+    Every string literal alone, and every run of two or more consecutive
+    literals that a path join (:data:`_PATH_CALLS`) or the ``/`` operator
+    combines: ``os.path.join(dirname(__file__), 'compliance')`` names
+    ``compliance``, ``HERE / 'data' / 'x.json'`` names ``data/x.json``.
+    Nothing is executed.
+    """
+    try:
+        tree = ast.parse(source)
+    except (SyntaxError, ValueError):
+        return []
+
+    def literal(node):
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            return node.value
+        return None
+
+    def operands(node):
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div):
+            return [*operands(node.left), node.right]
+        return [node]
+
+    found: set[tuple[str, ...]] = set()
+    # A literal followed by another in one join is a path component
+    # (``'fixtures'`` in ``HERE / 'fixtures' / 'one.txt'``), not a
+    # reference to that directory as a whole.
+    components: set[int] = set()
+
+    def runs(nodes):
+        run: list = []
+        for node in [*nodes, None]:
+            if node is not None and literal(node) is not None:
+                run.append(node)
+                continue
+            if len(run) > 1:
+                found.add(tuple(literal(item) for item in run))
+                components.update(id(item) for item in run[:-1])
+            run = []
+
+    nodes = list(ast.walk(tree))
+    for node in nodes:
+        if isinstance(node, ast.Call):
+            function = node.func
+            name = (function.attr if isinstance(function, ast.Attribute)
+                    else getattr(function, "id", None))
+            if name in _PATH_CALLS:
+                runs(node.args)
+        elif isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div):
+            runs(operands(node))
+    for node in nodes:
+        value = literal(node)
+        if value is not None and id(node) not in components:
+            found.add((value,))
+    return sorted(found)
+
+
+def _relative_path(base: PurePosixPath, parts: tuple[str, ...]) -> str | None:
+    """``parts`` joined under ``base``, normalized; None if it leaves it."""
+    joined = "/".join(parts)
+    if (not joined or len(joined) > 512 or "\0" in joined or "\\" in joined
+            or joined.startswith("/") or ":" in joined):
+        return None
+    combined = posixpath.normpath(posixpath.join(base.as_posix(), joined))
+    if combined in (".", "..") or combined.startswith("../"):
+        return None
+    return combined
+
+
 def support_files(root: Path, commit: str, test_path: str,
-                  test_bytes: bytes) -> dict[str, bytes]:
+                  test_bytes: bytes,
+                  notes: list | None = None) -> dict[str, bytes]:
     """Files the hidden test needs beside it, read from the fix commit.
 
     The evaluator captures them at registration exactly like the test
@@ -218,6 +299,14 @@ def support_files(root: Path, commit: str, test_path: str,
     as packages or helpers, so a source package (``src/pkg/__init__.py``,
     or ``pkg.py`` beside a root-level test) is never captured: the
     submission's code is always the submission's.
+
+    Data files are captured too (:func:`_data_files`): non-Python regular
+    files under the test root that the test or a captured helper names
+    by a string-literal path, and every such file of a test subdirectory
+    it names (``os.path.join(HERE, 'compliance')`` and a ``glob``). A
+    directory that would exceed :data:`MAX_SUPPORT_FILES` or the
+    private-material bounds is captured not at all, never in part, and
+    the reason is appended to ``notes``.
     """
     listing = gitquery.raw_bytes(root, "ls-tree", "-r", "-z", commit)
     if listing is None:
@@ -314,11 +403,110 @@ def support_files(root: Path, commit: str, test_path: str,
         source = test_bytes if origin == test_path else found[origin]
         for level, parts in _imported_modules(source):
             resolve(origin, level, parts)
+    test_root = packages[-1] if packages else test.parent
+    _data_files(root, commit, test_path, test_bytes, found, paths,
+                test_root=test_root, in_test_dir=in_test_dir,
+                notes=notes if notes is not None else [])
     sizes = [len(test_bytes), *(len(data) for data in found.values())]
     if (len(sizes) > MAX_PRIVATE_FILES or max(sizes) > MAX_PRIVATE_FILE_BYTES
             or sum(sizes) > MAX_PRIVATE_TOTAL_BYTES):
         raise ImportError_("support_files_exceed_the_bound")
     return dict(sorted(found.items()))
+
+
+def _data_files(root: Path, commit: str, test_path: str, test_bytes: bytes,
+                found: dict[str, bytes], paths: set[str], *,
+                test_root: PurePosixPath, in_test_dir, notes: list) -> None:
+    """Add the data files the test reads beside itself to ``found``.
+
+    jmespath's compliance tests load ``tests/compliance/*.json`` through
+    ``os.path.dirname(__file__)``; without them the staged test fails
+    even on the correct fix. A string literal (or a joined run of them)
+    in the test or a captured ``.py`` helper is resolved against that
+    file's directory and the test's. It names:
+
+    - a data file: a regular file in the fix commit (``paths`` holds
+      regular files only), not ``.py`` and no other code suffix, in a
+      test directory under the test root;
+    - a data directory: a test subdirectory strictly under the test
+      root, not a package, whose data files (recursively) are captured
+      all together or, when they would exceed :data:`MAX_SUPPORT_FILES`
+      or a size bound, not at all, with a note saying why.
+
+    Single files come first, then directories, each in path order, after
+    every Python support file.
+    """
+    root_text = test_root.as_posix()
+    prefix = "" if root_text == "." else root_text + "/"
+    directories = {posixpath.dirname(path) for path in paths}
+    for path in list(directories):
+        while path:
+            path = posixpath.dirname(path)
+            directories.add(path)
+
+    def eligible(path: str) -> bool:
+        return (path.startswith(prefix) and in_test_dir(path)
+                and not path.endswith(".py") and path != test_path)
+
+    def total() -> int:
+        return len(test_bytes) + sum(len(data) for data in found.values())
+
+    sources = {test_path: test_bytes, **{
+        path: data for path, data in found.items() if path.endswith(".py")}}
+    files: set[str] = set()
+    folders: set[str] = set()
+    for origin, source in sources.items():
+        bases = {PurePosixPath(origin).parent, PurePosixPath(test_path).parent}
+        for parts in _string_paths(source):
+            for base in bases:
+                candidate = _relative_path(base, parts)
+                if candidate is None:
+                    continue
+                if candidate in paths and eligible(candidate):
+                    files.add(candidate)
+                elif (candidate in directories and candidate.startswith(prefix)
+                      and candidate != root_text
+                      and in_test_dir(candidate + "/x")
+                      and candidate + "/__init__.py" not in paths):
+                    folders.add(candidate)
+
+    def note(path: str, reason: str, **extra) -> None:
+        notes.append({"path": path, "reason": reason, **extra})
+
+    for path in sorted(files - set(found)):
+        if not SAFE_REL.fullmatch(path) or not support_target_allowed(path):
+            note(path, "data_path_unsafe")
+        elif len(found) >= MAX_SUPPORT_FILES:
+            note(path, "support_files_cap")
+        else:
+            data = _blob(root, commit, path)
+            if (len(data) > MAX_PRIVATE_FILE_BYTES
+                    or total() + len(data) > MAX_PRIVATE_TOTAL_BYTES):
+                note(path, "private_size_bound")
+            else:
+                found[path] = data
+    for folder in sorted(folders):
+        members = sorted(path for path in paths
+                         if path.startswith(folder + "/") and eligible(path)
+                         and support_target_allowed(path)
+                         and path not in found)
+        if not members:
+            continue
+        if any(not SAFE_REL.fullmatch(path) for path in members):
+            note(folder, "data_path_unsafe")
+            continue
+        if len(found) + len(members) > MAX_SUPPORT_FILES:
+            note(folder, "support_files_cap", files=len(members),
+                 room=MAX_SUPPORT_FILES - len(found))
+            continue
+        payloads = {path: _blob(root, commit, path) for path in members}
+        if (max(len(data) for data in payloads.values())
+                > MAX_PRIVATE_FILE_BYTES
+                or total() + sum(len(data) for data in payloads.values())
+                > MAX_PRIVATE_TOTAL_BYTES):
+            note(folder, "private_size_bound", files=len(members))
+            continue
+        found.update(payloads)
 
 
 def private_files(info: dict) -> dict[str, bytes]:
@@ -428,6 +616,7 @@ def import_repository(args, *, executor_factory=None) -> dict:
                 root, max_scan=args.max_scan, explicit=args.commits):
             if args.max_tasks and len(tasks) >= args.max_tasks:
                 break
+            info = {}
             try:
                 info = describe_commit(root, commit, fix_pattern=fix_pattern)
                 if not gitquery.predicate(root, "merge-base", "--is-ancestor",
@@ -495,11 +684,15 @@ def import_repository(args, *, executor_factory=None) -> dict:
                         "base_execution_digest":
                             repository_execution_digest(base_tree),
                         "verification": verification,
+                        **({"support_notes": info["support_notes"]}
+                           if info.get("support_notes") else {}),
                     },
                 }
                 tasks.append(task)
             except ImportError_ as exc:
-                rejected.append({"commit": commit, "reason": str(exc)})
+                rejected.append({"commit": commit, "reason": str(exc),
+                                 **({"support_notes": info["support_notes"]}
+                                    if info.get("support_notes") else {})})
             except Exception as exc:  # noqa: BLE001 - recorded, not fatal
                 rejected.append({"commit": commit,
                                  "reason": f"{type(exc).__name__}: {exc}"})

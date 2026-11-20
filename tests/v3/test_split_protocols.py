@@ -1628,6 +1628,31 @@ class SplitSupportFileTests(SplitHarness):
         })
         self.assertFalse(shadow.exists())
 
+    def test_data_files_are_read_beside_the_private_test(self):
+        # jmespath: tests/compliance/*.json through dirname(__file__).
+        # They are staged at their repository paths in the private
+        # directory; the workspace's copies are never what the test reads.
+        self.write("tests/compliance/basic.json", "[[1, 1]]")
+        self.write("tests/compliance/extra.json", "[[0, 1]]")
+        self.assertPasses({
+            "tests/__init__.py": "",
+            "tests/compliance/basic.json": "[[2, 2]]",
+            "tests/test_compliance.py": (
+                "import glob\n"
+                "import json\n"
+                "import os\n"
+                "import cachekit\n"
+                "HERE = os.path.dirname(os.path.abspath(__file__))\n"
+                "CASES = os.path.join(HERE, 'compliance')\n"
+                "def test_cases():\n"
+                "    names = glob.glob(os.path.join(CASES, '*.json'))\n"
+                "    assert [os.path.basename(n) for n in names] =="
+                " ['basic.json']\n"
+                "    for size, expected in json.load(open(names[0])):\n"
+                "        assert cachekit.Cache(size).maxsize == expected\n"),
+        })
+        self.assertFalse(self.marker.exists())
+
     def test_without_support_files_the_workspace_package_stays_proxied(self):
         # A test package the evaluator did not register is the
         # submission's: it is reached through the proxy, in the worker.

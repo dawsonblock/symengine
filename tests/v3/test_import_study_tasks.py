@@ -390,6 +390,140 @@ class SupportFileTests(unittest.TestCase):
             "tests/sub/deeper/leaf.py", "tests/sub/helper.py",
             "tests/unused.py"])
 
+    def add_data(self, files: dict[str, str], links: dict[str, str] = ()):
+        path = self.repo["path"]
+        for relative, text in files.items():
+            target = path / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(text)
+        for relative, source in dict(links).items():
+            (path / relative).symlink_to(source)
+        commit(path, "Add test data")
+
+    def fix_with_test(self, name: str, text: str) -> str:
+        path = self.repo["path"]
+        (path / "calc.py").write_text("def add(x, y):\n    return y + x\n")
+        (path / "tests" / name).write_text(text)
+        return commit(path, "Fix add operand order")
+
+    #: jmespath's compliance test: a data directory named by a joined
+    #: literal and listed at run time.
+    DATA_TEST = (
+        "import glob\n"
+        "import json\n"
+        "import os\n"
+        "from pathlib import Path\n"
+        "import calc\n"
+        "from tests.reader import load\n"
+        "HERE = os.path.dirname(os.path.abspath(__file__))\n"
+        "CASES = os.path.join(HERE, 'compliance')\n"
+        "def test_cases():\n"
+        "    names = sorted(glob.glob(os.path.join(CASES, '*.json')))\n"
+        "    assert [os.path.basename(n) for n in names] == ["
+        "'a.json', 'b.json']\n"
+        "    for name in names:\n"
+        "        for x, y, total in json.load(open(name)):\n"
+        "            assert calc.add(x, y) == total\n"
+        "    assert (Path(__file__).parent / 'fixtures' / 'one.txt')"
+        ".read_text() == 'one'\n"
+        "    assert load() == 'helper data'\n")
+
+    def data_repository(self, links: bool = True, **extra) -> str:
+        self.add_data({
+            # Broken again, so the fix's base fails the new test.
+            "calc.py": "def add(x, y):\n    return x - y\n",
+            "tests/compliance/a.json": "[[1, 2, 3]]",
+            "tests/compliance/b.json": "[[2, 2, 4]]",
+            "tests/compliance/nested/c.txt": "nested",
+            "tests/compliance/skip.py": "RAN = 1\n",
+            "tests/compliance/cache.pyc": "",
+            "tests/fixtures/one.txt": "one",
+            "tests/fixtures/other.txt": "other",
+            "tests/helper_data.txt": "helper data",
+            "tests/reader.py": (
+                "import os\n"
+                "def load():\n"
+                "    here = os.path.dirname(__file__)\n"
+                "    return open(os.path.join(here, 'helper_data.txt'))"
+                ".read()\n"),
+            "tests/sub/__init__.py": "",
+            "tests/sub/notes.txt": "a package, not a data folder",
+            "README.txt": "outside the test root",
+            **extra,
+        }, links={"tests/compliance/linked.json": "a.json"} if links else {})
+        return self.fix_with_test("test_data.py", self.DATA_TEST + (
+            "def test_other_literals():\n"
+            "    assert '../README.txt' and 'sub' and 'fixtures/none.txt'\n"
+            "    assert '/etc/passwd' and 'compliance/skip.py'\n"))
+
+    def test_data_files_beside_the_test_are_captured(self):
+        info = self.describe(self.data_repository())
+        data = sorted(path for path in info["support"]
+                      if not path.endswith(".py"))
+        self.assertEqual(data, [
+            "tests/compliance/a.json", "tests/compliance/b.json",
+            "tests/compliance/nested/c.txt", "tests/fixtures/one.txt",
+            "tests/helper_data.txt"])
+        self.assertIn("tests/reader.py", info["support"])
+        self.assertEqual(info["support"]["tests/compliance/a.json"],
+                         b"[[1, 2, 3]]")
+        self.assertEqual(info["support_notes"], [])
+
+    def test_a_data_directory_over_the_cap_is_not_captured_in_part(self):
+        fix = self.data_repository(**{
+            f"tests/compliance/extra{index}.json": "[]"
+            for index in range(8)})
+        original = self.importer.MAX_SUPPORT_FILES
+        # The Python support files (6) and the two single data files
+        # fit; the eleven files of tests/compliance do not.
+        self.importer.MAX_SUPPORT_FILES = 12
+        self.addCleanup(setattr, self.importer, "MAX_SUPPORT_FILES",
+                        original)
+        info = self.describe(fix)
+        self.assertFalse(any(path.startswith("tests/compliance/")
+                             for path in info["support"]))
+        self.assertIn("tests/fixtures/one.txt", info["support"])
+        self.assertEqual(info["support_notes"], [{
+            "path": "tests/compliance", "reason": "support_files_cap",
+            "files": 11, "room": 4}])
+
+    def test_a_data_file_over_the_size_bound_is_noted(self):
+        original = self.importer.MAX_PRIVATE_FILE_BYTES
+        self.importer.MAX_PRIVATE_FILE_BYTES = 4096
+        self.addCleanup(setattr, self.importer, "MAX_PRIVATE_FILE_BYTES",
+                        original)
+        self.add_data({"tests/big.txt": "x" * 4097})
+        info = self.describe(self.fix_with_test(
+            "test_big.py", "def test_big():\n    assert 'big.txt'\n"))
+        self.assertNotIn("tests/big.txt", info["support"])
+        self.assertEqual(info["support_notes"], [
+            {"path": "tests/big.txt", "reason": "private_size_bound"}])
+
+    def test_imported_data_files_are_verified_and_staged(self):
+        # No link: a task tree with one is unusable.
+        fix = self.data_repository(links=False)
+        output = self.root / "fragment.json"
+        hidden_dir = self.root / "private"
+        import_repository(
+            self.importer, self.repo["path"], "calc", partition="holdout",
+            hidden_dir=hidden_dir, output=output)
+        fragment = json.loads(output.read_text())
+        task = next((item for item in fragment["tasks"]
+                     if item["source"]["fix_commit"] == fix), None)
+        self.assertIsNotNone(task, fragment["rejected"])
+        self.assertEqual(task["source"]["verification"],
+                         {"base": "fail", "fix": "pass"})
+        targets = {entry["target"]
+                   for entry in task["acceptance"]["support_files"]}
+        self.assertIn("tests/compliance/b.json", targets)
+        campaign = load_tool("five_arm_campaign")
+        from sis.v3.study_runtime import hidden_tests_digest
+        repository = {"hidden_tests": {
+            "path": str(hidden_dir.resolve()),
+            "digest": hidden_tests_digest(hidden_dir)}}
+        material = campaign._acceptance_material(task, repository)
+        self.assertEqual(material["tests/compliance/a.json"], b"[[1, 2, 3]]")
+
     def test_support_files_are_bounded(self):
         original = self.importer.MAX_SUPPORT_FILES
         self.importer.MAX_SUPPORT_FILES = 2
@@ -462,10 +596,18 @@ class SupportFileTests(unittest.TestCase):
             return dict(base, support_files=[item])
 
         self.assertEqual(support_file_problems(entry()), [])
+        # A data file the test reads beside itself is a target too.
+        self.assertEqual(support_file_problems(
+            entry(target="tests/compliance/basic.json")), [])
+        self.assertEqual(support_file_problems(
+            entry(target="tests/data/README")), [])
         self.assertEqual(load_support_files(entry(), hidden),
                          {"tests/__init__.py": b"x = 1\n"})
         for bad in (entry(target="../x.py"), entry(target="/etc/x.py"),
-                    entry(target="tests/test_x.py"), entry(target="a.txt"),
+                    entry(target="tests/test_x.py"), entry(target="a.pyc"),
+                    entry(target="tests/lib.so"), entry(target="x.pth"),
+                    entry(target="pytest.ini"),
+                    entry(target="_sis_split_bootstrap.py"),
                     entry(target="./a.py"), entry(digest="0" * 63),
                     entry(target="tests//x.py"), entry(target="tests/x.py/"),
                     entry(target="tests/./x.py"), entry(target="tests/"),
