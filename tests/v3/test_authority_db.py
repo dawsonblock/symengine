@@ -314,6 +314,68 @@ class ConcurrencyTests(unittest.TestCase):
         self.assertEqual(len(cold.decisions()), 1)
         cold.close()
 
+    def test_verify_reads_one_snapshot_while_another_writer_commits(self):
+        """A writer on another connection commits mid-verify: no false alarm.
+
+        Two AuthorityDB handles on one file stand in for two processes (each
+        has its own connection and lock). The second commits a transition
+        right after the first's verify has read the revisions; a verify that
+        reads each table in its own snapshot then sees the new decision
+        without its revision and reports a valid store as corrupt.
+        """
+        root = Path(tempfile.mkdtemp())
+        path = root / "authority.db"
+        seed = AuthorityDB(path)
+        seed.add_seed(_proc(pid="p1", status="draft"))
+        seed.close()
+        reader = AuthorityDB(path)
+        writer = AuthorityDB(path)
+        self.addCleanup(reader.close)
+        self.addCleanup(writer.close)
+        controller = PromotionController(
+            writer, operator_token_digest=operator_token_digest(TEST_TOKEN),
+            trusted_evaluator_keys={})
+        fired = []
+
+        class Interposed:
+            def __init__(self, con):
+                self._con = con
+
+            def execute(self, sql, *args):
+                cursor = self._con.execute(sql, *args)
+                if "FROM procedure_revision" in sql and not fired:
+                    fired.append(sql)
+                    rows = cursor.fetchall()
+                    controller.transition(
+                        "p1", "candidate", actor_role="operator",
+                        actor_identity="other-process",
+                        operator_token=TEST_TOKEN)
+
+                    class Done:
+                        def fetchall(self):
+                            return rows
+
+                        def fetchone(self):
+                            return rows[0] if rows else None
+
+                    return Done()
+                return cursor
+
+            def __getattr__(self, name):
+                return getattr(self._con, name)
+
+        real = reader._con
+        reader._con = Interposed(real)
+        try:
+            report = reader.verify()
+        finally:
+            reader._con = real
+        self.assertTrue(fired, "the interposed write never ran")
+        self.assertTrue(report["ok"], report["problems"])
+        # The committed transition is visible to the next read.
+        self.assertEqual(reader.get("p1").status, "candidate")
+        self.assertTrue(reader.verify()["ok"])
+
 
 def _writer_proc(db_path: str, index: int) -> None:
     db = AuthorityDB(db_path)

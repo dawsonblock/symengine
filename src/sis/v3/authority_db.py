@@ -909,8 +909,15 @@ class AuthorityDB:
     # integrity verification (fail closed)
     # ------------------------------------------------------------------ #
     def verify(self) -> dict:
-        """Replay the database; every digest, link and authorization must hold."""
-        with self._lock:
+        """Replay the database; every digest, link and authorization must hold.
+
+        The replay reads several tables and cross-checks them, so it runs in
+        one read snapshot. Another process (outside this handle's lock) can
+        commit a transition between two statements; read in separate
+        snapshots, its decision would appear without its revision and a
+        valid store would be reported corrupt.
+        """
+        with self._read():
             return self._verify_locked()
 
     def _verify_locked(self) -> dict:

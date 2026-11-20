@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-11-20 — Authority verification reads one snapshot (SIS-FIX-19)
+
+`AuthorityDB.verify()` replayed the revision, decision and grant tables
+in autocommit mode, one snapshot per statement, holding only the
+in-process lock. A writer in another process could commit a transition
+(decision and revision together) between two of those statements; the
+replay then saw the decision without its revision, reported
+`decision_without_revision`, and `PromotionController` refused to load a
+valid store. This surfaced as an intermittent macOS failure of
+`test_concurrent_process_writers`. The replay now runs in one read
+transaction (`AuthorityDB._read`), and a deterministic test commits a
+transition from a second connection in the middle of a verify.
+
 ## 2026-11-19 — Split custody grades ordinary pytest suites (SIS-FIX-18)
 
 The pilot graded correct upstream fixes under Docker split custody and
