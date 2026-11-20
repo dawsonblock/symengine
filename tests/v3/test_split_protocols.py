@@ -1245,6 +1245,60 @@ class SplitExceptionTests(SplitHarness):
         })
         self.assertFalse(marker.exists())
 
+    def test_a_class_aliased_into_a_stdlib_module_is_not_trusted(self):
+        # A test helper attaches its own exception to a standard-library
+        # module (json.Hooked). A worker naming json.Hooked must not get
+        # that helper class built with its arguments, nor used as a
+        # stand-in base: only a class defined where its name says counts.
+        marker = self.root / "EVALUATOR_HOOK_RAN"
+        self.write("claims.py", (
+            "class Hooked(Exception):\n"
+            "    pass\n"
+            "Hooked.__module__ = 'json'\n"
+            "class Child(Hooked):\n"
+            "    pass\n"
+            "def hooked():\n"
+            "    raise Hooked('chosen by the worker')\n"
+            "def child():\n"
+            "    raise Child('derived')\n"
+            "def decode():\n"
+            "    import json\n"
+            "    json.loads('{')\n"))
+        self.assertPasses({
+            "hooked_helper.py": (
+                "import json\n"
+                f"MARK = {str(marker)!r}\n"
+                "class Meta(type):\n"
+                "    def __call__(cls, *args):\n"
+                "        open(MARK, 'a').write('meta')\n"
+                "        return super().__call__(*args)\n"
+                "class Hooked(Exception, metaclass=Meta):\n"
+                "    def __init__(self, *args):\n"
+                "        open(MARK, 'a').write('init')\n"
+                "        super().__init__(*args)\n"
+                "    def __init_subclass__(cls, **kwargs):\n"
+                "        open(MARK, 'a').write('subclass')\n"
+                "json.Hooked = Hooked\n"),
+            "test_hidden.py": (
+                "import json\n"
+                "import pytest\n"
+                "import hooked_helper\n"
+                "import claims\n"
+                "def test_alias_is_inert():\n"
+                "    assert json.Hooked is hooked_helper.Hooked\n"
+                "    with pytest.raises(Exception, match='chosen') as info:\n"
+                "        claims.hooked()\n"
+                "    assert not isinstance(info.value, hooked_helper.Hooked)\n"
+                "    with pytest.raises(Exception, match='derived') as info:\n"
+                "        claims.child()\n"
+                "    assert not isinstance(info.value, hooked_helper.Hooked)\n"
+                # A class genuinely defined in the stdlib still resolves.
+                "    with pytest.raises(json.JSONDecodeError):\n"
+                "        claims.decode()\n"
+            ),
+        })
+        self.assertFalse(marker.exists())
+
     def test_a_cached_stand_in_gains_the_path_read_later(self):
         # A factory-made class has no importable qualified name, so the
         # stand-in built when it is first raised has no path. Reading the

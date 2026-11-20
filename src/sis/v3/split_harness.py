@@ -1392,6 +1392,10 @@ def class_entries(classes):
     return entries
 
 
+TYPE_MODULE = type.__dict__["__module__"]
+TYPE_QUALNAME = type.__dict__["__qualname__"]
+
+
 def trusted_class(module, qualname):
     """An Exception class the evaluator already has under this name.
 
@@ -1421,9 +1425,39 @@ def trusted_class(module, qualname):
             if not isinstance(namespace, (dict, types.MappingProxyType)):
                 return None
             candidate = namespace.get(part)
-    if isinstance(candidate, type) and issubclass(candidate, Exception):
-        return candidate
-    return None
+    if not (isinstance(candidate, type) and issubclass(candidate, Exception)):
+        return None
+    # The name must be where the class is defined, not an alias: a test
+    # helper can attach its own class to a standard-library module
+    # (``json.Hooked = Hooked``), and that class must not be built with
+    # worker-chosen arguments. Its own module and qualified name must be
+    # standard library and lead back to this very object.
+    # Read through type's own slot descriptors: works for builtin types
+    # and runs no metaclass property or __getattr__.
+    try:
+        home = TYPE_MODULE.__get__(candidate, type)
+        own_name = TYPE_QUALNAME.__get__(candidate, type)
+    except Exception:
+        return None
+    if not isinstance(home, str) or not isinstance(own_name, str):
+        return None
+    home_root = home.split(".")[0]
+    if home_root in RUNNER_MODULES or home_root not in STDLIB:
+        return None
+    if home == "builtins":
+        defined = vars(builtins).get(own_name)
+    else:
+        defined = sys.modules.get(home)
+        if defined is None or isinstance(defined, ProxyModule):
+            return None
+        for part in own_name.split("."):
+            namespace = getattr(defined, "__dict__", None)
+            if not isinstance(namespace, (dict, types.MappingProxyType)):
+                return None
+            defined = namespace.get(part)
+    if defined is not candidate:
+        return None
+    return candidate
 
 
 def stand_in(module, qualname, bases, path, lease=None):
