@@ -1,5 +1,58 @@
 # Changelog
 
+## 2026-11-20 — The coding agent can run as its own OS user (SIS-FEAT-22)
+
+In a real-agent study the campaign process both held the evaluator
+material (hidden tests, verifier registry and keys, `trust.json`, the
+state directory) and launched the coding agent, so the agent ran as the
+evaluator's user and could read all of it. `--agent-user NAME` on
+`tools/five_arm_campaign.py --real-agent` and
+`tools/build_guidance_bundle.py` now runs the agent CLI as a separate,
+unprivileged user (`sis.v3.agent_principal.AgentPrincipal`).
+
+- **Launch.** `sudo -n -u NAME -- /usr/bin/python3 -I -S -c <helper>`;
+  the evaluator stays non-root and needs one sudoers rule,
+  `EVALUATOR ALL=(NAME) NOPASSWD: /usr/bin/python3` (no `SETENV`, no
+  `env_keep`). The CLI's argv, working directory and allowlisted
+  environment, `ANTHROPIC_API_KEY` and proxy/CA variables included,
+  reach the helper as one JSON line on a pipe, never on a command line.
+  `HOME`, `USER` and `LOGNAME` name the agent user; `HOME` is a fresh
+  per-turn directory the agent owns, seeded with its stored CLI
+  credentials if any; `TMPDIR`, `CLAUDE_CONFIG_DIR` and `CODEX_HOME` are
+  dropped unless they lie in the agent's home.
+- **Workspace.** The agent never touches an evaluator-owned tree. The
+  workspace is streamed to the helper and unpacked into a directory the
+  agent owns under `~NAME/sis-work`. After the turn every process of the
+  agent user is killed, the tree is streamed back into a new
+  evaluator-owned directory beside the original with every entry
+  validated (regular files, directories and links stored as links; no
+  device, FIFO, absolute or `..` name; size and count bounded; set-id
+  and sticky bits dropped) and swapped in. What `tree_digest` and the
+  verifier then see is the evaluator's own copy with no agent process
+  left, so the `submission_changed_during_evaluation` guarantee holds.
+  A failed copy-back fails the arm (`real_agent_principal_failed`) and
+  leaves the workspace as staged.
+- **Process control.** A non-root parent cannot signal another user's
+  processes: `killpg` of the sudo group kills `sudo` and leaves the
+  agent running. The adapters' watchdog, `cancel` and `close` now kill
+  as the agent user first (`kill(-1, SIGKILL)`, repeated until `/proc`
+  shows none alive), which also reaches processes that left the group.
+  The agent user must therefore be dedicated to SIS, and `--workers`
+  must be 1.
+- **Fail closed.** Before any agent turn the run checks, as the agent
+  user, that the state directory, keys, registry, journal, candidate
+  registry, trust config and every hidden-test path (each with a sample
+  of its contents) are neither readable nor searchable, that the agent
+  CLI is executable and that the agent's home is its own, and stops with
+  `BLOCKED_AGENT_PRINCIPAL` naming the problem.
+- **Provenance.** `provenance.agent_principal` (also `report.agent_principal`)
+  records whether the agent was separated, the user, uid, mechanism and
+  the preflight; a real run without separation gets a limitation line.
+  The run journal identity binds the principal when one is set, so a
+  resume as another user, or without one, is refused
+  (`journal_identity_mismatch`); journals from earlier runs still resume
+  without one.
+
 ## 2026-11-20 — Root hosts, a test-dependency image and repository screening (SIS-FIX-21)
 
 - **The Docker evaluator works on a root host.** The workspace was
