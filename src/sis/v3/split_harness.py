@@ -117,8 +117,17 @@ Known limits, each because it would need code or class objects to cross:
   traceback do not cross. A stand-in based on a class the evaluator
   imported runs that class's own ``__init_subclass__`` and metaclass,
   which are evaluator-environment code, never submission code.
-* No async protocols. Handles are never released (``MAX_HANDLES``), and
-  every protocol call is one round trip. Requests from several test
+* No async protocols, and every protocol call is one round trip.
+  ``MAX_HANDLES`` bounds the worker's *live* handles. The bootstrap
+  releases a handle when its last local holder (``Ref``, exception or
+  stand-in class) is collected: each handle has one lease, which counts
+  how often the worker handed it out, and its finalizer queues
+  ``[handle, count]`` for the next request to carry (``"release"``). The
+  worker drops a handle once every hand-out is released and ignores any
+  malformed, unknown or non-``#n`` entry. A handle a test keeps alive
+  stays held, as does one behind a cached stand-in class or an object
+  the collector has not reached yet, and the host-side
+  :class:`SplitClient` releases nothing. Requests from several test
   threads are serialized and the worker serves one at a time, so a race
   a test provokes with threads (jmespath's cache-eviction test) is not
   reproduced in the submission.
@@ -564,16 +573,26 @@ import sys
 
 MAX_DEPTH = 32
 MAX_ITEMS = 10000
+# The bound on *live* handles: those handed out and not released yet.
 MAX_HANDLES = 100000
+# Handle ids are never reused, and the evaluator accepts at most nine
+# digits; past that the worker keeps nothing more.
+MAX_HANDLE_ID = 999999999
 MAX_CLASSES = 64
 MAX_MESSAGE = 8192
 # Call results that cannot cross the socket stay here; the evaluator
 # refers to them by handle ("#<n>"), never by the callable's path.
 HANDLES = {}
+# How many times each live handle was handed to the evaluator and not
+# released yet. A release names a handle and a count; the handle is
+# dropped when its count reaches zero.
+COUNTS = {}
+NEXT_HANDLE = [0]
 # Mutable containers. Read as an attribute or an item they stay here and
 # the evaluator gets a handle, so ``pkg.REGISTRY.add(x)`` changes the
 # submission's own set instead of a copy. One handle per object, by id
-# (HANDLES keeps the object alive, so its id is never reused).
+# (HANDLES keeps the object alive while the handle lives, and a released
+# handle's entry goes with it, so a reused id never names it).
 MUTABLE = (list, dict, set, bytearray, collections.deque)
 SHARED = {}
 # Dunder attributes the evaluator may read: plain metadata, never a way to
@@ -702,20 +721,56 @@ def resolve(path):
 
 
 def keep(value):
-    if len(HANDLES) >= MAX_HANDLES:
+    if len(HANDLES) >= MAX_HANDLES or NEXT_HANDLE[0] >= MAX_HANDLE_ID:
         raise NotEncodable("handles")
-    handle = "#%d" % (len(HANDLES) + 1,)
+    NEXT_HANDLE[0] += 1
+    handle = "#%d" % (NEXT_HANDLE[0],)
     HANDLES[handle] = value
+    COUNTS[handle] = 1
     return {"t": "ref", "handle": handle}
 
 
 def share(value):
     handle = SHARED.get(id(value))
     if handle is not None and HANDLES.get(handle) is value:
+        # Handed out once more: one more release before it is dropped.
+        COUNTS[handle] += 1
         return {"t": "ref", "handle": handle}
     ref = keep(value)
     SHARED[id(value)] = ref["handle"]
     return ref
+
+
+def release(entries):
+    """Drop handles the evaluator no longer refers to.
+
+    ``entries`` is a list of ``[handle, count]`` pairs: every local
+    reference to ``handle`` is gone, and the evaluator had received it
+    ``count`` times. A handle is dropped when all its hand-outs are
+    released. Anything malformed, unknown, already released or not a
+    ``#n`` handle (an attribute path) is ignored: a release never fails
+    and never names a module.
+    """
+    if not isinstance(entries, list):
+        return
+    for entry in entries[:MAX_ITEMS]:
+        if not isinstance(entry, list) or len(entry) != 2:
+            continue
+        handle, count = entry
+        if (not isinstance(handle, str) or type(count) is not int
+                or count < 1):
+            continue
+        held = COUNTS.get(handle)
+        if held is None:
+            continue
+        if count < held:
+            COUNTS[handle] = held - count
+            continue
+        del COUNTS[handle]
+        value = HANDLES.pop(handle, None)
+        if SHARED.get(id(value)) == handle:
+            del SHARED[id(value)]
+        del value
 
 
 def state(value):
@@ -868,6 +923,9 @@ def handle(request):
     op = request.get("op")
     if op == "ping":
         return {"ok": True, "value": {"t": "str", "v": "ready"}}
+    if op == "release":
+        # The releases rode on the request itself (see main).
+        return {"ok": True, "value": {"t": "none"}}
     path = request.get("path")
     if (not isinstance(path, list) or not path
             or not all(isinstance(part, str) for part in path)):
@@ -967,6 +1025,14 @@ def main():
             return 0
         try:
             request = json.loads(line)
+            if isinstance(request, dict) and "release" in request:
+                # Releases ride on any request and apply before it. They
+                # come from the evaluator; a malformed one changes nothing
+                # and never fails the request it came with.
+                try:
+                    release(request["release"])
+                except Exception:
+                    pass
             response = handle(request)
         except BaseException as exc:
             response = {"ok": False, "error": describe_error(exc)}
@@ -983,6 +1049,7 @@ if __name__ == "__main__":
 #: acceptance tests, and reaches submitted code only through the proxy.
 SPLIT_BOOTSTRAP_SOURCE = r'''"""SIS split-custody bootstrap (evaluator-owned, read-only)."""
 import builtins
+import collections
 import importlib
 import importlib.abc
 import importlib.machinery
@@ -995,6 +1062,7 @@ import sys
 import threading
 import types
 import warnings
+import weakref
 
 warnings.filterwarnings(
     "ignore", message=r".*found in sys\.modules.*", category=RuntimeWarning)
@@ -1053,14 +1121,74 @@ except OSError as exc:
 # interleave frames on the one socket and read another thread's answer.
 REQUEST_LOCK = threading.Lock()
 
+# Handle release. Every handle the worker hands out is held here by one
+# Lease, shared by every Ref (and stand-in exception or class) that
+# refers to it, and the lease counts how many times the worker handed the
+# handle out. When the last local reference goes, the lease's finalizer
+# queues ``(handle, count)``; the next request carries the queue to the
+# worker, which drops the handle once every hand-out is released. A
+# handle the worker hands out again after its lease died gets a new
+# lease with its own count, so a queued release never drops a handle a
+# live Ref still uses. The finalizer only appends to a deque: no lock, no
+# socket I/O, safe whenever the collector runs it (inside REQUEST_LOCK,
+# in another thread, at shutdown).
+RELEASE_BATCH = 1024
+PENDING = collections.deque()
+LEASES = weakref.WeakValueDictionary()
+LEASE_LOCK = threading.Lock()
+
+
+class Lease:
+    __slots__ = ("handle", "count", "__weakref__")
+
+
+def lease_for(handle):
+    """The live lease for a handle the worker just handed out, counted."""
+    with LEASE_LOCK:
+        held = LEASES.get(handle)
+        if held is None:
+            held = Lease()
+            held.handle = handle
+            # The count cell outlives the lease, so the finalizer (which
+            # must not refer to the lease) reads its final value.
+            held.count = [0]
+            finalizer = weakref.finalize(
+                held, PENDING.append, (handle, held.count))
+            finalizer.atexit = False
+            LEASES[handle] = held
+        held.count[0] += 1
+        return held
+
+
+def drain_releases():
+    """Up to RELEASE_BATCH queued releases, as ``[handle, count]`` pairs.
+
+    Called under REQUEST_LOCK only, so it is the one consumer of PENDING.
+    """
+    counts = {}
+    while PENDING and len(counts) < RELEASE_BATCH:
+        handle, cell = PENDING.popleft()
+        counts[handle] = counts.get(handle, 0) + cell[0]
+    return [[handle, count] for handle, count in counts.items() if count]
+
+
+def exchange(payload):
+    stream.write(json.dumps(payload).encode("utf-8") + b"\n")
+    stream.flush()
+    return stream.readline(MAX_FRAME + 1)
+
 
 def request(payload):
-    data = json.dumps(payload).encode("utf-8") + b"\n"
     try:
         with REQUEST_LOCK:
-            stream.write(data)
-            stream.flush()
-            line = stream.readline(MAX_FRAME + 1)
+            while len(PENDING) > RELEASE_BATCH:
+                # A long queue goes ahead in release-only requests, so no
+                # frame grows with it.
+                exchange({"op": "release", "release": drain_releases()})
+            released = drain_releases()
+            if released:
+                payload = dict(payload, release=released)
+            line = exchange(payload)
     except OSError:
         fail(SPLIT_LOST_EXIT, "evaluation_split_worker_lost")
     if not line or len(line) > MAX_FRAME:
@@ -1137,7 +1265,7 @@ class RemoteExceptionMeta(type):
         path = cls.__dict__.get("_sis_path")
         if path is None or is_dunder(name) or name.startswith("_sis_"):
             raise AttributeError(name)
-        return fetch(list(path) + [name])
+        return fetch(list(path) + [name], cls.__dict__.get("_sis_lease"))
 
     def __instancecheck__(cls, instance):
         path = cls.__dict__.get("_sis_path")
@@ -1164,7 +1292,7 @@ def stand_in_getattr(self, name):
     handle = self.__dict__.get("_sis_handle")
     if handle is None or is_dunder(name) or name.startswith("_sis_"):
         raise AttributeError(name)
-    return fetch([handle, name])
+    return fetch([handle, name], self.__dict__.get("_sis_lease"))
 
 
 def class_entries(classes):
@@ -1218,16 +1346,18 @@ def trusted_class(module, qualname):
     return None
 
 
-def stand_in(module, qualname, bases, path):
+def stand_in(module, qualname, bases, path, lease=None):
     key = (module, qualname)
     cls = STAND_INS.get(key)
     if cls is not None or len(STAND_INS) >= MAX_STAND_INS:
         return cls
     parts = qualname.split(".")
     if path is None and module and all(part.isidentifier() for part in parts):
-        path = [module, *parts]
+        path, lease = [module, *parts], None
+    # A cached stand-in keeps the handle its path names (``_sis_lease``).
     namespace = {"__module__": module, "__qualname__": qualname,
                  "__doc__": None, "_sis_remote": key, "_sis_path": path,
+                 "_sis_lease": lease,
                  "__str__": stand_in_str, "__getattr__": stand_in_getattr}
     for candidate in (bases, (Exception,)):
         try:
@@ -1243,7 +1373,7 @@ def stand_in(module, qualname, bases, path):
     return None
 
 
-def exception_class(classes, path=None):
+def exception_class(classes, path=None, lease=None):
     """The local class for a worker exception class chain, or None.
 
     Each class of the chain resolves to the evaluator's own builtin or
@@ -1274,7 +1404,8 @@ def exception_class(classes, path=None):
             other is not base and issubclass(other, base) for other in local)]
         built[position] = stand_in(
             module, qualname, tuple(local) or (Exception,),
-            path if position == 0 else None)
+            path if position == 0 else None,
+            lease if position == 0 else None)
     if controls_the_run(built[0]):
         return None
     return built[0]
@@ -1318,6 +1449,13 @@ def instantiate(cls, args, message):
 def raise_remote(error):
     if not isinstance(error, dict):
         error = {}
+    # The raised object's handle is counted first, so it is released with
+    # the local exception, or right away when none is built.
+    handle = error.get("handle")
+    held = None
+    if (isinstance(handle, str) and handle.startswith("#")
+            and handle[1:].isdigit() and len(handle) <= 10):
+        held = lease_for(handle)
     name = error.get("type")
     name = name if isinstance(name, str) else "RemoteError"
     message = error.get("message")
@@ -1346,13 +1484,18 @@ def raise_remote(error):
     exc = instantiate(cls, args, message)
     if exc is None or not isinstance(exc, Exception):
         raise RuntimeError("%s: %s" % (name, message))
-    handle = error.get("handle")
-    if (isinstance(handle, str) and handle.startswith("#")
-            and handle[1:].isdigit() and len(handle) <= 10):
+    if held is not None:
         exc._sis_handle = handle
+        exc._sis_lease = held
     if isinstance(type(exc), RemoteExceptionMeta):
         exc._sis_message = message
-    raise exc
+    try:
+        raise exc
+    finally:
+        # The traceback keeps this frame: without this, exc -> traceback
+        # -> frame -> exc is a cycle, and the handle waits for the cycle
+        # collector instead of going with the exception.
+        exc = held = None
 
 
 class SplitArgumentError(TypeError):
@@ -1363,13 +1506,15 @@ def is_dunder(name):
     return name.startswith("__") and name.endswith("__")
 
 
-def result_value(value, path=None):
+def result_value(value, path=None, lease=None):
     """Decode a response value; an object that stayed remote is a Ref.
 
     ``path`` names an attribute read, which the worker resolves again on
-    use. A call or protocol result has no path: the worker keeps it and
-    the evaluator refers to it by handle, never by the callable's path
-    (that would re-call it on every access).
+    use; ``lease`` is the lease of the handle that path starts from, kept
+    by the result so the handle outlives it. A call or protocol result
+    has no path: the worker keeps it and the evaluator refers to it by
+    handle, never by the callable's path (that would re-call it on every
+    access).
     """
     if value.get("t") != "ref":
         return decode(value)
@@ -1381,20 +1526,21 @@ def result_value(value, path=None):
                 or not handle[1:].isdigit() or len(handle) > 10):
             fail(SPLIT_LOST_EXIT, "evaluation_split_worker_lost")
         path = [handle]
+        lease = lease_for(handle)
     if value.get("exc") is not None:
         # A worker exception class: a local stand-in, so that
         # pytest.raises(pkg.Error) and ``except pkg.Error`` work.
-        cls = exception_class(value.get("exc"), path)
+        cls = exception_class(value.get("exc"), path, lease)
         if cls is not None:
             return cls
-    return Ref(path)
+    return Ref(path, lease)
 
 
-def fetch(path):
+def fetch(path, lease=None):
     response = request({"op": "get", "path": list(path)})
     if not response.get("ok"):
         raise_remote(response.get("error"))
-    return result_value(response.get("value") or {}, list(path))
+    return result_value(response.get("value") or {}, list(path), lease)
 
 
 def forward(path, name, payload):
@@ -1415,25 +1561,28 @@ class Ref:
     ``__class__`` or ``__dict__``). ``type(ref)`` is always ``Ref``.
     """
 
-    __slots__ = ("_path",)
+    __slots__ = ("_path", "_lease")
 
-    def __init__(self, path):
+    def __init__(self, path, lease=None):
         object.__setattr__(self, "_path", list(path))
+        # The lease of the handle the path starts from: the worker keeps
+        # that handle at least as long as this Ref lives.
+        object.__setattr__(self, "_lease", lease)
 
     def __getattr__(self, name):
         # Read the attribute in the worker: a plain value (``box.n``)
         # comes back as data, anything else stays a reference.
         if is_dunder(name) and name not in READABLE_DUNDERS:
             raise AttributeError(name)
-        return fetch(self._path + [name])
+        return fetch(self._path + [name], self._lease)
 
     def __setattr__(self, name, value):
-        if is_dunder(name) or name == "_path":
+        if is_dunder(name) or name in ("_path", "_lease"):
             raise AttributeError(name)
         forward(self._path, "__setattr__", [encode(name), encode(value)])
 
     def __delattr__(self, name):
-        if is_dunder(name) or name == "_path":
+        if is_dunder(name) or name in ("_path", "_lease"):
             raise AttributeError(name)
         forward(self._path, "__delattr__", [encode(name)])
 

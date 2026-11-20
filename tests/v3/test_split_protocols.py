@@ -22,6 +22,7 @@ from sis.v3.runner import stage_private_material
 from sis.v3.split_harness import (
     MAX_ITEMS,
     SPLIT_BOOTSTRAP_NAME,
+    RemoteError,
     SplitClient,
     SplitProtocolError,
     SplitRef,
@@ -44,6 +45,19 @@ class SplitHarness(unittest.TestCase):
         self.workspace = self.root / "ws"
         self.workspace.mkdir()
 
+    #: A lower live-handle cap for the worker, for tests only: the real
+    #: worker source with its ``MAX_HANDLES`` line rewritten.
+    max_handles: int | None = None
+
+    def worker_command(self, child: socket.socket) -> list[str]:
+        argv = worker_argv(("--fd", str(child.fileno())), str(self.workspace))
+        if self.max_handles is not None:
+            line = "MAX_HANDLES = 100000\n"
+            assert argv[2].count(line) == 1, "worker cap line moved"
+            argv[2] = argv[2].replace(
+                line, f"MAX_HANDLES = {int(self.max_handles)}\n")
+        return [PY, *argv]
+
     def write(self, relative: str, text: str) -> None:
         path = self.workspace / relative
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -56,9 +70,8 @@ class SplitHarness(unittest.TestCase):
         self.addCleanup(shutil.rmtree, material, True)
         parent, child = socket.socketpair()
         worker = subprocess.Popen(
-            [PY, *worker_argv(("--fd", str(child.fileno())),
-                              str(self.workspace))],
-            cwd=str(self.workspace), pass_fds=(child.fileno(),),
+            self.worker_command(child), cwd=str(self.workspace),
+            pass_fds=(child.fileno(),),
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         child.close()
         try:
@@ -92,9 +105,8 @@ class SplitHarness(unittest.TestCase):
     def host_client(self) -> SplitClient:
         parent, child = socket.socketpair()
         worker = subprocess.Popen(
-            [PY, *worker_argv(("--fd", str(child.fileno())),
-                              str(self.workspace))],
-            cwd=str(self.workspace), pass_fds=(child.fileno(),),
+            self.worker_command(child), cwd=str(self.workspace),
+            pass_fds=(child.fileno(),),
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         child.close()
         client = SplitClient(parent)
@@ -393,6 +405,171 @@ class SplitStateTests(SplitHarness):
         self.assertEqual(client.get(["state", "NAME"]), "fixed")
         self.assertEqual(client.call(["state", "fresh"], (), {}), [1, 2])
         self.assertIsInstance(client.call(["state", "fresh"], (), {}), list)
+
+
+HANDLE_CAP = 48
+HANDLE_MODULE = """
+LIST = []
+
+
+class Box:
+    def __init__(self, n):
+        self.n = n
+        self.items = [n]
+    def get(self):
+        return self
+
+
+class Failure(Exception):
+    def __init__(self, n):
+        super().__init__(n)
+        self.n = n
+
+
+def make(n):
+    return Box(n)
+
+
+def fail(n):
+    raise Failure(n)
+
+
+def size():
+    return len(LIST)
+"""
+
+
+@unittest.skipUnless(os.name == "posix", "socketpair transport")
+class SplitHandleTests(SplitHarness):
+    """Handles are released when the evaluator's last reference goes.
+
+    jmespath's thread test makes 32 x 4096 calls; with handles never
+    released, the worker's handle table filled up and the run failed on
+    the harness. The worker here runs with a cap of HANDLE_CAP live
+    handles, and every test makes several times that many.
+    """
+
+    max_handles = HANDLE_CAP
+
+    def setUp(self):
+        super().setUp()
+        self.write("handles.py", HANDLE_MODULE)
+
+    def test_short_lived_handles_are_released(self):
+        self.assertPasses({"test_hidden.py": (
+            "import pytest\n"
+            "import handles\n"
+            f"ROUNDS = 3 * {HANDLE_CAP}\n"
+            "def test_calls():\n"
+            "    kept = handles.make(-1)\n"
+            "    for i in range(ROUNDS):\n"
+            "        assert handles.make(i).n == i\n"
+            "        assert handles.make(i).get().items == [i]\n"
+            "        assert list(iter(handles.make(i).items)) == [i]\n"
+            "    assert kept.n == -1 and kept.get().n == -1\n"
+            "def test_exceptions():\n"
+            "    for i in range(ROUNDS):\n"
+            "        with pytest.raises(handles.Failure) as info:\n"
+            "            handles.fail(i)\n"
+            "        assert info.value.n == i\n"
+            "        assert not hasattr(handles.make(i), 'missing')\n"
+            "def test_threads():\n"
+            "    from concurrent.futures import ThreadPoolExecutor\n"
+            "    def work(index):\n"
+            "        for i in range(ROUNDS):\n"
+            "            assert handles.make(i).get().n == i\n"
+            "        return index\n"
+            "    with ThreadPoolExecutor(max_workers=8) as pool:\n"
+            "        assert list(pool.map(work, range(8))) == list(range(8))\n"
+        )})
+
+    def test_a_shared_handle_survives_until_its_last_ref(self):
+        self.assertPasses({"test_hidden.py": (
+            "import gc\n"
+            "import handles\n"
+            f"ROUNDS = 3 * {HANDLE_CAP}\n"
+            "def churn():\n"
+            "    for i in range(ROUNDS):\n"
+            "        assert handles.make(i).n == i\n"
+            "    gc.collect()\n"
+            "def test_shared():\n"
+            "    first = handles.LIST\n"
+            "    second = handles.LIST\n"
+            "    assert first._path == second._path\n"
+            "    del first\n"
+            "    churn()\n"
+            "    second.append(1)\n"
+            "    assert handles.size() == 1 and len(second) == 1\n"
+            "    box = handles.make(7)\n"
+            "    items, method = box.items, box.get\n"
+            "    del box\n"
+            "    churn()\n"
+            # An attribute path or a mutable read off a handle keeps the
+            # handle it starts from.
+            "    assert method().n == 7\n"
+            "    items.append(8)\n"
+            "    assert items == [7, 8]\n"
+            "    for _ in range(ROUNDS):\n"
+            "        again = handles.LIST\n"
+            "        assert len(again) == 1\n"
+            "    assert len(second) == 1\n"
+        )})
+
+    def release(self, client, entries, op="release"):
+        response = client.request({"op": op, "release": entries})
+        self.assertTrue(response.get("ok"), response)
+
+    def test_the_worker_counts_hand_outs_before_dropping(self):
+        client = self.host_client()
+        first = client.get(["handles", "LIST"])
+        second = client.get(["handles", "LIST"])
+        handle = first._path[0]
+        self.assertEqual(second._path, [handle])
+        self.release(client, [[handle, 1]])
+        self.assertEqual(len(first), 0)
+        # Piggy-backed on an ordinary request, applied before it.
+        response = client.request({"op": "dunder", "path": [handle],
+                                   "name": "__len__", "args": [],
+                                   "release": [[handle, 1]]})
+        self.assertFalse(response.get("ok"))
+        self.assertEqual(response["error"]["type"], "KeyError")
+        # The object itself is untouched; a new read is a new handle.
+        third = client.get(["handles", "LIST"])
+        self.assertNotEqual(third._path, [handle])
+        self.assertEqual(len(third), 0)
+
+    def test_malformed_releases_never_hurt_the_worker(self):
+        client = self.host_client()
+        kept = client.call(["handles", "make"], (5,), {})
+        handle = kept._path[0]
+        for entries in (
+                None, "x", 7, {"#1": 1}, [None], ["#1"], [[handle]],
+                [[handle, 1, 2]], [[handle, True]], [[handle, 0]],
+                [[handle, -3]], [[handle, 1.0]], [[handle, "1"]],
+                [[1, 1]], [["handles", 1]], [["handles.LIST", 5]],
+                [["#999999", 1]], [["#0", 1]], [[[handle], 1]],
+                [[{"t": "none"}, 1]], [["#1" * 9, 10 ** 30]],
+                [["#", 1]] * 20000):
+            self.release(client, entries)
+            self.release(client, entries, op="ping")
+        client.ping()
+        self.assertEqual(client.get([handle, "n"]), 5)
+        self.assertEqual(client.call(["handles", "size"], (), {}), 0)
+        # Releasing it twice is the same as once.
+        self.release(client, [[handle, 1], [handle, 1]])
+        self.release(client, [[handle, 1]])
+        response = client.request({"op": "get", "path": [handle, "n"]})
+        self.assertEqual(response["error"]["type"], "KeyError")
+        client.ping()
+
+    def test_the_cap_still_bounds_live_handles(self):
+        client = self.host_client()
+        held = [client.call(["handles", "make"], (i,), {})
+                for i in range(HANDLE_CAP)]
+        with self.assertRaises(RemoteError):
+            client.call(["handles", "make"], (0,), {})
+        self.release(client, [[held[0]._path[0], 1]])
+        self.assertEqual(client.call(["handles", "make"], (9,), {}).n, 9)
 
 
 PROTOCOL_MODULE = """
