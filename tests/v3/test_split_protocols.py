@@ -285,6 +285,39 @@ class SplitCodecTests(SplitHarness):
                 client.call(["names", name], (), {})
         self.assertEqual(client.call(["names", "live"], (), {}), before)
 
+    def test_distinct_nans_stay_distinct_both_ways(self):
+        # JSON decoding gives every NaN token one shared float, so two
+        # distinct NaNs in a set (or as mapping keys) collapsed into one.
+        self.write("nans.py", (
+            "NANS = frozenset({float('nan'), float('nan')})\n"
+            "def fresh():\n"
+            "    return {float('nan'), float('nan')}\n"
+            "def keys():\n"
+            "    return {float('nan'): 1, float('nan'): 2}\n"
+            "def count(value):\n"
+            "    return len(value)\n"))
+        self.assertPasses({"test_hidden.py": (
+            "import nans\n"
+            "def nan():\n"
+            "    return float('nan')\n"
+            "def test_nans():\n"
+            "    assert isinstance(nans.NANS, frozenset)\n"
+            "    assert len(nans.NANS) == 2\n"
+            "    assert type(nans.fresh()) is set and len(nans.fresh()) == 2\n"
+            "    assert len(nans.keys()) == 2\n"
+            "    assert nans.count({nan(), nan()}) == 2\n"
+            "    assert nans.count(frozenset({nan(), nan()})) == 2\n"
+            "    assert nans.count({nan(): 1, nan(): 2}) == 2\n"
+        )})
+        client = self.host_client()
+        self.assertEqual(len(client.get(["nans", "NANS"])), 2)
+        self.assertEqual(len(client.call(["nans", "fresh"], (), {})), 2)
+        self.assertEqual(len(client.call(["nans", "keys"], (), {})), 2)
+        self.assertEqual(client.call(
+            ["nans", "count"], ({float("nan"), float("nan")},), {}), 2)
+        self.assertEqual(client.call(
+            ["nans", "count"], ({float("nan"): 1, float("nan"): 2},), {}), 2)
+
     def test_host_client_decodes_sets_and_maps(self):
         self.write("data.py", (
             "S = {1, 2}\n"

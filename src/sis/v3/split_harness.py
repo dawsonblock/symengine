@@ -250,7 +250,10 @@ def _decode(payload: Any, depth: int = 0) -> Any:
         value = payload.get("v")
         if type(value) not in (int, float):
             raise SplitProtocolError("float payload must be a number")
-        return float(value)
+        # JSON decoding shares one NaN object; two distinct NaNs must stay
+        # two set elements or mapping keys.
+        value = float(value)
+        return float("nan") if value != value else value
     if kind == "str":
         value = payload.get("v")
         if not isinstance(value, str):
@@ -652,6 +655,13 @@ class NotEncodable(Exception):
     pass
 
 
+def fresh_float(value):
+    # JSON decoding gives every NaN token one shared float, so two NaNs
+    # would collapse into one set element or mapping key: each is its own.
+    value = float(value)
+    return float("nan") if value != value else value
+
+
 def decode(payload):
     kind = payload.get("t")
     if kind == "none":
@@ -663,7 +673,7 @@ def decode(payload):
     if kind == "int":
         return int(payload.get("v"))
     if kind == "float":
-        return float(payload.get("v"))
+        return fresh_float(payload.get("v"))
     if kind == "str":
         return payload.get("v")
     if kind == "bytes":
@@ -1339,7 +1349,10 @@ def decode(payload, depth=0):
     if kind == "int":
         return int(payload.get("v"))
     if kind == "float":
-        return float(payload.get("v"))
+        # A fresh float per NaN: JSON decoding shares one NaN object, and
+        # two distinct NaNs must stay two set elements or mapping keys.
+        value = float(payload.get("v"))
+        return float("nan") if value != value else value
     if kind == "str":
         return payload.get("v")
     if kind == "bytes":

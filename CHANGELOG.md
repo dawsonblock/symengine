@@ -165,6 +165,10 @@ paths are now tighter.
   cannot write a request (an argument past the digit limit), nothing is
   written and its releases go back on the queue for the next request; a
   transport failure after the write still ends the run, never replays.
+- **Distinct NaNs stay distinct.** JSON decoding shares one NaN object,
+  so a set with two NaNs, or a mapping with two NaN keys, lost entries
+  on the way across. Each of the three decoders (worker requests,
+  bootstrap and host responses) now builds a fresh float per NaN.
 - **Only whole `/` chains name a path.** `HERE / 'fixtures' / 'nested'
   / 'one.txt'` names that file and no longer also `fixtures/nested` as
   a directory, whose unreferenced siblings were captured with it.
