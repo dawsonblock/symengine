@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
+import json
 import os
 import subprocess
 import sys
@@ -293,6 +294,69 @@ class ReportSemanticsTests(unittest.TestCase):
         self.assertIn(
             "only",
             benchmark.METRIC_DEFINITIONS["exact_recovery_verified"])
+
+
+class CurrentBenchmarkEvidenceTests(unittest.TestCase):
+    """evidence/v339 repeats the v336 runs on the current engine.
+
+    The v336 records predate the 2026-11-14 search-ordering change and
+    learner v2 (2026-11-19).
+    """
+
+    RECORDS = ("benchmark_default", "benchmark_negative_z3")
+    # Measured, not deterministic.
+    MEASURED = {"runtime_seconds", "peak_traced_bytes", "observed_peak_bytes"}
+
+    @staticmethod
+    def load(release: str, name: str) -> dict:
+        path = ROOT / "evidence" / release / f"{name}.json"
+        return json.loads(path.read_text(encoding="utf-8"))
+
+    @staticmethod
+    def settings(record: dict) -> argparse.Namespace:
+        budget = record["budget"]
+        return _args(
+            train=record["partition"]["train"],
+            dev=record["partition"]["dev"],
+            holdout=record["partition"]["holdout"],
+            input_min=record["input_domain"][0],
+            input_max=record["input_domain"][1],
+            max_candidates=budget["max_candidates"],
+            max_signature_checks=budget["max_signature_checks"],
+            max_wall_seconds=budget["max_wall_seconds"],
+            max_memory_bytes=budget["max_memory_bytes"],
+            max_expression_depth=budget["max_expression_depth"],
+            equivalence=record["equivalence_mode"])
+
+    def test_the_records_repeat_the_v336_settings(self):
+        for name in self.RECORDS:
+            with self.subTest(name=name):
+                old, new = self.load("v336", name), self.load("v339", name)
+                for key in ("kind", "target", "budget", "input_domain",
+                            "partition", "equivalence_mode"):
+                    self.assertEqual(new[key], old[key], key)
+                self.assertEqual(
+                    [row["fields"] for row in new["results"]],
+                    [row["fields"] for row in old["results"]])
+                self.assertGreater(new["generated_at"], "2026-11-19")
+
+    def check_rows(self, name: str, fields: tuple[int, ...]) -> None:
+        record = self.load("v339", name)
+        rows = {row["fields"]: row for row in record["results"]}
+        for count in fields:
+            with self.subTest(name=name, fields=count):
+                row = benchmark.run_case(count, self.settings(record))
+                for key in sorted(set(row) | set(rows[count])):
+                    if key not in self.MEASURED:
+                        self.assertEqual(row.get(key), rows[count].get(key),
+                                         key)
+
+    def test_the_default_record_matches_the_current_engine(self):
+        self.check_rows("benchmark_default", (2, 4))
+
+    @unittest.skipUnless(HAS_Z3, "z3-solver not installed")
+    def test_the_z3_record_matches_the_current_engine(self):
+        self.check_rows("benchmark_negative_z3", (2, 4))
 
 
 if __name__ == "__main__":
