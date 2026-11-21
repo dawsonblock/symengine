@@ -1,5 +1,52 @@
 # Changelog
 
+## 2026-11-21 — Review fixes: agent principal, screener, split codec, manifest (SIS-FIX-23)
+
+A review of the agent-principal, screening and split-custody work found
+eight bugs; each fix has a test that failed before it.
+
+- **A failed copy-in no longer hands the agent a partial tree.** An
+  error while archiving the workspace (an unreadable file, one vanishing
+  mid-walk) was swallowed; the archive ended cleanly, the helper exited
+  0, and copy-back replaced the workspace with the partial tree. The
+  copy-in now raises `agent workspace copy incomplete: ...` after
+  reaping the helper.
+- **The returned tree stays readable to the evaluator.** An agent's
+  `chmod 000` came back verbatim, so `tree_digest` and grading failed
+  with `PermissionError`. `receive_tree` now writes files with at least
+  `0o600` and directories (the root included) with `0o700`; other bits
+  are kept, set-id and sticky stay dropped.
+- **Refreshed CLI credentials survive the turn.** A token the CLI
+  refreshed (or a refresh token it rotated) in the per-turn home was
+  deleted with it. Before removing the turn home, the helper, as the
+  agent user, copies each `CREDENTIAL_FILES` entry back to the agent's
+  home: regular non-symlink files only, only when changed, atomically
+  (temp file and rename) with mode 0600, never through a symlink.
+- **The screener rejects repositories the image shadows.** When the
+  image installs the repository's own package (the testdeps image ships
+  `dateutil`, `six`, `sortedcontainers`, `toml`, `yaml`, `freezegun`),
+  the split grader imports the installed copy, never the submission.
+  The new blocking kind `package_shadowed_by_image` makes that image's
+  verdict `unlikely`, with the reason in `reasons`.
+- **A failed copy-in leaves no agent-side directories.** `ws-<token>`
+  and `home-<token>` (with its copied credentials) are removed, best
+  effort, when the copy-in fails.
+- **Helper reads have a deadline.** A wedged helper could block a turn
+  forever while holding the kill and turn locks. Each workspace
+  transfer, and each helper call's timeout path, now kills the helper
+  (`sudo`, then every process of the agent user) after the helper
+  timeout and raises `... timed out`. The timeout is
+  `AgentPrincipal(helper_timeout=...)`, default 120 s.
+- **A float payload out of range is a protocol error.** `{"t": "float",
+  "v": 10**400}` raised a raw `OverflowError` in the host, bootstrap and
+  worker decoders; they now raise `SplitProtocolError` (host) and
+  `ValueError` (bootstrap, worker) like any other malformed payload.
+- **Manifest validation checks the hidden-tests root of support
+  files.** A task with `support_files` whose repository's hidden-tests
+  root is a file validated, then failed at registration with
+  `support_files_need_a_hidden_tests_directory`; validation now reports
+  it.
+
 ## 2026-11-20 — The coding agent can run as its own OS user (SIS-FEAT-22)
 
 In a real-agent study the campaign process both held the evaluator
