@@ -342,14 +342,40 @@ class ReceiveTreeTests(unittest.TestCase):
         self.assertEqual((self.dest / "copy.py").read_text(), "A = 1\n")
         self.assertNotEqual((self.dest / "copy.py").stat().st_ino,
                             (self.dest / "src" / "a.py").stat().st_ino)
-        # Set-id bits are dropped; a read-only directory is applied last.
+        # Set-id bits are dropped; the owner keeps full access to a
+        # read-only directory, applied last.
         self.assertEqual(stat.S_IMODE((self.dest / "run.sh").stat().st_mode),
                          0o755)
         self.assertEqual(stat.S_IMODE((self.dest / "src").stat().st_mode),
-                         0o555)
+                         0o755)
         # A symlink stays a link (the evaluator refuses links later).
         self.assertTrue((self.dest / "link").is_symlink())
-        os.chmod(self.dest / "src", 0o755)
+
+    def test_the_evaluator_can_always_read_the_returned_tree(self):
+        # The agent may chmod 000 its files and directories; the tree that
+        # is digested and graded must stay readable to the evaluator, which
+        # now owns it.
+        self.receive([
+            (".", tarfile.DIRTYPE, None, 0o000),
+            ("./locked", tarfile.DIRTYPE, None, 0o000),
+            ("./locked/inside.py", tarfile.REGTYPE, b"IN = 1\n", 0o000),
+            ("./secret.py", tarfile.REGTYPE, b"S = 1\n", 0o000),
+            ("./copy.py", tarfile.LNKTYPE, "secret.py", 0o000),
+            ("./shared", tarfile.DIRTYPE, None, 0o1075),
+            ("./shared/tool", tarfile.REGTYPE, b"#!/bin/sh\n", 0o2051),
+        ])
+        modes = {name: stat.S_IMODE((self.dest / name).stat().st_mode)
+                 for name in (".", "locked", "locked/inside.py",
+                              "secret.py", "copy.py", "shared",
+                              "shared/tool")}
+        self.assertEqual(modes, {
+            ".": 0o700, "locked": 0o700, "locked/inside.py": 0o600,
+            "secret.py": 0o600, "copy.py": 0o600,
+            # Other bits are kept; set-id and sticky stay dropped.
+            "shared": 0o775, "shared/tool": 0o651})
+        self.assertEqual((self.dest / "locked" / "inside.py").read_text(),
+                         "IN = 1\n")
+        self.assertRegex(tree_digest(self.dest), r"^[0-9a-f]{64}$")
 
     def test_unsafe_names_and_types_are_refused(self):
         cases = [
@@ -442,13 +468,12 @@ class CheckoutTests(unittest.TestCase):
             (agent_path / "run.sh").unlink()
         self.assertEqual((self.workspace / "pkg" / "mod.py").read_text(),
                          "X = 2\n")
+        # The returned tree stays readable to the evaluator.
         new = self.workspace / "new.py"
-        self.assertEqual(stat.S_IMODE(new.stat().st_mode), 0o000)
-        new.chmod(0o600)
+        self.assertEqual(stat.S_IMODE(new.stat().st_mode), 0o600)
         self.assertEqual(new.read_text(), "NEW = 1\n")
         locked = self.workspace / "locked"
-        self.assertEqual(stat.S_IMODE(locked.stat().st_mode), 0o000)
-        locked.chmod(0o700)
+        self.assertEqual(stat.S_IMODE(locked.stat().st_mode), 0o700)
         self.assertEqual((locked / "inside.txt").read_text(), "in")
         self.assertFalse((self.workspace / "run.sh").exists())
         self.assertEqual(list((self.home / "sis-work").iterdir()), [])

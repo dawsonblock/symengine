@@ -753,7 +753,11 @@ def receive_tree(stream, destination: Path, *,
     a parent must already be a real directory created here, so a symlink
     in the archive is stored as a link and never followed. Hard links
     become copies. Devices, FIFOs and other types are refused. Set-id and
-    sticky bits are dropped; directory modes are applied last.
+    sticky bits are dropped, and the owner (the evaluator) always keeps
+    access: files get at least ``0o600`` and directories, the root
+    included, ``0o700``, so an agent's ``chmod 000`` cannot make the tree
+    unreadable to ``tree_digest`` or the grader. Directory modes are
+    applied last.
     """
     destination = Path(destination)
     created: dict[PurePosixPath, str] = {}
@@ -778,7 +782,7 @@ def receive_tree(stream, destination: Path, *,
                     if not member.isdir():
                         raise AgentPrincipalError(
                             "agent tree root is not a directory")
-                    root_mode = mode
+                    root_mode = mode | 0o700
                     continue
                 if relative in created:
                     raise AgentPrincipalError(
@@ -791,14 +795,14 @@ def receive_tree(stream, destination: Path, *,
                 target = destination / relative
                 if member.isdir():
                     os.mkdir(target, 0o700)
-                    dir_modes.append((target, mode))
+                    dir_modes.append((target, mode | 0o700))
                     created[relative] = "dir"
                 elif member.isreg():
                     total += member.size
                     if total > max_bytes:
                         raise AgentPrincipalError("agent tree is too large")
                     source = archive.extractfile(member)
-                    _write_new(target, source, mode)
+                    _write_new(target, source, mode | 0o600)
                     created[relative] = "file"
                 elif member.issym():
                     os.symlink(member.linkname, target)
@@ -813,7 +817,7 @@ def receive_tree(stream, destination: Path, *,
                     if total > max_bytes:
                         raise AgentPrincipalError("agent tree is too large")
                     with open(source_path, "rb") as source:
-                        _write_new(target, source, mode)
+                        _write_new(target, source, mode | 0o600)
                     created[relative] = "file"
                 else:
                     raise AgentPrincipalError(
