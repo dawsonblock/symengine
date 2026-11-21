@@ -526,6 +526,54 @@ class CheckoutTests(unittest.TestCase):
                     self.fail("the agent must not work on a partial tree")
         self.assertEqual(tree_digest(self.workspace), before)
 
+    def test_refreshed_credentials_outlive_the_turn_home(self):
+        # The CLI may refresh an OAuth token or rotate a refresh token in
+        # the per-turn home; the next turn must start from the new one.
+        persistent = self.home / ".claude" / ".credentials.json"
+        persistent.chmod(0o644)
+        outside = self.root / "outside.json"
+        outside.write_text("evaluator data")
+        with self.agent.checkout(self.workspace):
+            turn_home = Path(self.agent.environment({})["HOME"])
+            (turn_home / ".claude" / ".credentials.json").write_text(
+                '{"token": "refreshed"}')
+            # A symlink planted at a source is never copied.
+            (turn_home / ".codex").mkdir()
+            (turn_home / ".codex" / "auth.json").symlink_to(outside)
+        self.assertEqual(persistent.read_text(), '{"token": "refreshed"}')
+        self.assertFalse(persistent.is_symlink())
+        self.assertEqual(stat.S_IMODE(persistent.stat().st_mode), 0o600)
+        self.assertFalse(os.path.lexists(self.home / ".codex" / "auth.json"))
+        self.assertEqual(sorted(os.listdir(self.home / ".claude")),
+                         [".credentials.json"])
+        self.assertEqual(list((self.home / "sis-work").iterdir()), [])
+
+    def test_unchanged_credentials_are_not_rewritten(self):
+        persistent = self.home / ".claude" / ".credentials.json"
+        before = persistent.stat()
+        with self.agent.checkout(self.workspace):
+            pass
+        after = persistent.stat()
+        self.assertEqual((after.st_ino, after.st_mtime_ns),
+                         (before.st_ino, before.st_mtime_ns))
+
+    def test_a_destination_symlink_is_replaced_not_followed(self):
+        outside = self.root / "outside.json"
+        outside.write_text("evaluator data")
+        persistent = self.home / ".claude" / ".credentials.json"
+        persistent.unlink()
+        persistent.symlink_to(outside)
+        with self.agent.checkout(self.workspace):
+            turn_home = Path(self.agent.environment({})["HOME"])
+            # Seeding never followed the link either.
+            self.assertFalse(
+                (turn_home / ".claude" / ".credentials.json").exists())
+            (turn_home / ".claude").mkdir(exist_ok=True)
+            (turn_home / ".claude" / ".credentials.json").write_text("new")
+        self.assertEqual(outside.read_text(), "evaluator data")
+        self.assertFalse(persistent.is_symlink())
+        self.assertEqual(persistent.read_text(), "new")
+
     def test_one_turn_at_a_time(self):
         with self.agent.checkout(self.workspace):
             with self.assertRaisesRegex(AgentPrincipalError, "one turn"):

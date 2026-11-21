@@ -99,7 +99,7 @@ class AgentPrincipalError(RuntimeError):
 # need to read. Its first stdin line is the JSON request; ``unpack`` reads a
 # tar stream after it. It never imports anything outside the stdlib.
 HELPER_SOURCE = r'''
-import json, os, shutil, signal, stat, sys, tarfile, time
+import json, os, shutil, signal, stat, sys, tarfile, tempfile, time
 
 def out(document):
     sys.stdout.write(json.dumps(document) + "\n")
@@ -277,7 +277,87 @@ def op_pack(request):
     archive.close()
     sys.stdout.buffer.flush()
 
+def real_dir(top, relative, create):
+    # top/relative with every component a real directory, never a symlink;
+    # None if one is not (or is missing and create is false).
+    try:
+        if not stat.S_ISDIR(os.lstat(top).st_mode):
+            return None
+    except OSError:
+        return None
+    path = top
+    for part in relative.split("/") if relative else ():
+        if part in ("", ".", ".."):
+            return None
+        path = os.path.join(path, part)
+        try:
+            info = os.lstat(path)
+        except FileNotFoundError:
+            if not create:
+                return None
+            os.mkdir(path, 0o700)
+            info = os.lstat(path)
+        if not stat.S_ISDIR(info.st_mode):
+            return None
+    return path
+
+def read_regular(path):
+    # The bytes of a regular file, never through a symlink; else None.
+    try:
+        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW
+                             | os.O_NONBLOCK)
+    except OSError:
+        return None
+    with os.fdopen(descriptor, "rb") as handle:
+        if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
+            return None
+        return handle.read()
+
+def persist_credentials(request):
+    # Copy credentials the CLI refreshed in the per-turn home back to the
+    # agent's own home: changed regular files only, atomically, 0600.
+    errors = []
+    turn_home = child(request["base"], request["home"])
+    for name in request.get("credentials", ()):
+        try:
+            directory, base = os.path.split(name)
+            source = real_dir(turn_home, directory, False)
+            data = (read_regular(os.path.join(source, base))
+                    if source is not None and base else None)
+            if data is None:
+                continue
+            target_dir = real_dir(request["persistent_home"], directory,
+                                  True)
+            if target_dir is None:
+                errors.append(name + ": destination is not a directory")
+                continue
+            target = os.path.join(target_dir, base)
+            if read_regular(target) == data:
+                continue
+            descriptor, temp = tempfile.mkstemp(prefix="." + base + ".",
+                                                dir=target_dir)
+            try:
+                with os.fdopen(descriptor, "wb") as handle:
+                    handle.write(data)
+                    handle.flush()
+                    os.fsync(handle.fileno())
+                os.chmod(temp, 0o600)
+                # rename replaces a symlink at the target, never follows it.
+                os.rename(temp, target)
+            except BaseException:
+                try:
+                    os.unlink(temp)
+                except OSError:
+                    pass
+                raise
+        except OSError as exc:
+            errors.append("%s: %s" % (name, exc))
+    return errors
+
 def op_remove(request):
+    errors = []
+    if request.get("persist"):
+        errors = persist_credentials(request["persist"])
     for name in request["names"]:
         path = child(request["base"], name)
         if not os.path.lexists(path):
@@ -288,7 +368,7 @@ def op_remove(request):
             shutil.rmtree(path)
         else:
             os.unlink(path)
-    out({"ok": True})
+    out({"ok": True, "credential_errors": errors})
 
 def main():
     request = json.loads(sys.stdin.buffer.readline(1 << 22))
@@ -575,10 +655,17 @@ class AgentPrincipal:
                             raise
                     finally:
                         try:
+                            # Refreshed CLI credentials go back to the
+                            # agent's own home before its turn home goes.
                             self._call("remove", {
                                 "base": self.work_base,
                                 "names": [names["workspace"],
-                                          names["home"]]})
+                                          names["home"]],
+                                "persist": {
+                                    "base": self.work_base,
+                                    "home": names["home"],
+                                    "persistent_home": self.home,
+                                    "credentials": list(CREDENTIAL_FILES)}})
                         except AgentPrincipalError:
                             if completed:
                                 raise
