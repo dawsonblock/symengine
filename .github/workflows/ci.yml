@@ -190,6 +190,55 @@ jobs:
           PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
           PYTHONNOUSERSITE: "1"
 
+  archive:
+    # The canonical source archive must stand alone. Build it with the
+    # repository's own tool, extract it into an empty directory, install
+    # from there and run the suite with no Git checkout behind it: a file
+    # the archive omits but a test needs fails here, not in a user's
+    # download. build_canonical_zip.py rewrites RELEASE_SHA256.json for
+    # the tree it archives, so it builds from a scratch worktree; the
+    # committed seal in the checkout is never touched. Linux only.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Build the canonical source archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          git worktree add --detach "$RUNNER_TEMP/staging" HEAD
+          python tools/build_canonical_zip.py "$RUNNER_TEMP/sis-source.zip" \
+            --source "$RUNNER_TEMP/staging" --project sis-source
+          git diff --exit-code -- RELEASE_SHA256.json
+      - name: Extract the archive into a fresh directory
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir "$RUNNER_TEMP/extracted"
+          python -m zipfile -e "$RUNNER_TEMP/sis-source.zip" "$RUNNER_TEMP/extracted"
+          test ! -e "$RUNNER_TEMP/extracted/sis-source/.git"
+      - name: Verify the extracted tree against its own inventory
+        working-directory: ${{ runner.temp }}/extracted/sis-source
+        run: python tools/verify_release.py --compile .
+      - name: Install from the extracted tree
+        working-directory: ${{ runner.temp }}/extracted/sis-source
+        run: |
+          python -m pip install -r requirements-lock.txt
+          python -m pip install -e . --no-deps
+      - name: Build evaluator sandbox image from the extracted tree
+        working-directory: ${{ runner.temp }}/extracted/sis-source
+        run: docker build -t sis-evaluator:3.3.9 docker/sandbox
+      - name: Run the test suite from the extracted tree
+        working-directory: ${{ runner.temp }}/extracted/sis-source
+        run: python -m pytest tests/ -q -rs
+        env:
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
+          PYTHONNOUSERSITE: "1"
+
   lint:
     # One pinned static gate over the production tree. The rules are
     # deliberately limited to syntax errors and pyflakes so the check

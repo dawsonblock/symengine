@@ -1,0 +1,6995 @@
+{
+  "counts": {
+    "extra_in_tree": 113,
+    "missing_from_tree": 47,
+    "modified": 102,
+    "renamed": 47,
+    "unattributed": 0,
+    "unchanged": 321
+  },
+  "gate": {
+    "passed": true,
+    "problems": []
+  },
+  "generated_at": "2026-11-21T01:52:44Z",
+  "groups": [
+    {
+      "commits": [
+        {
+          "commit": "de20441",
+          "merge": false,
+          "paths": {
+            "modified": [
+              "CHANGELOG.md"
+            ]
+          },
+          "subject": "Record the review fixes in the changelog (SIS-FIX-23)"
+        },
+        {
+          "commit": "3f34b38",
+          "merge": false,
+          "paths": {
+            "modified": [
+              "src/sis/v3/efficacy_manifest.py",
+              "tests/v3/test_efficacy_manifest.py"
+            ]
+          },
+          "subject": "Reject support files when the hidden-tests root is a file"
+        },
+        {
+          "commit": "aa55132",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "tests/v3/test_split_protocols.py"
+            ],
+            "modified": [
+              "src/sis/v3/split_harness.py"
+            ]
+          },
+          "subject": "Report a float payload out of range as a protocol error"
+        },
+        {
+          "commit": "aebdd85",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "tests/v3/test_screen_study_repos.py",
+              "tools/screen_study_repos.py"
+            ]
+          },
+          "subject": "Screen out repositories whose package the image installs"
+        },
+        {
+          "commit": "1be5e6f",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "src/sis/v3/agent_principal.py",
+              "tests/v3/test_agent_principal.py"
+            ]
+          },
+          "subject": "Put a deadline on every agent helper read"
+        },
+        {
+          "commit": "c3c6f17",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "src/sis/v3/agent_principal.py",
+              "tests/v3/test_agent_principal.py"
+            ]
+          },
+          "subject": "Remove the agent-side directories when the copy-in fails"
+        },
+        {
+          "commit": "4c52e03",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "src/sis/v3/agent_principal.py",
+              "tests/v3/test_agent_principal.py"
+            ]
+          },
+          "subject": "Persist refreshed CLI credentials from the per-turn home"
+        },
+        {
+          "commit": "9539b2a",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "src/sis/v3/agent_principal.py",
+              "tests/v3/test_agent_principal.py"
+            ]
+          },
+          "subject": "Keep the returned agent tree readable to the evaluator"
+        },
+        {
+          "commit": "a535b45",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "src/sis/v3/agent_principal.py",
+              "tests/v3/test_agent_principal.py"
+            ]
+          },
+          "subject": "Fail the copy-in when the workspace archive is incomplete"
+        }
+      ],
+      "commits_total": 9,
+      "group": "direct",
+      "merge": null,
+      "merge_subject": null,
+      "paths": {
+        "extra_in_tree": 5,
+        "missing_from_tree": 0,
+        "modified": 4
+      },
+      "pr": null
+    },
+    {
+      "commits": [
+        {
+          "commit": "ee29b80",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "tests/v3/test_split_protocols.py"
+            ],
+            "modified": [
+              "CHANGELOG.md",
+              "src/sis/v3/split_harness.py"
+            ]
+          },
+          "subject": "Let a declined worker operator fall back to the local operand"
+        },
+        {
+          "commit": "2dc05ea",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "tests/v3/test_split_protocols.py"
+            ],
+            "modified": [
+              "CHANGELOG.md",
+              "src/sis/v3/split_harness.py"
+            ]
+          },
+          "subject": "Decode each NaN to its own float on every receive path"
+        },
+        {
+          "commit": "5434129",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "tests/v3/test_split_protocols.py"
+            ],
+            "modified": [
+              "CHANGELOG.md",
+              "src/sis/v3/split_harness.py"
+            ]
+          },
+          "subject": "Keep queued releases when a request cannot be serialized"
+        },
+        {
+          "commit": "ae51888",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "tests/v3/test_split_protocols.py"
+            ],
+            "modified": [
+              "CHANGELOG.md",
+              "src/sis/v3/split_harness.py"
+            ]
+          },
+          "subject": "Fall back to a handle when JSON cannot write a worker response"
+        },
+        {
+          "commit": "6e08447",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "tests/v3/test_split_protocols.py"
+            ]
+          },
+          "subject": "Check each thread sees its own proxied exception class"
+        },
+        {
+          "commit": "7ba8f11",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "tests/v3/test_import_study_tasks.py",
+              "tools/import_study_tasks.py"
+            ],
+            "modified": [
+              "CHANGELOG.md"
+            ]
+          },
+          "subject": "Capture a named file with the named directory that holds it"
+        },
+        {
+          "commit": "cbde6fd",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "tests/v3/test_import_study_tasks.py",
+              "tools/import_study_tasks.py"
+            ],
+            "modified": [
+              "CHANGELOG.md"
+            ]
+          },
+          "subject": "Count only whole division chains as path references"
+        },
+        {
+          "commit": "2bce045",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "docs/v3/PILOT_RUNBOOK.md",
+              "tests/v3/test_agent_principal_campaign.py"
+            ],
+            "modified": [
+              "tools/five_arm_campaign.py"
+            ]
+          },
+          "subject": "Check repository clones and support files in the agent preflight"
+        },
+        {
+          "commit": "f578513",
+          "merge": false,
+          "paths": {
+            "modified": [
+              "CHANGELOG.md"
+            ]
+          },
+          "subject": "Record the agent principal in the changelog (SIS-FEAT-22)"
+        },
+        {
+          "commit": "e52b6cb",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "tests/v3/test_agent_principal_campaign.py",
+              "tests/v3/test_build_guidance_bundle.py",
+              "tools/build_guidance_bundle.py"
+            ],
+            "modified": [
+              "tools/five_arm_campaign.py"
+            ]
+          },
+          "subject": "Add --agent-user to the campaign and the guidance bundle builder"
+        },
+        {
+          "commit": "080a17a",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "src/sis/v3/adapters/claude_code.py",
+              "src/sis/v3/agent_principal.py",
+              "tests/v3/test_agent_principal.py"
+            ],
+            "modified": [
+              "src/sis/v3/adapters/codex_cli.py",
+              "src/sis/v3/learning_qualification.py"
+            ]
+          },
+          "subject": "Run the agent CLI as a separate OS user through an agent principal"
+        },
+        {
+          "commit": "85c00a9",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "tests/v3/test_split_protocols.py"
+            ],
+            "modified": [
+              "src/sis/v3/split_harness.py"
+            ]
+          },
+          "subject": "Use startup builtin identities when a worker exception is unresolved"
+        },
+        {
+          "commit": "302ff2c",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "tests/v3/test_split_protocols.py"
+            ],
+            "modified": [
+              "docs/v3/SECURITY_BOUNDARIES_V3_3.md",
+              "src/sis/v3/split_harness.py"
+            ]
+          },
+          "subject": "Resolve worker exception names only against reviewed class identities"
+        },
+        {
+          "commit": "24c2e81",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "docs/v3/PILOT_RUNBOOK.md",
+              "tests/v3/test_screen_study_repos.py",
+              "tools/screen_study_repos.py"
+            ],
+            "modified": [
+              "CHANGELOG.md"
+            ]
+          },
+          "subject": "Screen for values and process state split custody cannot carry"
+        },
+        {
+          "commit": "69ec029",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "docs/v3/PILOT_RUNBOOK.md",
+              "tests/v3/test_screen_study_repos.py",
+              "tools/screen_study_repos.py"
+            ],
+            "modified": [
+              "CHANGELOG.md"
+            ]
+          },
+          "subject": "Add a static split-custody screen for candidate study repositories"
+        },
+        {
+          "commit": "a49a66d",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "docker/sandbox/Dockerfile.testdeps",
+              "docker/sandbox/requirements-testdeps.lock",
+              "docs/v3/PILOT_RUNBOOK.md"
+            ],
+            "modified": [
+              "CHANGELOG.md",
+              "docker/sandbox/README.md",
+              "tests/v3/test_evaluator_image_lock.py"
+            ]
+          },
+          "subject": "Add a hash-pinned test-dependency variant of the evaluator image"
+        },
+        {
+          "commit": "a4a83fc",
+          "merge": false,
+          "paths": {
+            "modified": [
+              "CHANGELOG.md",
+              "src/sis/v3/docker_sandbox.py",
+              "tests/v3/test_docker_sandbox.py"
+            ]
+          },
+          "subject": "Accept a registry host and port in a digest-pinned image reference"
+        },
+        {
+          "commit": "46e93fc",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "tests/v3/test_review_fix_sandbox_docker.py",
+              "tests/v3/test_sandbox_launch_policy.py"
+            ],
+            "modified": [
+              "CHANGELOG.md",
+              "docker/sandbox/README.md",
+              "docs/v3/SECURITY_BOUNDARIES_V3_3.md",
+              "src/sis/v3/docker_sandbox.py",
+              "tests/v3/test_docker_sandbox.py",
+              "tests/v3/test_v338_workspace_ownership.py"
+            ]
+          },
+          "subject": "Stream the Docker workspace in so a root host can evaluate"
+        },
+        {
+          "commit": "c27840a",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "tests/v3/test_split_protocols.py"
+            ],
+            "modified": [
+              "src/sis/v3/split_harness.py"
+            ]
+          },
+          "subject": "Decide inertness and class-ness from exact types only"
+        },
+        {
+          "commit": "0a90138",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "tests/v3/test_split_protocols.py"
+            ],
+            "modified": [
+              "src/sis/v3/split_harness.py"
+            ]
+          },
+          "subject": "Trust an exception class only if it runs standard-library code alone"
+        },
+        {
+          "commit": "c87dc86",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "tests/v3/test_split_protocols.py"
+            ],
+            "modified": [
+              "src/sis/v3/split_harness.py"
+            ]
+          },
+          "subject": "Trust a stdlib exception class only where it is defined"
+        },
+        {
+          "commit": "7ef6483",
+          "merge": false,
+          "paths": {
+            "modified": [
+              "CHANGELOG.md",
+              "docs/v3/SECURITY_BOUNDARIES_V3_3.md",
+              "src/sis/v3/split_harness.py"
+            ]
+          },
+          "subject": "Document handle release, trusted imports and test data files"
+        },
+        {
+          "commit": "461d609",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "src/sis/v3/study_runtime.py",
+              "tests/v3/test_import_study_tasks.py",
+              "tests/v3/test_split_protocols.py",
+              "tools/import_study_tasks.py"
+            ]
+          },
+          "subject": "Capture the data files a hidden test reads beside itself"
+        },
+        {
+          "commit": "0120599",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "tests/v3/test_import_study_tasks.py",
+              "tools/import_study_tasks.py"
+            ]
+          },
+          "subject": "Resolve a captured helper's relative imports against its own package"
+        },
+        {
+          "commit": "0b0e02f",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "src/sis/v3/study_runtime.py",
+              "tests/v3/test_import_study_tasks.py"
+            ]
+          },
+          "subject": "Reject empty support-target components and guard the staged test name"
+        },
+        {
+          "commit": "af7bed8",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "tests/v3/test_split_protocols.py"
+            ]
+          },
+          "subject": "Exercise the set encoder in the unhashable-set test"
+        },
+        {
+          "commit": "8267867",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "tests/v3/test_split_protocols.py"
+            ],
+            "modified": [
+              "src/sis/v3/split_harness.py"
+            ]
+          },
+          "subject": "Publish one stand-in per class and attach a path read later"
+        },
+        {
+          "commit": "0d1bd9f",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "tests/v3/test_split_protocols.py"
+            ],
+            "modified": [
+              "src/sis/v3/split_harness.py"
+            ]
+          },
+          "subject": "Keep a generator's typed return value in the host client"
+        },
+        {
+          "commit": "1a80787",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "tests/v3/test_split_protocols.py"
+            ],
+            "modified": [
+              "src/sis/v3/split_harness.py"
+            ]
+          },
+          "subject": "Bind with-targets to worker state and forward three-argument pow"
+        },
+        {
+          "commit": "89dc007",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "tests/v3/test_split_protocols.py"
+            ],
+            "modified": [
+              "src/sis/v3/split_harness.py"
+            ]
+          },
+          "subject": "Answer a result too large for one frame with a handle"
+        },
+        {
+          "commit": "29a96aa",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "tests/v3/test_split_protocols.py"
+            ],
+            "modified": [
+              "src/sis/v3/split_harness.py"
+            ]
+          },
+          "subject": "Resolve worker exception names only to builtin and stdlib classes"
+        },
+        {
+          "commit": "8b0fb1e",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "tests/v3/test_split_protocols.py"
+            ],
+            "modified": [
+              "src/sis/v3/split_harness.py"
+            ]
+          },
+          "subject": "Import trusted names from the trusted path and blind workspace entries"
+        },
+        {
+          "commit": "4d3670d",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "tests/v3/test_split_protocols.py"
+            ],
+            "modified": [
+              "src/sis/v3/split_harness.py"
+            ]
+          },
+          "subject": "Keep every portion of a namespace package the workspace spans"
+        },
+        {
+          "commit": "8d5f3f7",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "tests/v3/test_split_protocols.py"
+            ],
+            "modified": [
+              "src/sis/v3/split_harness.py"
+            ]
+          },
+          "subject": "Release split-custody handles the evaluator no longer holds"
+        },
+        {
+          "commit": "4abd4b3",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "tests/v3/test_split_protocols.py"
+            ]
+          },
+          "subject": "Guard that the workspace is never on the evaluator's import path"
+        },
+        {
+          "commit": "9d056d6",
+          "merge": false,
+          "paths": {
+            "modified": [
+              "tests/v3/test_authority_db.py"
+            ]
+          },
+          "subject": "Pin the snapshot test's interposed write to verify's revision read"
+        },
+        {
+          "commit": "8d4be45",
+          "merge": false,
+          "paths": {
+            "modified": [
+              "CHANGELOG.md",
+              "src/sis/v3/authority_db.py",
+              "tests/v3/test_authority_db.py"
+            ]
+          },
+          "subject": "Verify the authority store in one read snapshot"
+        },
+        {
+          "commit": "a9f0201",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "tests/v3/test_import_study_tasks.py",
+              "tools/import_study_tasks.py"
+            ]
+          },
+          "subject": "Capture only regular files as a hidden test's support files"
+        },
+        {
+          "commit": "e692b0c",
+          "merge": false,
+          "paths": {
+            "modified": [
+              "CHANGELOG.md",
+              "docs/v3/SECURITY_BOUNDARIES_V3_3.md"
+            ]
+          },
+          "subject": "Document state handles, support files and the real-repository result"
+        },
+        {
+          "commit": "41c8466",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "tests/v3/test_split_protocols.py"
+            ],
+            "modified": [
+              "src/sis/v3/split_harness.py"
+            ]
+          },
+          "subject": "Resolve links before trusting a sys.path entry under split custody"
+        },
+        {
+          "commit": "8e80b0a",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "src/sis/v3/study_runtime.py",
+              "tests/v3/test_import_study_tasks.py",
+              "tests/v3/test_split_protocols.py",
+              "tools/build_guidance_bundle.py",
+              "tools/import_study_tasks.py"
+            ],
+            "modified": [
+              "src/sis/v3/efficacy_manifest.py",
+              "src/sis/v3/split_harness.py",
+              "tools/build_efficacy_manifest.py",
+              "tools/five_arm_campaign.py"
+            ]
+          },
+          "subject": "Register a hidden test's conftest, package and helper files with it"
+        },
+        {
+          "commit": "025aba1",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "tests/v3/test_split_protocols.py"
+            ],
+            "modified": [
+              "src/sis/v3/split_harness.py"
+            ]
+          },
+          "subject": "Serialize split requests from concurrent test threads"
+        },
+        {
+          "commit": "e5dfb8f",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "tests/v3/test_split_protocols.py"
+            ],
+            "modified": [
+              "src/sis/v3/split_harness.py"
+            ]
+          },
+          "subject": "Keep mutable submission state in the worker under split custody"
+        },
+        {
+          "commit": "d2109fe",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "tests/v3/test_split_protocols.py"
+            ],
+            "modified": [
+              "CHANGELOG.md",
+              "src/sis/v3/split_harness.py"
+            ]
+          },
+          "subject": "Never let a submission's exception steer the test runner"
+        },
+        {
+          "commit": "1b1f68e",
+          "merge": false,
+          "paths": {
+            "modified": [
+              "CHANGELOG.md",
+              "docs/v3/SECURITY_BOUNDARIES_V3_3.md",
+              "src/sis/v3/split_harness.py"
+            ]
+          },
+          "subject": "Document what crosses the split boundary and what remains unsupported"
+        },
+        {
+          "commit": "081fe93",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "tests/v3/test_split_protocols.py"
+            ],
+            "modified": [
+              "src/sis/v3/split_harness.py"
+            ]
+          },
+          "subject": "Import src/-layout workspaces under split custody"
+        },
+        {
+          "commit": "e1df774",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "tests/v3/test_split_protocols.py"
+            ],
+            "modified": [
+              "src/sis/v3/split_harness.py"
+            ]
+          },
+          "subject": "Stand in locally for submission exception classes under split custody"
+        },
+        {
+          "commit": "b89aa63",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "tests/v3/test_split_protocols.py"
+            ],
+            "modified": [
+              "src/sis/v3/split_harness.py"
+            ]
+          },
+          "subject": "Forward common dunder protocols through one allow-listed worker op"
+        },
+        {
+          "commit": "631a4da",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "tests/v3/test_split_protocols.py"
+            ],
+            "modified": [
+              "src/sis/v3/split_harness.py"
+            ]
+          },
+          "subject": "Carry sets, frozensets and non-text-key mappings across the split codec"
+        },
+        {
+          "commit": "4887959",
+          "merge": false,
+          "paths": {
+            "modified": [
+              "src/sis/v3/verifier.py",
+              "tests/v3/test_split_custody.py"
+            ]
+          },
+          "subject": "Persist the task registry without protocol-message bounds"
+        }
+      ],
+      "commits_total": 51,
+      "group": "PR #9",
+      "merge": "cbdf376",
+      "merge_subject": "Merge pull request #9: split-custody grading of real suites, root hosts, agent principal",
+      "paths": {
+        "extra_in_tree": 17,
+        "missing_from_tree": 0,
+        "modified": 17
+      },
+      "pr": 9
+    },
+    {
+      "commits": [
+        {
+          "commit": "bfb3945",
+          "merge": false,
+          "paths": {
+            "modified": [
+              "docs/v3/SECURITY_BOUNDARIES_V3_3.md"
+            ]
+          },
+          "subject": "Say where the Windows scope note appears under -q"
+        },
+        {
+          "commit": "ce46f9b",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "docs/history/LEGACY_README.md",
+              "docs/history/LIMITATIONS.md",
+              "docs/history/ROADMAP.md",
+              "docs/history/TEST_REPORT_V1_5.md",
+              "docs/history/TEST_REPORT_V1_8.md",
+              "docs/history/V1_9_LORA_AND_NEURAL_COMPARISON.md",
+              "docs/history/v3/G1_GATE_REPORT.md",
+              "docs/history/v3/QUALIFICATION_REPORT_V3_3_4.md",
+              "docs/history/v3/QUALIFICATION_REPORT_V3_3_5.md",
+              "docs/history/v3/QUALIFICATION_REPORT_V3_3_6.md",
+              "docs/history/v3/STATUS.md",
+              "tests/conftest.py",
+              "tests/test_platform_scope.py"
+            ],
+            "modified": [
+              "docs/ARCHITECTURE.md",
+              "docs/AUTHORITY_CHECKPOINTS.md",
+              "docs/SECURITY.md"
+            ]
+          },
+          "subject": "Show the Windows scope note under -q and fix stale doc paths in prose"
+        },
+        {
+          "commit": "291597d",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "tests/conftest.py",
+              "tests/test_platform_scope.py"
+            ],
+            "modified": [
+              ".github/workflows/ci.yml",
+              "CHANGELOG.md",
+              "README.md",
+              "docs/v3/SECURITY_BOUNDARIES_V3_3.md"
+            ]
+          },
+          "subject": "Support Windows for the core learner and CLI; v3 layer is POSIX-only"
+        },
+        {
+          "commit": "1b86bbe",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "tests/test_cli_help.py"
+            ],
+            "modified": [
+              "src/sis/cli.py"
+            ]
+          },
+          "subject": "Group the sis --help command list by area"
+        },
+        {
+          "commit": "a73e461",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "docs/history/AUTHORITY_RECOVERY_RELEASE_NOTES.md",
+              "docs/history/LEGACY_README.md",
+              "docs/history/LIMITATIONS.md",
+              "docs/history/MIGRATION_V330_TO_V331.md",
+              "docs/history/README.md",
+              "docs/history/RELEASE_NOTES.md",
+              "docs/history/ROADMAP.md",
+              "docs/history/TEST_REPORT_V1_2.md",
+              "docs/history/TEST_REPORT_V1_3.md",
+              "docs/history/TEST_REPORT_V1_4.md",
+              "docs/history/TEST_REPORT_V1_5.md",
+              "docs/history/TEST_REPORT_V1_6.md",
+              "docs/history/TEST_REPORT_V1_7.md",
+              "docs/history/TEST_REPORT_V1_8.md",
+              "docs/history/TEST_REPORT_V1_9.md",
+              "docs/history/TEST_REPORT_V2_1.md",
+              "docs/history/TEST_REPORT_V2_3.md",
+              "docs/history/TEST_REPORT_V2_4.md",
+              "docs/history/UPGRADE_RELEASE_NOTES_2026-10-24.md",
+              "docs/history/UPGRADE_V1_1.md",
+              "docs/history/UPGRADE_V1_2.md",
+              "docs/history/UPGRADE_V1_3.md",
+              "docs/history/V1_5_TRANSFER_AND_QUALIFICATION.md",
+              "docs/history/V1_6_PAIRED_LLM_BENCHMARK.md",
+              "docs/history/V1_7_PROCEDURAL_SKILLS.md",
+              "docs/history/V1_8_PROCEDURAL_HOLDOUT_AND_DISTILLATION.md",
+              "docs/history/V1_9_LORA_AND_NEURAL_COMPARISON.md",
+              "docs/history/V2_0_FAMILY_QUALIFICATION.md",
+              "docs/history/V2_1_TYPED_TRACE_LEARNING.md",
+              "docs/history/V2_2_EXPERIENCE_ABSTRACTION.md",
+              "docs/history/V2_3_WORKFLOW_LEARNING.md",
+              "docs/history/V2_4_CODE_REPAIR.md",
+              "docs/history/v3/G1_GATE_REPORT.md",
+              "docs/history/v3/G2_GATE_REPORT.md",
+              "docs/history/v3/G3_GATE_REPORT.md",
+              "docs/history/v3/G4_GATE_REPORT.md",
+              "docs/history/v3/QUALIFICATION_REPORT.md",
+              "docs/history/v3/QUALIFICATION_REPORT_V3_3_0.md",
+              "docs/history/v3/QUALIFICATION_REPORT_V3_3_4.md",
+              "docs/history/v3/QUALIFICATION_REPORT_V3_3_5.md",
+              "docs/history/v3/QUALIFICATION_REPORT_V3_3_6.md",
+              "docs/history/v3/QUALIFICATION_REPORT_V3_3_7.md",
+              "docs/history/v3/RELEASE_NOTES_V3_3.md",
+              "docs/history/v3/STATUS.md",
+              "docs/history/v3/UPGRADE_2026_10_24.md",
+              "docs/history/v3/V2_BASELINE.md",
+              "docs/history/v3/V32_GAP_MAP.md",
+              "docs/history/v3/V33_LIMITATIONS.md"
+            ],
+            "missing_from_tree": [
+              "AUTHORITY_RECOVERY_RELEASE_NOTES.md",
+              "UPGRADE_RELEASE_NOTES_2026-10-24.md",
+              "docs/LEGACY_README.md",
+              "docs/LIMITATIONS.md",
+              "docs/MIGRATION_V330_TO_V331.md",
+              "docs/RELEASE_NOTES.md",
+              "docs/ROADMAP.md",
+              "docs/TEST_REPORT_V1_2.md",
+              "docs/TEST_REPORT_V1_3.md",
+              "docs/TEST_REPORT_V1_4.md",
+              "docs/TEST_REPORT_V1_5.md",
+              "docs/TEST_REPORT_V1_6.md",
+              "docs/TEST_REPORT_V1_7.md",
+              "docs/TEST_REPORT_V1_8.md",
+              "docs/TEST_REPORT_V1_9.md",
+              "docs/TEST_REPORT_V2_1.md",
+              "docs/TEST_REPORT_V2_3.md",
+              "docs/TEST_REPORT_V2_4.md",
+              "docs/UPGRADE_V1_1.md",
+              "docs/UPGRADE_V1_2.md",
+              "docs/UPGRADE_V1_3.md",
+              "docs/V1_5_TRANSFER_AND_QUALIFICATION.md",
+              "docs/V1_6_PAIRED_LLM_BENCHMARK.md",
+              "docs/V1_7_PROCEDURAL_SKILLS.md",
+              "docs/V1_8_PROCEDURAL_HOLDOUT_AND_DISTILLATION.md",
+              "docs/V1_9_LORA_AND_NEURAL_COMPARISON.md",
+              "docs/V2_0_FAMILY_QUALIFICATION.md",
+              "docs/V2_1_TYPED_TRACE_LEARNING.md",
+              "docs/V2_2_EXPERIENCE_ABSTRACTION.md",
+              "docs/V2_3_WORKFLOW_LEARNING.md",
+              "docs/V2_4_CODE_REPAIR.md",
+              "docs/v3/G1_GATE_REPORT.md",
+              "docs/v3/G2_GATE_REPORT.md",
+              "docs/v3/G3_GATE_REPORT.md",
+              "docs/v3/G4_GATE_REPORT.md",
+              "docs/v3/QUALIFICATION_REPORT.md",
+              "docs/v3/QUALIFICATION_REPORT_V3_3_0.md",
+              "docs/v3/QUALIFICATION_REPORT_V3_3_4.md",
+              "docs/v3/QUALIFICATION_REPORT_V3_3_5.md",
+              "docs/v3/QUALIFICATION_REPORT_V3_3_6.md",
+              "docs/v3/QUALIFICATION_REPORT_V3_3_7.md",
+              "docs/v3/RELEASE_NOTES_V3_3.md",
+              "docs/v3/STATUS.md",
+              "docs/v3/UPGRADE_2026_10_24.md",
+              "docs/v3/V2_BASELINE.md",
+              "docs/v3/V32_GAP_MAP.md",
+              "docs/v3/V33_LIMITATIONS.md"
+            ],
+            "modified": [
+              ".markdownlint-cli2.jsonc",
+              "README.md",
+              "docs/ARCHITECTURE.md",
+              "docs/INDEX.md",
+              "docs/SECURITY.md",
+              "src/sis/v3/authority_db.py"
+            ]
+          },
+          "subject": "Move the historical record into docs/history/"
+        }
+      ],
+      "commits_total": 6,
+      "group": "PR #8",
+      "merge": "a0a35e0",
+      "merge_subject": "Merge pull request #8 from dawsonblock/claude/fervent-ramanujan-l7b4y3",
+      "paths": {
+        "extra_in_tree": 51,
+        "missing_from_tree": 47,
+        "modified": 11
+      },
+      "pr": 8
+    },
+    {
+      "commits": [
+        {
+          "commit": "3a881d9",
+          "merge": false,
+          "paths": {
+            "modified": [
+              "README.md"
+            ]
+          },
+          "subject": "Rewrite the README for the current release"
+        }
+      ],
+      "commits_total": 2,
+      "group": "PR #7",
+      "merge": "eed4495",
+      "merge_subject": "Merge pull request #7 from dawsonblock/claude/fervent-ramanujan-l7b4y3",
+      "paths": {
+        "extra_in_tree": 0,
+        "missing_from_tree": 0,
+        "modified": 1
+      },
+      "pr": 7
+    },
+    {
+      "commits": [
+        {
+          "commit": "72a71b4",
+          "merge": false,
+          "paths": {
+            "modified": [
+              "CHANGELOG.md",
+              "src/sis/v3/runner.py",
+              "tests/v3/test_runner_isolation.py"
+            ]
+          },
+          "subject": "Apply resource limits without preexec_fn in the local runner"
+        },
+        {
+          "commit": "d8a7290",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "docs/history/LEGACY_README.md"
+            ],
+            "missing_from_tree": [
+              "docs/LEGACY_README.md"
+            ],
+            "modified": [
+              "CHANGELOG.md",
+              "src/sis/server.py",
+              "src/sis/v3/serving_service.py",
+              "tests/v3/test_v332_security_regressions.py"
+            ]
+          },
+          "subject": "Authenticate v3 requests before reading the body"
+        },
+        {
+          "commit": "6c4b83b",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "evidence/evaluation/two_arm_demo.json"
+            ],
+            "modified": [
+              "CHANGELOG.md",
+              "docs/v3/EFFICACY_STUDY_PROTOCOL.md",
+              "tests/v3/test_governed_eval.py",
+              "tools/five_arm_campaign.py"
+            ]
+          },
+          "subject": "Run the scripted primary-contrast demo"
+        },
+        {
+          "commit": "7ae55ab",
+          "merge": false,
+          "paths": {
+            "modified": [
+              "tools/real_agent_campaign.py"
+            ]
+          },
+          "subject": "Let the exploratory real-agent campaign run the A/E primary contrast"
+        },
+        {
+          "commit": "073c70c",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "docs/v3/efficacy_manifest_two_arm_template.json"
+            ],
+            "modified": [
+              "CHANGELOG.md",
+              "docs/v3/BUILD11_PLAN.md",
+              "docs/v3/EFFICACY_STUDY_PROTOCOL.md",
+              "src/sis/v3/efficacy_manifest.py",
+              "src/sis/v3/governed_eval.py",
+              "src/sis/v3/learning_qualification.py",
+              "tests/v3/test_build_efficacy_manifest.py",
+              "tests/v3/test_efficacy_manifest.py",
+              "tests/v3/test_five_arm_real_run.py",
+              "tools/build_efficacy_manifest.py",
+              "tools/check_efficacy_manifest.py",
+              "tools/five_arm_campaign.py"
+            ]
+          },
+          "subject": "Add the primary-contrast two-arm study path"
+        },
+        {
+          "commit": "1f20c37",
+          "merge": false,
+          "paths": {
+            "modified": [
+              "CHANGELOG.md",
+              "README.md",
+              "src/sis/server.py",
+              "tests/v3/test_v332_security_regressions.py"
+            ]
+          },
+          "subject": "Answer a deeply nested JSON body instead of dropping the connection"
+        },
+        {
+          "commit": "799f9cb",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "src/sis/v3/gitquery.py",
+              "tests/v3/test_gitquery.py"
+            ],
+            "modified": [
+              "CHANGELOG.md",
+              "src/sis/v3/efficacy_manifest.py",
+              "tests/v3/test_release_artifact.py",
+              "tools/build_canonical_zip.py",
+              "tools/build_efficacy_manifest.py",
+              "tools/five_arm_campaign.py"
+            ]
+          },
+          "subject": "Run Git queries in untrusted checkouts without executing repository config"
+        },
+        {
+          "commit": "cad25fc",
+          "merge": false,
+          "paths": {
+            "modified": [
+              "tests/v3/test_release_ci.py"
+            ]
+          },
+          "subject": "Guard the release-path symlink fixtures on non-POSIX runners"
+        },
+        {
+          "commit": "271cf99",
+          "merge": false,
+          "paths": {
+            "modified": [
+              "src/sis/v3/governed_eval.py",
+              "tests/v3/test_governed_eval.py"
+            ]
+          },
+          "subject": "Keep the rate validator total for oversized integers"
+        },
+        {
+          "commit": "5411a7b",
+          "merge": false,
+          "paths": {
+            "modified": [
+              "CHANGELOG.md",
+              "UPGRADE_README.md",
+              "docs/v3/BUILD11_PLAN.md",
+              "docs/v3/EFFICACY_STUDY_PROTOCOL.md",
+              "docs/v3/efficacy_manifest_template.json",
+              "src/sis/v3/efficacy_manifest.py",
+              "src/sis/v3/governed_eval.py",
+              "src/sis/v3/learning_qualification.py",
+              "tests/v3/test_efficacy_manifest.py",
+              "tests/v3/test_five_arm_real_run.py",
+              "tests/v3/test_governed_eval.py",
+              "tests/v3/test_release_ci.py",
+              "tools/build_efficacy_manifest.py",
+              "tools/check_release_ci.py",
+              "tools/governed_campaign.py",
+              "tools/governed_live_campaign.py",
+              "tools/real_agent_campaign.py"
+            ]
+          },
+          "subject": "Make the powered planner direction-agnostic and fix release-path symlink checks"
+        }
+      ],
+      "commits_total": 11,
+      "group": "PR #1",
+      "merge": "3421a76",
+      "merge_subject": "Merge pull request #1 from dawsonblock/repair/v335-resource-security",
+      "paths": {
+        "extra_in_tree": 5,
+        "missing_from_tree": 1,
+        "modified": 28
+      },
+      "pr": 1
+    },
+    {
+      "commits": [
+        {
+          "commit": "d1aa0c9",
+          "merge": false,
+          "paths": {
+            "modified": [
+              "src/sis/v3/learning_qualification.py",
+              "tests/v3/test_five_arm_real_run.py"
+            ]
+          },
+          "subject": "Report observed actions from Codex-backed agent runs"
+        },
+        {
+          "commit": "66c5b0c",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "tests/v3/test_study_runner.py"
+            ],
+            "modified": [
+              "tools/five_arm_campaign.py"
+            ]
+          },
+          "subject": "Bind the resume journal to the full executor configuration"
+        },
+        {
+          "commit": "d2217f7",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "tests/v3/test_build_guidance_bundle.py",
+              "tools/build_guidance_bundle.py"
+            ]
+          },
+          "subject": "Count agent failures as losses when qualifying guidance candidates"
+        },
+        {
+          "commit": "a3bbaf5",
+          "merge": true,
+          "paths": {
+            "modified": [
+              "CHANGELOG.md"
+            ]
+          },
+          "subject": "Merge the learner branch (with #3 and #4) into the pilot tooling branch"
+        },
+        {
+          "commit": "c8226ac",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "tests/v3/test_claude_code_adapter.py",
+              "tests/v3/test_study_runtime.py"
+            ],
+            "modified": [
+              "src/sis/v3/learning_qualification.py"
+            ]
+          },
+          "subject": "Keep the Claude Code status probe and study tests portable to Windows"
+        },
+        {
+          "commit": "2879fa2",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "docs/v3/PILOT_RUNBOOK.md",
+              "docs/v3/pilot_learning_spec_template.json",
+              "docs/v3/pilot_study_spec_template.json",
+              "tests/v3/test_efficacy_pilot_dry_run.py"
+            ],
+            "modified": [
+              "CHANGELOG.md",
+              "docs/v3/EFFICACY_STUDY_PROTOCOL.md"
+            ]
+          },
+          "subject": "Prepare the exploratory Claude Code pilot"
+        },
+        {
+          "commit": "1bb8723",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "tests/v3/test_repository_power.py"
+            ],
+            "modified": [
+              "src/sis/v3/governed_eval.py"
+            ]
+          },
+          "subject": "Size confirmatory studies in repositories"
+        },
+        {
+          "commit": "eacacba",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "tests/v3/test_build_guidance_bundle.py",
+              "tools/build_guidance_bundle.py"
+            ]
+          },
+          "subject": "Produce signed guidance bundles from the induction partition"
+        },
+        {
+          "commit": "db835ac",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "tests/v3/test_import_study_tasks.py",
+              "tools/import_study_tasks.py"
+            ]
+          },
+          "subject": "Import study tasks from bug-fix commits"
+        },
+        {
+          "commit": "41fdcf7",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "src/sis/v3/study_runtime.py",
+              "tests/v3/study_fixtures.py",
+              "tests/v3/test_followup_campaign_keys.py",
+              "tests/v3/test_review_fix_study_serving.py",
+              "tests/v3/test_study_runner.py",
+              "tests/v3/test_study_runtime.py"
+            ],
+            "modified": [
+              "src/sis/v3/efficacy_manifest.py",
+              "tests/v3/test_five_arm_real_run.py",
+              "tools/build_efficacy_manifest.py",
+              "tools/five_arm_campaign.py"
+            ]
+          },
+          "subject": "Wire Docker split custody, resume and task commits into the runner"
+        },
+        {
+          "commit": "d0e4b99",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "src/sis/v3/adapters/claude_code.py",
+              "tests/v3/test_claude_code_adapter.py"
+            ],
+            "modified": [
+              "src/sis/v3/adapters/__init__.py",
+              "src/sis/v3/benchmark.py",
+              "src/sis/v3/governed_eval.py",
+              "src/sis/v3/learning_qualification.py",
+              "src/sis/v3/verifier.py"
+            ]
+          },
+          "subject": "Add a Claude Code agent and resumable, parallel harness runs"
+        }
+      ],
+      "commits_total": 12,
+      "group": "PR #6",
+      "merge": "818a8b2",
+      "merge_subject": "Merge pull request #6 from dawsonblock/claude/sis-efficacy-pilot-tooling",
+      "paths": {
+        "extra_in_tree": 17,
+        "missing_from_tree": 0,
+        "modified": 11
+      },
+      "pr": 6
+    },
+    {
+      "commits": [
+        {
+          "commit": "34d23b2",
+          "merge": true,
+          "paths": {
+            "modified": [
+              "CHANGELOG.md"
+            ]
+          },
+          "subject": "Merge repair/v335-resource-security (with #3 and #4) into the learner branch"
+        },
+        {
+          "commit": "bddd224",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "docs/history/LIMITATIONS.md",
+              "docs/history/v3/V33_LIMITATIONS.md"
+            ],
+            "missing_from_tree": [
+              "docs/LIMITATIONS.md",
+              "docs/v3/V33_LIMITATIONS.md"
+            ],
+            "modified": [
+              "CHANGELOG.md",
+              "README.md",
+              "docs/ARCHITECTURE.md"
+            ]
+          },
+          "subject": "Document learner v2 and the grammar-2 ops"
+        },
+        {
+          "commit": "48be25f",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "evidence/benchmark/induction_corpus_v2.json",
+              "tests/test_induction_corpus.py",
+              "tests/test_review_fix_induction_holdout.py"
+            ],
+            "modified": [
+              "tests/test_system.py",
+              "tests/v3/test_v334_induction.py",
+              "tests/v3/test_v335_memory_budget.py",
+              "tests/v3/test_v336_benchmark_semantics.py",
+              "tests/v3/test_v336_memory_enforcement.py"
+            ]
+          },
+          "subject": "Update behaviour-pinning tests for learner v2; add the corpus subset"
+        },
+        {
+          "commit": "a9c7620",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "src/sis/synthesis.py",
+              "tests/test_learner_v2.py"
+            ],
+            "modified": [
+              "src/sis/expression.py",
+              "src/sis/induction.py",
+              "src/sis/smt.py"
+            ]
+          },
+          "subject": "Learn typed, deeper and conditional rules (learner v2)"
+        },
+        {
+          "commit": "7775db0",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "evidence/benchmark/induction_corpus_baseline.json",
+              "examples/induction_corpus/corpus.json",
+              "examples/induction_corpus/targets.py"
+            ]
+          },
+          "subject": "Use mixed-case strings in the induction corpus"
+        },
+        {
+          "commit": "b7eb120",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "tests/test_grammar_registry.py"
+            ],
+            "modified": [
+              "src/sis/expression.py",
+              "src/sis/induction.py",
+              "src/sis/model.py",
+              "src/sis/registry.py",
+              "src/sis/sealed_eval.py",
+              "src/sis/smt.py",
+              "src/sis/transfer.py",
+              "tools/benchmark_induction.py"
+            ]
+          },
+          "subject": "Declare every grammar op once and stamp induction results with versions"
+        },
+        {
+          "commit": "220ca74",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "evidence/benchmark/induction_corpus_baseline.json",
+              "examples/induction_corpus/corpus.json",
+              "examples/induction_corpus/targets.py"
+            ],
+            "modified": [
+              "tools/benchmark_induction.py"
+            ]
+          },
+          "subject": "Add the induction benchmark corpus and its baseline"
+        }
+      ],
+      "commits_total": 8,
+      "group": "PR #5",
+      "merge": "17adace",
+      "merge_subject": "Merge pull request #5 from dawsonblock/claude/sis-learner-v2",
+      "paths": {
+        "extra_in_tree": 11,
+        "missing_from_tree": 2,
+        "modified": 16
+      },
+      "pr": 5
+    },
+    {
+      "commits": [
+        {
+          "commit": "10c5e97",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "tests/v3/test_sandbox_launch_policy.py"
+            ],
+            "modified": [
+              ".gitattributes"
+            ]
+          },
+          "subject": "Keep the new sandbox tests portable to the Windows job"
+        },
+        {
+          "commit": "0965eb2",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "tests/v3/test_sandbox_launch_policy.py"
+            ],
+            "modified": [
+              "src/sis/v3/docker_sandbox.py"
+            ]
+          },
+          "subject": "Keep draining output after the cap so the docker client can exit"
+        },
+        {
+          "commit": "6614f29",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "tests/v3/test_review_fix_sandbox_runner.py",
+              "tools/redteam_sandbox.py"
+            ]
+          },
+          "subject": "Report red-team surprises in full and fix the darwin launcher test"
+        },
+        {
+          "commit": "9e5fb16",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "tests/v3/test_sandbox_launch_policy.py"
+            ],
+            "modified": [
+              "src/sis/v3/docker_sandbox.py"
+            ]
+          },
+          "subject": "Bound gVisor workload processes inside the sandbox"
+        },
+        {
+          "commit": "b745896",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "tests/v3/test_sandbox_launch_policy.py"
+            ],
+            "modified": [
+              "src/sis/v3/docker_sandbox.py"
+            ]
+          },
+          "subject": "Give the gVisor container a signed memory allowance"
+        },
+        {
+          "commit": "39f6693",
+          "merge": false,
+          "paths": {
+            "modified": [
+              "CHANGELOG.md"
+            ]
+          },
+          "subject": "Record SIS-FEAT-16 in the changelog"
+        },
+        {
+          "commit": "800d3c2",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "tests/v3/test_darwin_dev_hardening.py"
+            ],
+            "modified": [
+              "docs/v3/SECURITY_BOUNDARIES_V3_3.md",
+              "src/sis/v3/evaluator_worker.py",
+              "src/sis/v3/runner.py",
+              "tests/v3/test_evaluator_worker.py",
+              "tests/v3/test_governed_eval.py",
+              "tests/v3/test_governed_live_campaign.py",
+              "tests/v3/test_skill_holdout.py",
+              "tools/governed_campaign.py",
+              "tools/governed_live_campaign.py",
+              "tools/learn_recommend_cycle.py",
+              "tools/live_study.py",
+              "tools/real_agent_campaign.py",
+              "tools/skill_holdout.py"
+            ]
+          },
+          "subject": "Keep native macOS development-only: RSS watchdog and hostile-code gate"
+        },
+        {
+          "commit": "3f78500",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "tests/v3/test_isolator_key_fingerprint.py",
+              "tools/isolator_key_fingerprint.py"
+            ],
+            "modified": [
+              "docker/sandbox/README.md",
+              "docs/v3/RELEASE_PROCESS.md",
+              "docs/v3/SANDBOX_QUALIFICATION_GATE2.md"
+            ]
+          },
+          "subject": "Document the isolator key ritual and re-attestation policy"
+        },
+        {
+          "commit": "0ff7340",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "tests/v3/test_sandbox_ci_job.py",
+              "tools/configure_docker_runsc.py"
+            ],
+            "modified": [
+              ".github/workflows/ci.yml"
+            ]
+          },
+          "subject": "Add a CI job that qualifies the sandbox under gVisor"
+        },
+        {
+          "commit": "af5032f",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "tests/v3/test_redteam_sandbox.py",
+              "tools/redteam_sandbox.py"
+            ]
+          },
+          "subject": "Add a red-team suite for the Docker sandbox"
+        },
+        {
+          "commit": "af249d0",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "docker/sandbox/seccomp.json",
+              "evidence/sandbox/gate2_isolation/freshness.json",
+              "tests/v3/test_sandbox_launch_policy.py",
+              "tools/derive_sandbox_seccomp.py"
+            ],
+            "modified": [
+              "src/sis/v3/docker_sandbox.py",
+              "tests/v3/test_gate2_qualification.py",
+              "tests/v3/test_release_ci.py",
+              "tools/check_release_ci.py",
+              "tools/probe_docker_sandbox.py",
+              "tools/qualify_docker_isolation.py"
+            ]
+          },
+          "subject": "Sign the sandbox policy the launch actually used; require gVisor"
+        }
+      ],
+      "commits_total": 12,
+      "group": "PR #4",
+      "merge": "df71bc4",
+      "merge_subject": "Merge pull request #4 from dawsonblock/claude/sis-sandbox-gvisor",
+      "paths": {
+        "extra_in_tree": 12,
+        "missing_from_tree": 0,
+        "modified": 25
+      },
+      "pr": 4
+    },
+    {
+      "commits": [
+        {
+          "commit": "1c07d89",
+          "merge": false,
+          "paths": {
+            "modified": [
+              "src/sis/v3/runner.py"
+            ]
+          },
+          "subject": "Stage private test material under its long path on Windows"
+        },
+        {
+          "commit": "c1733ae",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "tests/v3/test_review_fix_sandbox_evaluation.py"
+            ],
+            "modified": [
+              "src/sis/v3/verifier.py"
+            ]
+          },
+          "subject": "Report why a shared-custody verdict failed"
+        },
+        {
+          "commit": "c585ac9",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "tests/v3/test_review_fix_sandbox_runner.py"
+            ],
+            "modified": [
+              "src/sis/v3/runner.py",
+              "tests/test_vault_storage.py"
+            ]
+          },
+          "subject": "Fix Windows failures uncovered once the ACL errors cleared"
+        },
+        {
+          "commit": "97b868c",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "docs/v3/efficacy_manifest_two_arm_template.json",
+              "tests/v3/test_followup_campaign_keys.py",
+              "tests/v3/test_followup_manifest_minimum.py"
+            ],
+            "modified": [
+              "CHANGELOG.md",
+              "docs/EVALUATION_PROTOCOL.md",
+              "docs/V332_EFFICACY_STATUS.md",
+              "docs/v3/EFFICACY_STUDY_PROTOCOL.md",
+              "docs/v3/efficacy_manifest_template.json",
+              "src/sis/v3/efficacy_manifest.py",
+              "src/sis/v3/learning_qualification.py",
+              "tests/v3/test_build_efficacy_manifest.py",
+              "tests/v3/test_efficacy_manifest.py",
+              "tests/v3/test_five_arm_real_run.py",
+              "tools/build_efficacy_manifest.py",
+              "tools/check_efficacy_manifest.py",
+              "tools/five_arm_campaign.py"
+            ]
+          },
+          "subject": "Bind the study tier to the label and let the campaign CLI trust keys"
+        },
+        {
+          "commit": "eb6c9b5",
+          "merge": false,
+          "paths": {
+            "modified": [
+              "src/sis/vault_storage.py",
+              "tests/test_v200.py",
+              "tests/test_v240_review.py",
+              "tests/test_vault_storage.py",
+              "tests/v3/test_release_artifact.py"
+            ]
+          },
+          "subject": "Compare Windows ACL trustees as SIDs, not SDDL spellings"
+        },
+        {
+          "commit": "5ee979d",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "docs/history/v3/V33_LIMITATIONS.md",
+              "tests/test_followup_enforced_induction.py"
+            ],
+            "missing_from_tree": [
+              "docs/v3/V33_LIMITATIONS.md"
+            ],
+            "modified": [
+              "src/sis/enforced_induction.py"
+            ]
+          },
+          "subject": "Apply enforced-induction limits through the launcher, not preexec_fn"
+        }
+      ],
+      "commits_total": 7,
+      "group": "PR #3",
+      "merge": "5ba9d2e",
+      "merge_subject": "Merge pull request #3 from dawsonblock/claude/fervent-ramanujan-l7b4y3",
+      "paths": {
+        "extra_in_tree": 7,
+        "missing_from_tree": 1,
+        "modified": 21
+      },
+      "pr": 3
+    },
+    {
+      "commits": [
+        {
+          "commit": "a478a29",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "tests/v3/test_review_fix_sandbox_runner.py"
+            ],
+            "modified": [
+              "docs/v3/SECURITY_BOUNDARIES_V3_3.md"
+            ]
+          },
+          "subject": "Run the process-lifetime tests where their mechanism exists"
+        },
+        {
+          "commit": "154b75a",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "tests/v3/test_review_fix_sandbox_runner.py"
+            ],
+            "modified": [
+              "docs/v3/SECURITY_BOUNDARIES_V3_3.md",
+              "src/sis/v3/runner.py"
+            ]
+          },
+          "subject": "Do not ask the macOS launcher for an unsettable RLIMIT_AS"
+        },
+        {
+          "commit": "67460f2",
+          "merge": false,
+          "paths": {
+            "modified": [
+              "src/sis/v3/control_plane.py"
+            ]
+          },
+          "subject": "Serialize Postgres schema setup on its own advisory lock"
+        },
+        {
+          "commit": "6aadc12",
+          "merge": false,
+          "paths": {
+            "modified": [
+              "src/sis/v3/runner.py"
+            ]
+          },
+          "subject": "Apply rlimits in the supervised child, not the supervisor"
+        },
+        {
+          "commit": "22b2f37",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "src/sis/v3/gitquery.py",
+              "tests/v3/test_review_fix_sandbox_codex.py",
+              "tests/v3/test_review_fix_sandbox_docker.py",
+              "tests/v3/test_review_fix_sandbox_evaluation.py",
+              "tests/v3/test_review_fix_sandbox_gitquery.py",
+              "tests/v3/test_review_fix_sandbox_linux_worker.py",
+              "tests/v3/test_review_fix_sandbox_runner.py",
+              "tests/v3/test_review_fix_sandbox_seccomp.py",
+              "tests/v3/test_review_fix_sandbox_split.py"
+            ],
+            "modified": [
+              "CHANGELOG.md",
+              "docs/v3/SANDBOX_QUALIFICATION_GATE2.md",
+              "docs/v3/SECURITY_BOUNDARIES_V3_3.md",
+              "src/sis/v3/adapters/codex_cli.py",
+              "src/sis/v3/benchmark.py",
+              "src/sis/v3/docker_sandbox.py",
+              "src/sis/v3/efficacy_manifest.py",
+              "src/sis/v3/evaluation_runtime.py",
+              "src/sis/v3/linux_worker.py",
+              "src/sis/v3/runner.py",
+              "src/sis/v3/seccomp_exec.py",
+              "src/sis/v3/split_harness.py",
+              "src/sis/v3/verifier.py",
+              "tests/v3/test_benchmark.py",
+              "tests/v3/test_evaluation_runtime.py",
+              "tests/v3/test_v334_linux_worker.py"
+            ]
+          },
+          "subject": "Close evaluator sandbox escapes and grading bypasses"
+        },
+        {
+          "commit": "128b6c2",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "src/sis/v3/bootstrap.py",
+              "tests/v3/test_review_fix_authority_regressions.py"
+            ],
+            "modified": [
+              "docs/AUTHORITY_CHECKPOINTS.md",
+              "docs/EVIDENCE_CUSTODY.md",
+              "docs/SECURITY_THREAT_MODEL.md",
+              "docs/V332_OPERATIONS.md",
+              "src/sis/cli.py",
+              "src/sis/v3/authority_db.py",
+              "src/sis/v3/candidates.py",
+              "src/sis/v3/checkpoints.py",
+              "src/sis/v3/control_plane.py",
+              "src/sis/v3/evidence_custody.py",
+              "src/sis/v3/nonce_store.py",
+              "src/sis/v3/promotion.py",
+              "src/sis/v3/serving.py",
+              "tests/v3/test_authority_db.py",
+              "tests/v3/test_candidates.py",
+              "tests/v3/test_v332_security_regressions.py"
+            ]
+          },
+          "subject": "Honour custody revocations at serve time and harden the authority layer"
+        },
+        {
+          "commit": "26e8bf4",
+          "merge": false,
+          "paths": {
+            "extra_in_tree": [
+              "tests/test_review_fix_induction_holdout.py",
+              "tests/v3/test_review_fix_study_serving.py",
+              "tests/v3/test_review_fix_study_statistics.py"
+            ],
+            "modified": [
+              "docs/EVALUATION_PROTOCOL.md",
+              "docs/V332_EFFICACY_STATUS.md",
+              "docs/v3/EFFICACY_STUDY_PROTOCOL.md",
+              "src/sis/induction.py",
+              "src/sis/registry.py",
+              "src/sis/v3/governed_eval.py",
+              "src/sis/v3/learning_qualification.py",
+              "tests/test_system.py",
+              "tests/test_v120.py",
+              "tests/v3/test_learning_qualification.py",
+              "tests/v3/test_v333_trust_boundary.py",
+              "tests/v3/test_v334_induction.py",
+              "tools/five_arm_campaign.py"
+            ]
+          },
+          "subject": "Fix the efficacy-study statistics and the induction holdout"
+        }
+      ],
+      "commits_total": 8,
+      "group": "PR #2",
+      "merge": "a52f3ed",
+      "merge_subject": "Fix review findings in authority, sandbox and efficacy-study layers (#2)",
+      "paths": {
+        "extra_in_tree": 14,
+        "missing_from_tree": 0,
+        "modified": 45
+      },
+      "pr": 2
+    }
+  ],
+  "history": {
+    "commits_since_seal": 154,
+    "lineage_commits": 126,
+    "lineage_merges": 11,
+    "outside_lineage": 28,
+    "seal_is_ancestor": true
+  },
+  "inventory": {
+    "files": 470,
+    "matches_seal_commit": true,
+    "path": "RELEASE_SHA256.json",
+    "provenance_signed": false,
+    "release": "SIS-v3.3.9",
+    "seal_commit": "d81f7bf00bd4f478b791354e8ce016c91faa33bb",
+    "seal_subject": "Seal SIS-v3.3.9 with the manifest binding repairs",
+    "seal_tree_matches_inventory": true,
+    "seal_tree_mismatches": [],
+    "sha256": "db2c1d4c6f7f94c6711933f1232a37eef1c5f0d786fe900275083935da7c4873",
+    "source_commit": "b559b143307b6fa055776a2b0afcd48698c7dc05",
+    "source_inventory_agrees": true,
+    "status": "ENGINEERING_VERIFIED",
+    "test_evidence_signed": false
+  },
+  "kind": "inventory_reconciliation",
+  "paths": {
+    "extra_in_tree": [
+      {
+        "commits": [
+          {
+            "commit": "a49a66d",
+            "status": "A"
+          }
+        ],
+        "path": "docker/sandbox/Dockerfile.testdeps"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a49a66d",
+            "status": "A"
+          }
+        ],
+        "path": "docker/sandbox/requirements-testdeps.lock"
+      },
+      {
+        "commits": [
+          {
+            "commit": "af249d0",
+            "status": "A"
+          }
+        ],
+        "path": "docker/sandbox/seccomp.json"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a73e461",
+            "from": "AUTHORITY_RECOVERY_RELEASE_NOTES.md",
+            "status": "R",
+            "to": "docs/history/AUTHORITY_RECOVERY_RELEASE_NOTES.md"
+          }
+        ],
+        "path": "docs/history/AUTHORITY_RECOVERY_RELEASE_NOTES.md",
+        "renamed_from": "AUTHORITY_RECOVERY_RELEASE_NOTES.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "ce46f9b",
+            "status": "M"
+          },
+          {
+            "commit": "a73e461",
+            "from": "docs/LEGACY_README.md",
+            "status": "R",
+            "to": "docs/history/LEGACY_README.md"
+          },
+          {
+            "commit": "d8a7290",
+            "status": "M"
+          }
+        ],
+        "path": "docs/history/LEGACY_README.md",
+        "renamed_from": "docs/LEGACY_README.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "ce46f9b",
+            "status": "M"
+          },
+          {
+            "commit": "a73e461",
+            "from": "docs/LIMITATIONS.md",
+            "status": "R",
+            "to": "docs/history/LIMITATIONS.md"
+          },
+          {
+            "commit": "bddd224",
+            "status": "M"
+          }
+        ],
+        "path": "docs/history/LIMITATIONS.md",
+        "renamed_from": "docs/LIMITATIONS.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a73e461",
+            "from": "docs/MIGRATION_V330_TO_V331.md",
+            "status": "R",
+            "to": "docs/history/MIGRATION_V330_TO_V331.md"
+          }
+        ],
+        "path": "docs/history/MIGRATION_V330_TO_V331.md",
+        "renamed_from": "docs/MIGRATION_V330_TO_V331.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a73e461",
+            "status": "A"
+          }
+        ],
+        "path": "docs/history/README.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a73e461",
+            "from": "docs/RELEASE_NOTES.md",
+            "status": "R",
+            "to": "docs/history/RELEASE_NOTES.md"
+          }
+        ],
+        "path": "docs/history/RELEASE_NOTES.md",
+        "renamed_from": "docs/RELEASE_NOTES.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "ce46f9b",
+            "status": "M"
+          },
+          {
+            "commit": "a73e461",
+            "from": "docs/ROADMAP.md",
+            "status": "R",
+            "to": "docs/history/ROADMAP.md"
+          }
+        ],
+        "path": "docs/history/ROADMAP.md",
+        "renamed_from": "docs/ROADMAP.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a73e461",
+            "from": "docs/TEST_REPORT_V1_2.md",
+            "status": "R",
+            "to": "docs/history/TEST_REPORT_V1_2.md"
+          }
+        ],
+        "path": "docs/history/TEST_REPORT_V1_2.md",
+        "renamed_from": "docs/TEST_REPORT_V1_2.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a73e461",
+            "from": "docs/TEST_REPORT_V1_3.md",
+            "status": "R",
+            "to": "docs/history/TEST_REPORT_V1_3.md"
+          }
+        ],
+        "path": "docs/history/TEST_REPORT_V1_3.md",
+        "renamed_from": "docs/TEST_REPORT_V1_3.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a73e461",
+            "from": "docs/TEST_REPORT_V1_4.md",
+            "status": "R",
+            "to": "docs/history/TEST_REPORT_V1_4.md"
+          }
+        ],
+        "path": "docs/history/TEST_REPORT_V1_4.md",
+        "renamed_from": "docs/TEST_REPORT_V1_4.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "ce46f9b",
+            "status": "M"
+          },
+          {
+            "commit": "a73e461",
+            "from": "docs/TEST_REPORT_V1_5.md",
+            "status": "R",
+            "to": "docs/history/TEST_REPORT_V1_5.md"
+          }
+        ],
+        "path": "docs/history/TEST_REPORT_V1_5.md",
+        "renamed_from": "docs/TEST_REPORT_V1_5.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a73e461",
+            "from": "docs/TEST_REPORT_V1_6.md",
+            "status": "R",
+            "to": "docs/history/TEST_REPORT_V1_6.md"
+          }
+        ],
+        "path": "docs/history/TEST_REPORT_V1_6.md",
+        "renamed_from": "docs/TEST_REPORT_V1_6.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a73e461",
+            "from": "docs/TEST_REPORT_V1_7.md",
+            "status": "R",
+            "to": "docs/history/TEST_REPORT_V1_7.md"
+          }
+        ],
+        "path": "docs/history/TEST_REPORT_V1_7.md",
+        "renamed_from": "docs/TEST_REPORT_V1_7.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "ce46f9b",
+            "status": "M"
+          },
+          {
+            "commit": "a73e461",
+            "from": "docs/TEST_REPORT_V1_8.md",
+            "status": "R",
+            "to": "docs/history/TEST_REPORT_V1_8.md"
+          }
+        ],
+        "path": "docs/history/TEST_REPORT_V1_8.md",
+        "renamed_from": "docs/TEST_REPORT_V1_8.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a73e461",
+            "from": "docs/TEST_REPORT_V1_9.md",
+            "status": "R",
+            "to": "docs/history/TEST_REPORT_V1_9.md"
+          }
+        ],
+        "path": "docs/history/TEST_REPORT_V1_9.md",
+        "renamed_from": "docs/TEST_REPORT_V1_9.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a73e461",
+            "from": "docs/TEST_REPORT_V2_1.md",
+            "status": "R",
+            "to": "docs/history/TEST_REPORT_V2_1.md"
+          }
+        ],
+        "path": "docs/history/TEST_REPORT_V2_1.md",
+        "renamed_from": "docs/TEST_REPORT_V2_1.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a73e461",
+            "from": "docs/TEST_REPORT_V2_3.md",
+            "status": "R",
+            "to": "docs/history/TEST_REPORT_V2_3.md"
+          }
+        ],
+        "path": "docs/history/TEST_REPORT_V2_3.md",
+        "renamed_from": "docs/TEST_REPORT_V2_3.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a73e461",
+            "from": "docs/TEST_REPORT_V2_4.md",
+            "status": "R",
+            "to": "docs/history/TEST_REPORT_V2_4.md"
+          }
+        ],
+        "path": "docs/history/TEST_REPORT_V2_4.md",
+        "renamed_from": "docs/TEST_REPORT_V2_4.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a73e461",
+            "from": "UPGRADE_RELEASE_NOTES_2026-10-24.md",
+            "status": "R",
+            "to": "docs/history/UPGRADE_RELEASE_NOTES_2026-10-24.md"
+          }
+        ],
+        "path": "docs/history/UPGRADE_RELEASE_NOTES_2026-10-24.md",
+        "renamed_from": "UPGRADE_RELEASE_NOTES_2026-10-24.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a73e461",
+            "from": "docs/UPGRADE_V1_1.md",
+            "status": "R",
+            "to": "docs/history/UPGRADE_V1_1.md"
+          }
+        ],
+        "path": "docs/history/UPGRADE_V1_1.md",
+        "renamed_from": "docs/UPGRADE_V1_1.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a73e461",
+            "from": "docs/UPGRADE_V1_2.md",
+            "status": "R",
+            "to": "docs/history/UPGRADE_V1_2.md"
+          }
+        ],
+        "path": "docs/history/UPGRADE_V1_2.md",
+        "renamed_from": "docs/UPGRADE_V1_2.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a73e461",
+            "from": "docs/UPGRADE_V1_3.md",
+            "status": "R",
+            "to": "docs/history/UPGRADE_V1_3.md"
+          }
+        ],
+        "path": "docs/history/UPGRADE_V1_3.md",
+        "renamed_from": "docs/UPGRADE_V1_3.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a73e461",
+            "from": "docs/V1_5_TRANSFER_AND_QUALIFICATION.md",
+            "status": "R",
+            "to": "docs/history/V1_5_TRANSFER_AND_QUALIFICATION.md"
+          }
+        ],
+        "path": "docs/history/V1_5_TRANSFER_AND_QUALIFICATION.md",
+        "renamed_from": "docs/V1_5_TRANSFER_AND_QUALIFICATION.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a73e461",
+            "from": "docs/V1_6_PAIRED_LLM_BENCHMARK.md",
+            "status": "R",
+            "to": "docs/history/V1_6_PAIRED_LLM_BENCHMARK.md"
+          }
+        ],
+        "path": "docs/history/V1_6_PAIRED_LLM_BENCHMARK.md",
+        "renamed_from": "docs/V1_6_PAIRED_LLM_BENCHMARK.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a73e461",
+            "from": "docs/V1_7_PROCEDURAL_SKILLS.md",
+            "status": "R",
+            "to": "docs/history/V1_7_PROCEDURAL_SKILLS.md"
+          }
+        ],
+        "path": "docs/history/V1_7_PROCEDURAL_SKILLS.md",
+        "renamed_from": "docs/V1_7_PROCEDURAL_SKILLS.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a73e461",
+            "from": "docs/V1_8_PROCEDURAL_HOLDOUT_AND_DISTILLATION.md",
+            "status": "R",
+            "to": "docs/history/V1_8_PROCEDURAL_HOLDOUT_AND_DISTILLATION.md"
+          }
+        ],
+        "path": "docs/history/V1_8_PROCEDURAL_HOLDOUT_AND_DISTILLATION.md",
+        "renamed_from": "docs/V1_8_PROCEDURAL_HOLDOUT_AND_DISTILLATION.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "ce46f9b",
+            "status": "M"
+          },
+          {
+            "commit": "a73e461",
+            "from": "docs/V1_9_LORA_AND_NEURAL_COMPARISON.md",
+            "status": "R",
+            "to": "docs/history/V1_9_LORA_AND_NEURAL_COMPARISON.md"
+          }
+        ],
+        "path": "docs/history/V1_9_LORA_AND_NEURAL_COMPARISON.md",
+        "renamed_from": "docs/V1_9_LORA_AND_NEURAL_COMPARISON.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a73e461",
+            "from": "docs/V2_0_FAMILY_QUALIFICATION.md",
+            "status": "R",
+            "to": "docs/history/V2_0_FAMILY_QUALIFICATION.md"
+          }
+        ],
+        "path": "docs/history/V2_0_FAMILY_QUALIFICATION.md",
+        "renamed_from": "docs/V2_0_FAMILY_QUALIFICATION.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a73e461",
+            "from": "docs/V2_1_TYPED_TRACE_LEARNING.md",
+            "status": "R",
+            "to": "docs/history/V2_1_TYPED_TRACE_LEARNING.md"
+          }
+        ],
+        "path": "docs/history/V2_1_TYPED_TRACE_LEARNING.md",
+        "renamed_from": "docs/V2_1_TYPED_TRACE_LEARNING.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a73e461",
+            "from": "docs/V2_2_EXPERIENCE_ABSTRACTION.md",
+            "status": "R",
+            "to": "docs/history/V2_2_EXPERIENCE_ABSTRACTION.md"
+          }
+        ],
+        "path": "docs/history/V2_2_EXPERIENCE_ABSTRACTION.md",
+        "renamed_from": "docs/V2_2_EXPERIENCE_ABSTRACTION.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a73e461",
+            "from": "docs/V2_3_WORKFLOW_LEARNING.md",
+            "status": "R",
+            "to": "docs/history/V2_3_WORKFLOW_LEARNING.md"
+          }
+        ],
+        "path": "docs/history/V2_3_WORKFLOW_LEARNING.md",
+        "renamed_from": "docs/V2_3_WORKFLOW_LEARNING.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a73e461",
+            "from": "docs/V2_4_CODE_REPAIR.md",
+            "status": "R",
+            "to": "docs/history/V2_4_CODE_REPAIR.md"
+          }
+        ],
+        "path": "docs/history/V2_4_CODE_REPAIR.md",
+        "renamed_from": "docs/V2_4_CODE_REPAIR.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "ce46f9b",
+            "status": "M"
+          },
+          {
+            "commit": "a73e461",
+            "from": "docs/v3/G1_GATE_REPORT.md",
+            "status": "R",
+            "to": "docs/history/v3/G1_GATE_REPORT.md"
+          }
+        ],
+        "path": "docs/history/v3/G1_GATE_REPORT.md",
+        "renamed_from": "docs/v3/G1_GATE_REPORT.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a73e461",
+            "from": "docs/v3/G2_GATE_REPORT.md",
+            "status": "R",
+            "to": "docs/history/v3/G2_GATE_REPORT.md"
+          }
+        ],
+        "path": "docs/history/v3/G2_GATE_REPORT.md",
+        "renamed_from": "docs/v3/G2_GATE_REPORT.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a73e461",
+            "from": "docs/v3/G3_GATE_REPORT.md",
+            "status": "R",
+            "to": "docs/history/v3/G3_GATE_REPORT.md"
+          }
+        ],
+        "path": "docs/history/v3/G3_GATE_REPORT.md",
+        "renamed_from": "docs/v3/G3_GATE_REPORT.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a73e461",
+            "from": "docs/v3/G4_GATE_REPORT.md",
+            "status": "R",
+            "to": "docs/history/v3/G4_GATE_REPORT.md"
+          }
+        ],
+        "path": "docs/history/v3/G4_GATE_REPORT.md",
+        "renamed_from": "docs/v3/G4_GATE_REPORT.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a73e461",
+            "from": "docs/v3/QUALIFICATION_REPORT.md",
+            "status": "R",
+            "to": "docs/history/v3/QUALIFICATION_REPORT.md"
+          }
+        ],
+        "path": "docs/history/v3/QUALIFICATION_REPORT.md",
+        "renamed_from": "docs/v3/QUALIFICATION_REPORT.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a73e461",
+            "from": "docs/v3/QUALIFICATION_REPORT_V3_3_0.md",
+            "status": "R",
+            "to": "docs/history/v3/QUALIFICATION_REPORT_V3_3_0.md"
+          }
+        ],
+        "path": "docs/history/v3/QUALIFICATION_REPORT_V3_3_0.md",
+        "renamed_from": "docs/v3/QUALIFICATION_REPORT_V3_3_0.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "ce46f9b",
+            "status": "M"
+          },
+          {
+            "commit": "a73e461",
+            "from": "docs/v3/QUALIFICATION_REPORT_V3_3_4.md",
+            "status": "R",
+            "to": "docs/history/v3/QUALIFICATION_REPORT_V3_3_4.md"
+          }
+        ],
+        "path": "docs/history/v3/QUALIFICATION_REPORT_V3_3_4.md",
+        "renamed_from": "docs/v3/QUALIFICATION_REPORT_V3_3_4.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "ce46f9b",
+            "status": "M"
+          },
+          {
+            "commit": "a73e461",
+            "from": "docs/v3/QUALIFICATION_REPORT_V3_3_5.md",
+            "status": "R",
+            "to": "docs/history/v3/QUALIFICATION_REPORT_V3_3_5.md"
+          }
+        ],
+        "path": "docs/history/v3/QUALIFICATION_REPORT_V3_3_5.md",
+        "renamed_from": "docs/v3/QUALIFICATION_REPORT_V3_3_5.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "ce46f9b",
+            "status": "M"
+          },
+          {
+            "commit": "a73e461",
+            "from": "docs/v3/QUALIFICATION_REPORT_V3_3_6.md",
+            "status": "R",
+            "to": "docs/history/v3/QUALIFICATION_REPORT_V3_3_6.md"
+          }
+        ],
+        "path": "docs/history/v3/QUALIFICATION_REPORT_V3_3_6.md",
+        "renamed_from": "docs/v3/QUALIFICATION_REPORT_V3_3_6.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a73e461",
+            "from": "docs/v3/QUALIFICATION_REPORT_V3_3_7.md",
+            "status": "R",
+            "to": "docs/history/v3/QUALIFICATION_REPORT_V3_3_7.md"
+          }
+        ],
+        "path": "docs/history/v3/QUALIFICATION_REPORT_V3_3_7.md",
+        "renamed_from": "docs/v3/QUALIFICATION_REPORT_V3_3_7.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a73e461",
+            "from": "docs/v3/RELEASE_NOTES_V3_3.md",
+            "status": "R",
+            "to": "docs/history/v3/RELEASE_NOTES_V3_3.md"
+          }
+        ],
+        "path": "docs/history/v3/RELEASE_NOTES_V3_3.md",
+        "renamed_from": "docs/v3/RELEASE_NOTES_V3_3.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "ce46f9b",
+            "status": "M"
+          },
+          {
+            "commit": "a73e461",
+            "from": "docs/v3/STATUS.md",
+            "status": "R",
+            "to": "docs/history/v3/STATUS.md"
+          }
+        ],
+        "path": "docs/history/v3/STATUS.md",
+        "renamed_from": "docs/v3/STATUS.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a73e461",
+            "from": "docs/v3/UPGRADE_2026_10_24.md",
+            "status": "R",
+            "to": "docs/history/v3/UPGRADE_2026_10_24.md"
+          }
+        ],
+        "path": "docs/history/v3/UPGRADE_2026_10_24.md",
+        "renamed_from": "docs/v3/UPGRADE_2026_10_24.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a73e461",
+            "from": "docs/v3/V2_BASELINE.md",
+            "status": "R",
+            "to": "docs/history/v3/V2_BASELINE.md"
+          }
+        ],
+        "path": "docs/history/v3/V2_BASELINE.md",
+        "renamed_from": "docs/v3/V2_BASELINE.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a73e461",
+            "from": "docs/v3/V32_GAP_MAP.md",
+            "status": "R",
+            "to": "docs/history/v3/V32_GAP_MAP.md"
+          }
+        ],
+        "path": "docs/history/v3/V32_GAP_MAP.md",
+        "renamed_from": "docs/v3/V32_GAP_MAP.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a73e461",
+            "from": "docs/v3/V33_LIMITATIONS.md",
+            "status": "R",
+            "to": "docs/history/v3/V33_LIMITATIONS.md"
+          },
+          {
+            "commit": "bddd224",
+            "status": "M"
+          },
+          {
+            "commit": "5ee979d",
+            "status": "M"
+          }
+        ],
+        "path": "docs/history/v3/V33_LIMITATIONS.md",
+        "renamed_from": "docs/v3/V33_LIMITATIONS.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "2bce045",
+            "status": "M"
+          },
+          {
+            "commit": "24c2e81",
+            "status": "M"
+          },
+          {
+            "commit": "69ec029",
+            "status": "M"
+          },
+          {
+            "commit": "a49a66d",
+            "status": "M"
+          },
+          {
+            "commit": "2879fa2",
+            "status": "A"
+          }
+        ],
+        "path": "docs/v3/PILOT_RUNBOOK.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "97b868c",
+            "status": "M"
+          },
+          {
+            "commit": "073c70c",
+            "status": "A"
+          }
+        ],
+        "path": "docs/v3/efficacy_manifest_two_arm_template.json"
+      },
+      {
+        "commits": [
+          {
+            "commit": "2879fa2",
+            "status": "A"
+          }
+        ],
+        "path": "docs/v3/pilot_learning_spec_template.json"
+      },
+      {
+        "commits": [
+          {
+            "commit": "2879fa2",
+            "status": "A"
+          }
+        ],
+        "path": "docs/v3/pilot_study_spec_template.json"
+      },
+      {
+        "commits": [
+          {
+            "commit": "7775db0",
+            "status": "M"
+          },
+          {
+            "commit": "220ca74",
+            "status": "A"
+          }
+        ],
+        "path": "evidence/benchmark/induction_corpus_baseline.json"
+      },
+      {
+        "commits": [
+          {
+            "commit": "48be25f",
+            "status": "A"
+          }
+        ],
+        "path": "evidence/benchmark/induction_corpus_v2.json"
+      },
+      {
+        "commits": [
+          {
+            "commit": "6c4b83b",
+            "status": "A"
+          }
+        ],
+        "path": "evidence/evaluation/two_arm_demo.json"
+      },
+      {
+        "commits": [
+          {
+            "commit": "af249d0",
+            "status": "A"
+          }
+        ],
+        "path": "evidence/sandbox/gate2_isolation/freshness.json"
+      },
+      {
+        "commits": [
+          {
+            "commit": "7775db0",
+            "status": "M"
+          },
+          {
+            "commit": "220ca74",
+            "status": "A"
+          }
+        ],
+        "path": "examples/induction_corpus/corpus.json"
+      },
+      {
+        "commits": [
+          {
+            "commit": "7775db0",
+            "status": "M"
+          },
+          {
+            "commit": "220ca74",
+            "status": "A"
+          }
+        ],
+        "path": "examples/induction_corpus/targets.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a9c7620",
+            "status": "A"
+          }
+        ],
+        "path": "src/sis/synthesis.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "080a17a",
+            "status": "M"
+          },
+          {
+            "commit": "d0e4b99",
+            "status": "A"
+          }
+        ],
+        "path": "src/sis/v3/adapters/claude_code.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "1be5e6f",
+            "status": "M"
+          },
+          {
+            "commit": "c3c6f17",
+            "status": "M"
+          },
+          {
+            "commit": "4c52e03",
+            "status": "M"
+          },
+          {
+            "commit": "9539b2a",
+            "status": "M"
+          },
+          {
+            "commit": "a535b45",
+            "status": "M"
+          },
+          {
+            "commit": "080a17a",
+            "status": "A"
+          }
+        ],
+        "path": "src/sis/v3/agent_principal.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "128b6c2",
+            "status": "A"
+          }
+        ],
+        "path": "src/sis/v3/bootstrap.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "22b2f37",
+            "status": "M"
+          },
+          {
+            "commit": "799f9cb",
+            "status": "A"
+          }
+        ],
+        "path": "src/sis/v3/gitquery.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "461d609",
+            "status": "M"
+          },
+          {
+            "commit": "0b0e02f",
+            "status": "M"
+          },
+          {
+            "commit": "8e80b0a",
+            "status": "M"
+          },
+          {
+            "commit": "41fdcf7",
+            "status": "A"
+          }
+        ],
+        "path": "src/sis/v3/study_runtime.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "ce46f9b",
+            "status": "M"
+          },
+          {
+            "commit": "291597d",
+            "status": "A"
+          }
+        ],
+        "path": "tests/conftest.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "1b86bbe",
+            "status": "A"
+          }
+        ],
+        "path": "tests/test_cli_help.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "5ee979d",
+            "status": "A"
+          }
+        ],
+        "path": "tests/test_followup_enforced_induction.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "b7eb120",
+            "status": "A"
+          }
+        ],
+        "path": "tests/test_grammar_registry.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "48be25f",
+            "status": "A"
+          }
+        ],
+        "path": "tests/test_induction_corpus.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a9c7620",
+            "status": "A"
+          }
+        ],
+        "path": "tests/test_learner_v2.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "ce46f9b",
+            "status": "M"
+          },
+          {
+            "commit": "291597d",
+            "status": "A"
+          }
+        ],
+        "path": "tests/test_platform_scope.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "48be25f",
+            "status": "M"
+          },
+          {
+            "commit": "26e8bf4",
+            "status": "A"
+          }
+        ],
+        "path": "tests/test_review_fix_induction_holdout.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "41fdcf7",
+            "status": "A"
+          }
+        ],
+        "path": "tests/v3/study_fixtures.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "1be5e6f",
+            "status": "M"
+          },
+          {
+            "commit": "c3c6f17",
+            "status": "M"
+          },
+          {
+            "commit": "4c52e03",
+            "status": "M"
+          },
+          {
+            "commit": "9539b2a",
+            "status": "M"
+          },
+          {
+            "commit": "a535b45",
+            "status": "M"
+          },
+          {
+            "commit": "080a17a",
+            "status": "A"
+          }
+        ],
+        "path": "tests/v3/test_agent_principal.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "2bce045",
+            "status": "M"
+          },
+          {
+            "commit": "e52b6cb",
+            "status": "A"
+          }
+        ],
+        "path": "tests/v3/test_agent_principal_campaign.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "e52b6cb",
+            "status": "M"
+          },
+          {
+            "commit": "d2217f7",
+            "status": "M"
+          },
+          {
+            "commit": "eacacba",
+            "status": "A"
+          }
+        ],
+        "path": "tests/v3/test_build_guidance_bundle.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "c8226ac",
+            "status": "M"
+          },
+          {
+            "commit": "d0e4b99",
+            "status": "A"
+          }
+        ],
+        "path": "tests/v3/test_claude_code_adapter.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "800d3c2",
+            "status": "A"
+          }
+        ],
+        "path": "tests/v3/test_darwin_dev_hardening.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "2879fa2",
+            "status": "A"
+          }
+        ],
+        "path": "tests/v3/test_efficacy_pilot_dry_run.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "41fdcf7",
+            "status": "M"
+          },
+          {
+            "commit": "97b868c",
+            "status": "A"
+          }
+        ],
+        "path": "tests/v3/test_followup_campaign_keys.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "97b868c",
+            "status": "A"
+          }
+        ],
+        "path": "tests/v3/test_followup_manifest_minimum.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "799f9cb",
+            "status": "A"
+          }
+        ],
+        "path": "tests/v3/test_gitquery.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "7ba8f11",
+            "status": "M"
+          },
+          {
+            "commit": "cbde6fd",
+            "status": "M"
+          },
+          {
+            "commit": "461d609",
+            "status": "M"
+          },
+          {
+            "commit": "0120599",
+            "status": "M"
+          },
+          {
+            "commit": "0b0e02f",
+            "status": "M"
+          },
+          {
+            "commit": "a9f0201",
+            "status": "M"
+          },
+          {
+            "commit": "8e80b0a",
+            "status": "M"
+          },
+          {
+            "commit": "db835ac",
+            "status": "A"
+          }
+        ],
+        "path": "tests/v3/test_import_study_tasks.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "3f78500",
+            "status": "A"
+          }
+        ],
+        "path": "tests/v3/test_isolator_key_fingerprint.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "af5032f",
+            "status": "A"
+          }
+        ],
+        "path": "tests/v3/test_redteam_sandbox.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "1bb8723",
+            "status": "A"
+          }
+        ],
+        "path": "tests/v3/test_repository_power.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "128b6c2",
+            "status": "A"
+          }
+        ],
+        "path": "tests/v3/test_review_fix_authority_regressions.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "22b2f37",
+            "status": "A"
+          }
+        ],
+        "path": "tests/v3/test_review_fix_sandbox_codex.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "46e93fc",
+            "status": "M"
+          },
+          {
+            "commit": "22b2f37",
+            "status": "A"
+          }
+        ],
+        "path": "tests/v3/test_review_fix_sandbox_docker.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "c1733ae",
+            "status": "M"
+          },
+          {
+            "commit": "22b2f37",
+            "status": "A"
+          }
+        ],
+        "path": "tests/v3/test_review_fix_sandbox_evaluation.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "22b2f37",
+            "status": "A"
+          }
+        ],
+        "path": "tests/v3/test_review_fix_sandbox_gitquery.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "22b2f37",
+            "status": "A"
+          }
+        ],
+        "path": "tests/v3/test_review_fix_sandbox_linux_worker.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "6614f29",
+            "status": "M"
+          },
+          {
+            "commit": "c585ac9",
+            "status": "M"
+          },
+          {
+            "commit": "a478a29",
+            "status": "M"
+          },
+          {
+            "commit": "154b75a",
+            "status": "M"
+          },
+          {
+            "commit": "22b2f37",
+            "status": "A"
+          }
+        ],
+        "path": "tests/v3/test_review_fix_sandbox_runner.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "22b2f37",
+            "status": "A"
+          }
+        ],
+        "path": "tests/v3/test_review_fix_sandbox_seccomp.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "22b2f37",
+            "status": "A"
+          }
+        ],
+        "path": "tests/v3/test_review_fix_sandbox_split.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "41fdcf7",
+            "status": "M"
+          },
+          {
+            "commit": "26e8bf4",
+            "status": "A"
+          }
+        ],
+        "path": "tests/v3/test_review_fix_study_serving.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "26e8bf4",
+            "status": "A"
+          }
+        ],
+        "path": "tests/v3/test_review_fix_study_statistics.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "0ff7340",
+            "status": "A"
+          }
+        ],
+        "path": "tests/v3/test_sandbox_ci_job.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "46e93fc",
+            "status": "M"
+          },
+          {
+            "commit": "10c5e97",
+            "status": "M"
+          },
+          {
+            "commit": "0965eb2",
+            "status": "M"
+          },
+          {
+            "commit": "9e5fb16",
+            "status": "M"
+          },
+          {
+            "commit": "b745896",
+            "status": "M"
+          },
+          {
+            "commit": "af249d0",
+            "status": "A"
+          }
+        ],
+        "path": "tests/v3/test_sandbox_launch_policy.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "aebdd85",
+            "status": "M"
+          },
+          {
+            "commit": "24c2e81",
+            "status": "M"
+          },
+          {
+            "commit": "69ec029",
+            "status": "A"
+          }
+        ],
+        "path": "tests/v3/test_screen_study_repos.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "aa55132",
+            "status": "M"
+          },
+          {
+            "commit": "ee29b80",
+            "status": "M"
+          },
+          {
+            "commit": "2dc05ea",
+            "status": "M"
+          },
+          {
+            "commit": "5434129",
+            "status": "M"
+          },
+          {
+            "commit": "ae51888",
+            "status": "M"
+          },
+          {
+            "commit": "6e08447",
+            "status": "M"
+          },
+          {
+            "commit": "85c00a9",
+            "status": "M"
+          },
+          {
+            "commit": "302ff2c",
+            "status": "M"
+          },
+          {
+            "commit": "c27840a",
+            "status": "M"
+          },
+          {
+            "commit": "0a90138",
+            "status": "M"
+          },
+          {
+            "commit": "c87dc86",
+            "status": "M"
+          },
+          {
+            "commit": "461d609",
+            "status": "M"
+          },
+          {
+            "commit": "af7bed8",
+            "status": "M"
+          },
+          {
+            "commit": "8267867",
+            "status": "M"
+          },
+          {
+            "commit": "0d1bd9f",
+            "status": "M"
+          },
+          {
+            "commit": "1a80787",
+            "status": "M"
+          },
+          {
+            "commit": "89dc007",
+            "status": "M"
+          },
+          {
+            "commit": "29a96aa",
+            "status": "M"
+          },
+          {
+            "commit": "8b0fb1e",
+            "status": "M"
+          },
+          {
+            "commit": "4d3670d",
+            "status": "M"
+          },
+          {
+            "commit": "8d5f3f7",
+            "status": "M"
+          },
+          {
+            "commit": "4abd4b3",
+            "status": "M"
+          },
+          {
+            "commit": "41c8466",
+            "status": "M"
+          },
+          {
+            "commit": "8e80b0a",
+            "status": "M"
+          },
+          {
+            "commit": "025aba1",
+            "status": "M"
+          },
+          {
+            "commit": "e5dfb8f",
+            "status": "M"
+          },
+          {
+            "commit": "d2109fe",
+            "status": "M"
+          },
+          {
+            "commit": "081fe93",
+            "status": "M"
+          },
+          {
+            "commit": "e1df774",
+            "status": "M"
+          },
+          {
+            "commit": "b89aa63",
+            "status": "M"
+          },
+          {
+            "commit": "631a4da",
+            "status": "A"
+          }
+        ],
+        "path": "tests/v3/test_split_protocols.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "66c5b0c",
+            "status": "M"
+          },
+          {
+            "commit": "41fdcf7",
+            "status": "A"
+          }
+        ],
+        "path": "tests/v3/test_study_runner.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "c8226ac",
+            "status": "M"
+          },
+          {
+            "commit": "41fdcf7",
+            "status": "A"
+          }
+        ],
+        "path": "tests/v3/test_study_runtime.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "e52b6cb",
+            "status": "M"
+          },
+          {
+            "commit": "8e80b0a",
+            "status": "M"
+          },
+          {
+            "commit": "d2217f7",
+            "status": "M"
+          },
+          {
+            "commit": "eacacba",
+            "status": "A"
+          }
+        ],
+        "path": "tools/build_guidance_bundle.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "0ff7340",
+            "status": "A"
+          }
+        ],
+        "path": "tools/configure_docker_runsc.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "af249d0",
+            "status": "A"
+          }
+        ],
+        "path": "tools/derive_sandbox_seccomp.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "7ba8f11",
+            "status": "M"
+          },
+          {
+            "commit": "cbde6fd",
+            "status": "M"
+          },
+          {
+            "commit": "461d609",
+            "status": "M"
+          },
+          {
+            "commit": "0120599",
+            "status": "M"
+          },
+          {
+            "commit": "a9f0201",
+            "status": "M"
+          },
+          {
+            "commit": "8e80b0a",
+            "status": "M"
+          },
+          {
+            "commit": "db835ac",
+            "status": "A"
+          }
+        ],
+        "path": "tools/import_study_tasks.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "3f78500",
+            "status": "A"
+          }
+        ],
+        "path": "tools/isolator_key_fingerprint.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "6614f29",
+            "status": "M"
+          },
+          {
+            "commit": "af5032f",
+            "status": "A"
+          }
+        ],
+        "path": "tools/redteam_sandbox.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "aebdd85",
+            "status": "M"
+          },
+          {
+            "commit": "24c2e81",
+            "status": "M"
+          },
+          {
+            "commit": "69ec029",
+            "status": "A"
+          }
+        ],
+        "path": "tools/screen_study_repos.py"
+      }
+    ],
+    "missing_from_tree": [
+      {
+        "commits": [
+          {
+            "commit": "a73e461",
+            "from": "AUTHORITY_RECOVERY_RELEASE_NOTES.md",
+            "status": "R",
+            "to": "docs/history/AUTHORITY_RECOVERY_RELEASE_NOTES.md"
+          }
+        ],
+        "path": "AUTHORITY_RECOVERY_RELEASE_NOTES.md",
+        "renamed_to": "docs/history/AUTHORITY_RECOVERY_RELEASE_NOTES.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a73e461",
+            "from": "UPGRADE_RELEASE_NOTES_2026-10-24.md",
+            "status": "R",
+            "to": "docs/history/UPGRADE_RELEASE_NOTES_2026-10-24.md"
+          }
+        ],
+        "path": "UPGRADE_RELEASE_NOTES_2026-10-24.md",
+        "renamed_to": "docs/history/UPGRADE_RELEASE_NOTES_2026-10-24.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a73e461",
+            "from": "docs/LEGACY_README.md",
+            "status": "R",
+            "to": "docs/history/LEGACY_README.md"
+          },
+          {
+            "commit": "d8a7290",
+            "status": "M"
+          }
+        ],
+        "path": "docs/LEGACY_README.md",
+        "renamed_to": "docs/history/LEGACY_README.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a73e461",
+            "from": "docs/LIMITATIONS.md",
+            "status": "R",
+            "to": "docs/history/LIMITATIONS.md"
+          },
+          {
+            "commit": "bddd224",
+            "status": "M"
+          }
+        ],
+        "path": "docs/LIMITATIONS.md",
+        "renamed_to": "docs/history/LIMITATIONS.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a73e461",
+            "from": "docs/MIGRATION_V330_TO_V331.md",
+            "status": "R",
+            "to": "docs/history/MIGRATION_V330_TO_V331.md"
+          }
+        ],
+        "path": "docs/MIGRATION_V330_TO_V331.md",
+        "renamed_to": "docs/history/MIGRATION_V330_TO_V331.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a73e461",
+            "from": "docs/RELEASE_NOTES.md",
+            "status": "R",
+            "to": "docs/history/RELEASE_NOTES.md"
+          }
+        ],
+        "path": "docs/RELEASE_NOTES.md",
+        "renamed_to": "docs/history/RELEASE_NOTES.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a73e461",
+            "from": "docs/ROADMAP.md",
+            "status": "R",
+            "to": "docs/history/ROADMAP.md"
+          }
+        ],
+        "path": "docs/ROADMAP.md",
+        "renamed_to": "docs/history/ROADMAP.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a73e461",
+            "from": "docs/TEST_REPORT_V1_2.md",
+            "status": "R",
+            "to": "docs/history/TEST_REPORT_V1_2.md"
+          }
+        ],
+        "path": "docs/TEST_REPORT_V1_2.md",
+        "renamed_to": "docs/history/TEST_REPORT_V1_2.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a73e461",
+            "from": "docs/TEST_REPORT_V1_3.md",
+            "status": "R",
+            "to": "docs/history/TEST_REPORT_V1_3.md"
+          }
+        ],
+        "path": "docs/TEST_REPORT_V1_3.md",
+        "renamed_to": "docs/history/TEST_REPORT_V1_3.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a73e461",
+            "from": "docs/TEST_REPORT_V1_4.md",
+            "status": "R",
+            "to": "docs/history/TEST_REPORT_V1_4.md"
+          }
+        ],
+        "path": "docs/TEST_REPORT_V1_4.md",
+        "renamed_to": "docs/history/TEST_REPORT_V1_4.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a73e461",
+            "from": "docs/TEST_REPORT_V1_5.md",
+            "status": "R",
+            "to": "docs/history/TEST_REPORT_V1_5.md"
+          }
+        ],
+        "path": "docs/TEST_REPORT_V1_5.md",
+        "renamed_to": "docs/history/TEST_REPORT_V1_5.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a73e461",
+            "from": "docs/TEST_REPORT_V1_6.md",
+            "status": "R",
+            "to": "docs/history/TEST_REPORT_V1_6.md"
+          }
+        ],
+        "path": "docs/TEST_REPORT_V1_6.md",
+        "renamed_to": "docs/history/TEST_REPORT_V1_6.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a73e461",
+            "from": "docs/TEST_REPORT_V1_7.md",
+            "status": "R",
+            "to": "docs/history/TEST_REPORT_V1_7.md"
+          }
+        ],
+        "path": "docs/TEST_REPORT_V1_7.md",
+        "renamed_to": "docs/history/TEST_REPORT_V1_7.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a73e461",
+            "from": "docs/TEST_REPORT_V1_8.md",
+            "status": "R",
+            "to": "docs/history/TEST_REPORT_V1_8.md"
+          }
+        ],
+        "path": "docs/TEST_REPORT_V1_8.md",
+        "renamed_to": "docs/history/TEST_REPORT_V1_8.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a73e461",
+            "from": "docs/TEST_REPORT_V1_9.md",
+            "status": "R",
+            "to": "docs/history/TEST_REPORT_V1_9.md"
+          }
+        ],
+        "path": "docs/TEST_REPORT_V1_9.md",
+        "renamed_to": "docs/history/TEST_REPORT_V1_9.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a73e461",
+            "from": "docs/TEST_REPORT_V2_1.md",
+            "status": "R",
+            "to": "docs/history/TEST_REPORT_V2_1.md"
+          }
+        ],
+        "path": "docs/TEST_REPORT_V2_1.md",
+        "renamed_to": "docs/history/TEST_REPORT_V2_1.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a73e461",
+            "from": "docs/TEST_REPORT_V2_3.md",
+            "status": "R",
+            "to": "docs/history/TEST_REPORT_V2_3.md"
+          }
+        ],
+        "path": "docs/TEST_REPORT_V2_3.md",
+        "renamed_to": "docs/history/TEST_REPORT_V2_3.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a73e461",
+            "from": "docs/TEST_REPORT_V2_4.md",
+            "status": "R",
+            "to": "docs/history/TEST_REPORT_V2_4.md"
+          }
+        ],
+        "path": "docs/TEST_REPORT_V2_4.md",
+        "renamed_to": "docs/history/TEST_REPORT_V2_4.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a73e461",
+            "from": "docs/UPGRADE_V1_1.md",
+            "status": "R",
+            "to": "docs/history/UPGRADE_V1_1.md"
+          }
+        ],
+        "path": "docs/UPGRADE_V1_1.md",
+        "renamed_to": "docs/history/UPGRADE_V1_1.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a73e461",
+            "from": "docs/UPGRADE_V1_2.md",
+            "status": "R",
+            "to": "docs/history/UPGRADE_V1_2.md"
+          }
+        ],
+        "path": "docs/UPGRADE_V1_2.md",
+        "renamed_to": "docs/history/UPGRADE_V1_2.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a73e461",
+            "from": "docs/UPGRADE_V1_3.md",
+            "status": "R",
+            "to": "docs/history/UPGRADE_V1_3.md"
+          }
+        ],
+        "path": "docs/UPGRADE_V1_3.md",
+        "renamed_to": "docs/history/UPGRADE_V1_3.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a73e461",
+            "from": "docs/V1_5_TRANSFER_AND_QUALIFICATION.md",
+            "status": "R",
+            "to": "docs/history/V1_5_TRANSFER_AND_QUALIFICATION.md"
+          }
+        ],
+        "path": "docs/V1_5_TRANSFER_AND_QUALIFICATION.md",
+        "renamed_to": "docs/history/V1_5_TRANSFER_AND_QUALIFICATION.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a73e461",
+            "from": "docs/V1_6_PAIRED_LLM_BENCHMARK.md",
+            "status": "R",
+            "to": "docs/history/V1_6_PAIRED_LLM_BENCHMARK.md"
+          }
+        ],
+        "path": "docs/V1_6_PAIRED_LLM_BENCHMARK.md",
+        "renamed_to": "docs/history/V1_6_PAIRED_LLM_BENCHMARK.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a73e461",
+            "from": "docs/V1_7_PROCEDURAL_SKILLS.md",
+            "status": "R",
+            "to": "docs/history/V1_7_PROCEDURAL_SKILLS.md"
+          }
+        ],
+        "path": "docs/V1_7_PROCEDURAL_SKILLS.md",
+        "renamed_to": "docs/history/V1_7_PROCEDURAL_SKILLS.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a73e461",
+            "from": "docs/V1_8_PROCEDURAL_HOLDOUT_AND_DISTILLATION.md",
+            "status": "R",
+            "to": "docs/history/V1_8_PROCEDURAL_HOLDOUT_AND_DISTILLATION.md"
+          }
+        ],
+        "path": "docs/V1_8_PROCEDURAL_HOLDOUT_AND_DISTILLATION.md",
+        "renamed_to": "docs/history/V1_8_PROCEDURAL_HOLDOUT_AND_DISTILLATION.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a73e461",
+            "from": "docs/V1_9_LORA_AND_NEURAL_COMPARISON.md",
+            "status": "R",
+            "to": "docs/history/V1_9_LORA_AND_NEURAL_COMPARISON.md"
+          }
+        ],
+        "path": "docs/V1_9_LORA_AND_NEURAL_COMPARISON.md",
+        "renamed_to": "docs/history/V1_9_LORA_AND_NEURAL_COMPARISON.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a73e461",
+            "from": "docs/V2_0_FAMILY_QUALIFICATION.md",
+            "status": "R",
+            "to": "docs/history/V2_0_FAMILY_QUALIFICATION.md"
+          }
+        ],
+        "path": "docs/V2_0_FAMILY_QUALIFICATION.md",
+        "renamed_to": "docs/history/V2_0_FAMILY_QUALIFICATION.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a73e461",
+            "from": "docs/V2_1_TYPED_TRACE_LEARNING.md",
+            "status": "R",
+            "to": "docs/history/V2_1_TYPED_TRACE_LEARNING.md"
+          }
+        ],
+        "path": "docs/V2_1_TYPED_TRACE_LEARNING.md",
+        "renamed_to": "docs/history/V2_1_TYPED_TRACE_LEARNING.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a73e461",
+            "from": "docs/V2_2_EXPERIENCE_ABSTRACTION.md",
+            "status": "R",
+            "to": "docs/history/V2_2_EXPERIENCE_ABSTRACTION.md"
+          }
+        ],
+        "path": "docs/V2_2_EXPERIENCE_ABSTRACTION.md",
+        "renamed_to": "docs/history/V2_2_EXPERIENCE_ABSTRACTION.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a73e461",
+            "from": "docs/V2_3_WORKFLOW_LEARNING.md",
+            "status": "R",
+            "to": "docs/history/V2_3_WORKFLOW_LEARNING.md"
+          }
+        ],
+        "path": "docs/V2_3_WORKFLOW_LEARNING.md",
+        "renamed_to": "docs/history/V2_3_WORKFLOW_LEARNING.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a73e461",
+            "from": "docs/V2_4_CODE_REPAIR.md",
+            "status": "R",
+            "to": "docs/history/V2_4_CODE_REPAIR.md"
+          }
+        ],
+        "path": "docs/V2_4_CODE_REPAIR.md",
+        "renamed_to": "docs/history/V2_4_CODE_REPAIR.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a73e461",
+            "from": "docs/v3/G1_GATE_REPORT.md",
+            "status": "R",
+            "to": "docs/history/v3/G1_GATE_REPORT.md"
+          }
+        ],
+        "path": "docs/v3/G1_GATE_REPORT.md",
+        "renamed_to": "docs/history/v3/G1_GATE_REPORT.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a73e461",
+            "from": "docs/v3/G2_GATE_REPORT.md",
+            "status": "R",
+            "to": "docs/history/v3/G2_GATE_REPORT.md"
+          }
+        ],
+        "path": "docs/v3/G2_GATE_REPORT.md",
+        "renamed_to": "docs/history/v3/G2_GATE_REPORT.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a73e461",
+            "from": "docs/v3/G3_GATE_REPORT.md",
+            "status": "R",
+            "to": "docs/history/v3/G3_GATE_REPORT.md"
+          }
+        ],
+        "path": "docs/v3/G3_GATE_REPORT.md",
+        "renamed_to": "docs/history/v3/G3_GATE_REPORT.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a73e461",
+            "from": "docs/v3/G4_GATE_REPORT.md",
+            "status": "R",
+            "to": "docs/history/v3/G4_GATE_REPORT.md"
+          }
+        ],
+        "path": "docs/v3/G4_GATE_REPORT.md",
+        "renamed_to": "docs/history/v3/G4_GATE_REPORT.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a73e461",
+            "from": "docs/v3/QUALIFICATION_REPORT.md",
+            "status": "R",
+            "to": "docs/history/v3/QUALIFICATION_REPORT.md"
+          }
+        ],
+        "path": "docs/v3/QUALIFICATION_REPORT.md",
+        "renamed_to": "docs/history/v3/QUALIFICATION_REPORT.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a73e461",
+            "from": "docs/v3/QUALIFICATION_REPORT_V3_3_0.md",
+            "status": "R",
+            "to": "docs/history/v3/QUALIFICATION_REPORT_V3_3_0.md"
+          }
+        ],
+        "path": "docs/v3/QUALIFICATION_REPORT_V3_3_0.md",
+        "renamed_to": "docs/history/v3/QUALIFICATION_REPORT_V3_3_0.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a73e461",
+            "from": "docs/v3/QUALIFICATION_REPORT_V3_3_4.md",
+            "status": "R",
+            "to": "docs/history/v3/QUALIFICATION_REPORT_V3_3_4.md"
+          }
+        ],
+        "path": "docs/v3/QUALIFICATION_REPORT_V3_3_4.md",
+        "renamed_to": "docs/history/v3/QUALIFICATION_REPORT_V3_3_4.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a73e461",
+            "from": "docs/v3/QUALIFICATION_REPORT_V3_3_5.md",
+            "status": "R",
+            "to": "docs/history/v3/QUALIFICATION_REPORT_V3_3_5.md"
+          }
+        ],
+        "path": "docs/v3/QUALIFICATION_REPORT_V3_3_5.md",
+        "renamed_to": "docs/history/v3/QUALIFICATION_REPORT_V3_3_5.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a73e461",
+            "from": "docs/v3/QUALIFICATION_REPORT_V3_3_6.md",
+            "status": "R",
+            "to": "docs/history/v3/QUALIFICATION_REPORT_V3_3_6.md"
+          }
+        ],
+        "path": "docs/v3/QUALIFICATION_REPORT_V3_3_6.md",
+        "renamed_to": "docs/history/v3/QUALIFICATION_REPORT_V3_3_6.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a73e461",
+            "from": "docs/v3/QUALIFICATION_REPORT_V3_3_7.md",
+            "status": "R",
+            "to": "docs/history/v3/QUALIFICATION_REPORT_V3_3_7.md"
+          }
+        ],
+        "path": "docs/v3/QUALIFICATION_REPORT_V3_3_7.md",
+        "renamed_to": "docs/history/v3/QUALIFICATION_REPORT_V3_3_7.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a73e461",
+            "from": "docs/v3/RELEASE_NOTES_V3_3.md",
+            "status": "R",
+            "to": "docs/history/v3/RELEASE_NOTES_V3_3.md"
+          }
+        ],
+        "path": "docs/v3/RELEASE_NOTES_V3_3.md",
+        "renamed_to": "docs/history/v3/RELEASE_NOTES_V3_3.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a73e461",
+            "from": "docs/v3/STATUS.md",
+            "status": "R",
+            "to": "docs/history/v3/STATUS.md"
+          }
+        ],
+        "path": "docs/v3/STATUS.md",
+        "renamed_to": "docs/history/v3/STATUS.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a73e461",
+            "from": "docs/v3/UPGRADE_2026_10_24.md",
+            "status": "R",
+            "to": "docs/history/v3/UPGRADE_2026_10_24.md"
+          }
+        ],
+        "path": "docs/v3/UPGRADE_2026_10_24.md",
+        "renamed_to": "docs/history/v3/UPGRADE_2026_10_24.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a73e461",
+            "from": "docs/v3/V2_BASELINE.md",
+            "status": "R",
+            "to": "docs/history/v3/V2_BASELINE.md"
+          }
+        ],
+        "path": "docs/v3/V2_BASELINE.md",
+        "renamed_to": "docs/history/v3/V2_BASELINE.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a73e461",
+            "from": "docs/v3/V32_GAP_MAP.md",
+            "status": "R",
+            "to": "docs/history/v3/V32_GAP_MAP.md"
+          }
+        ],
+        "path": "docs/v3/V32_GAP_MAP.md",
+        "renamed_to": "docs/history/v3/V32_GAP_MAP.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a73e461",
+            "from": "docs/v3/V33_LIMITATIONS.md",
+            "status": "R",
+            "to": "docs/history/v3/V33_LIMITATIONS.md"
+          },
+          {
+            "commit": "bddd224",
+            "status": "M"
+          },
+          {
+            "commit": "5ee979d",
+            "status": "M"
+          }
+        ],
+        "path": "docs/v3/V33_LIMITATIONS.md",
+        "renamed_to": "docs/history/v3/V33_LIMITATIONS.md"
+      }
+    ],
+    "modified": [
+      {
+        "commits": [
+          {
+            "commit": "10c5e97",
+            "status": "M"
+          }
+        ],
+        "path": ".gitattributes"
+      },
+      {
+        "commits": [
+          {
+            "commit": "291597d",
+            "status": "M"
+          },
+          {
+            "commit": "0ff7340",
+            "status": "M"
+          }
+        ],
+        "path": ".github/workflows/ci.yml"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a73e461",
+            "status": "M"
+          }
+        ],
+        "path": ".markdownlint-cli2.jsonc"
+      },
+      {
+        "commits": [
+          {
+            "commit": "de20441",
+            "status": "M"
+          },
+          {
+            "commit": "ee29b80",
+            "status": "M"
+          },
+          {
+            "commit": "2dc05ea",
+            "status": "M"
+          },
+          {
+            "commit": "5434129",
+            "status": "M"
+          },
+          {
+            "commit": "ae51888",
+            "status": "M"
+          },
+          {
+            "commit": "7ba8f11",
+            "status": "M"
+          },
+          {
+            "commit": "cbde6fd",
+            "status": "M"
+          },
+          {
+            "commit": "f578513",
+            "status": "M"
+          },
+          {
+            "commit": "24c2e81",
+            "status": "M"
+          },
+          {
+            "commit": "69ec029",
+            "status": "M"
+          },
+          {
+            "commit": "a49a66d",
+            "status": "M"
+          },
+          {
+            "commit": "a4a83fc",
+            "status": "M"
+          },
+          {
+            "commit": "46e93fc",
+            "status": "M"
+          },
+          {
+            "commit": "7ef6483",
+            "status": "M"
+          },
+          {
+            "commit": "8d4be45",
+            "status": "M"
+          },
+          {
+            "commit": "e692b0c",
+            "status": "M"
+          },
+          {
+            "commit": "d2109fe",
+            "status": "M"
+          },
+          {
+            "commit": "1b1f68e",
+            "status": "M"
+          },
+          {
+            "commit": "291597d",
+            "status": "M"
+          },
+          {
+            "commit": "a3bbaf5",
+            "status": "M"
+          },
+          {
+            "commit": "2879fa2",
+            "status": "M"
+          },
+          {
+            "commit": "34d23b2",
+            "status": "M"
+          },
+          {
+            "commit": "39f6693",
+            "status": "M"
+          },
+          {
+            "commit": "bddd224",
+            "status": "M"
+          },
+          {
+            "commit": "97b868c",
+            "status": "M"
+          },
+          {
+            "commit": "22b2f37",
+            "status": "M"
+          },
+          {
+            "commit": "72a71b4",
+            "status": "M"
+          },
+          {
+            "commit": "d8a7290",
+            "status": "M"
+          },
+          {
+            "commit": "6c4b83b",
+            "status": "M"
+          },
+          {
+            "commit": "073c70c",
+            "status": "M"
+          },
+          {
+            "commit": "1f20c37",
+            "status": "M"
+          },
+          {
+            "commit": "799f9cb",
+            "status": "M"
+          },
+          {
+            "commit": "5411a7b",
+            "status": "M"
+          }
+        ],
+        "path": "CHANGELOG.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "291597d",
+            "status": "M"
+          },
+          {
+            "commit": "a73e461",
+            "status": "M"
+          },
+          {
+            "commit": "3a881d9",
+            "status": "M"
+          },
+          {
+            "commit": "bddd224",
+            "status": "M"
+          },
+          {
+            "commit": "1f20c37",
+            "status": "M"
+          }
+        ],
+        "path": "README.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "5411a7b",
+            "status": "M"
+          }
+        ],
+        "path": "UPGRADE_README.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a49a66d",
+            "status": "M"
+          },
+          {
+            "commit": "46e93fc",
+            "status": "M"
+          },
+          {
+            "commit": "3f78500",
+            "status": "M"
+          }
+        ],
+        "path": "docker/sandbox/README.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "ce46f9b",
+            "status": "M"
+          },
+          {
+            "commit": "a73e461",
+            "status": "M"
+          },
+          {
+            "commit": "bddd224",
+            "status": "M"
+          }
+        ],
+        "path": "docs/ARCHITECTURE.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "ce46f9b",
+            "status": "M"
+          },
+          {
+            "commit": "128b6c2",
+            "status": "M"
+          }
+        ],
+        "path": "docs/AUTHORITY_CHECKPOINTS.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "97b868c",
+            "status": "M"
+          },
+          {
+            "commit": "26e8bf4",
+            "status": "M"
+          }
+        ],
+        "path": "docs/EVALUATION_PROTOCOL.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "128b6c2",
+            "status": "M"
+          }
+        ],
+        "path": "docs/EVIDENCE_CUSTODY.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a73e461",
+            "status": "M"
+          }
+        ],
+        "path": "docs/INDEX.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "ce46f9b",
+            "status": "M"
+          },
+          {
+            "commit": "a73e461",
+            "status": "M"
+          }
+        ],
+        "path": "docs/SECURITY.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "128b6c2",
+            "status": "M"
+          }
+        ],
+        "path": "docs/SECURITY_THREAT_MODEL.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "97b868c",
+            "status": "M"
+          },
+          {
+            "commit": "26e8bf4",
+            "status": "M"
+          }
+        ],
+        "path": "docs/V332_EFFICACY_STATUS.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "128b6c2",
+            "status": "M"
+          }
+        ],
+        "path": "docs/V332_OPERATIONS.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "073c70c",
+            "status": "M"
+          },
+          {
+            "commit": "5411a7b",
+            "status": "M"
+          }
+        ],
+        "path": "docs/v3/BUILD11_PLAN.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "2879fa2",
+            "status": "M"
+          },
+          {
+            "commit": "97b868c",
+            "status": "M"
+          },
+          {
+            "commit": "26e8bf4",
+            "status": "M"
+          },
+          {
+            "commit": "6c4b83b",
+            "status": "M"
+          },
+          {
+            "commit": "073c70c",
+            "status": "M"
+          },
+          {
+            "commit": "5411a7b",
+            "status": "M"
+          }
+        ],
+        "path": "docs/v3/EFFICACY_STUDY_PROTOCOL.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "3f78500",
+            "status": "M"
+          }
+        ],
+        "path": "docs/v3/RELEASE_PROCESS.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "3f78500",
+            "status": "M"
+          },
+          {
+            "commit": "22b2f37",
+            "status": "M"
+          }
+        ],
+        "path": "docs/v3/SANDBOX_QUALIFICATION_GATE2.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "302ff2c",
+            "status": "M"
+          },
+          {
+            "commit": "46e93fc",
+            "status": "M"
+          },
+          {
+            "commit": "7ef6483",
+            "status": "M"
+          },
+          {
+            "commit": "e692b0c",
+            "status": "M"
+          },
+          {
+            "commit": "1b1f68e",
+            "status": "M"
+          },
+          {
+            "commit": "bfb3945",
+            "status": "M"
+          },
+          {
+            "commit": "291597d",
+            "status": "M"
+          },
+          {
+            "commit": "800d3c2",
+            "status": "M"
+          },
+          {
+            "commit": "a478a29",
+            "status": "M"
+          },
+          {
+            "commit": "154b75a",
+            "status": "M"
+          },
+          {
+            "commit": "22b2f37",
+            "status": "M"
+          }
+        ],
+        "path": "docs/v3/SECURITY_BOUNDARIES_V3_3.md"
+      },
+      {
+        "commits": [
+          {
+            "commit": "97b868c",
+            "status": "M"
+          },
+          {
+            "commit": "5411a7b",
+            "status": "M"
+          }
+        ],
+        "path": "docs/v3/efficacy_manifest_template.json"
+      },
+      {
+        "commits": [
+          {
+            "commit": "1b86bbe",
+            "status": "M"
+          },
+          {
+            "commit": "128b6c2",
+            "status": "M"
+          }
+        ],
+        "path": "src/sis/cli.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "5ee979d",
+            "status": "M"
+          }
+        ],
+        "path": "src/sis/enforced_induction.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a9c7620",
+            "status": "M"
+          },
+          {
+            "commit": "b7eb120",
+            "status": "M"
+          }
+        ],
+        "path": "src/sis/expression.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a9c7620",
+            "status": "M"
+          },
+          {
+            "commit": "b7eb120",
+            "status": "M"
+          },
+          {
+            "commit": "26e8bf4",
+            "status": "M"
+          }
+        ],
+        "path": "src/sis/induction.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "b7eb120",
+            "status": "M"
+          }
+        ],
+        "path": "src/sis/model.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "b7eb120",
+            "status": "M"
+          },
+          {
+            "commit": "26e8bf4",
+            "status": "M"
+          }
+        ],
+        "path": "src/sis/registry.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "b7eb120",
+            "status": "M"
+          }
+        ],
+        "path": "src/sis/sealed_eval.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "d8a7290",
+            "status": "M"
+          },
+          {
+            "commit": "1f20c37",
+            "status": "M"
+          }
+        ],
+        "path": "src/sis/server.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a9c7620",
+            "status": "M"
+          },
+          {
+            "commit": "b7eb120",
+            "status": "M"
+          }
+        ],
+        "path": "src/sis/smt.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "b7eb120",
+            "status": "M"
+          }
+        ],
+        "path": "src/sis/transfer.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "d0e4b99",
+            "status": "M"
+          }
+        ],
+        "path": "src/sis/v3/adapters/__init__.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "080a17a",
+            "status": "M"
+          },
+          {
+            "commit": "22b2f37",
+            "status": "M"
+          }
+        ],
+        "path": "src/sis/v3/adapters/codex_cli.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "8d4be45",
+            "status": "M"
+          },
+          {
+            "commit": "a73e461",
+            "status": "M"
+          },
+          {
+            "commit": "128b6c2",
+            "status": "M"
+          }
+        ],
+        "path": "src/sis/v3/authority_db.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "d0e4b99",
+            "status": "M"
+          },
+          {
+            "commit": "22b2f37",
+            "status": "M"
+          }
+        ],
+        "path": "src/sis/v3/benchmark.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "128b6c2",
+            "status": "M"
+          }
+        ],
+        "path": "src/sis/v3/candidates.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "128b6c2",
+            "status": "M"
+          }
+        ],
+        "path": "src/sis/v3/checkpoints.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "67460f2",
+            "status": "M"
+          },
+          {
+            "commit": "128b6c2",
+            "status": "M"
+          }
+        ],
+        "path": "src/sis/v3/control_plane.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a4a83fc",
+            "status": "M"
+          },
+          {
+            "commit": "46e93fc",
+            "status": "M"
+          },
+          {
+            "commit": "0965eb2",
+            "status": "M"
+          },
+          {
+            "commit": "9e5fb16",
+            "status": "M"
+          },
+          {
+            "commit": "b745896",
+            "status": "M"
+          },
+          {
+            "commit": "af249d0",
+            "status": "M"
+          },
+          {
+            "commit": "22b2f37",
+            "status": "M"
+          }
+        ],
+        "path": "src/sis/v3/docker_sandbox.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "3f34b38",
+            "status": "M"
+          },
+          {
+            "commit": "8e80b0a",
+            "status": "M"
+          },
+          {
+            "commit": "41fdcf7",
+            "status": "M"
+          },
+          {
+            "commit": "97b868c",
+            "status": "M"
+          },
+          {
+            "commit": "22b2f37",
+            "status": "M"
+          },
+          {
+            "commit": "073c70c",
+            "status": "M"
+          },
+          {
+            "commit": "799f9cb",
+            "status": "M"
+          },
+          {
+            "commit": "5411a7b",
+            "status": "M"
+          }
+        ],
+        "path": "src/sis/v3/efficacy_manifest.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "22b2f37",
+            "status": "M"
+          }
+        ],
+        "path": "src/sis/v3/evaluation_runtime.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "800d3c2",
+            "status": "M"
+          }
+        ],
+        "path": "src/sis/v3/evaluator_worker.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "128b6c2",
+            "status": "M"
+          }
+        ],
+        "path": "src/sis/v3/evidence_custody.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "1bb8723",
+            "status": "M"
+          },
+          {
+            "commit": "d0e4b99",
+            "status": "M"
+          },
+          {
+            "commit": "26e8bf4",
+            "status": "M"
+          },
+          {
+            "commit": "073c70c",
+            "status": "M"
+          },
+          {
+            "commit": "271cf99",
+            "status": "M"
+          },
+          {
+            "commit": "5411a7b",
+            "status": "M"
+          }
+        ],
+        "path": "src/sis/v3/governed_eval.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "080a17a",
+            "status": "M"
+          },
+          {
+            "commit": "d1aa0c9",
+            "status": "M"
+          },
+          {
+            "commit": "c8226ac",
+            "status": "M"
+          },
+          {
+            "commit": "d0e4b99",
+            "status": "M"
+          },
+          {
+            "commit": "97b868c",
+            "status": "M"
+          },
+          {
+            "commit": "26e8bf4",
+            "status": "M"
+          },
+          {
+            "commit": "073c70c",
+            "status": "M"
+          },
+          {
+            "commit": "5411a7b",
+            "status": "M"
+          }
+        ],
+        "path": "src/sis/v3/learning_qualification.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "22b2f37",
+            "status": "M"
+          }
+        ],
+        "path": "src/sis/v3/linux_worker.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "128b6c2",
+            "status": "M"
+          }
+        ],
+        "path": "src/sis/v3/nonce_store.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "128b6c2",
+            "status": "M"
+          }
+        ],
+        "path": "src/sis/v3/promotion.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "800d3c2",
+            "status": "M"
+          },
+          {
+            "commit": "1c07d89",
+            "status": "M"
+          },
+          {
+            "commit": "c585ac9",
+            "status": "M"
+          },
+          {
+            "commit": "154b75a",
+            "status": "M"
+          },
+          {
+            "commit": "6aadc12",
+            "status": "M"
+          },
+          {
+            "commit": "22b2f37",
+            "status": "M"
+          },
+          {
+            "commit": "72a71b4",
+            "status": "M"
+          }
+        ],
+        "path": "src/sis/v3/runner.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "22b2f37",
+            "status": "M"
+          }
+        ],
+        "path": "src/sis/v3/seccomp_exec.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "128b6c2",
+            "status": "M"
+          }
+        ],
+        "path": "src/sis/v3/serving.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "d8a7290",
+            "status": "M"
+          }
+        ],
+        "path": "src/sis/v3/serving_service.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "aa55132",
+            "status": "M"
+          },
+          {
+            "commit": "ee29b80",
+            "status": "M"
+          },
+          {
+            "commit": "2dc05ea",
+            "status": "M"
+          },
+          {
+            "commit": "5434129",
+            "status": "M"
+          },
+          {
+            "commit": "ae51888",
+            "status": "M"
+          },
+          {
+            "commit": "85c00a9",
+            "status": "M"
+          },
+          {
+            "commit": "302ff2c",
+            "status": "M"
+          },
+          {
+            "commit": "c27840a",
+            "status": "M"
+          },
+          {
+            "commit": "0a90138",
+            "status": "M"
+          },
+          {
+            "commit": "c87dc86",
+            "status": "M"
+          },
+          {
+            "commit": "7ef6483",
+            "status": "M"
+          },
+          {
+            "commit": "8267867",
+            "status": "M"
+          },
+          {
+            "commit": "0d1bd9f",
+            "status": "M"
+          },
+          {
+            "commit": "1a80787",
+            "status": "M"
+          },
+          {
+            "commit": "89dc007",
+            "status": "M"
+          },
+          {
+            "commit": "29a96aa",
+            "status": "M"
+          },
+          {
+            "commit": "8b0fb1e",
+            "status": "M"
+          },
+          {
+            "commit": "4d3670d",
+            "status": "M"
+          },
+          {
+            "commit": "8d5f3f7",
+            "status": "M"
+          },
+          {
+            "commit": "41c8466",
+            "status": "M"
+          },
+          {
+            "commit": "8e80b0a",
+            "status": "M"
+          },
+          {
+            "commit": "025aba1",
+            "status": "M"
+          },
+          {
+            "commit": "e5dfb8f",
+            "status": "M"
+          },
+          {
+            "commit": "d2109fe",
+            "status": "M"
+          },
+          {
+            "commit": "1b1f68e",
+            "status": "M"
+          },
+          {
+            "commit": "081fe93",
+            "status": "M"
+          },
+          {
+            "commit": "e1df774",
+            "status": "M"
+          },
+          {
+            "commit": "b89aa63",
+            "status": "M"
+          },
+          {
+            "commit": "631a4da",
+            "status": "M"
+          },
+          {
+            "commit": "22b2f37",
+            "status": "M"
+          }
+        ],
+        "path": "src/sis/v3/split_harness.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "4887959",
+            "status": "M"
+          },
+          {
+            "commit": "d0e4b99",
+            "status": "M"
+          },
+          {
+            "commit": "c1733ae",
+            "status": "M"
+          },
+          {
+            "commit": "22b2f37",
+            "status": "M"
+          }
+        ],
+        "path": "src/sis/v3/verifier.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "eb6c9b5",
+            "status": "M"
+          }
+        ],
+        "path": "src/sis/vault_storage.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "48be25f",
+            "status": "M"
+          },
+          {
+            "commit": "26e8bf4",
+            "status": "M"
+          }
+        ],
+        "path": "tests/test_system.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "26e8bf4",
+            "status": "M"
+          }
+        ],
+        "path": "tests/test_v120.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "eb6c9b5",
+            "status": "M"
+          }
+        ],
+        "path": "tests/test_v200.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "eb6c9b5",
+            "status": "M"
+          }
+        ],
+        "path": "tests/test_v240_review.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "c585ac9",
+            "status": "M"
+          },
+          {
+            "commit": "eb6c9b5",
+            "status": "M"
+          }
+        ],
+        "path": "tests/test_vault_storage.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "9d056d6",
+            "status": "M"
+          },
+          {
+            "commit": "8d4be45",
+            "status": "M"
+          },
+          {
+            "commit": "128b6c2",
+            "status": "M"
+          }
+        ],
+        "path": "tests/v3/test_authority_db.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "22b2f37",
+            "status": "M"
+          }
+        ],
+        "path": "tests/v3/test_benchmark.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "97b868c",
+            "status": "M"
+          },
+          {
+            "commit": "073c70c",
+            "status": "M"
+          }
+        ],
+        "path": "tests/v3/test_build_efficacy_manifest.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "128b6c2",
+            "status": "M"
+          }
+        ],
+        "path": "tests/v3/test_candidates.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a4a83fc",
+            "status": "M"
+          },
+          {
+            "commit": "46e93fc",
+            "status": "M"
+          }
+        ],
+        "path": "tests/v3/test_docker_sandbox.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "3f34b38",
+            "status": "M"
+          },
+          {
+            "commit": "97b868c",
+            "status": "M"
+          },
+          {
+            "commit": "073c70c",
+            "status": "M"
+          },
+          {
+            "commit": "5411a7b",
+            "status": "M"
+          }
+        ],
+        "path": "tests/v3/test_efficacy_manifest.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "22b2f37",
+            "status": "M"
+          }
+        ],
+        "path": "tests/v3/test_evaluation_runtime.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "a49a66d",
+            "status": "M"
+          }
+        ],
+        "path": "tests/v3/test_evaluator_image_lock.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "800d3c2",
+            "status": "M"
+          }
+        ],
+        "path": "tests/v3/test_evaluator_worker.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "d1aa0c9",
+            "status": "M"
+          },
+          {
+            "commit": "41fdcf7",
+            "status": "M"
+          },
+          {
+            "commit": "97b868c",
+            "status": "M"
+          },
+          {
+            "commit": "073c70c",
+            "status": "M"
+          },
+          {
+            "commit": "5411a7b",
+            "status": "M"
+          }
+        ],
+        "path": "tests/v3/test_five_arm_real_run.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "af249d0",
+            "status": "M"
+          }
+        ],
+        "path": "tests/v3/test_gate2_qualification.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "800d3c2",
+            "status": "M"
+          },
+          {
+            "commit": "6c4b83b",
+            "status": "M"
+          },
+          {
+            "commit": "271cf99",
+            "status": "M"
+          },
+          {
+            "commit": "5411a7b",
+            "status": "M"
+          }
+        ],
+        "path": "tests/v3/test_governed_eval.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "800d3c2",
+            "status": "M"
+          }
+        ],
+        "path": "tests/v3/test_governed_live_campaign.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "26e8bf4",
+            "status": "M"
+          }
+        ],
+        "path": "tests/v3/test_learning_qualification.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "eb6c9b5",
+            "status": "M"
+          },
+          {
+            "commit": "799f9cb",
+            "status": "M"
+          }
+        ],
+        "path": "tests/v3/test_release_artifact.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "af249d0",
+            "status": "M"
+          },
+          {
+            "commit": "cad25fc",
+            "status": "M"
+          },
+          {
+            "commit": "5411a7b",
+            "status": "M"
+          }
+        ],
+        "path": "tests/v3/test_release_ci.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "72a71b4",
+            "status": "M"
+          }
+        ],
+        "path": "tests/v3/test_runner_isolation.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "800d3c2",
+            "status": "M"
+          }
+        ],
+        "path": "tests/v3/test_skill_holdout.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "4887959",
+            "status": "M"
+          }
+        ],
+        "path": "tests/v3/test_split_custody.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "128b6c2",
+            "status": "M"
+          },
+          {
+            "commit": "d8a7290",
+            "status": "M"
+          },
+          {
+            "commit": "1f20c37",
+            "status": "M"
+          }
+        ],
+        "path": "tests/v3/test_v332_security_regressions.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "26e8bf4",
+            "status": "M"
+          }
+        ],
+        "path": "tests/v3/test_v333_trust_boundary.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "48be25f",
+            "status": "M"
+          },
+          {
+            "commit": "26e8bf4",
+            "status": "M"
+          }
+        ],
+        "path": "tests/v3/test_v334_induction.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "22b2f37",
+            "status": "M"
+          }
+        ],
+        "path": "tests/v3/test_v334_linux_worker.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "48be25f",
+            "status": "M"
+          }
+        ],
+        "path": "tests/v3/test_v335_memory_budget.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "48be25f",
+            "status": "M"
+          }
+        ],
+        "path": "tests/v3/test_v336_benchmark_semantics.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "48be25f",
+            "status": "M"
+          }
+        ],
+        "path": "tests/v3/test_v336_memory_enforcement.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "46e93fc",
+            "status": "M"
+          }
+        ],
+        "path": "tests/v3/test_v338_workspace_ownership.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "b7eb120",
+            "status": "M"
+          },
+          {
+            "commit": "220ca74",
+            "status": "M"
+          }
+        ],
+        "path": "tools/benchmark_induction.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "799f9cb",
+            "status": "M"
+          }
+        ],
+        "path": "tools/build_canonical_zip.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "8e80b0a",
+            "status": "M"
+          },
+          {
+            "commit": "41fdcf7",
+            "status": "M"
+          },
+          {
+            "commit": "97b868c",
+            "status": "M"
+          },
+          {
+            "commit": "073c70c",
+            "status": "M"
+          },
+          {
+            "commit": "799f9cb",
+            "status": "M"
+          },
+          {
+            "commit": "5411a7b",
+            "status": "M"
+          }
+        ],
+        "path": "tools/build_efficacy_manifest.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "97b868c",
+            "status": "M"
+          },
+          {
+            "commit": "073c70c",
+            "status": "M"
+          }
+        ],
+        "path": "tools/check_efficacy_manifest.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "af249d0",
+            "status": "M"
+          },
+          {
+            "commit": "5411a7b",
+            "status": "M"
+          }
+        ],
+        "path": "tools/check_release_ci.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "2bce045",
+            "status": "M"
+          },
+          {
+            "commit": "e52b6cb",
+            "status": "M"
+          },
+          {
+            "commit": "8e80b0a",
+            "status": "M"
+          },
+          {
+            "commit": "66c5b0c",
+            "status": "M"
+          },
+          {
+            "commit": "41fdcf7",
+            "status": "M"
+          },
+          {
+            "commit": "97b868c",
+            "status": "M"
+          },
+          {
+            "commit": "26e8bf4",
+            "status": "M"
+          },
+          {
+            "commit": "6c4b83b",
+            "status": "M"
+          },
+          {
+            "commit": "073c70c",
+            "status": "M"
+          },
+          {
+            "commit": "799f9cb",
+            "status": "M"
+          }
+        ],
+        "path": "tools/five_arm_campaign.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "800d3c2",
+            "status": "M"
+          },
+          {
+            "commit": "5411a7b",
+            "status": "M"
+          }
+        ],
+        "path": "tools/governed_campaign.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "800d3c2",
+            "status": "M"
+          },
+          {
+            "commit": "5411a7b",
+            "status": "M"
+          }
+        ],
+        "path": "tools/governed_live_campaign.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "800d3c2",
+            "status": "M"
+          }
+        ],
+        "path": "tools/learn_recommend_cycle.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "800d3c2",
+            "status": "M"
+          }
+        ],
+        "path": "tools/live_study.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "af249d0",
+            "status": "M"
+          }
+        ],
+        "path": "tools/probe_docker_sandbox.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "af249d0",
+            "status": "M"
+          }
+        ],
+        "path": "tools/qualify_docker_isolation.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "800d3c2",
+            "status": "M"
+          },
+          {
+            "commit": "7ae55ab",
+            "status": "M"
+          },
+          {
+            "commit": "5411a7b",
+            "status": "M"
+          }
+        ],
+        "path": "tools/real_agent_campaign.py"
+      },
+      {
+        "commits": [
+          {
+            "commit": "800d3c2",
+            "status": "M"
+          }
+        ],
+        "path": "tools/skill_holdout.py"
+      }
+    ],
+    "unchanged": [
+      {
+        "path": ".gitignore"
+      },
+      {
+        "path": ".markdownlint.json"
+      },
+      {
+        "path": "LICENSE"
+      },
+      {
+        "path": "docker/sandbox/Dockerfile"
+      },
+      {
+        "path": "docker/sandbox/requirements.lock"
+      },
+      {
+        "path": "docs/EVALUATION.md"
+      },
+      {
+        "path": "docs/EVALUATION_CERTIFICATES.md"
+      },
+      {
+        "path": "docs/EVALUATOR_V1_4.md"
+      },
+      {
+        "path": "docs/EXECUTION_IDENTITY.md"
+      },
+      {
+        "path": "docs/SKILL_INGESTION.md"
+      },
+      {
+        "path": "docs/V331_ARCHITECTURE.md"
+      },
+      {
+        "path": "docs/V332_ACCEPTANCE_MATRIX.md"
+      },
+      {
+        "path": "docs/V332_AUTHORITY_CONSISTENCY.md"
+      },
+      {
+        "path": "docs/audits/BASELINE_INTEGRITY.md"
+      },
+      {
+        "path": "docs/v3/ARCHITECTURE_V3_3.md"
+      },
+      {
+        "path": "docs/v3/CODEX_ADAPTER.md"
+      },
+      {
+        "path": "docs/v3/EVALUATION_PROTOCOL_V3_3.md"
+      },
+      {
+        "path": "docs/v3/EVIDENCE_PROTOCOL.md"
+      },
+      {
+        "path": "docs/v3/EVOLUTION_DESIGN.md"
+      },
+      {
+        "path": "docs/v3/IMPLEMENTATION_REPORT_V3_3.md"
+      },
+      {
+        "path": "docs/v3/MEMORY_DESIGN.md"
+      },
+      {
+        "path": "docs/v3/MIGRATION.md"
+      },
+      {
+        "path": "docs/v3/OPERATIONS.md"
+      },
+      {
+        "path": "docs/v3/QUALIFICATION_REPORT_V3_3_8.md"
+      },
+      {
+        "path": "docs/v3/QUALIFICATION_REPORT_V3_3_9.md"
+      },
+      {
+        "path": "docs/v3/SKILL_HOLDOUTS.md"
+      },
+      {
+        "path": "docs/v3/SKILL_INGESTION.md"
+      },
+      {
+        "path": "docs/v3/TEST_MATRIX.md"
+      },
+      {
+        "path": "docs/v3/THREAT_MODEL.md"
+      },
+      {
+        "path": "docs/v3/TRUST_BOUNDARIES.md"
+      },
+      {
+        "path": "docs/v3/WORKER_VALIDATION_PLAN.md"
+      },
+      {
+        "path": "docs/v3/episodes/live-001/README.md"
+      },
+      {
+        "path": "docs/v3/episodes/live-001/episode.jsonl"
+      },
+      {
+        "path": "docs/v3/episodes/live-001/evaluator_public.key"
+      },
+      {
+        "path": "docs/v3/episodes/live-001/head_anchor.json"
+      },
+      {
+        "path": "docs/v3/episodes/live-001/receipts.jsonl"
+      },
+      {
+        "path": "docs/v3/episodes/live-002/README.md"
+      },
+      {
+        "path": "docs/v3/episodes/live-002/episode.jsonl"
+      },
+      {
+        "path": "docs/v3/episodes/live-002/evaluator_public.key"
+      },
+      {
+        "path": "docs/v3/episodes/live-002/head_anchor.json"
+      },
+      {
+        "path": "docs/v3/episodes/live-002/outcome_receipt.json"
+      },
+      {
+        "path": "docs/v3/episodes/live-002/receipts.jsonl"
+      },
+      {
+        "path": "evidence/adversarial/authority_campaign.json"
+      },
+      {
+        "path": "evidence/authority/checkpoints.json"
+      },
+      {
+        "path": "evidence/baseline/baseline_tests.json"
+      },
+      {
+        "path": "evidence/baseline/integrity_findings.json"
+      },
+      {
+        "path": "evidence/baseline/source_inventory.json"
+      },
+      {
+        "path": "evidence/baseline/v331_baseline.json"
+      },
+      {
+        "path": "evidence/baseline/v334_baseline.json"
+      },
+      {
+        "path": "evidence/benchmark/benchmark_summary.json"
+      },
+      {
+        "path": "evidence/benchmark/governed_evaluation.json"
+      },
+      {
+        "path": "evidence/benchmark/live-campaign/live_campaign_evidence.json"
+      },
+      {
+        "path": "evidence/benchmark/live-campaign/skill-bundle/SHA256SUMS"
+      },
+      {
+        "path": "evidence/benchmark/live-campaign/skill-bundle/manifest.json"
+      },
+      {
+        "path": "evidence/benchmark/live-campaign/skill-bundle/payload.json"
+      },
+      {
+        "path": "evidence/benchmark/live_study_summary.json"
+      },
+      {
+        "path": "evidence/benchmark/live_study_v33.json"
+      },
+      {
+        "path": "evidence/benchmark/v334_induction_scalability.json"
+      },
+      {
+        "path": "evidence/evaluation/CORRECTIONS.md"
+      },
+      {
+        "path": "evidence/evaluation/five_arm_demo.json"
+      },
+      {
+        "path": "evidence/evaluation/real_agent_attempt_summary.json"
+      },
+      {
+        "path": "evidence/evaluation/real_agent_five_arm.json"
+      },
+      {
+        "path": "evidence/evaluation/real_agent_gate.json"
+      },
+      {
+        "path": "evidence/ingestion/compatibility.json"
+      },
+      {
+        "path": "evidence/integration/campaign_evidence.json"
+      },
+      {
+        "path": "evidence/integration/skill-bundle/SHA256SUMS"
+      },
+      {
+        "path": "evidence/integration/skill-bundle/manifest.json"
+      },
+      {
+        "path": "evidence/integration/skill-bundle/payload.json"
+      },
+      {
+        "path": "evidence/qualification/LEARN_CYCLE.md"
+      },
+      {
+        "path": "evidence/qualification/learn_cycle_live.json"
+      },
+      {
+        "path": "evidence/qualification/learn_cycle_live_docker.json"
+      },
+      {
+        "path": "evidence/qualification/learn_cycle_scripted.json"
+      },
+      {
+        "path": "evidence/qualification/qualification_run.json"
+      },
+      {
+        "path": "evidence/sandbox/docker_sandbox_probe.json"
+      },
+      {
+        "path": "evidence/sandbox/gate2_isolation/attestation.json"
+      },
+      {
+        "path": "evidence/sandbox/gate2_isolation/qualification.json"
+      },
+      {
+        "path": "evidence/sandbox/gate2_isolation/receipt.json"
+      },
+      {
+        "path": "evidence/sandbox/holdout_summary.json"
+      },
+      {
+        "path": "evidence/sandbox/skill_holdouts_v331.json"
+      },
+      {
+        "path": "evidence/sandbox/v334_linux_worker_probe.json"
+      },
+      {
+        "path": "evidence/sandbox/v334_linux_worker_probe_env.json"
+      },
+      {
+        "path": "evidence/security/failure_injection.json"
+      },
+      {
+        "path": "evidence/skills/holdout.json"
+      },
+      {
+        "path": "evidence/v332/baseline.json"
+      },
+      {
+        "path": "evidence/v332/baseline_reproduction.json"
+      },
+      {
+        "path": "evidence/v332/baseline_reproduction.txt"
+      },
+      {
+        "path": "evidence/v332/fixed_reproduction.txt"
+      },
+      {
+        "path": "evidence/v332/qualification.json"
+      },
+      {
+        "path": "evidence/v332/reproduce_v331_baseline.py"
+      },
+      {
+        "path": "evidence/v335/V335_01_REPORT.md"
+      },
+      {
+        "path": "evidence/v335/V335_02_REPORT.md"
+      },
+      {
+        "path": "evidence/v335/V335_03_REPORT.md"
+      },
+      {
+        "path": "evidence/v335/V335_04_REPORT.md"
+      },
+      {
+        "path": "evidence/v335/V335_ARTIFACT_VERIFICATION.md"
+      },
+      {
+        "path": "evidence/v335/memory_budget_probe.json"
+      },
+      {
+        "path": "evidence/v336/ARTIFACT_VERIFICATION.md"
+      },
+      {
+        "path": "evidence/v336/benchmark_default.json"
+      },
+      {
+        "path": "evidence/v336/benchmark_negative_z3.json"
+      },
+      {
+        "path": "evidence/v336/memory_enforcement_receipt.json"
+      },
+      {
+        "path": "evidence/v336/test_summary.txt"
+      },
+      {
+        "path": "evidence/v336/test_summary_clean_venv.txt"
+      },
+      {
+        "path": "evidence/v336/trust_profile_bypass_repro.json"
+      },
+      {
+        "path": "examples/active_oracle_loop.py"
+      },
+      {
+        "path": "examples/agent_bridge.py"
+      },
+      {
+        "path": "examples/ambiguous_study.json"
+      },
+      {
+        "path": "examples/arithmetic_study.json"
+      },
+      {
+        "path": "examples/benchmark.json"
+      },
+      {
+        "path": "examples/chat.json"
+      },
+      {
+        "path": "examples/experience_study.json"
+      },
+      {
+        "path": "examples/llm_env.example"
+      },
+      {
+        "path": "examples/neural_eval_template.json"
+      },
+      {
+        "path": "examples/neural_training_config.json"
+      },
+      {
+        "path": "examples/paired_eval_synthetic.json"
+      },
+      {
+        "path": "examples/predict.json"
+      },
+      {
+        "path": "examples/predict_batch.json"
+      },
+      {
+        "path": "examples/query.json"
+      },
+      {
+        "path": "examples/sequence_study.json"
+      },
+      {
+        "path": "examples/skill_sum_benchmark.json"
+      },
+      {
+        "path": "examples/skill_sum_predict.json"
+      },
+      {
+        "path": "examples/skill_sum_study.json"
+      },
+      {
+        "path": "examples/trace_predict.json"
+      },
+      {
+        "path": "examples/trace_study.json"
+      },
+      {
+        "path": "examples/transfer.json"
+      },
+      {
+        "path": "examples/transfer_batch.json"
+      },
+      {
+        "path": "examples/v2_2/experience_study.json"
+      },
+      {
+        "path": "examples/v2_2/plan.json"
+      },
+      {
+        "path": "examples/v2_2/prediction.json"
+      },
+      {
+        "path": "examples/v2_3/workflow_predict.json"
+      },
+      {
+        "path": "examples/v2_3/workflow_study.json"
+      },
+      {
+        "path": "examples/v2_4/code_capture.json"
+      },
+      {
+        "path": "examples/v2_4/code_preview.json"
+      },
+      {
+        "path": "examples/v2_4/code_study.json"
+      },
+      {
+        "path": "examples/v3/contracts_v1.json"
+      },
+      {
+        "path": "examples/v3/fixtures/buggy_calc/README.md"
+      },
+      {
+        "path": "examples/v3/fixtures/buggy_calc/acceptance_hidden.py"
+      },
+      {
+        "path": "examples/v3/fixtures/buggy_calc/calc.py"
+      },
+      {
+        "path": "examples/v3/learning_upgrade_demo.py"
+      },
+      {
+        "path": "examples/v3/negative_transfer/remaining_balance.json"
+      },
+      {
+        "path": "pyproject.toml"
+      },
+      {
+        "path": "requirements-lock.txt"
+      },
+      {
+        "path": "scripts/v3/run_codex_episode.py"
+      },
+      {
+        "path": "src/sis/__init__.py"
+      },
+      {
+        "path": "src/sis/__main__.py"
+      },
+      {
+        "path": "src/sis/abstraction_engine.py"
+      },
+      {
+        "path": "src/sis/active.py"
+      },
+      {
+        "path": "src/sis/anchoring.py"
+      },
+      {
+        "path": "src/sis/bridge.py"
+      },
+      {
+        "path": "src/sis/code_learning.py"
+      },
+      {
+        "path": "src/sis/code_registry.py"
+      },
+      {
+        "path": "src/sis/distillation.py"
+      },
+      {
+        "path": "src/sis/errors.py"
+      },
+      {
+        "path": "src/sis/evaluation.py"
+      },
+      {
+        "path": "src/sis/experience.py"
+      },
+      {
+        "path": "src/sis/experience_events.py"
+      },
+      {
+        "path": "src/sis/family_eval.py"
+      },
+      {
+        "path": "src/sis/neural_eval.py"
+      },
+      {
+        "path": "src/sis/neural_training.py"
+      },
+      {
+        "path": "src/sis/paired_eval.py"
+      },
+      {
+        "path": "src/sis/qualification.py"
+      },
+      {
+        "path": "src/sis/service.py"
+      },
+      {
+        "path": "src/sis/skill_bundle.py"
+      },
+      {
+        "path": "src/sis/skill_holdout.py"
+      },
+      {
+        "path": "src/sis/skill_learning.py"
+      },
+      {
+        "path": "src/sis/skill_program.py"
+      },
+      {
+        "path": "src/sis/skill_registry.py"
+      },
+      {
+        "path": "src/sis/tooling.py"
+      },
+      {
+        "path": "src/sis/trace_learning.py"
+      },
+      {
+        "path": "src/sis/v3/__init__.py"
+      },
+      {
+        "path": "src/sis/v3/adapters/base.py"
+      },
+      {
+        "path": "src/sis/v3/adapters/codex.py"
+      },
+      {
+        "path": "src/sis/v3/audit.py"
+      },
+      {
+        "path": "src/sis/v3/authority.py"
+      },
+      {
+        "path": "src/sis/v3/candidate_authority.py"
+      },
+      {
+        "path": "src/sis/v3/catalog.py"
+      },
+      {
+        "path": "src/sis/v3/cgroups.py"
+      },
+      {
+        "path": "src/sis/v3/compat/__init__.py"
+      },
+      {
+        "path": "src/sis/v3/compat/guidance_gateway.py"
+      },
+      {
+        "path": "src/sis/v3/composition.py"
+      },
+      {
+        "path": "src/sis/v3/contracts.py"
+      },
+      {
+        "path": "src/sis/v3/counterexamples.py"
+      },
+      {
+        "path": "src/sis/v3/episode_projection.py"
+      },
+      {
+        "path": "src/sis/v3/episode_store.py"
+      },
+      {
+        "path": "src/sis/v3/evaluation.py"
+      },
+      {
+        "path": "src/sis/v3/evaluation_certificate.py"
+      },
+      {
+        "path": "src/sis/v3/evolution.py"
+      },
+      {
+        "path": "src/sis/v3/execution_identity.py"
+      },
+      {
+        "path": "src/sis/v3/guidance.py"
+      },
+      {
+        "path": "src/sis/v3/guidance_gateway.py"
+      },
+      {
+        "path": "src/sis/v3/isolation.py"
+      },
+      {
+        "path": "src/sis/v3/learning/__init__.py"
+      },
+      {
+        "path": "src/sis/v3/learning/optimization.py"
+      },
+      {
+        "path": "src/sis/v3/learning/pipeline.py"
+      },
+      {
+        "path": "src/sis/v3/learning/records.py"
+      },
+      {
+        "path": "src/sis/v3/learning/strategies.py"
+      },
+      {
+        "path": "src/sis/v3/learning/symbolic.py"
+      },
+      {
+        "path": "src/sis/v3/memory.py"
+      },
+      {
+        "path": "src/sis/v3/memory_witness.py"
+      },
+      {
+        "path": "src/sis/v3/outcome_v2.py"
+      },
+      {
+        "path": "src/sis/v3/patcher.py"
+      },
+      {
+        "path": "src/sis/v3/policy.py"
+      },
+      {
+        "path": "src/sis/v3/procedures.py"
+      },
+      {
+        "path": "src/sis/v3/repository_registry.py"
+      },
+      {
+        "path": "src/sis/v3/retrieval.py"
+      },
+      {
+        "path": "src/sis/v3/revocation.py"
+      },
+      {
+        "path": "src/sis/v3/rollback.py"
+      },
+      {
+        "path": "src/sis/v3/schemas/execution_receipt_v1.json"
+      },
+      {
+        "path": "src/sis/v3/schemas/guidance_request_v1.json"
+      },
+      {
+        "path": "src/sis/v3/schemas/guidance_v1.json"
+      },
+      {
+        "path": "src/sis/v3/schemas/observation_event_v1.json"
+      },
+      {
+        "path": "src/sis/v3/schemas/outcome_receipt_v1.json"
+      },
+      {
+        "path": "src/sis/v3/schemas/patch_proposal_v1.json"
+      },
+      {
+        "path": "src/sis/v3/schemas/procedure_record_v1.json"
+      },
+      {
+        "path": "src/sis/v3/schemas/promotion_decision_v1.json"
+      },
+      {
+        "path": "src/sis/v3/schemas/task_envelope_v1.json"
+      },
+      {
+        "path": "src/sis/v3/scope_grants.py"
+      },
+      {
+        "path": "src/sis/v3/secure_guidance.py"
+      },
+      {
+        "path": "src/sis/v3/semantic_checks.py"
+      },
+      {
+        "path": "src/sis/v3/signatures.py"
+      },
+      {
+        "path": "src/sis/v3/skill_ingest.py"
+      },
+      {
+        "path": "src/sis/v3/skill_markdown.py"
+      },
+      {
+        "path": "src/sis/v3/skill_package.py"
+      },
+      {
+        "path": "src/sis/v3/source_change.py"
+      },
+      {
+        "path": "src/sis/v3/workspace_guard.py"
+      },
+      {
+        "path": "src/sis/validation.py"
+      },
+      {
+        "path": "src/sis/workflow_engine.py"
+      },
+      {
+        "path": "src/sis/workflow_registry.py"
+      },
+      {
+        "path": "tests/test_upgrade.py"
+      },
+      {
+        "path": "tests/test_v130.py"
+      },
+      {
+        "path": "tests/test_v140.py"
+      },
+      {
+        "path": "tests/test_v150.py"
+      },
+      {
+        "path": "tests/test_v160.py"
+      },
+      {
+        "path": "tests/test_v170.py"
+      },
+      {
+        "path": "tests/test_v180.py"
+      },
+      {
+        "path": "tests/test_v190.py"
+      },
+      {
+        "path": "tests/test_v210.py"
+      },
+      {
+        "path": "tests/test_v22_experience_abstraction.py"
+      },
+      {
+        "path": "tests/test_v230_http.py"
+      },
+      {
+        "path": "tests/test_v230_workflows.py"
+      },
+      {
+        "path": "tests/test_v240_code_learning.py"
+      },
+      {
+        "path": "tests/test_v240_http.py"
+      },
+      {
+        "path": "tests/v3/__init__.py"
+      },
+      {
+        "path": "tests/v3/authority_testkit.py"
+      },
+      {
+        "path": "tests/v3/candidate_testkit.py"
+      },
+      {
+        "path": "tests/v3/fixtures/v331_checkpoints/checkpoints.jsonl"
+      },
+      {
+        "path": "tests/v3/fixtures/v331_checkpoints/keys.json"
+      },
+      {
+        "path": "tests/v3/isolation_testkit.py"
+      },
+      {
+        "path": "tests/v3/test_audit.py"
+      },
+      {
+        "path": "tests/v3/test_authority_checkpoints.py"
+      },
+      {
+        "path": "tests/v3/test_authority_recovery.py"
+      },
+      {
+        "path": "tests/v3/test_candidate_authority.py"
+      },
+      {
+        "path": "tests/v3/test_canonical_tree_digest.py"
+      },
+      {
+        "path": "tests/v3/test_codex_adapter.py"
+      },
+      {
+        "path": "tests/v3/test_codex_cli_adapter.py"
+      },
+      {
+        "path": "tests/v3/test_contracts.py"
+      },
+      {
+        "path": "tests/v3/test_control_plane_postgres.py"
+      },
+      {
+        "path": "tests/v3/test_control_plane_sqlite.py"
+      },
+      {
+        "path": "tests/v3/test_e2e_loop.py"
+      },
+      {
+        "path": "tests/v3/test_episode_replay.py"
+      },
+      {
+        "path": "tests/v3/test_evaluation_certificates.py"
+      },
+      {
+        "path": "tests/v3/test_evolution_composition.py"
+      },
+      {
+        "path": "tests/v3/test_execution_identity_custody.py"
+      },
+      {
+        "path": "tests/v3/test_execution_qualification.py"
+      },
+      {
+        "path": "tests/v3/test_gate2_containment_repairs.py"
+      },
+      {
+        "path": "tests/v3/test_guidance.py"
+      },
+      {
+        "path": "tests/v3/test_http_permissions.py"
+      },
+      {
+        "path": "tests/v3/test_learning_evidence.py"
+      },
+      {
+        "path": "tests/v3/test_learning_loop.py"
+      },
+      {
+        "path": "tests/v3/test_memory.py"
+      },
+      {
+        "path": "tests/v3/test_migrate_authority.py"
+      },
+      {
+        "path": "tests/v3/test_patcher.py"
+      },
+      {
+        "path": "tests/v3/test_policy.py"
+      },
+      {
+        "path": "tests/v3/test_private_evaluation_entrypoints.py"
+      },
+      {
+        "path": "tests/v3/test_procedures.py"
+      },
+      {
+        "path": "tests/v3/test_promotion.py"
+      },
+      {
+        "path": "tests/v3/test_receipt_signatures.py"
+      },
+      {
+        "path": "tests/v3/test_release_inventory.py"
+      },
+      {
+        "path": "tests/v3/test_release_test_evidence.py"
+      },
+      {
+        "path": "tests/v3/test_retrieval.py"
+      },
+      {
+        "path": "tests/v3/test_revocation.py"
+      },
+      {
+        "path": "tests/v3/test_roadmap_modules.py"
+      },
+      {
+        "path": "tests/v3/test_schemas.py"
+      },
+      {
+        "path": "tests/v3/test_scope_grants.py"
+      },
+      {
+        "path": "tests/v3/test_serving_package.py"
+      },
+      {
+        "path": "tests/v3/test_skill_ingest.py"
+      },
+      {
+        "path": "tests/v3/test_skill_ingest_hardening.py"
+      },
+      {
+        "path": "tests/v3/test_source_change.py"
+      },
+      {
+        "path": "tests/v3/test_source_manifest.py"
+      },
+      {
+        "path": "tests/v3/test_upgrade_integrity_learning.py"
+      },
+      {
+        "path": "tests/v3/test_v332_release_provenance.py"
+      },
+      {
+        "path": "tests/v3/test_v334_isolation.py"
+      },
+      {
+        "path": "tests/v3/test_v334_memory_trust.py"
+      },
+      {
+        "path": "tests/v3/test_v335_chain_membership.py"
+      },
+      {
+        "path": "tests/v3/test_v336_trust_profile.py"
+      },
+      {
+        "path": "tests/v3/test_verified_episode.py"
+      },
+      {
+        "path": "tools/build_release.py"
+      },
+      {
+        "path": "tools/check_source_manifest.py"
+      },
+      {
+        "path": "tools/demo_code_learning.py"
+      },
+      {
+        "path": "tools/demo_experience_capture.py"
+      },
+      {
+        "path": "tools/demo_family_eval.py"
+      },
+      {
+        "path": "tools/demo_neural_comparison.py"
+      },
+      {
+        "path": "tools/demo_paired_offline.py"
+      },
+      {
+        "path": "tools/demo_skill_holdout.py"
+      },
+      {
+        "path": "tools/demo_tabular_workflow.py"
+      },
+      {
+        "path": "tools/evaluate_fixtures.py"
+      },
+      {
+        "path": "tools/generate_eval_demo.py"
+      },
+      {
+        "path": "tools/generate_qualification_demo.py"
+      },
+      {
+        "path": "tools/ingest_skills.py"
+      },
+      {
+        "path": "tools/issue_worker_attestation.py"
+      },
+      {
+        "path": "tools/linux_worker_probe.py"
+      },
+      {
+        "path": "tools/migrate_authority.py"
+      },
+      {
+        "path": "tools/package_release.py"
+      },
+      {
+        "path": "tools/provenance.py"
+      },
+      {
+        "path": "tools/reproduce_v332_defects.py"
+      },
+      {
+        "path": "tools/run_paired_study.py"
+      },
+      {
+        "path": "tools/run_tests.py"
+      },
+      {
+        "path": "tools/skill_holdouts.py"
+      },
+      {
+        "path": "tools/smoke_integration.py"
+      },
+      {
+        "path": "tools/test_evidence.py"
+      },
+      {
+        "path": "tools/verify_external_attestation.py"
+      },
+      {
+        "path": "tools/verify_provenance.py"
+      },
+      {
+        "path": "tools/verify_release.py"
+      }
+    ]
+  },
+  "renames": [
+    {
+      "commit": "a73e461",
+      "from": "AUTHORITY_RECOVERY_RELEASE_NOTES.md",
+      "to": "docs/history/AUTHORITY_RECOVERY_RELEASE_NOTES.md"
+    },
+    {
+      "commit": "a73e461",
+      "from": "UPGRADE_RELEASE_NOTES_2026-10-24.md",
+      "to": "docs/history/UPGRADE_RELEASE_NOTES_2026-10-24.md"
+    },
+    {
+      "commit": "a73e461",
+      "from": "docs/LEGACY_README.md",
+      "to": "docs/history/LEGACY_README.md"
+    },
+    {
+      "commit": "a73e461",
+      "from": "docs/LIMITATIONS.md",
+      "to": "docs/history/LIMITATIONS.md"
+    },
+    {
+      "commit": "a73e461",
+      "from": "docs/MIGRATION_V330_TO_V331.md",
+      "to": "docs/history/MIGRATION_V330_TO_V331.md"
+    },
+    {
+      "commit": "a73e461",
+      "from": "docs/RELEASE_NOTES.md",
+      "to": "docs/history/RELEASE_NOTES.md"
+    },
+    {
+      "commit": "a73e461",
+      "from": "docs/ROADMAP.md",
+      "to": "docs/history/ROADMAP.md"
+    },
+    {
+      "commit": "a73e461",
+      "from": "docs/TEST_REPORT_V1_2.md",
+      "to": "docs/history/TEST_REPORT_V1_2.md"
+    },
+    {
+      "commit": "a73e461",
+      "from": "docs/TEST_REPORT_V1_3.md",
+      "to": "docs/history/TEST_REPORT_V1_3.md"
+    },
+    {
+      "commit": "a73e461",
+      "from": "docs/TEST_REPORT_V1_4.md",
+      "to": "docs/history/TEST_REPORT_V1_4.md"
+    },
+    {
+      "commit": "a73e461",
+      "from": "docs/TEST_REPORT_V1_5.md",
+      "to": "docs/history/TEST_REPORT_V1_5.md"
+    },
+    {
+      "commit": "a73e461",
+      "from": "docs/TEST_REPORT_V1_6.md",
+      "to": "docs/history/TEST_REPORT_V1_6.md"
+    },
+    {
+      "commit": "a73e461",
+      "from": "docs/TEST_REPORT_V1_7.md",
+      "to": "docs/history/TEST_REPORT_V1_7.md"
+    },
+    {
+      "commit": "a73e461",
+      "from": "docs/TEST_REPORT_V1_8.md",
+      "to": "docs/history/TEST_REPORT_V1_8.md"
+    },
+    {
+      "commit": "a73e461",
+      "from": "docs/TEST_REPORT_V1_9.md",
+      "to": "docs/history/TEST_REPORT_V1_9.md"
+    },
+    {
+      "commit": "a73e461",
+      "from": "docs/TEST_REPORT_V2_1.md",
+      "to": "docs/history/TEST_REPORT_V2_1.md"
+    },
+    {
+      "commit": "a73e461",
+      "from": "docs/TEST_REPORT_V2_3.md",
+      "to": "docs/history/TEST_REPORT_V2_3.md"
+    },
+    {
+      "commit": "a73e461",
+      "from": "docs/TEST_REPORT_V2_4.md",
+      "to": "docs/history/TEST_REPORT_V2_4.md"
+    },
+    {
+      "commit": "a73e461",
+      "from": "docs/UPGRADE_V1_1.md",
+      "to": "docs/history/UPGRADE_V1_1.md"
+    },
+    {
+      "commit": "a73e461",
+      "from": "docs/UPGRADE_V1_2.md",
+      "to": "docs/history/UPGRADE_V1_2.md"
+    },
+    {
+      "commit": "a73e461",
+      "from": "docs/UPGRADE_V1_3.md",
+      "to": "docs/history/UPGRADE_V1_3.md"
+    },
+    {
+      "commit": "a73e461",
+      "from": "docs/V1_5_TRANSFER_AND_QUALIFICATION.md",
+      "to": "docs/history/V1_5_TRANSFER_AND_QUALIFICATION.md"
+    },
+    {
+      "commit": "a73e461",
+      "from": "docs/V1_6_PAIRED_LLM_BENCHMARK.md",
+      "to": "docs/history/V1_6_PAIRED_LLM_BENCHMARK.md"
+    },
+    {
+      "commit": "a73e461",
+      "from": "docs/V1_7_PROCEDURAL_SKILLS.md",
+      "to": "docs/history/V1_7_PROCEDURAL_SKILLS.md"
+    },
+    {
+      "commit": "a73e461",
+      "from": "docs/V1_8_PROCEDURAL_HOLDOUT_AND_DISTILLATION.md",
+      "to": "docs/history/V1_8_PROCEDURAL_HOLDOUT_AND_DISTILLATION.md"
+    },
+    {
+      "commit": "a73e461",
+      "from": "docs/V1_9_LORA_AND_NEURAL_COMPARISON.md",
+      "to": "docs/history/V1_9_LORA_AND_NEURAL_COMPARISON.md"
+    },
+    {
+      "commit": "a73e461",
+      "from": "docs/V2_0_FAMILY_QUALIFICATION.md",
+      "to": "docs/history/V2_0_FAMILY_QUALIFICATION.md"
+    },
+    {
+      "commit": "a73e461",
+      "from": "docs/V2_1_TYPED_TRACE_LEARNING.md",
+      "to": "docs/history/V2_1_TYPED_TRACE_LEARNING.md"
+    },
+    {
+      "commit": "a73e461",
+      "from": "docs/V2_2_EXPERIENCE_ABSTRACTION.md",
+      "to": "docs/history/V2_2_EXPERIENCE_ABSTRACTION.md"
+    },
+    {
+      "commit": "a73e461",
+      "from": "docs/V2_3_WORKFLOW_LEARNING.md",
+      "to": "docs/history/V2_3_WORKFLOW_LEARNING.md"
+    },
+    {
+      "commit": "a73e461",
+      "from": "docs/V2_4_CODE_REPAIR.md",
+      "to": "docs/history/V2_4_CODE_REPAIR.md"
+    },
+    {
+      "commit": "a73e461",
+      "from": "docs/v3/G1_GATE_REPORT.md",
+      "to": "docs/history/v3/G1_GATE_REPORT.md"
+    },
+    {
+      "commit": "a73e461",
+      "from": "docs/v3/G2_GATE_REPORT.md",
+      "to": "docs/history/v3/G2_GATE_REPORT.md"
+    },
+    {
+      "commit": "a73e461",
+      "from": "docs/v3/G3_GATE_REPORT.md",
+      "to": "docs/history/v3/G3_GATE_REPORT.md"
+    },
+    {
+      "commit": "a73e461",
+      "from": "docs/v3/G4_GATE_REPORT.md",
+      "to": "docs/history/v3/G4_GATE_REPORT.md"
+    },
+    {
+      "commit": "a73e461",
+      "from": "docs/v3/QUALIFICATION_REPORT.md",
+      "to": "docs/history/v3/QUALIFICATION_REPORT.md"
+    },
+    {
+      "commit": "a73e461",
+      "from": "docs/v3/QUALIFICATION_REPORT_V3_3_0.md",
+      "to": "docs/history/v3/QUALIFICATION_REPORT_V3_3_0.md"
+    },
+    {
+      "commit": "a73e461",
+      "from": "docs/v3/QUALIFICATION_REPORT_V3_3_4.md",
+      "to": "docs/history/v3/QUALIFICATION_REPORT_V3_3_4.md"
+    },
+    {
+      "commit": "a73e461",
+      "from": "docs/v3/QUALIFICATION_REPORT_V3_3_5.md",
+      "to": "docs/history/v3/QUALIFICATION_REPORT_V3_3_5.md"
+    },
+    {
+      "commit": "a73e461",
+      "from": "docs/v3/QUALIFICATION_REPORT_V3_3_6.md",
+      "to": "docs/history/v3/QUALIFICATION_REPORT_V3_3_6.md"
+    },
+    {
+      "commit": "a73e461",
+      "from": "docs/v3/QUALIFICATION_REPORT_V3_3_7.md",
+      "to": "docs/history/v3/QUALIFICATION_REPORT_V3_3_7.md"
+    },
+    {
+      "commit": "a73e461",
+      "from": "docs/v3/RELEASE_NOTES_V3_3.md",
+      "to": "docs/history/v3/RELEASE_NOTES_V3_3.md"
+    },
+    {
+      "commit": "a73e461",
+      "from": "docs/v3/STATUS.md",
+      "to": "docs/history/v3/STATUS.md"
+    },
+    {
+      "commit": "a73e461",
+      "from": "docs/v3/UPGRADE_2026_10_24.md",
+      "to": "docs/history/v3/UPGRADE_2026_10_24.md"
+    },
+    {
+      "commit": "a73e461",
+      "from": "docs/v3/V2_BASELINE.md",
+      "to": "docs/history/v3/V2_BASELINE.md"
+    },
+    {
+      "commit": "a73e461",
+      "from": "docs/v3/V32_GAP_MAP.md",
+      "to": "docs/history/v3/V32_GAP_MAP.md"
+    },
+    {
+      "commit": "a73e461",
+      "from": "docs/v3/V33_LIMITATIONS.md",
+      "to": "docs/history/v3/V33_LIMITATIONS.md"
+    }
+  ],
+  "reproduce": "python3 tools/reconcile_inventory.py --tree <extracted project directory> --revision de204410c3e1",
+  "revision": {
+    "commit": "de204410c3e1099b83a11e1999a349950160bd60",
+    "requested": "de20441",
+    "revision_files": 536,
+    "revision_only": [],
+    "subject": "Record the review fixes in the changelog (SIS-FIX-23)"
+  },
+  "schema_version": 1,
+  "statement": "The inventory is the SIS-v3.3.9 seal. The tree is a development revision (de204410c3e1), not a release: its drift from the inventory is expected and is not repaired by rehashing. The seal must be regenerated by the owner's signed release process.",
+  "tree": {
+    "files": 536,
+    "inside_repository": false,
+    "is_repository_root": false,
+    "name": "symengine-main"
+  },
+  "unattributed": []
+}

@@ -1,5 +1,61 @@
 # Changelog
 
+## 2026-11-21 — Gate G1: inventory reconciliation, test evidence, archive CI (SIS-CHORE-25)
+
+`RELEASE_SHA256.json` and `release/source_inventory.json` are still the
+SIS-v3.3.9 seal of `d81f7bf`; an audit of a downloaded `main` found 102
+modified, 47 missing and 113 extra paths against it, and
+`tools/build_release.py --check` reports "release manifest is stale".
+That drift is expected in development and is now explained rather than
+rehashed: the seal is the owner's signed step, and nothing here touches
+`RELEASE_SHA256.json` or `release/`.
+
+- **Inventory reconciliation (SIS-401).** `tools/reconcile_inventory.py`
+  uses the release tooling's own walk and filter
+  (`build_release.inventory`, `check_source_manifest._included`) to
+  class every path as `unchanged`, `modified`, `missing_from_tree` or
+  `extra_in_tree`, checks that the inventory is the file at the seal
+  commit and that the seal commit's tree holds exactly its hashes, and
+  attributes each change to the commits since the seal that descend
+  from it, following renames (`--name-status -M`) and grouping by the
+  pull request that merged them. `--tree` may be the checkout or an
+  extracted archive; every tree file is compared with `HEAD` or
+  `--revision`, and any path Git history cannot explain is
+  `unattributed` and fails the gate (exit 1).
+  `evidence/v339/inventory_reconciliation.{md,json}` reports `de20441`
+  from a `git archive` zip: 321 unchanged, 102 modified, 47 missing, 113
+  extra, 0 unattributed, matching the audit. All 47 missing paths are
+  the moves into `docs/history/` (`a73e461`, PR #8), so 66 of the
+  extras are new files. `cbdf376` (the PR #9 merge, `origin/main`)
+  gives the same counts; the nine SIS-FIX-23 commits after it change
+  only already-drifted paths, so the tool tells the two apart only by
+  `--revision`. Of the 154 commits in `d81f7bf..de20441`, 126 descend
+  from the seal; the other 28 are the v3.3.2 to v3.3.4 mainline joined
+  by the PR #1 merge, whose tree equals its seal-side parent.
+- **Hidden skip removed (SIS-402).** `test_source_manifest.py` pinned
+  `--baseline-ref` to the v2 baseline `daf0ccc`, which this repository
+  never contained, so baseline verification was untested in every
+  checkout. A new test verifies the seal commit's inventory and blobs
+  and the separately reported development delta.
+- **Preserved test report (SIS-402).** `evidence/v339/test_report.json`
+  (`tools/run_tests.py --json`, `f392e22`, Python 3.13.18, pytest 8.4.2,
+  Docker present, agent user `sisagent`): 2254 passed, 0 failed,
+  40 skipped. It is **unsigned** development evidence, not the signed CI
+  evidence a seal requires. `evidence/v339/TEST_EVIDENCE.md` classifies
+  every skip (21 platform, 13 optional dependency, 4 environment,
+  2 other; no Docker test skipped) and records the non-root run from an
+  export (2254 passed), the PostgreSQL tests against a local
+  `postgres:16` (8 passed) and the extracted-archive run.
+- **Archive CI job (SIS-402).** The new `archive` job (Linux, Python
+  3.12) builds the canonical archive with `tools/build_canonical_zip.py`
+  from a scratch worktree, fails if the checkout's `RELEASE_SHA256.json`
+  changed, extracts it into an empty directory, verifies it against its
+  own inventory, installs from there, builds the evaluator image from
+  the extracted `docker/sandbox` and runs `tests/` with
+  `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONNOUSERSITE=1`. By hand: 540
+  files verified, 2246 passed, 45 skipped, 0 failed; the archive omits
+  nothing the suite needs, so what it includes is unchanged.
+
 ## 2026-11-21 — Audit follow-ups: test runtime, signing backend, agent principal, benchmark (SIS-FIX-24)
 
 An external audit ran the suite under pytest 9.0.2 (about 130 failures
