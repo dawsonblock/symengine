@@ -8,13 +8,17 @@ operation, which would signal every process of the current user).
 
 ``AgentPrincipalIntegrationTests`` runs only when ``SIS_TEST_AGENT_USER``
 names a second user that ``sudo -n -u USER /usr/bin/python3`` can become.
+It holds a host-wide lock on that user (``agent_user_testkit``), so suites
+that share it never run its ``kill_all`` into each other.
 """
 from __future__ import annotations
 
+import importlib.util
 import io
 import json
 import os
 import pwd
+import secrets
 import shutil
 import signal
 import stat
@@ -40,6 +44,7 @@ from sis.v3.learning_qualification import (ClaudeCodeAgent, CodexCliAgent,
                                            claude_code_agent_status)
 from sis.v3.runner import tree_digest
 
+from .agent_user_testkit import AgentUserLock, agent_user_lock_path
 from .test_claude_code_adapter import standard_stream, write_fake_claude
 
 POSIX = os.name == "posix"
@@ -940,9 +945,12 @@ def _integration_user() -> tuple[str | None, str]:
     sudo = shutil.which("sudo")
     if sudo is None or not Path(DEFAULT_PYTHON).exists():
         return None, "sudo or /usr/bin/python3 is missing"
-    probe = subprocess.run(
-        [sudo, "-n", "-u", user, "--", DEFAULT_PYTHON, "-I", "-S", "-c",
-         "pass"], capture_output=True, cwd="/", start_new_session=True)
+    # The probe runs as the agent user: another suite's kill_all would
+    # kill it and turn this suite's integration tests into skips.
+    with AgentUserLock(user):
+        probe = subprocess.run(
+            [sudo, "-n", "-u", user, "--", DEFAULT_PYTHON, "-I", "-S", "-c",
+             "pass"], capture_output=True, cwd="/", start_new_session=True)
     if probe.returncode != 0:
         return None, (f"sudo -n -u {user} {DEFAULT_PYTHON} is not allowed: "
                       + probe.stderr.decode(errors="replace").strip())
@@ -1001,6 +1009,19 @@ def _agent_processes(uid: int) -> list[int]:
 @unittest.skipUnless(AGENT_USER, SKIP_REASON)
 class AgentPrincipalIntegrationTests(unittest.TestCase):
     """A real second user: the fake CLI runs as it, through sudo."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        # kill_all signals every process of the agent user, another
+        # suite's on this host included: hold the user while these run.
+        cls._user_lock = AgentUserLock(AGENT_USER)
+        cls._user_lock.acquire()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls._user_lock.release()
+        super().tearDownClass()
 
     def setUp(self):
         self.temp = Path(tempfile.mkdtemp(prefix="sis-principal-"))
@@ -1076,6 +1097,74 @@ class AgentPrincipalIntegrationTests(unittest.TestCase):
                                     "can read evaluator material"):
             self.principal.preflight([self.private],
                                      executables=[str(self.fake)])
+
+
+_TRY_LOCK = (
+    "import fcntl, os, sys\n"
+    "fd = os.open(sys.argv[1], os.O_RDONLY | os.O_CREAT)\n"
+    "try:\n"
+    "    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)\n"
+    "except BlockingIOError:\n"
+    "    print('blocked')\n"
+    "else:\n"
+    "    print('acquired')\n")
+
+
+@unittest.skipUnless(POSIX, "the agent user lock is POSIX-only")
+class AgentUserLockTests(unittest.TestCase):
+    """Suites sharing one agent user on a host run its tests one at a time."""
+
+    def setUp(self):
+        # A name no real run uses, so this never contends with one.
+        self.user = f"unit-{os.getpid()}-{secrets.token_hex(4)}"
+        self.path = agent_user_lock_path(self.user)
+        self.addCleanup(lambda: Path(self.path).unlink(missing_ok=True))
+
+    def other_process(self) -> str:
+        """Try the lock from another process without waiting."""
+        return subprocess.run(
+            [sys.executable, "-I", "-c", _TRY_LOCK, self.path],
+            capture_output=True, text=True, check=True,
+            timeout=30).stdout.strip()
+
+    def test_a_second_process_is_blocked_until_release(self):
+        lock = AgentUserLock(self.user)
+        lock.acquire()
+        try:
+            self.assertEqual(self.other_process(), "blocked")
+        finally:
+            lock.release()
+        self.assertEqual(self.other_process(), "acquired")
+
+    def test_the_lock_file_is_per_user_and_shared_across_users(self):
+        self.assertEqual(self.path, os.path.join(
+            tempfile.gettempdir(), f"sis-agent-user-{self.user}.lock"))
+        with AgentUserLock(self.user):
+            pass
+        # Despite the umask: root and a non-root runner both open it.
+        self.assertEqual(stat.S_IMODE(os.stat(self.path).st_mode), 0o666)
+
+    def test_the_integration_tests_hold_the_lock_while_they_run(self):
+        with mock.patch.object(sys.modules[__name__], "AGENT_USER",
+                               self.user):
+            AgentPrincipalIntegrationTests.setUpClass()
+        try:
+            self.assertEqual(self.other_process(), "blocked")
+        finally:
+            AgentPrincipalIntegrationTests.tearDownClass()
+        self.assertEqual(self.other_process(), "acquired")
+
+    def test_the_module_imports_without_fcntl(self):
+        # Windows has no fcntl; collecting the module must still work.
+        spec = importlib.util.spec_from_file_location(
+            "agent_user_testkit_without_fcntl",
+            Path(__file__).with_name("agent_user_testkit.py"))
+        module = importlib.util.module_from_spec(spec)
+        with mock.patch.dict(sys.modules, {"fcntl": None}):
+            spec.loader.exec_module(module)
+        with self.assertRaisesRegex(RuntimeError, "POSIX-only"):
+            module.AgentUserLock(self.user).acquire()
+        self.assertFalse(os.path.exists(self.path))
 
 
 if __name__ == "__main__":

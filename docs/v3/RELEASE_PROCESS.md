@@ -36,7 +36,10 @@ to point at a different version.
 ## The seal ritual
 
 `release/` holds provenance about the archive, not payload. The archive
-itself is out-of-band (`release/*.zip` is git-ignored).
+itself is out-of-band (`release/*.zip` is git-ignored). A top-level
+`.claude/` is local agent state (Claude Code worktrees and
+`settings.local.json`) and is never inventoried or archived, even though
+`git status` does not show it.
 
 Release signing requires the constant-time Ed25519 backend. Install it
 in the sealing environment first:

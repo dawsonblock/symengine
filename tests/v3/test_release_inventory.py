@@ -11,6 +11,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 from unittest import mock
 
@@ -18,6 +19,8 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools"))
 sys.path.insert(0, str(ROOT / "src"))
 
+import build_canonical_zip  # noqa: E402
+import build_release  # noqa: E402
 import package_release  # noqa: E402
 import provenance  # noqa: E402
 from check_source_manifest import _included  # noqa: E402
@@ -41,6 +44,48 @@ class InventoryExclusionTests(unittest.TestCase):
     def test_source_files_remain_inventoried(self):
         self.assertTrue(_included("README.md"))
         self.assertTrue(_included("src/sis/cli.py"))
+
+
+class LocalAgentStateExclusionTests(unittest.TestCase):
+    """A top-level ``.claude/`` is local agent state, never release payload.
+
+    Claude Code keeps agent worktrees (other branches' checkouts) and
+    ``settings.local.json`` there. ``.git/info/exclude`` hides it from
+    ``git status``, so the clean-tree gate cannot catch it either.
+    """
+
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.base = Path(temp.name)
+        self.root = self.base / "proj"
+        for relative, body in {
+                "src/pkg/a.py": b"print(1)\n",
+                "docs/.claude/x": b"a nested .claude is ordinary source\n",
+                ".claude/worktrees/x/src/a.py": b"print('other branch')\n",
+                ".claude/settings.local.json": b'{"local": true}\n'}.items():
+            path = self.root / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(body)
+
+    def test_only_a_top_level_claude_dir_is_skipped(self):
+        self.assertFalse(_included(".claude/settings.local.json"))
+        self.assertFalse(_included(".claude/worktrees/x/src/a.py"))
+        self.assertTrue(_included("docs/.claude/x"))
+
+    def test_the_inventory_omits_local_agent_state(self):
+        self.assertEqual(sorted(build_release.inventory(self.root)),
+                         ["docs/.claude/x", "src/pkg/a.py"])
+
+    def test_the_canonical_zip_omits_local_agent_state(self):
+        target = self.base / "out" / "SIS.zip"
+        report = build_canonical_zip.build(
+            self.root, target, require_clean=False)
+        self.assertEqual(report["source_files"], 2)
+        with zipfile.ZipFile(target) as archive:
+            names = sorted(archive.namelist())
+        self.assertEqual(names, ["proj/RELEASE_SHA256.json",
+                                 "proj/docs/.claude/x", "proj/src/pkg/a.py"])
 
 
 class ReleaseToolingVersionTests(unittest.TestCase):

@@ -33,6 +33,13 @@ SKIP_NAMES = {".coverage"}
 # archive, or every rebuild would embed the previous release (and its stale
 # checksum) inside the next one.
 OUT_OF_BAND_DIRS = {"release"}
+# A top-level `.claude/` is local agent state: Claude Code keeps agent
+# worktrees (full checkouts of other branches) and `settings.local.json`
+# there. `.git/info/exclude` hides it from `git status`, so the clean-tree
+# gate cannot catch it; without this a seal would hash and archive all of
+# it. Matched on the first path component only, like OUT_OF_BAND_DIRS: a
+# nested `.claude` (e.g. `docs/.claude/`) is ordinary source.
+LOCAL_STATE_DIRS = {".claude"}
 # The build record describes the build, not the source. It is rewritten by
 # every packaging run, so it cannot be part of the archive it describes.
 OUT_OF_BAND_FILES = {"evidence/release/build_record.json",
@@ -60,6 +67,7 @@ def _included(relative):
             and path.name not in SKIP_NAMES
             and not path.name.startswith(".coverage.")
             and not (path.parts and path.parts[0] in OUT_OF_BAND_DIRS)
+            and not (path.parts and path.parts[0] in LOCAL_STATE_DIRS)
             and relative not in OUT_OF_BAND_FILES
             and not any(part in SKIP_DIRS or part.endswith(".egg-info") for part in path.parts)
             and path.suffix not in SKIP_EXTS)

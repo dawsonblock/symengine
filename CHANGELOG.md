@@ -1,5 +1,46 @@
 # Changelog
 
+## 2026-11-21 — 64-field induction regression, local agent state, copy-out reasons, agent-user lock (SIS-FIX-26)
+
+Found while doing gate G1 (SIS-CHORE-25). Each change has a test that
+failed before it.
+
+- **The 64-field benchmark target is found again.** Learner v2
+  completed each new pool program at once: the `add`/`sub`/`mul` inverse
+  lookups, then about 230 forward checks (`min`/`max`/`absdiff` against
+  every terminal, `floordiv`/`mod` by 2..12). Pool level 4 starts with
+  the 2,080 `add` pairs, so on 64 fields their forward checks used the
+  whole signature budget before any `mul` pair was built, and
+  `x62 * x63 + 2` was never found. A stage's forward checks now run at
+  its end, after its lookups. Every fit keeps the position the one-pass
+  order would have found it at and a duplicate keeps the earlier one, so
+  a search that completes finds the same fits, selects the same rule and
+  spends the same budget: the 62-target corpus and every completed
+  benchmark row are identical (`DEFER_FORWARD = False` restores the old
+  order for the equivalence tests). 64 fields now returns
+  `2 + x62 * x63`, holdout accuracy 1.0; the budget still ends that
+  search, so it stays `search_incomplete`
+  (`evidence/v339/benchmark_*_deferred.json`). The engine stamp is now
+  `sis-induce-3`, because a truncated search can return a different rule.
+- **Local agent state stays out of the release.** `.claude/` (Claude
+  Code worktrees, `settings.local.json`) is hidden from `git status` by
+  `.git/info/exclude`, so the clean-tree gate passed while
+  `build_release.py` and `build_canonical_zip.py` hashed and archived
+  every agent worktree in the checkout (7,067 files here). A top-level
+  `.claude/` is never inventoried; a nested one is ordinary source.
+  Nothing under `.claude/` is tracked or sealed.
+- **A Docker copy-out failure always names a reason.** A `tar` that
+  exited non-zero with empty stderr gave a bare
+  `workspace_copy_out_failed:`; it now says `exit=<code>`, or
+  `watchdog_timeout` when the 300 s copy-out watchdog killed it
+  (including a kill that truncated the stream mid-archive).
+- **Agent-user integration tests take a host-wide lock.**
+  `AgentPrincipal.kill_all` kills every process of the agent user, so
+  two suites sharing `SIS_TEST_AGENT_USER` killed each other's helpers.
+  The real-user tests now hold an exclusive `flock` on
+  `<tmp>/sis-agent-user-<user>.lock` (mode 0666, shared by root and a
+  non-root runner); a second suite waits instead.
+
 ## 2026-11-21 — Gate G1: inventory reconciliation, test evidence, archive CI (SIS-CHORE-25)
 
 `RELEASE_SHA256.json` and `release/source_inventory.json` are still the
