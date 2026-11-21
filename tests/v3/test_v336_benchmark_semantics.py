@@ -359,5 +359,56 @@ class CurrentBenchmarkEvidenceTests(unittest.TestCase):
         self.check_rows("benchmark_negative_z3", (2, 4))
 
 
+class DeferredCompletionEvidenceTests(unittest.TestCase):
+    """evidence/v339/*_deferred.json repeat the v339 runs after SIS-FIX-26.
+
+    Deferring forward completions leaves every completed row unchanged and
+    recovers the 64-field target the learner v2 order never reached.
+    """
+
+    load = staticmethod(CurrentBenchmarkEvidenceTests.load)
+    MEASURED = CurrentBenchmarkEvidenceTests.MEASURED | {"generated_at"}
+
+    def pairs(self):
+        for name in CurrentBenchmarkEvidenceTests.RECORDS:
+            yield (name, self.load("v339", name),
+                   self.load("v339", name + "_deferred"))
+
+    def test_the_deferred_records_repeat_the_v339_settings(self):
+        for name, old, new in self.pairs():
+            with self.subTest(name=name):
+                for key in ("kind", "target", "budget", "input_domain",
+                            "partition", "equivalence_mode"):
+                    self.assertEqual(new[key], old[key], key)
+                self.assertEqual(
+                    [row["fields"] for row in new["results"]],
+                    [row["fields"] for row in old["results"]])
+
+    def test_every_completed_row_is_unchanged(self):
+        for name, old, new in self.pairs():
+            rows = {row["fields"]: row for row in new["results"]}
+            for before in old["results"]:
+                if before["search_outcome"] != "completed":
+                    continue
+                after = rows[before["fields"]]
+                with self.subTest(name=name, fields=before["fields"]):
+                    for key in sorted(set(before) | set(after)):
+                        if key not in self.MEASURED:
+                            self.assertEqual(after.get(key), before.get(key), key)
+
+    def test_the_64_field_target_is_recovered_and_still_reported_truncated(self):
+        old = self.load("v339", "benchmark_default")
+        new = self.load("v339", "benchmark_default_deferred")
+        before = {row["fields"]: row for row in old["results"]}[64]
+        after = {row["fields"]: row for row in new["results"]}[64]
+        self.assertFalse(before["candidate_found"])
+        self.assertTrue(after["candidate_found"])
+        self.assertTrue(after["target_structure_recovered"])
+        self.assertEqual(after["holdout_accuracy"], 1.0)
+        # The signature budget still ends the search: not an exact recovery.
+        self.assertEqual(after["search_outcome"], "truncated")
+        self.assertFalse(after["exact_recovery_verified"])
+
+
 if __name__ == "__main__":
     unittest.main()

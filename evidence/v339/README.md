@@ -80,6 +80,21 @@ row except v339 at 64 fields (0.0, nothing returned).
   parent `7775db0` gives 129 candidates, 193 checks, `locally_validated`;
   `a9c7620` gives 2,197 candidates, 500,000 checks and no candidate. The
   tool's default budget (`max_candidates` 12,000) gives the same result.
+- **64 fields after SIS-FIX-26 (2026-11-21).** Learner v2 completed
+  each new pool program at once, hash lookups and then about 230 forward
+  checks (`min`/`max`/`absdiff` against every terminal, `floordiv`/`mod`
+  by 2..12). Pool level 4 starts with the 2,080 `add` pairs, so their
+  forward checks used the whole signature budget before any `mul` pair
+  existed. The engine now queues a stage's forward checks behind its
+  lookups and keeps every fit at its original discovery position, so a
+  search that completes is unchanged. `benchmark_default_deferred.json`
+  and `benchmark_negative_z3_deferred.json` repeat both runs with the
+  same settings: every completed row (2 to 32 fields) is identical, and
+  64 fields now returns the intended rule `2 + x62 * x63` (22,110
+  candidates, holdout accuracy 1.0). The signature budget still ends that
+  search, so it is reported `search_incomplete`, not an exact recovery;
+  completing it needs cheaper forward checks, which is induction work for
+  after gate G1.
 - The 16-field negative-domain run is the one case without a large
   saving: the search went to depth 4 (1,422 candidates, about the v336
   count) before returning the intended rule `2 + x14 * x15`, verified

@@ -23,6 +23,13 @@ Search stages, in order:
    a prefix or suffix of the outputs is looked up for ``concat``.
    Completions start only after the affine stage, so a wide schema whose
    rule is affine in a ranked product is not charged quadratic work first.
+   Within a stage the cheap hash-lookup completions run as each program is
+   added; its forward checks (about one per terminal) are queued and run at
+   the end of the same stage, so on a wide schema a ``mul`` pair is
+   completed before the forward work of every earlier ``add`` pair has used
+   the budget. Each fit keeps the position the one-pass order would have
+   found it at (``DEFER_FORWARD``), so a search that is not truncated finds
+   the same fits and selects the same rule either way.
 4. One-level conditionals (``if_lt`` / ``if_eq``), run by the caller when
    no unconditional rule fits training and development data, and by the
    rival scan: predicates compare leaves with each other or with observed
@@ -72,6 +79,9 @@ MAX_PREDICATE_CONSTS = 24
 MAX_EQ_CONSTS = 8
 MAX_ALTERNATIVES_PER_KEY = 3
 PAIRWISE_LIMIT = 48
+#: Queue each stage's forward completions behind its hash-lookup ones.
+#: ``False`` restores the one-pass order; the equivalence tests use it.
+DEFER_FORWARD = True
 
 
 class _Err:
@@ -185,6 +195,20 @@ class Engine:
         self.conditionals_run = False
         self.completing = False
         self.prog_by_fp = {}
+        # Discovery positions: every fit is stamped with the position the
+        # one-pass order would have found it at, (slot, phase, sequence).
+        # A slot is one program's completion (or a stage boundary); phase 1
+        # is its forward checks. A duplicate keeps the earlier position, so
+        # deferring forward checks never changes which program represents
+        # a function.
+        self.defer_forward = DEFER_FORWARD
+        self.fit_pos = {}
+        self._fit_index = {}
+        self._forward_queue = []
+        self._slot = 0
+        self._phase = 0
+        self._offer_seq = 0
+        self.replaced_fits = 0
         self.useful = _useful_types(self.out_type)
         self._work = self._steps()
 
@@ -281,9 +305,26 @@ class Engine:
             if not _same(value, expected):
                 return False
         key = (sig, self.full_sig(prog))
-        if key in self.fits:
+        self._offer_seq += 1
+        pos = (self._slot, self._phase, self._offer_seq)
+        held = self.fits.get(key)
+        if held is not None:
+            if pos < self.fit_pos[key]:
+                # A deferred forward check reached a function that the
+                # one-pass order finds here first: this program represents
+                # it, exactly as before. Not a new candidate.
+                self.fits[key] = prog
+                self.fit_pos[key] = pos
+                self.fit_order[self._fit_index[key]] = prog
+                old_fp = canonical(held.ast)
+                if self.prog_by_fp.get(old_fp) is held:
+                    del self.prog_by_fp[old_fp]
+                self.prog_by_fp.setdefault(canonical(prog.ast), prog)
+                self.replaced_fits += 1
             return False
         self.fits[key] = prog
+        self.fit_pos[key] = pos
+        self._fit_index[key] = len(self.fit_order)
         self.fit_order.append(prog)
         self.prog_by_fp.setdefault(canonical(prog.ast), prog)
         return True
@@ -379,12 +420,33 @@ class Engine:
             yield "affine"
         self.completing = True
         for prog in list(self.pool):
+            self._new_slot()
             self._complete(prog)
+        self._drain_forward()
         yield "completions"
         for level in range(4, HORIZON_COST + 1):
             self._level(level)
+            self._drain_forward()
             self.level_reached = level
             yield "level"
+
+    def _new_slot(self):
+        """Start a discovery slot: later fits sort after earlier ones."""
+        self._slot += 1
+        self._phase = 0
+
+    def _drain_forward(self):
+        """Run the stage's queued forward checks, each at its own slot."""
+        queue, self._forward_queue = self._forward_queue, []
+        top = self._slot
+        try:
+            for x, slot in queue:
+                self._slot, self._phase = slot, 1
+                self._forward_int(x)
+        finally:
+            # Whatever the next stage offers sorts after every forward fit.
+            self._slot = top
+            self._new_slot()
 
     def _leaf_asts(self):
         first = self.train[0]["inputs"]
@@ -459,6 +521,7 @@ class Engine:
         depth = 1 + max(k.depth for k in kids)
         if not self.depth_ok(depth, POOL_DEPTH):
             return
+        self._new_slot()
         self.spend()
         prog = self.node(op, kids)
         added = self._add(prog)
@@ -495,7 +558,14 @@ class Engine:
                 self._lookup_int(x, "mul", tuple(o // v for o, v in zip(outs, xs)),
                                  first=True, skip_consts=(0, 1))
             if x.depth <= 2:
-                self._forward_int(x)
+                if self.defer_forward:
+                    self._forward_queue.append((x, self._slot))
+                else:
+                    self._phase = 1
+                    try:
+                        self._forward_int(x)
+                    finally:
+                        self._phase = 0
         elif self.out_type == "str" and x.type == "str" and "concat" in OPS:
             self.spend()
             if all(type(o) is str and o.startswith(v) for o, v in zip(outs, xs)):
@@ -559,6 +629,7 @@ class Engine:
 
     # ----------------------------------------------------------- affine
     def _affine_stage(self):
+        self._new_slot()
         ints = [p for p in self.leaves if p.type == "int"]
         n = self.n_train
         outs = self.outputs
@@ -668,6 +739,7 @@ class Engine:
     def run_conditionals(self):
         """Run the conditional stage under the active budget."""
         self.conditionals_run = True
+        self._new_slot()
         try:
             return self.conditionals()
         except Budget:

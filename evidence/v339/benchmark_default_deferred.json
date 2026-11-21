@@ -1,0 +1,324 @@
+{
+  "budget": {
+    "max_candidates": 50000,
+    "max_expression_depth": 5,
+    "max_memory_bytes": null,
+    "max_signature_checks": 500000,
+    "max_wall_seconds": 30.0
+  },
+  "equivalence_mode": "none",
+  "generated_at": "2026-11-21T04:53:44Z",
+  "input_domain": [
+    0,
+    9
+  ],
+  "kind": "induction_scalability",
+  "metric_definitions": {
+    "candidate_found": "the search returned some rule",
+    "equivalence_verified": "the returned rule and the target were proved equivalent over the declared bounded input box (z3 only)",
+    "exact_recovery_verified": "candidate found, intended structure recovered, equivalence verified, holdout perfect, search complete and result not ambiguous; the only exact-recovery claim",
+    "holdout_accuracy": "fraction of sealed holdout examples the returned rule matches",
+    "search_complete": "the search finished without truncation or resource exhaustion",
+    "target_structure_recovered": "the returned rule has the intended structure; commutative operands are normalized"
+  },
+  "partition": {
+    "dev": 3,
+    "holdout": 3,
+    "train": 6
+  },
+  "platform": "Linux-6.18.44-fc-v726-x86_64-with-glibc2.39",
+  "python": "3.13.18",
+  "results": [
+    {
+      "ambiguous": true,
+      "candidate_found": true,
+      "candidates_evaluated": 9,
+      "equivalence_scope": "not_requested",
+      "equivalence_verified": false,
+      "equivalence_witness": null,
+      "exact_recovery_verified": false,
+      "false_positive": false,
+      "fields": 2,
+      "holdout_accuracy": 1.0,
+      "holdout_correct": 3,
+      "holdout_count": 3,
+      "holdout_passed": 3,
+      "limits_hit": [],
+      "memory_limit_source": null,
+      "observed_peak_bytes": 0,
+      "peak_traced_bytes": 1306700,
+      "rule": {
+        "args": [
+          {
+            "args": [
+              {
+                "name": "x0",
+                "op": "field"
+              },
+              {
+                "name": "x1",
+                "op": "field"
+              }
+            ],
+            "op": "mul"
+          },
+          {
+            "op": "const",
+            "value": 2
+          }
+        ],
+        "op": "add"
+      },
+      "runtime_seconds": 0.311,
+      "search_complete": true,
+      "search_depth": 2,
+      "search_outcome": "completed",
+      "signature_checks": 50,
+      "status": "ambiguous",
+      "target_structure_recovered": true
+    },
+    {
+      "ambiguous": true,
+      "candidate_found": true,
+      "candidates_evaluated": 17,
+      "equivalence_scope": "not_requested",
+      "equivalence_verified": false,
+      "equivalence_witness": null,
+      "exact_recovery_verified": false,
+      "false_positive": false,
+      "fields": 4,
+      "holdout_accuracy": 1.0,
+      "holdout_correct": 3,
+      "holdout_count": 3,
+      "holdout_passed": 3,
+      "limits_hit": [],
+      "memory_limit_source": null,
+      "observed_peak_bytes": 0,
+      "peak_traced_bytes": 4676914,
+      "rule": {
+        "args": [
+          {
+            "args": [
+              {
+                "name": "x2",
+                "op": "field"
+              },
+              {
+                "name": "x3",
+                "op": "field"
+              }
+            ],
+            "op": "mul"
+          },
+          {
+            "op": "const",
+            "value": 2
+          }
+        ],
+        "op": "add"
+      },
+      "runtime_seconds": 1.04,
+      "search_complete": true,
+      "search_depth": 2,
+      "search_outcome": "completed",
+      "signature_checks": 161,
+      "status": "ambiguous",
+      "target_structure_recovered": true
+    },
+    {
+      "ambiguous": true,
+      "candidate_found": true,
+      "candidates_evaluated": 29,
+      "equivalence_scope": "not_requested",
+      "equivalence_verified": false,
+      "equivalence_witness": null,
+      "exact_recovery_verified": false,
+      "false_positive": false,
+      "fields": 8,
+      "holdout_accuracy": 1.0,
+      "holdout_correct": 3,
+      "holdout_count": 3,
+      "holdout_passed": 3,
+      "limits_hit": [],
+      "memory_limit_source": null,
+      "observed_peak_bytes": 0,
+      "peak_traced_bytes": 13600734,
+      "rule": {
+        "args": [
+          {
+            "args": [
+              {
+                "name": "x6",
+                "op": "field"
+              },
+              {
+                "name": "x7",
+                "op": "field"
+              }
+            ],
+            "op": "mul"
+          },
+          {
+            "op": "const",
+            "value": 2
+          }
+        ],
+        "op": "add"
+      },
+      "runtime_seconds": 2.415,
+      "search_complete": true,
+      "search_depth": 2,
+      "search_outcome": "completed",
+      "signature_checks": 607,
+      "status": "ambiguous",
+      "target_structure_recovered": true
+    },
+    {
+      "ambiguous": true,
+      "candidate_found": true,
+      "candidates_evaluated": 53,
+      "equivalence_scope": "not_requested",
+      "equivalence_verified": false,
+      "equivalence_witness": null,
+      "exact_recovery_verified": false,
+      "false_positive": false,
+      "fields": 16,
+      "holdout_accuracy": 1.0,
+      "holdout_correct": 3,
+      "holdout_count": 3,
+      "holdout_passed": 3,
+      "limits_hit": [],
+      "memory_limit_source": null,
+      "observed_peak_bytes": 0,
+      "peak_traced_bytes": 13659088,
+      "rule": {
+        "args": [
+          {
+            "args": [
+              {
+                "name": "x15",
+                "op": "field"
+              },
+              {
+                "name": "x14",
+                "op": "field"
+              }
+            ],
+            "op": "mul"
+          },
+          {
+            "op": "const",
+            "value": 2
+          }
+        ],
+        "op": "add"
+      },
+      "runtime_seconds": 5.116,
+      "search_complete": true,
+      "search_depth": 2,
+      "search_outcome": "completed",
+      "signature_checks": 1121,
+      "status": "ambiguous",
+      "target_structure_recovered": true
+    },
+    {
+      "ambiguous": true,
+      "candidate_found": true,
+      "candidates_evaluated": 101,
+      "equivalence_scope": "not_requested",
+      "equivalence_verified": false,
+      "equivalence_witness": null,
+      "exact_recovery_verified": false,
+      "false_positive": false,
+      "fields": 32,
+      "holdout_accuracy": 1.0,
+      "holdout_correct": 3,
+      "holdout_count": 3,
+      "holdout_passed": 3,
+      "limits_hit": [],
+      "memory_limit_source": null,
+      "observed_peak_bytes": 0,
+      "peak_traced_bytes": 6099673,
+      "rule": {
+        "args": [
+          {
+            "args": [
+              {
+                "name": "x31",
+                "op": "field"
+              },
+              {
+                "name": "x30",
+                "op": "field"
+              }
+            ],
+            "op": "mul"
+          },
+          {
+            "op": "const",
+            "value": 2
+          }
+        ],
+        "op": "add"
+      },
+      "runtime_seconds": 4.955,
+      "search_complete": true,
+      "search_depth": 2,
+      "search_outcome": "completed",
+      "signature_checks": 1217,
+      "status": "ambiguous",
+      "target_structure_recovered": true
+    },
+    {
+      "ambiguous": false,
+      "candidate_found": true,
+      "candidates_evaluated": 22110,
+      "equivalence_scope": "not_requested",
+      "equivalence_verified": false,
+      "equivalence_witness": null,
+      "exact_recovery_verified": false,
+      "false_positive": false,
+      "fields": 64,
+      "holdout_accuracy": 1.0,
+      "holdout_correct": 3,
+      "holdout_count": 3,
+      "holdout_passed": 3,
+      "limits_hit": [
+        "max_signature_checks"
+      ],
+      "memory_limit_source": null,
+      "observed_peak_bytes": 0,
+      "peak_traced_bytes": 24195945,
+      "rule": {
+        "args": [
+          {
+            "op": "const",
+            "value": 2
+          },
+          {
+            "args": [
+              {
+                "name": "x62",
+                "op": "field"
+              },
+              {
+                "name": "x63",
+                "op": "field"
+              }
+            ],
+            "op": "mul"
+          }
+        ],
+        "op": "add"
+      },
+      "runtime_seconds": 8.914,
+      "search_complete": false,
+      "search_depth": 2,
+      "search_outcome": "truncated",
+      "signature_checks": 500000,
+      "status": "search_incomplete",
+      "target_structure_recovered": true
+    }
+  ],
+  "target": "x[n-2] * x[n-1] + 2"
+}
