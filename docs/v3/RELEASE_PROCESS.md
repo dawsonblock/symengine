@@ -52,7 +52,20 @@ before it writes or builds anything. `requirements-lock.txt` does not
 include `cryptography`, so the test suite keeps exercising the
 fallback.
 
-1. Land every source change and make sure the tree is clean.
+1. Land every source change and make sure the tree is clean. Then
+   review every difference from the previous seal:
+
+   ```bash
+   python3 tools/reconcile_inventory.py \
+     --markdown /tmp/sis-reconciliation.md --json /tmp/sis-reconciliation.json
+   ```
+
+   It classifies each path as unchanged, modified, missing or extra
+   against `RELEASE_SHA256.json`, attributes every change to the
+   commits (and PR merges) since the seal commit, and exits non-zero
+   if any file is unattributed. Pass `--tree DIR` to check an
+   extracted download instead of the checkout. Read the report
+   before you rehash: drift you cannot attribute is not sealed.
 2. Run the supported suite and write signed machine-readable evidence:
 
    ```bash
@@ -254,6 +267,14 @@ gate and fails with one error naming every missing anchor. The
 release-only `test-evidence` job likewise fails with an explicit error
 when `SIS_TEST_EVIDENCE_SIGNING_KEY` is absent rather than uploading an
 unsigned report the seal cannot use.
+
+The `archive` job runs on every push and pull request. It builds the
+canonical source archive with `tools/build_canonical_zip.py` from a
+scratch worktree (the committed seal is never rewritten), extracts it
+into an empty directory, verifies the extracted tree against its own
+inventory, installs from it and runs the suite there with no Git
+checkout behind it. A file the archive omits but a test needs fails
+that job rather than a downloaded release.
 
 ## Test environment
 

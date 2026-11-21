@@ -313,7 +313,9 @@ def check(root: Path, mode: str, *,
             if mode == "development":
                 print(
                     "development tree: inventory drift allowed;"
-                    " not release verification")
+                    " not release verification. Attribute the drift"
+                    " with tools/reconcile_inventory.py; only the"
+                    " signed release process regenerates the seal.")
                 return 0
             raise ValueError("release manifest is stale")
         report = verify_tree(root)
