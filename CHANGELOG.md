@@ -1,5 +1,168 @@
 # Changelog
 
+## 2026-11-21 — Gate G1: inventory reconciliation, test evidence, archive CI (SIS-CHORE-25)
+
+`RELEASE_SHA256.json` and `release/source_inventory.json` are still the
+SIS-v3.3.9 seal of `d81f7bf`; an audit of a downloaded `main` found 102
+modified, 47 missing and 113 extra paths against it, and
+`tools/build_release.py --check` reports "release manifest is stale".
+That drift is expected in development and is now explained rather than
+rehashed: the seal is the owner's signed step, and nothing here touches
+`RELEASE_SHA256.json` or `release/`.
+
+- **Inventory reconciliation (SIS-401).** `tools/reconcile_inventory.py`
+  uses the release tooling's own walk and filter
+  (`build_release.inventory`, `check_source_manifest._included`) to
+  class every path as `unchanged`, `modified`, `missing_from_tree` or
+  `extra_in_tree`, checks that the inventory is the file at the seal
+  commit and that the seal commit's tree holds exactly its hashes, and
+  attributes each change to the commits since the seal that descend
+  from it, following renames (`--name-status -M`) and grouping by the
+  pull request that merged them. `--tree` may be the checkout or an
+  extracted archive; every tree file is compared with `HEAD` or
+  `--revision`, and any path Git history cannot explain is
+  `unattributed` and fails the gate (exit 1).
+  `evidence/v339/inventory_reconciliation.{md,json}` reports `de20441`
+  from a `git archive` zip: 321 unchanged, 102 modified, 47 missing, 113
+  extra, 0 unattributed, matching the audit. All 47 missing paths are
+  the moves into `docs/history/` (`a73e461`, PR #8), so 66 of the
+  extras are new files. `cbdf376` (the PR #9 merge, `origin/main`)
+  gives the same counts; the nine SIS-FIX-23 commits after it change
+  only already-drifted paths, so the tool tells the two apart only by
+  `--revision`. Of the 154 commits in `d81f7bf..de20441`, 126 descend
+  from the seal; the other 28 are the v3.3.2 to v3.3.4 mainline joined
+  by the PR #1 merge, whose tree equals its seal-side parent.
+- **Hidden skip removed (SIS-402).** `test_source_manifest.py` pinned
+  `--baseline-ref` to the v2 baseline `daf0ccc`, which this repository
+  never contained, so baseline verification was untested in every
+  checkout. A new test verifies the seal commit's inventory and blobs
+  and the separately reported development delta.
+- **Preserved test report (SIS-402).** `evidence/v339/test_report.json`
+  (`tools/run_tests.py --json`, `f392e22`, Python 3.13.18, pytest 8.4.2,
+  Docker present, agent user `sisagent`): 2254 passed, 0 failed,
+  40 skipped. It is **unsigned** development evidence, not the signed CI
+  evidence a seal requires. `evidence/v339/TEST_EVIDENCE.md` classifies
+  every skip (21 platform, 13 optional dependency, 4 environment,
+  2 other; no Docker test skipped) and records the non-root run from an
+  export (2254 passed), the PostgreSQL tests against a local
+  `postgres:16` (8 passed) and the extracted-archive run.
+- **Archive CI job (SIS-402).** The new `archive` job (Linux, Python
+  3.12) builds the canonical archive with `tools/build_canonical_zip.py`
+  from a scratch worktree, fails if the checkout's `RELEASE_SHA256.json`
+  changed, extracts it into an empty directory, verifies it against its
+  own inventory, installs from there, builds the evaluator image from
+  the extracted `docker/sandbox` and runs `tests/` with
+  `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONNOUSERSITE=1`. By hand: 540
+  files verified, 2246 passed, 45 skipped, 0 failed; the archive omits
+  nothing the suite needs, so what it includes is unchanged.
+
+## 2026-11-21 — Audit follow-ups: test runtime, signing backend, agent principal, benchmark (SIS-FIX-24)
+
+An external audit ran the suite under pytest 9.0.2 (about 130 failures
+and 9 errors) and flagged the non-constant-time Ed25519 fallback, opt-in
+agent OS separation and a stale benchmark record. Each change has a test
+that failed before it.
+
+- **One clear failure under the wrong pytest.** The evaluator refuses
+  any pytest but `EvaluationRuntimeProfile.pytest_version` (8.4.2), so
+  under 9.0.2 every evaluator test failed with `runtime_pin_mismatch`. A
+  `pytest_sessionstart` hook in `tests/conftest.py` now stops such a run
+  before collection with exit code 4 and one message naming the required
+  version and `pip install -r requirements-lock.txt` /
+  `pip install -e .[dev]`. The pin is read lazily from the profile, not
+  copied. `SIS_ALLOW_UNPINNED_PYTEST=1` runs the suite anyway.
+- **The pytest-9 failures are the pin, not pytest 9.** With
+  `SIS_ALLOW_UNPINNED_PYTEST=1`, the audited tree gave 133 failed and 9
+  errors under pytest 9.0.2. 140 come from the pin: 106 name it in their own failure
+  (`runtime_pin_mismatch` or `pytest_version_mismatch`), 3 surface it as
+  `evaluator_bootstrap_error`, and 31 are its consequences (evaluations
+  end in `error`, so pass counts, imports and qualification fail). With
+  a scratch copy's pin set to 9.0.2, 130 of them pass under pytest 9.0.2
+  and the other 10 fail on the 8.4.2 that the scripted test executor
+  and the evaluator image report. The last 2 are agent-principal
+  integration tests whose helper was killed (exit -9) while another run
+  on the machine used the same agent user; they pass in isolation on
+  both versions. None is a pytest-9 incompatibility, and collection is
+  identical (2,282 items), so nothing needed changing. The pin stays at
+  8.4.2.
+- **Production and release signing require the constant-time backend.**
+  `signatures.require_constant_time(context)` refuses the vendored
+  pure-Python Ed25519, whose scalar arithmetic is not constant-time. A
+  production verifier (`isolation_policy` set) rejects the evaluation
+  with `constant_time_signing_required` before the run, so no
+  `OutcomeReceiptV2` is signed on the fallback;
+  `tools/package_release.py --provenance-key` exits before writing
+  anything; `tools/check_release_ci.py --mode release` fails the gate.
+  Install the backend with `pip install -e .[production]`, a new extra
+  pinning `cryptography==50.0.2`. Development and test signing keep the
+  fallback, `requirements-lock.txt` still omits `cryptography` so CI
+  exercises it, and the release job installs `.[production]` only after
+  the suite, before the strict gate.
+- **A confirmatory run requires a separated agent principal.**
+  `tools/five_arm_campaign.py --real-agent` on a manifest whose
+  `study_tier` is `confirmatory` now stops before any agent turn with
+  `BLOCKED_AGENT_PRINCIPAL_REQUIRED` unless `--agent-user` names a
+  principal that reports separation and passes its preflight.
+  Exploratory and diagnostic studies still run unseparated, with the
+  disclosure and the limitation.
+- **Fresh benchmark evidence.** The `evidence/v336/benchmark_default.json`
+  and `benchmark_negative_z3.json` numbers predate the 2026-11-14
+  search-ordering change (and learner v2). `evidence/v339/` repeats both
+  runs with the recorded settings, with the commands and a comparison in
+  its README: from 2 to 32 fields the search needs one to two orders of
+  magnitude fewer candidates and checks, and 32 fields now completes
+  (exact recovery under z3). 64 fields on the default domain now
+  exhausts `max_signature_checks` without returning a rule; the change
+  dates from learner v2 (`a9c7620`), whose parent still finds it in 129
+  candidates. The engine is not changed here.
+
+## 2026-11-21 — Review fixes: agent principal, screener, split codec, manifest (SIS-FIX-23)
+
+A review of the agent-principal, screening and split-custody work found
+eight bugs; each fix has a test that failed before it.
+
+- **A failed copy-in no longer hands the agent a partial tree.** An
+  error while archiving the workspace (an unreadable file, one vanishing
+  mid-walk) was swallowed; the archive ended cleanly, the helper exited
+  0, and copy-back replaced the workspace with the partial tree. The
+  copy-in now raises `agent workspace copy incomplete: ...` after
+  reaping the helper.
+- **The returned tree stays readable to the evaluator.** An agent's
+  `chmod 000` came back verbatim, so `tree_digest` and grading failed
+  with `PermissionError`. `receive_tree` now writes files with at least
+  `0o600` and directories (the root included) with `0o700`; other bits
+  are kept, set-id and sticky stay dropped.
+- **Refreshed CLI credentials survive the turn.** A token the CLI
+  refreshed (or a refresh token it rotated) in the per-turn home was
+  deleted with it. Before removing the turn home, the helper, as the
+  agent user, copies each `CREDENTIAL_FILES` entry back to the agent's
+  home: regular non-symlink files only, only when changed, atomically
+  (temp file and rename) with mode 0600, never through a symlink.
+- **The screener rejects repositories the image shadows.** When the
+  image installs the repository's own package (the testdeps image ships
+  `dateutil`, `six`, `sortedcontainers`, `toml`, `yaml`, `freezegun`),
+  the split grader imports the installed copy, never the submission.
+  The new blocking kind `package_shadowed_by_image` makes that image's
+  verdict `unlikely`, with the reason in `reasons`.
+- **A failed copy-in leaves no agent-side directories.** `ws-<token>`
+  and `home-<token>` (with its copied credentials) are removed, best
+  effort, when the copy-in fails.
+- **Helper reads have a deadline.** A wedged helper could block a turn
+  forever while holding the kill and turn locks. Each workspace
+  transfer, and each helper call's timeout path, now kills the helper
+  (`sudo`, then every process of the agent user) after the helper
+  timeout and raises `... timed out`. The timeout is
+  `AgentPrincipal(helper_timeout=...)`, default 120 s.
+- **A float payload out of range is a protocol error.** `{"t": "float",
+  "v": 10**400}` raised a raw `OverflowError` in the host, bootstrap and
+  worker decoders; they now raise `SplitProtocolError` (host) and
+  `ValueError` (bootstrap, worker) like any other malformed payload.
+- **Manifest validation checks the hidden-tests root of support
+  files.** A task with `support_files` whose repository's hidden-tests
+  root is a file validated, then failed at registration with
+  `support_files_need_a_hidden_tests_directory`; validation now reports
+  it.
+
 ## 2026-11-20 — The coding agent can run as its own OS user (SIS-FEAT-22)
 
 In a real-agent study the campaign process both held the evaluator

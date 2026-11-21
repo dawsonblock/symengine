@@ -7,6 +7,14 @@ validated against the RFC test vectors and cross-checked against the
 ``cryptography`` backend in the test suite, but its scalar arithmetic is
 not constant-time. ``backend()`` reports which implementation is active so
 receipts and reports can state it honestly.
+
+The fallback is for development and tests. Production and release signing
+with a secret key — a production verifier's ``OutcomeReceiptV2``, the
+release provenance seal (``tools/package_release.py --provenance-key``) and
+the release gate (``tools/check_release_ci.py --mode release``) — call
+:func:`require_constant_time` and refuse to run on it. Install the backend
+with ``pip install -e .[production]``, which pins ``cryptography``.
+Verification uses only public data and works with either backend.
 """
 from __future__ import annotations
 
@@ -189,6 +197,28 @@ def _valid_public_key_cached(public: bytes) -> bool:
 def backend() -> str:
     """Name the active signing backend for honest reporting."""
     return "cryptography" if _HAS_CRYPTOGRAPHY else "vendored-python"
+
+
+class ConstantTimeBackendRequired(RuntimeError):
+    """Production or release signing was asked of the vendored fallback."""
+
+
+def require_constant_time(context: str) -> None:
+    """Refuse ``context`` unless the constant-time backend is active.
+
+    ``context`` names the signing step, e.g. ``"release provenance
+    signing"``. Development and test signing do not call this and keep
+    the vendored fallback.
+    """
+    if not isinstance(context, str) or not context.strip():
+        raise ValueError("context must name the signing step")
+    if backend() != "cryptography":
+        raise ConstantTimeBackendRequired(
+            f"{context} requires the constant-time Ed25519 backend; the"
+            f" active backend is {backend()!r}, a pure-Python fallback"
+            " whose scalar arithmetic is not constant-time and which is"
+            " for development and tests only. Install the 'cryptography'"
+            " package with `pip install -e .[production]`.")
 
 
 def public_key(seed: bytes) -> bytes:

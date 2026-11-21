@@ -48,8 +48,10 @@ fixtures it requests. The same rules are applied to the first
 version of its one test file. The verdict is coarse and per image:
 ``likely`` when at least 60% of those candidates are clean (of the test
 modules at HEAD when fewer than three candidates exist), ``partial``
-from 25%, ``unlikely`` below that or when the package itself imports a
-module the image lacks. **This is a heuristic, not a verdict on any
+from 25%, ``unlikely`` below that, when the package itself imports a
+module the image lacks, or when the image installs the repository's own
+package (the grader would import that copy, never the submission).
+**This is a heuristic, not a verdict on any
 task**: only ``--verify docker`` grades a task.
 
 ``--sample N`` adds an empirical rate: the first N fix candidates are
@@ -130,7 +132,8 @@ BLOCKING = ("missing_test_dependency", "callable_into_package",
             "patches_package", "base_exception_expected",
             "captures_package_output", "evaluator_process_state",
             "evaluator_temp_files", "reads_data_files",
-            "removed_python_api", "nose_style_test", "unparseable")
+            "removed_python_api", "nose_style_test", "unparseable",
+            "package_shadowed_by_image")
 #: Call results that the split codec cannot carry into the worker (it
 #: carries None, bool, int, float, str, bytes, slices, and lists, tuples,
 #: sets and mappings of those; anything else needs a callback).
@@ -994,6 +997,10 @@ class TreeAnalysis:
             kinds.add("missing_test_dependency")
         if any(name not in available for name in self.runtime):
             kinds.add("package_runtime_dependency")
+        if set(self.packages) & available:
+            # The image installs the repository's own package: the split
+            # grader imports that copy (trusted_spec), never the submission.
+            kinds.add("package_shadowed_by_image")
         return kinds
 
 
@@ -1034,6 +1041,7 @@ def screen_repository(root: Path, *, candidates: int = 0,
                 len(clean) / len(modules), 3) if modules else 0.0,
             "package_runtime_missing": sorted(
                 name for name in tree.runtime if name not in available),
+            "package_shadowed": sorted(set(tree.packages) & available),
         }
     blocked_by: Counter = Counter()
     per_module = {}
@@ -1142,6 +1150,11 @@ def _decide(report: dict, profile: str) -> None:
                         for kind, count in sorted(
                             report["modules_blocked_by"].items(),
                             key=lambda item: (-item[1], item[0]))]
+    shadowed = image.get("package_shadowed") or []
+    if shadowed:
+        reasons.append("the image installs the repository's own package: "
+                       + ", ".join(shadowed) + "; the grader would import"
+                       " the installed copy, never the submission")
     if runtime:
         reasons.append("the package imports modules the image lacks: "
                        + ", ".join(runtime))
@@ -1151,7 +1164,7 @@ def _decide(report: dict, profile: str) -> None:
     if missing:
         reasons.append("third-party test imports the image lacks: "
                        + ", ".join(missing))
-    if not total or runtime or fraction < PARTIAL_AT:
+    if not total or runtime or shadowed or fraction < PARTIAL_AT:
         verdict = "unlikely"
     elif fraction >= LIKELY_AT:
         verdict = "likely"

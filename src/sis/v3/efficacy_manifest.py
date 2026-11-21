@@ -730,6 +730,18 @@ def _validate_tasks(document, by_id: dict[str, dict], problems: list[str],
         hidden_root = (repository.get("hidden_tests") or {}).get("path") \
             if repository is not None and isinstance(
                 repository.get("hidden_tests"), Mapping) else None
+        if (acceptance.get("support_files")
+                and isinstance(hidden_root, str)
+                and not _placeholder(hidden_root)
+                and Path(hidden_root).exists()
+                and not Path(hidden_root).is_dir()):
+            # The run registers support files from the hidden-tests
+            # directory and refuses a file-shaped root
+            # (support_files_need_a_hidden_tests_directory). A missing root
+            # is reported by the path checks.
+            _problem(problems,
+                     f"{label}.acceptance.support_files need the"
+                     " repository's hidden_tests path to be a directory")
         if (not support_file_problems(acceptance)
                 and acceptance.get("support_files")
                 and isinstance(hidden_root, str)

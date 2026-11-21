@@ -1,4 +1,5 @@
 """Release qualification consumes executed test evidence, not typed totals."""
+import contextlib
 import hashlib
 import json
 import shutil
@@ -8,6 +9,7 @@ import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools"))
@@ -327,18 +329,28 @@ class PackageIsolationRecordTests(unittest.TestCase):
             attestation_path.write_bytes(
                 attestation.canonical_bytes() + b"\n")
             release_seed, _release_public = signatures.generate_keypair()
-            result = package_release.package(
-                root, "SIS-test", status="TEST",
-                test_evidence=evidence,
-                provenance_seed=release_seed,
-                provenance_trust_root="qualification-only",
-                isolation_receipt=receipt_path,
-                isolation_attestation=attestation_path,
-                isolator_public_key=iso_public.hex(),
-                isolation_image_digest="6" * 64,
-                isolation_policy_digest="5" * 64,
-                isolation_properties=["net:denied"],
-                require_external_attestation=True)
+            # The seal refuses the vendored signing fallback, which CI
+            # keeps; this test is about the isolation record, so there
+            # it lifts only that guard (ReleaseSigningBackendTests in
+            # test_release_inventory.py cover it).
+            guard = (contextlib.nullcontext()
+                     if signatures.backend() == "cryptography"
+                     else mock.patch.object(
+                         signatures, "require_constant_time",
+                         lambda context: None))
+            with guard:
+                result = package_release.package(
+                    root, "SIS-test", status="TEST",
+                    test_evidence=evidence,
+                    provenance_seed=release_seed,
+                    provenance_trust_root="qualification-only",
+                    isolation_receipt=receipt_path,
+                    isolation_attestation=attestation_path,
+                    isolator_public_key=iso_public.hex(),
+                    isolation_image_digest="6" * 64,
+                    isolation_policy_digest="5" * 64,
+                    isolation_properties=["net:denied"],
+                    require_external_attestation=True)
             record = result["release_manifest"]["isolation"][
                 "external_attestation"]
             self.assertTrue(record["verified"])

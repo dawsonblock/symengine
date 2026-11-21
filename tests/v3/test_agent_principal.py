@@ -16,6 +16,7 @@ import json
 import os
 import pwd
 import shutil
+import signal
 import stat
 import subprocess
 import sys
@@ -342,14 +343,40 @@ class ReceiveTreeTests(unittest.TestCase):
         self.assertEqual((self.dest / "copy.py").read_text(), "A = 1\n")
         self.assertNotEqual((self.dest / "copy.py").stat().st_ino,
                             (self.dest / "src" / "a.py").stat().st_ino)
-        # Set-id bits are dropped; a read-only directory is applied last.
+        # Set-id bits are dropped; the owner keeps full access to a
+        # read-only directory, applied last.
         self.assertEqual(stat.S_IMODE((self.dest / "run.sh").stat().st_mode),
                          0o755)
         self.assertEqual(stat.S_IMODE((self.dest / "src").stat().st_mode),
-                         0o555)
+                         0o755)
         # A symlink stays a link (the evaluator refuses links later).
         self.assertTrue((self.dest / "link").is_symlink())
-        os.chmod(self.dest / "src", 0o755)
+
+    def test_the_evaluator_can_always_read_the_returned_tree(self):
+        # The agent may chmod 000 its files and directories; the tree that
+        # is digested and graded must stay readable to the evaluator, which
+        # now owns it.
+        self.receive([
+            (".", tarfile.DIRTYPE, None, 0o000),
+            ("./locked", tarfile.DIRTYPE, None, 0o000),
+            ("./locked/inside.py", tarfile.REGTYPE, b"IN = 1\n", 0o000),
+            ("./secret.py", tarfile.REGTYPE, b"S = 1\n", 0o000),
+            ("./copy.py", tarfile.LNKTYPE, "secret.py", 0o000),
+            ("./shared", tarfile.DIRTYPE, None, 0o1075),
+            ("./shared/tool", tarfile.REGTYPE, b"#!/bin/sh\n", 0o2051),
+        ])
+        modes = {name: stat.S_IMODE((self.dest / name).stat().st_mode)
+                 for name in (".", "locked", "locked/inside.py",
+                              "secret.py", "copy.py", "shared",
+                              "shared/tool")}
+        self.assertEqual(modes, {
+            ".": 0o700, "locked": 0o700, "locked/inside.py": 0o600,
+            "secret.py": 0o600, "copy.py": 0o600,
+            # Other bits are kept; set-id and sticky stay dropped.
+            "shared": 0o775, "shared/tool": 0o651})
+        self.assertEqual((self.dest / "locked" / "inside.py").read_text(),
+                         "IN = 1\n")
+        self.assertRegex(tree_digest(self.dest), r"^[0-9a-f]{64}$")
 
     def test_unsafe_names_and_types_are_refused(self):
         cases = [
@@ -442,13 +469,12 @@ class CheckoutTests(unittest.TestCase):
             (agent_path / "run.sh").unlink()
         self.assertEqual((self.workspace / "pkg" / "mod.py").read_text(),
                          "X = 2\n")
+        # The returned tree stays readable to the evaluator.
         new = self.workspace / "new.py"
-        self.assertEqual(stat.S_IMODE(new.stat().st_mode), 0o000)
-        new.chmod(0o600)
+        self.assertEqual(stat.S_IMODE(new.stat().st_mode), 0o600)
         self.assertEqual(new.read_text(), "NEW = 1\n")
         locked = self.workspace / "locked"
-        self.assertEqual(stat.S_IMODE(locked.stat().st_mode), 0o000)
-        locked.chmod(0o700)
+        self.assertEqual(stat.S_IMODE(locked.stat().st_mode), 0o700)
         self.assertEqual((locked / "inside.txt").read_text(), "in")
         self.assertFalse((self.workspace / "run.sh").exists())
         self.assertEqual(list((self.home / "sis-work").iterdir()), [])
@@ -471,11 +497,205 @@ class CheckoutTests(unittest.TestCase):
                 raise ValueError("agent failed")
         self.assertEqual(list(self.work.iterdir()), [self.workspace])
 
+    @unittest.skipIf(os.geteuid() == 0, "root reads a mode-000 file")
+    def test_an_unreadable_workspace_file_fails_the_copy_in(self):
+        # The archive would end cleanly before the file it could not
+        # read, and the helper would unpack a partial tree.
+        locked = self.workspace / "pkg" / "secret.py"
+        locked.write_text("S = 1\n")
+        locked.chmod(0o000)
+        with self.assertRaisesRegex(AgentPrincipalError,
+                                    "workspace copy incomplete"):
+            with self.agent.checkout(self.workspace):
+                self.fail("the agent must not work on a partial tree")
+        self.assertEqual(stat.S_IMODE(locked.stat().st_mode), 0o000)
+
+    def test_a_file_vanishing_mid_walk_fails_the_copy_in(self):
+        before = tree_digest(self.workspace)
+        original = tarfile.TarFile.add
+
+        def vanishing(archive, name, arcname=None, recursive=True, *,
+                      filter=None):
+            if arcname == "./pkg":
+                raise FileNotFoundError(2, "vanished", name)
+            return original(archive, name, arcname, recursive, filter=filter)
+
+        with mock.patch.object(tarfile.TarFile, "add", vanishing):
+            with self.assertRaisesRegex(AgentPrincipalError,
+                                        "workspace copy incomplete"):
+                with self.agent.checkout(self.workspace):
+                    self.fail("the agent must not work on a partial tree")
+        self.assertEqual(tree_digest(self.workspace), before)
+        # The partial agent-side copy and the turn home are removed.
+        self.assertEqual(list((self.home / "sis-work").iterdir()), [])
+
+    def test_a_failed_copy_in_leaves_no_agent_directories(self):
+        # The helper created ws-<token> and home-<token> (with copied
+        # credentials) before the unpack failed.
+        def failing_unpack(argv, **kwargs):
+            if argv[-1] == "unpack":
+                argv = list(argv)
+                argv[argv.index(HELPER_SOURCE)] = HELPER_SOURCE.replace(
+                    "    archive.extractall(",
+                    "    raise SystemExit('unpack failed')\n"
+                    "    archive.extractall(", 1)
+            return self.runner(argv, **kwargs)
+        self.agent._runner = failing_unpack
+        with self.assertRaisesRegex(AgentPrincipalError, "unpack failed"):
+            with self.agent.checkout(self.workspace):
+                self.fail("the copy-in failed")
+        self.assertEqual(list((self.home / "sis-work").iterdir()), [])
+        # A local failure while archiving.
+        self.agent._runner = self.runner
+        with mock.patch.object(tarfile.TarFile, "add",
+                               side_effect=OSError("vanished")):
+            with self.assertRaises(AgentPrincipalError):
+                with self.agent.checkout(self.workspace):
+                    self.fail("the copy-in failed")
+        self.assertEqual(list((self.home / "sis-work").iterdir()), [])
+        self.assertEqual(list(self.work.iterdir()), [self.workspace])
+
+    def test_refreshed_credentials_outlive_the_turn_home(self):
+        # The CLI may refresh an OAuth token or rotate a refresh token in
+        # the per-turn home; the next turn must start from the new one.
+        persistent = self.home / ".claude" / ".credentials.json"
+        persistent.chmod(0o644)
+        outside = self.root / "outside.json"
+        outside.write_text("evaluator data")
+        with self.agent.checkout(self.workspace):
+            turn_home = Path(self.agent.environment({})["HOME"])
+            (turn_home / ".claude" / ".credentials.json").write_text(
+                '{"token": "refreshed"}')
+            # A symlink planted at a source is never copied.
+            (turn_home / ".codex").mkdir()
+            (turn_home / ".codex" / "auth.json").symlink_to(outside)
+        self.assertEqual(persistent.read_text(), '{"token": "refreshed"}')
+        self.assertFalse(persistent.is_symlink())
+        self.assertEqual(stat.S_IMODE(persistent.stat().st_mode), 0o600)
+        self.assertFalse(os.path.lexists(self.home / ".codex" / "auth.json"))
+        self.assertEqual(sorted(os.listdir(self.home / ".claude")),
+                         [".credentials.json"])
+        self.assertEqual(list((self.home / "sis-work").iterdir()), [])
+
+    def test_unchanged_credentials_are_not_rewritten(self):
+        persistent = self.home / ".claude" / ".credentials.json"
+        before = persistent.stat()
+        with self.agent.checkout(self.workspace):
+            pass
+        after = persistent.stat()
+        self.assertEqual((after.st_ino, after.st_mtime_ns),
+                         (before.st_ino, before.st_mtime_ns))
+
+    def test_a_destination_symlink_is_replaced_not_followed(self):
+        outside = self.root / "outside.json"
+        outside.write_text("evaluator data")
+        persistent = self.home / ".claude" / ".credentials.json"
+        persistent.unlink()
+        persistent.symlink_to(outside)
+        with self.agent.checkout(self.workspace):
+            turn_home = Path(self.agent.environment({})["HOME"])
+            # Seeding never followed the link either.
+            self.assertFalse(
+                (turn_home / ".claude" / ".credentials.json").exists())
+            (turn_home / ".claude").mkdir(exist_ok=True)
+            (turn_home / ".claude" / ".credentials.json").write_text("new")
+        self.assertEqual(outside.read_text(), "evaluator data")
+        self.assertFalse(persistent.is_symlink())
+        self.assertEqual(persistent.read_text(), "new")
+
     def test_one_turn_at_a_time(self):
         with self.agent.checkout(self.workspace):
             with self.assertRaisesRegex(AgentPrincipalError, "one turn"):
                 with self.agent.checkout(self.workspace):
                     pass
+
+
+#: A wedged helper as sudo launches it: the process the evaluator holds
+#: (sudo) can be killed, but the helper below it (the agent user's) keeps
+#: the pipes open and never answers.
+WEDGED_HELPER = (
+    "import subprocess, sys, time\n"
+    "subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(20)'])\n"
+    "time.sleep(20)\n")
+
+
+@unittest.skipUnless(POSIX, "agent principals are POSIX-only")
+class HelperDeadlineTests(unittest.TestCase):
+    """A helper that never closes its stdout cannot block a turn."""
+
+    BOUND = 15
+
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.root = Path(temp.name)
+        self.home = self.root / "agent-home"
+        self.home.mkdir(mode=0o700)
+        self.work = self.root / "work"
+        self.work.mkdir(mode=0o700)
+        self.workspace = self.work / "arm-A-1"
+        self.workspace.mkdir()
+        (self.workspace / "mod.py").write_text("X = 1\n")
+        self.groups: list[int] = []
+        self.killed: list[str] = []
+        self.addCleanup(self.kill_groups)
+
+    def kill_groups(self):
+        for pid in self.groups:
+            try:
+                os.killpg(pid, signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                pass
+
+    def agent(self, wedged: str) -> AgentPrincipal:
+        local = local_runner()
+
+        def run(argv, **kwargs):
+            op = argv[-1]
+            if op == wedged:
+                proc = subprocess.Popen([sys.executable, "-c",
+                                         WEDGED_HELPER], **kwargs)
+                self.groups.append(proc.pid)
+                return proc
+            if op == "kill":
+                # The agent-user kill reaches the helper below sudo.
+                self.killed.append(wedged)
+                self.kill_groups()
+                return FakeProc(b'{"ok": true, "rounds": 1}\n')
+            return local(argv, **kwargs)
+        return principal(home=str(self.home), runner=run, helper_timeout=1)
+
+    def assertTimesOut(self, pattern, function):
+        start = time.monotonic()
+        with self.assertRaisesRegex(AgentPrincipalError, pattern):
+            function()
+        self.assertLess(time.monotonic() - start, self.BOUND)
+        self.assertTrue(self.killed)
+
+    def test_a_wedged_copy_in_times_out(self):
+        agent = self.agent("unpack")
+
+        def turn():
+            with agent.checkout(self.workspace):
+                self.fail("the copy-in never finished")
+        self.assertTimesOut("copy timed out", turn)
+        self.assertEqual((self.workspace / "mod.py").read_text(), "X = 1\n")
+
+    def test_a_wedged_copy_back_times_out(self):
+        agent = self.agent("pack")
+
+        def turn():
+            with agent.checkout(self.workspace) as path:
+                (Path(path) / "mod.py").write_text("X = 2\n")
+        self.assertTimesOut("copy-back timed out", turn)
+        # The workspace stays as staged and nothing of the turn is left.
+        self.assertEqual((self.workspace / "mod.py").read_text(), "X = 1\n")
+        self.assertEqual(list((self.home / "sis-work").iterdir()), [])
+        self.assertEqual(list(self.work.iterdir()), [self.workspace])
+
+    def test_a_wedged_helper_call_times_out(self):
+        agent = self.agent("probe")
+        self.assertTimesOut("probe timed out", lambda: agent.probe(["/x"]))
 
 
 class FakePrincipal:

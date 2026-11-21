@@ -287,6 +287,31 @@ class ScreenTests(unittest.TestCase):
                          ["nose"])
         self.assertEqual(report["images"]["testdeps"]["verdict"], "unlikely")
 
+    def test_a_package_the_image_installs_shadows_the_submission(self):
+        # The testdeps image ships six: the split grader would import the
+        # installed copy, never the submitted one.
+        path = self.repo({
+            "six.py": "def u(text):\n    return text\n",
+            "tests/test_six.py": """
+                import six
+
+                def test_u():
+                    assert six.u("x") == "x"
+                """})
+        report = screen.screen_repository(path)
+        self.assertEqual(report["packages"], ["six"])
+        tree = screen.TreeAnalysis(path, "HEAD")
+        self.assertNotIn("package_shadowed_by_image", tree.blocking(
+            "tests/test_six.py", screen.PROFILES["base"]))
+        self.assertIn("package_shadowed_by_image", tree.blocking(
+            "tests/test_six.py", screen.PROFILES["testdeps"]))
+        self.assertEqual(report["images"]["base"]["verdict"], "likely")
+        testdeps = report["images"]["testdeps"]
+        self.assertEqual(testdeps["verdict"], "unlikely")
+        self.assertEqual(testdeps["package_shadowed"], ["six"])
+        self.assertIn("the image installs the repository's own package: six",
+                      " ".join(testdeps["reasons"]))
+
     def test_a_package_runtime_dependency_blocks_every_module(self):
         path = self.repo({
             "pkg/__init__.py": """

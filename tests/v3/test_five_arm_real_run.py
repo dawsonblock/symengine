@@ -79,7 +79,8 @@ def _status(available=True, authenticated=True):
 
 def _manifest(root: Path, *, arms=GOVERNED_ARMS,
               kind="five_arm_efficacy_manifest",
-              identical_induction=False) -> dict:
+              identical_induction=False, holdout_count=5, task_count=9,
+              study_tier="exploratory") -> dict:
     repositories = []
     for index in range(5):
         path = root / f"induction-{index}"
@@ -99,7 +100,7 @@ def _manifest(root: Path, *, arms=GOVERNED_ARMS,
             "partition": "induction",
         })
     holdout_repos = []
-    for index in range(5):
+    for index in range(holdout_count):
         holdout = root / f"holdout-{index}"
         base_commit, origin = _repository(
             holdout, "solution.py", f"NO = {index}\n")
@@ -129,7 +130,7 @@ def _manifest(root: Path, *, arms=GOVERNED_ARMS,
         arms=arms)
     protocol["powered"] = True
     tasks = []
-    for index in range(9):
+    for index in range(task_count):
         repo = holdout_repos[index % len(holdout_repos)]
         tasks.append({
             "task_id": f"task-{index}",
@@ -145,10 +146,10 @@ def _manifest(root: Path, *, arms=GOVERNED_ARMS,
                          "acceptance.py"],
                 "files": {"acceptance.py": ACCEPTANCE}},
         })
-    # Five holdout repositories: a declared exploratory study (the
-    # confirmatory floor is MIN_CONFIRMATORY_HOLDOUT_REPOSITORIES = 20).
+    # Five holdout repositories by default: a declared exploratory study
+    # (the confirmatory floor is MIN_CONFIRMATORY_HOLDOUT_REPOSITORIES = 20).
     return {
-        "schema_version": 1, "kind": kind, "study_tier": "exploratory",
+        "schema_version": 1, "kind": kind, "study_tier": study_tier,
         "protocol": protocol,
         "agent": {"kind": "codex-cli", "model": "test-model",
                   "cli_version": "1.2.3"},

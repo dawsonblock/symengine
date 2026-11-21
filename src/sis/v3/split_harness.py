@@ -259,7 +259,10 @@ def _decode(payload: Any, depth: int = 0) -> Any:
             raise SplitProtocolError("float payload must be a number")
         # JSON decoding shares one NaN object; two distinct NaNs must stay
         # two set elements or mapping keys.
-        value = float(value)
+        try:
+            value = float(value)
+        except OverflowError as exc:
+            raise SplitProtocolError("float payload is out of range") from exc
         return float("nan") if value != value else value
     if kind == "str":
         value = payload.get("v")
@@ -672,7 +675,10 @@ class NotEncodable(Exception):
 def fresh_float(value):
     # JSON decoding gives every NaN token one shared float, so two NaNs
     # would collapse into one set element or mapping key: each is its own.
-    value = float(value)
+    try:
+        value = float(value)
+    except OverflowError:
+        raise ValueError("float payload is out of range")
     return float("nan") if value != value else value
 
 
@@ -1405,7 +1411,10 @@ def decode(payload, depth=0):
     if kind == "float":
         # A fresh float per NaN: JSON decoding shares one NaN object, and
         # two distinct NaNs must stay two set elements or mapping keys.
-        value = float(payload.get("v"))
+        try:
+            value = float(payload.get("v"))
+        except OverflowError:
+            raise ValueError("float payload is out of range")
         return float("nan") if value != value else value
     if kind == "str":
         return payload.get("v")

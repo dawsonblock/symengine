@@ -25,10 +25,12 @@ import unittest
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from pathlib import Path
+from unittest import mock
 
 from sis.v3 import signatures
 from sis.v3.contracts import ContractError, TaskEnvelopeV1
 from sis.v3.evaluation_runtime import (
+    EVALUATOR_BOOTSTRAP_ERROR,
     SANDBOX_FAILURE,
     TASK_PASS,
     classify_execution,
@@ -357,8 +359,8 @@ class ProductionClassificationTests(IsolationFixture):
                 self.receipt, production=True, isolation_attested=True)
 
 
-class ProductionVerifierTests(unittest.TestCase):
-    """G2.2/G2.3: the verifier issues V2 only with validated isolation."""
+class ProductionVerifierFixture(unittest.TestCase):
+    """A production-policy verifier, its isolator and one registered task."""
 
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -415,6 +417,22 @@ class ProductionVerifierTests(unittest.TestCase):
             actor_role="evaluator", task=_task(),
             submission_dir=self.submission,
             evaluation_nonce=kw.pop("nonce", "nonce-1"), **kw)
+
+
+class ProductionVerifierTests(ProductionVerifierFixture):
+    """G2.2/G2.3: the verifier issues V2 only with validated isolation."""
+
+    def setUp(self):
+        super().setUp()
+        if signatures.backend() != "cryptography":
+            # Production signing refuses the vendored fallback, which CI
+            # keeps (cryptography is not in requirements-lock.txt). These
+            # tests pin V2 semantics, so there they lift only that guard;
+            # ProductionSigningBackendTests cover the guard itself.
+            patcher = mock.patch.object(
+                signatures, "require_constant_time", lambda context: None)
+            patcher.start()
+            self.addCleanup(patcher.stop)
 
     def test_production_evaluation_issues_v2(self):
         receipt = self.evaluate(isolation_attestation_resolver=self.resolver)
@@ -568,6 +586,62 @@ class ProductionVerifierTests(unittest.TestCase):
             source = (root / name).read_text(encoding="utf-8")
             self.assertIn("parse_outcome_receipt", source, name)
             self.assertNotIn("OutcomeReceiptV1.from_json", source, name)
+
+
+class ProductionSigningBackendTests(ProductionVerifierFixture):
+    """A production OutcomeReceiptV2 is signed only by the constant-time backend."""
+
+    def test_the_vendored_fallback_is_refused_before_the_run(self):
+        with mock.patch.object(signatures, "_HAS_CRYPTOGRAPHY", False):
+            with self.assertRaises(EvaluationRejected) as caught:
+                self.evaluate(isolation_attestation_resolver=self.resolver)
+        self.assertEqual(caught.exception.reason,
+                         "constant_time_signing_required")
+        self.assertIn("pip install -e .[production]", str(caught.exception))
+        self.assertIn("OutcomeReceiptV2", str(caught.exception))
+        self.assertEqual(self.verifier.last_outcome_class,
+                         EVALUATOR_BOOTSTRAP_ERROR)
+        # Nothing ran (not even the bootstrap probe), nothing was signed
+        # or journaled.
+        self.assertEqual(self.executor._counter, 0)
+        self.assertEqual(self.executions, [])
+        self.assertEqual(self.verifier.issued_receipts(), [])
+
+    def test_development_signing_keeps_the_fallback(self):
+        verifier = OutcomeVerifier(
+            allow_shared_custody=True,
+            executor=ScriptedExecutor(self.root / "dev-exec"),
+            key_dir=self.root / "dev-keys",
+            registry_dir=self.root / "dev-registry")
+        verifier.register_task(
+            actor_role="evaluator", task_id="task-scale",
+            criterion_version="acceptance-v1",
+            argv=(PY, "acceptance.py"),
+            files={"acceptance.py": ACCEPTANCE})
+        with mock.patch.object(signatures, "_HAS_CRYPTOGRAPHY", False):
+            receipt = verifier.evaluate(
+                actor_role="evaluator", task=_task(),
+                submission_dir=self.submission, evaluation_nonce="nonce-dev")
+        self.assertIsInstance(receipt, OutcomeReceiptV1)
+        self.assertTrue(verifier.verify_receipt(receipt))
+
+    @unittest.skipUnless(signatures.backend() == "cryptography",
+                         "the cryptography package is not installed")
+    def test_the_cryptography_backend_signs_v2(self):
+        receipt = self.evaluate(isolation_attestation_resolver=self.resolver)
+        self.assertIsInstance(receipt, OutcomeReceiptV2)
+        self.assertEqual(receipt.outcome, "pass")
+        self.assertTrue(self.verifier.verify_receipt(receipt))
+
+    @unittest.skipUnless(signatures.backend() == "cryptography",
+                         "the cryptography package is not installed")
+    def test_a_refused_evaluation_consumes_nothing(self):
+        with mock.patch.object(signatures, "_HAS_CRYPTOGRAPHY", False):
+            with self.assertRaises(EvaluationRejected):
+                self.evaluate(isolation_attestation_resolver=self.resolver)
+        # The same nonce and tree evaluate once the backend is present.
+        receipt = self.evaluate(isolation_attestation_resolver=self.resolver)
+        self.assertIsInstance(receipt, OutcomeReceiptV2)
 
 
 class AttestationIssuanceTests(IsolationFixture):

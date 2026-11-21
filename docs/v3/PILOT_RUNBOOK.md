@@ -105,9 +105,14 @@ keep every line hashed.
   keys, registry, journal, trust config, candidate registry, hidden
   tests, support files or repository clones, and that it can run the
   CLI; any readable path blocks the run (`BLOCKED_AGENT_PRINCIPAL`). The
-  report records the principal (`agent_principal`), and a run without one
-  says so in its limitations. Not covered: the agent user can still leave
-  files in `/tmp` or its home for later turns.
+  report records the principal (`agent_principal`). A confirmatory
+  manifest (`study_tier: confirmatory`, the default for a powered
+  protocol) requires the agent user: without `--agent-user`, or with a
+  principal that does not report separation, `five_arm_campaign.py`
+  stops before any agent turn with `BLOCKED_AGENT_PRINCIPAL_REQUIRED`.
+  An exploratory or diagnostic run may still go without one and says so
+  in its limitations. Not covered: the agent user can still leave files
+  in `/tmp` or its home for later turns.
 
 ## 1. Repositories
 

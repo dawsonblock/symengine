@@ -59,9 +59,9 @@ class CampaignPrincipalTests(unittest.TestCase):
             return {"tokens_used": 5, "tools_used": 1}
         return agent
 
-    def run_real(self, output, principal, **kwargs):
+    def run_real(self, output, principal, manifest=None, **kwargs):
         return self.tool.run_real(
-            output, self.manifest, allow_shared_custody=True,
+            output, manifest or self.manifest, allow_shared_custody=True,
             agent_factory=self.factory, agent_principal=principal,
             **kwargs)
 
@@ -116,14 +116,85 @@ class CampaignPrincipalTests(unittest.TestCase):
             "/study/private/pkg/t1/support/tests/conftest.py", checked)
 
     def test_an_unseparated_run_discloses_it(self):
+        # The fixture manifest is exploratory: it still runs without a
+        # principal, and says so.
         output = self.root / "report.json"
         self.tool.run_real(output, self.manifest, allow_shared_custody=True,
                            agent_factory=self.real_run._scripted_agent)
-        analysis = json.loads(output.read_text())["learning_qualification"]
+        report = json.loads(output.read_text())
+        self.assertEqual(report["manifest"]["study_tier"], "exploratory")
+        self.assertFalse(report["release_gate"].startswith("BLOCKED_"))
+        self.assertEqual(report["receipts_issued"], 18)
+        analysis = report["learning_qualification"]
         self.assertEqual(analysis["provenance"]["agent_principal"],
                          {"separated": False})
         self.assertTrue(any("agent principal not separated" in item
                             for item in analysis["limitations"]))
+
+    def confirmatory_manifest(self) -> Path:
+        # A confirmatory study needs MIN_CONFIRMATORY_HOLDOUT_REPOSITORIES
+        # (20) holdout repositories contributing tasks.
+        root = self.root / "confirmatory"
+        root.mkdir()
+        document = self.real_run._manifest(
+            root, arms=("A", "E"), kind="primary_contrast_efficacy_manifest",
+            holdout_count=20, task_count=20, study_tier="confirmatory")
+        return self.real_run._write(root, document)
+
+    def test_a_confirmatory_run_without_a_principal_is_blocked(self):
+        output = self.root / "report.json"
+        turns = []
+
+        def factory(prompts, budget, model):
+            def agent(ctx):
+                turns.append(ctx.task.task_id)
+                return {"tokens_used": 5, "tools_used": 1}
+            return agent
+
+        code = self.tool.run_real(
+            output, self.confirmatory_manifest(), allow_shared_custody=True,
+            agent_factory=factory)
+        report = json.loads(output.read_text())
+        self.assertEqual(code, 2)
+        self.assertEqual(report["release_gate"],
+                         "BLOCKED_AGENT_PRINCIPAL_REQUIRED")
+        self.assertEqual(report["evidence_class"], "invalid")
+        self.assertEqual(report["manifest"]["study_tier"], "confirmatory")
+        self.assertIn("--agent-user", report["note"])
+        self.assertEqual(turns, [])
+
+    def test_a_confirmatory_run_with_a_checked_principal_proceeds(self):
+        principal = FakePrincipal(self.root)
+        output = self.root / "report.json"
+        self.run_real(output, principal, manifest=self.confirmatory_manifest())
+        report = json.loads(output.read_text())
+        self.assertFalse(report["release_gate"].startswith("BLOCKED_"),
+                         report.get("note"))
+        self.assertEqual(report["manifest"]["study_tier"], "confirmatory")
+        self.assertTrue(principal.checked)
+        self.assertEqual(self.factory_principals, [principal])
+        self.assertEqual(principal.checkouts, 40)
+        self.assertEqual(report["receipts_issued"], 40)
+        analysis = report["learning_qualification"]
+        self.assertTrue(analysis["provenance"]["agent_principal"]["separated"])
+        self.assertFalse(any("agent principal not separated" in item
+                             for item in analysis["limitations"]))
+
+    def test_a_confirmatory_run_needs_a_principal_that_reports_separation(self):
+        class Unseparated(FakePrincipal):
+            def describe(self):
+                return {"separated": False, "user": self.user}
+
+        principal = Unseparated(self.root)
+        output = self.root / "report.json"
+        code = self.run_real(output, principal,
+                             manifest=self.confirmatory_manifest())
+        report = json.loads(output.read_text())
+        self.assertEqual(code, 2)
+        self.assertEqual(report["release_gate"],
+                         "BLOCKED_AGENT_PRINCIPAL_REQUIRED")
+        self.assertEqual(self.factory_principals, [])
+        self.assertEqual(principal.checkouts, 0)
 
     def test_a_failed_preflight_blocks_before_any_agent_turn(self):
         principal = FakePrincipal(

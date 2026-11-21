@@ -658,6 +658,18 @@ class OutcomeVerifier:
         if marker in self._evaluated:
             raise EvaluationRejected("duplicate_evaluation", registration.task_id)
 
+        if self.isolation_policy is not None:
+            # A production evaluation ends in an OutcomeReceiptV2 signed
+            # with the evaluator's secret key, which the vendored
+            # fallback would do in non-constant time. Refuse before the
+            # run, so nothing is executed or consumed.
+            try:
+                signatures.require_constant_time(
+                    "signing a production OutcomeReceiptV2")
+            except signatures.ConstantTimeBackendRequired as exc:
+                self.last_outcome_class = EVALUATOR_BOOTSTRAP_ERROR
+                raise EvaluationRejected(
+                    "constant_time_signing_required", str(exc)) from exc
         bootstrap = self.bootstrap()
         if not bootstrap.ok:
             self.last_outcome_class = EVALUATOR_BOOTSTRAP_ERROR

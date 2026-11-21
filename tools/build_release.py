@@ -65,7 +65,11 @@ def main(argv=None) -> int:
             print("release manifest missing; run tools/build_release.py", file=sys.stderr)
             return 1
         if existing != current:
-            print("release manifest is stale; run tools/build_release.py", file=sys.stderr)
+            print("release manifest is stale: the tree differs from the sealed"
+                  " inventory. Review the drift with"
+                  " tools/reconcile_inventory.py; regenerate the seal only in"
+                  " the signed release process (docs/v3/RELEASE_PROCESS.md,"
+                  " 'The seal ritual').", file=sys.stderr)
             return 1
         print(f"release manifest covers {len(current['files'])} files and is current")
         return 0

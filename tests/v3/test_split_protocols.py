@@ -348,6 +348,60 @@ class SplitCodecTests(SplitHarness):
             _decode(payload)
 
 
+#: The worker answers this float with an integer no float can hold.
+HUGE_SENTINEL = 12345.5
+HUGE = 10 ** 400
+
+
+@unittest.skipUnless(os.name == "posix", "socketpair transport")
+class SplitHugeFloatTests(SplitHarness):
+    """A float payload too large for a float is a protocol error."""
+
+    def worker_command(self, child: socket.socket) -> list[str]:
+        argv = super().worker_command(child)
+        line = ('    if isinstance(value, float):\n'
+                '        return {"t": "float", "v": value}\n')
+        # [python, -I, -c, WORKER_SOURCE, ...]
+        assert argv[3].count(line) == 1, "worker float encoding moved"
+        argv[3] = argv[3].replace(line, (
+            '    if isinstance(value, float):\n'
+            '        return {"t": "float", "v": %d if value == %r else value}\n'
+            % (HUGE, HUGE_SENTINEL)))
+        return argv
+
+    def setUp(self):
+        super().setUp()
+        self.write("big.py", (
+            f"def huge():\n    return {HUGE_SENTINEL!r}\n"
+            "def echo(value):\n    return value\n"))
+
+    def test_the_host_decoder_reports_a_protocol_error(self):
+        with self.assertRaisesRegex(SplitProtocolError, "out of range"):
+            _decode({"t": "float", "v": HUGE})
+        client = self.host_client()
+        with self.assertRaisesRegex(SplitProtocolError, "out of range"):
+            client.call(["big", "huge"], (), {})
+
+    def test_the_worker_decoder_reports_a_protocol_error(self):
+        client = self.host_client()
+        response = client.request({
+            "op": "call", "path": ["big", "echo"],
+            "args": [{"t": "float", "v": HUGE}], "kwargs": {}})
+        self.assertFalse(response["ok"])
+        self.assertEqual(response["error"]["type"], "ValueError")
+        self.assertIn("out of range", response["error"]["message"])
+
+    def test_the_bootstrap_decoder_reports_a_protocol_error(self):
+        self.assertPasses({"test_hidden.py": (
+            "import pytest\n"
+            "import big\n"
+            "def test_huge():\n"
+            "    with pytest.raises(ValueError, match='out of range'):\n"
+            "        big.huge()\n"
+            "    assert big.echo(1.5) == 1.5\n"
+        )})
+
+
 STATE_MODULE = """
 import collections
 

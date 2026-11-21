@@ -4,6 +4,7 @@ import json
 import subprocess
 import sys
 import tempfile
+import textwrap
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -23,6 +24,20 @@ COMMIT = "a" * 40
 IMAGE = "1" * 64
 POLICY = "2" * 64
 PROPERTIES = PRODUCTION_PROPERTIES
+TOOL = str(ROOT / "tools/check_release_ci.py")
+# Runs the tool with the signing backend forced to the vendored fallback
+# ("fallback") or with only the release gate's constant-time guard lifted
+# ("unguarded").
+LAUNCHER = textwrap.dedent("""
+    import runpy, sys
+    from sis.v3 import signatures
+    if sys.argv[1] == "fallback":
+        signatures._HAS_CRYPTOGRAPHY = False
+    elif sys.argv[1] == "unguarded":
+        signatures.require_constant_time = lambda context: None
+    sys.argv = sys.argv[2:]
+    runpy.run_path(sys.argv[0], run_name="__main__")
+""")
 
 
 def _utcnow() -> str:
@@ -30,7 +45,7 @@ def _utcnow() -> str:
         timespec="seconds").replace("+00:00", "Z")
 
 
-class ReleaseCITests(unittest.TestCase):
+class ReleaseCIFixture(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
@@ -43,9 +58,17 @@ class ReleaseCITests(unittest.TestCase):
         self.release_dir = self.root / "release"
         self.release_dir.mkdir()
 
-    def run_check(self, mode, *extra, env=None):
+    def run_check(self, mode, *extra, env=None, backend=None):
+        if backend is None and signatures.backend() != "cryptography":
+            # Release mode refuses the vendored signing fallback, which
+            # CI's test job keeps (cryptography is not in
+            # requirements-lock.txt). There the other release-mode tests
+            # lift only that guard; ReleaseGateBackendTests cover it.
+            backend = "unguarded"
+        launcher = ([sys.executable, "-c", LAUNCHER, backend]
+                    if backend is not None else [sys.executable])
         return subprocess.run(
-            [sys.executable, str(ROOT / "tools/check_release_ci.py"),
+            [*launcher, TOOL,
              "--mode", mode, "--source", str(self.root), *extra],
             capture_output=True, text=True, env=env,
         )
@@ -218,6 +241,8 @@ class ReleaseCITests(unittest.TestCase):
               for item in ("--isolation-property", prop)),
         )
 
+
+class ReleaseCITests(ReleaseCIFixture):
     def test_matching_inventory_passes_development_only(self):
         result = self.run_check("development")
         self.assertEqual(result.returncode, 0)
@@ -511,6 +536,38 @@ class ReleaseCITests(unittest.TestCase):
             "SIS_TEST_EVIDENCE_SIGNING_KEY is not configured", workflow)
         for chunk in workflow.split("python tools/run_tests.py")[1:]:
             self.assertIn("--signing-key", chunk[:200])
+
+
+class ReleaseGateBackendTests(ReleaseCIFixture):
+    """Release qualification requires the constant-time signing backend."""
+
+    def test_release_mode_refuses_the_vendored_fallback(self):
+        self.write_valid_release()
+        result = self.run_check("release", *self.valid_args(),
+                                backend="fallback")
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn("release inventory check failed: release"
+                      " qualification (tools/check_release_ci.py --mode"
+                      " release) requires the constant-time Ed25519"
+                      " backend", result.stderr)
+        self.assertIn("pip install -e .[production]", result.stderr)
+        self.assertNotIn("release qualification verified", result.stdout)
+
+    def test_development_mode_keeps_the_fallback(self):
+        result = self.run_check("development", backend="fallback")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("release qualification not performed", result.stdout)
+
+    @unittest.skipUnless(signatures.backend() == "cryptography",
+                         "the cryptography package is not installed")
+    def test_release_mode_passes_with_the_cryptography_backend(self):
+        self.write_valid_release()
+        result = subprocess.run(
+            [sys.executable, TOOL, "--mode", "release",
+             "--source", str(self.root), *self.valid_args()],
+            capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("release qualification verified", result.stdout)
 
 
 class ReleasePathTests(unittest.TestCase):

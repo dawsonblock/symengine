@@ -6,17 +6,23 @@ and made ``verify_release.py`` fail on an otherwise clean tree.
 """
 from __future__ import annotations
 
+import shutil
+import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools"))
 sys.path.insert(0, str(ROOT / "src"))
 
 import package_release  # noqa: E402
+import provenance  # noqa: E402
 from check_source_manifest import _included  # noqa: E402
 from sis import __version__  # noqa: E402
+from sis.v3 import signatures  # noqa: E402
 
 
 class InventoryExclusionTests(unittest.TestCase):
@@ -71,6 +77,78 @@ class ArchivePreservationTests(unittest.TestCase):
 
     def test_no_archive_is_a_no_op(self):
         self.assertIsNone(package_release._preserve_archive(self.archive))
+
+
+class ReleaseSigningBackendTests(unittest.TestCase):
+    """The release seal is signed only by the constant-time backend."""
+
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.root = Path(temp.name) / "proj"
+        self.root.mkdir()
+        self.seed = bytes(range(32))
+
+    def fallback(self):
+        return mock.patch.object(signatures, "_HAS_CRYPTOGRAPHY", False)
+
+    def test_the_seal_is_refused_before_anything_is_written(self):
+        with self.fallback(), self.assertRaises(SystemExit) as caught:
+            package_release.package(
+                self.root, "SIS-test", status="test", passed=1,
+                allow_dirty=True, provenance_seed=self.seed)
+        message = str(caught.exception)
+        self.assertIn("release provenance signing (tools/package_release.py"
+                      " --provenance-key) requires the constant-time", message)
+        self.assertIn("pip install -e .[production]", message)
+        self.assertEqual(list(self.root.iterdir()), [])
+
+    def test_the_signing_step_refuses_the_vendored_fallback(self):
+        statement = provenance.build_statement(
+            archive_name="SIS-test.zip", archive_sha256="0" * 64,
+            release="SIS-test", branch="test", source_commit="a" * 40)
+        with self.fallback(), self.assertRaises(
+                signatures.ConstantTimeBackendRequired):
+            package_release.sign_provenance(
+                statement, self.seed, "release-key",
+                archive_path=self.root / "SIS-test.zip")
+
+    def test_the_cli_refuses_a_provenance_key_on_the_fallback(self):
+        key = self.root.parent / "release.key"
+        key.write_text(self.seed.hex() + "\n")
+        argv = ["package_release.py", "--root", str(self.root),
+                "--release", "SIS-test", "--status", "test", "--passed", "1",
+                "--allow-dirty", "--provenance-key", str(key)]
+        with self.fallback(), mock.patch.object(sys, "argv", argv), \
+                self.assertRaises(SystemExit) as caught:
+            package_release.main()
+        self.assertIn("pip install -e .[production]", str(caught.exception))
+        self.assertEqual(list(self.root.iterdir()), [])
+
+    @unittest.skipUnless(signatures.backend() == "cryptography",
+                         "the cryptography package is not installed")
+    @unittest.skipUnless(shutil.which("git"), "git is required")
+    def test_the_cryptography_backend_signs_a_verifiable_seal(self):
+        (self.root / "source.py").write_text("VALUE = 1\n")
+        for args in (("init", "-q"), ("add", "source.py"),
+                     ("-c", "user.name=t", "-c", "user.email=t@example.invalid",
+                      "commit", "-q", "-m", "source")):
+            subprocess.run(["git", "-C", str(self.root), *args], check=True,
+                           capture_output=True)
+        # The extracted tree has no test suite to smoke-test.
+        with mock.patch.object(package_release, "fresh_extraction_checks",
+                               return_value={"compileall_src": True}):
+            result = package_release.package(
+                self.root, "SIS-test", status="test", passed=1,
+                allow_dirty=True, provenance_seed=self.seed)
+        info = result["release_manifest"]["provenance"]
+        self.assertTrue(info["signed"])
+        statement = provenance.verify_file(
+            self.root / "release" / "provenance.dsse.json",
+            provenance.public_key_hex(self.seed),
+            archive_path=self.root / "release" / "SIS-test.zip")
+        self.assertEqual(statement["subject"][0]["digest"]["sha256"],
+                         info["subject_sha256"])
 
 
 if __name__ == "__main__":

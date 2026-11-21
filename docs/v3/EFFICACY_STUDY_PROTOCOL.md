@@ -291,8 +291,10 @@ diagnostic or unpowered plan) or a repository snapshot has drifted,
 `BLOCKED_SPLIT_CUSTODY` when the
 backend cannot keep acceptance tests out of the submission's process,
 `BLOCKED_AGENT_VERSION` when the installed CLI does not match the
-pinned `agent.cli_version`, and `BLOCKED_GUIDANCE` when a supplied
-guidance bundle is unusable.
+pinned `agent.cli_version`, `BLOCKED_AGENT_PRINCIPAL_REQUIRED` when a
+confirmatory manifest runs without a separated agent principal
+(`--agent-user`), and `BLOCKED_GUIDANCE` when a supplied guidance bundle
+is unusable.
 
 Executing a manifest is not evidence. A confirmatory label additionally
 requires all of the following, recorded in the report's `provenance`
@@ -300,6 +302,12 @@ block and enforced by the classifier:
 
 - the agent is the real `codex-cli` or `claude-code` (an injected test
   agent is `invalid`, never `exploratory`);
+- the agent ran as a separate OS user (`--agent-user`, see
+  `docs/v3/PILOT_RUNBOOK.md`) whose preflight found none of the
+  evaluator material readable. The gate enforces this before any agent
+  turn: a confirmatory manifest without one is
+  `BLOCKED_AGENT_PRINCIPAL_REQUIRED`, while an exploratory or diagnostic
+  run may go unseparated and records the limitation;
 - the installed CLI version matched the manifest;
 - private acceptance tests ran under split custody — on Linux,
   `--executor docker`, which grades in `DockerSandboxExecutor` with a

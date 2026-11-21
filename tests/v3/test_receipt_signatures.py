@@ -6,6 +6,7 @@ import tempfile
 import threading
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from sis.errors import InvalidInput
 from sis.v3 import signatures
@@ -431,6 +432,29 @@ class BackendDispatchTests(unittest.TestCase):
             self.assertEqual(signatures.backend(), "vendored-python")
         else:
             self.assertEqual(signatures.backend(), "cryptography")
+
+    def test_production_signing_refuses_the_vendored_fallback(self):
+        with mock.patch.object(signatures, "_HAS_CRYPTOGRAPHY", False):
+            self.assertEqual(signatures.backend(), "vendored-python")
+            with self.assertRaises(
+                    signatures.ConstantTimeBackendRequired) as caught:
+                signatures.require_constant_time("release signing")
+            # Development and test signing keep the fallback.
+            seed = bytes(range(32))
+            signature = signatures.sign(seed, b"dev")
+        message = str(caught.exception)
+        self.assertIn("release signing requires the constant-time", message)
+        self.assertIn("'vendored-python'", message)
+        self.assertIn("pip install -e .[production]", message)
+        self.assertTrue(signatures.verify(
+            signature, b"dev", signatures.public_key(seed)))
+        with self.assertRaises(ValueError):
+            signatures.require_constant_time(" ")
+
+    @unittest.skipUnless(signatures.backend() == "cryptography",
+                         "the cryptography package is not installed")
+    def test_production_signing_accepts_the_cryptography_backend(self):
+        self.assertIsNone(signatures.require_constant_time("release signing"))
 
     def test_vendored_fallback_interoperates_with_active_backend(self):
         seed = bytes(range(32))

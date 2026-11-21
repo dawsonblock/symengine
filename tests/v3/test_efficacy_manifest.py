@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -387,6 +388,41 @@ class EfficacyManifestTests(unittest.TestCase):
         report = validate_manifest(document)
         self.assertTrue(report["valid"], report["problems"])
         self.assertEqual(report["distinct_holdout_lineages"], 20)
+
+    def test_support_files_need_a_hidden_tests_directory(self):
+        # The run registers support files from the repository's
+        # hidden-tests directory; a file-shaped root fails there
+        # (support_files_need_a_hidden_tests_directory), so validation
+        # must report it.
+        with tempfile.TemporaryDirectory() as temp:
+            hidden_dir = Path(temp) / "hidden"
+            hidden_dir.mkdir()
+            hidden_file = Path(temp) / "hidden.py"
+            hidden_file.write_text("def test_x():\n    pass\n")
+
+            def document_with(root: Path) -> dict:
+                document = manifest()
+                task = document["tasks"][0]
+                repo = next(item for item in document["repositories"]
+                            if item["repository_id"] == task["repository_id"])
+                repo["hidden_tests"]["path"] = str(root)
+                task["acceptance"].update({
+                    "hidden_tests_path": str(hidden_dir / "t1" / "test_x.py"),
+                    "hidden_tests_digest": "1" * 64,
+                    "support_files": [{
+                        "target": "tests/conftest.py",
+                        "path": str(hidden_dir / "t1" / "conftest.py"),
+                        "digest": "2" * 64}]})
+                return document
+
+            report = validate_manifest(document_with(hidden_dir))
+            self.assertTrue(report["valid"], report["problems"])
+            report = validate_manifest(document_with(hidden_file))
+            self.assertFalse(report["valid"])
+            self.assertTrue(any(
+                "support_files need the repository's hidden_tests path to"
+                " be a directory" in problem
+                for problem in report["problems"]), report["problems"])
 
     def test_a_task_must_declare_the_holdout_partition(self):
         for declared in ("induction", None):

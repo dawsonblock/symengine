@@ -1,10 +1,11 @@
 """Explicit release/development inventory and authenticity policy for CI.
 
-Release mode requires the release metadata, the claimed archive, the
-source binding, a signed production provenance envelope, authenticated
-test evidence and a cryptographically verified external isolation
-attestation. Development mode reports inventory drift without rewriting
-anything and never claims release qualification. The relying party
+Release mode requires the constant-time signing backend
+(``pip install -e .[production]``), the release metadata, the claimed
+archive, the source binding, a signed production provenance envelope,
+authenticated test evidence and a cryptographically verified external
+isolation attestation. Development mode reports inventory drift without
+rewriting anything and never claims release qualification. The relying party
 supplies every trust anchor; the tool never treats a key shipped beside
 the artifact as its own root of trust.
 """
@@ -22,11 +23,13 @@ import test_evidence as test_evidence_module  # noqa: E402
 import verify_external_attestation  # noqa: E402
 from build_release import manifest_document  # noqa: E402
 from check_source_manifest import _valid_manifest  # noqa: E402
+from sis.v3 import signatures  # noqa: E402
 from sis.v3.contracts import ContractError, ExecutionReceiptV1  # noqa: E402
 from sis.v3.docker_sandbox import PRODUCTION_PROPERTIES  # noqa: E402
 from verify_release import verify, verify_against_tree, verify_tree  # noqa: E402
 
 RELEASE_MANIFEST = Path("release") / "release_manifest.json"
+RELEASE_GATE = "release qualification (tools/check_release_ci.py --mode release)"
 
 
 def _public_key(value: str) -> str:
@@ -299,6 +302,10 @@ def check(root: Path, mode: str, *,
     if mode not in {"release", "development"}:
         raise ValueError("unknown CI mode")
     try:
+        if mode == "release":
+            # The release gate runs where the release is signed; it
+            # refuses an environment without the constant-time backend.
+            signatures.require_constant_time(RELEASE_GATE)
         manifest = json.loads(
             (root / "RELEASE_SHA256.json").read_text(encoding="utf-8"))
         _valid_manifest(manifest)
@@ -306,7 +313,9 @@ def check(root: Path, mode: str, *,
             if mode == "development":
                 print(
                     "development tree: inventory drift allowed;"
-                    " not release verification")
+                    " not release verification. Attribute the drift"
+                    " with tools/reconcile_inventory.py; only the"
+                    " signed release process regenerates the seal.")
                 return 0
             raise ValueError("release manifest is stale")
         report = verify_tree(root)
