@@ -1,5 +1,65 @@
 # Changelog
 
+## 2026-11-21 — Audit follow-ups: test runtime, signing backend, agent principal, benchmark (SIS-FIX-24)
+
+An external audit ran the suite under pytest 9.0.2 (about 130 failures
+and 9 errors) and flagged the non-constant-time Ed25519 fallback, opt-in
+agent OS separation and a stale benchmark record. Each change has a test
+that failed before it.
+
+- **One clear failure under the wrong pytest.** The evaluator refuses
+  any pytest but `EvaluationRuntimeProfile.pytest_version` (8.4.2), so
+  under 9.0.2 every evaluator test failed with `runtime_pin_mismatch`. A
+  `pytest_sessionstart` hook in `tests/conftest.py` now stops such a run
+  before collection with exit code 4 and one message naming the required
+  version and `pip install -r requirements-lock.txt` /
+  `pip install -e .[dev]`. The pin is read lazily from the profile, not
+  copied. `SIS_ALLOW_UNPINNED_PYTEST=1` runs the suite anyway.
+- **The pytest-9 failures are the pin, not pytest 9.** With
+  `SIS_ALLOW_UNPINNED_PYTEST=1`, the audited tree gave 133 failed and 9
+  errors under pytest 9.0.2. 140 come from the pin: 106 name it in their own failure
+  (`runtime_pin_mismatch` or `pytest_version_mismatch`), 3 surface it as
+  `evaluator_bootstrap_error`, and 31 are its consequences (evaluations
+  end in `error`, so pass counts, imports and qualification fail). With
+  a scratch copy's pin set to 9.0.2, 130 of them pass under pytest 9.0.2
+  and the other 10 fail on the 8.4.2 that the scripted test executor
+  and the evaluator image report. The last 2 are agent-principal
+  integration tests whose helper was killed (exit -9) while another run
+  on the machine used the same agent user; they pass in isolation on
+  both versions. None is a pytest-9 incompatibility, and collection is
+  identical (2,282 items), so nothing needed changing. The pin stays at
+  8.4.2.
+- **Production and release signing require the constant-time backend.**
+  `signatures.require_constant_time(context)` refuses the vendored
+  pure-Python Ed25519, whose scalar arithmetic is not constant-time. A
+  production verifier (`isolation_policy` set) rejects the evaluation
+  with `constant_time_signing_required` before the run, so no
+  `OutcomeReceiptV2` is signed on the fallback;
+  `tools/package_release.py --provenance-key` exits before writing
+  anything; `tools/check_release_ci.py --mode release` fails the gate.
+  Install the backend with `pip install -e .[production]`, a new extra
+  pinning `cryptography==50.0.2`. Development and test signing keep the
+  fallback, `requirements-lock.txt` still omits `cryptography` so CI
+  exercises it, and the release job installs `.[production]` only after
+  the suite, before the strict gate.
+- **A confirmatory run requires a separated agent principal.**
+  `tools/five_arm_campaign.py --real-agent` on a manifest whose
+  `study_tier` is `confirmatory` now stops before any agent turn with
+  `BLOCKED_AGENT_PRINCIPAL_REQUIRED` unless `--agent-user` names a
+  principal that reports separation and passes its preflight.
+  Exploratory and diagnostic studies still run unseparated, with the
+  disclosure and the limitation.
+- **Fresh benchmark evidence.** The `evidence/v336/benchmark_default.json`
+  and `benchmark_negative_z3.json` numbers predate the 2026-11-14
+  search-ordering change (and learner v2). `evidence/v339/` repeats both
+  runs with the recorded settings, with the commands and a comparison in
+  its README: from 2 to 32 fields the search needs one to two orders of
+  magnitude fewer candidates and checks, and 32 fields now completes
+  (exact recovery under z3). 64 fields on the default domain now
+  exhausts `max_signature_checks` without returning a rule; the change
+  dates from learner v2 (`a9c7620`), whose parent still finds it in 129
+  candidates. The engine is not changed here.
+
 ## 2026-11-21 — Review fixes: agent principal, screener, split codec, manifest (SIS-FIX-23)
 
 A review of the agent-principal, screening and split-custody work found
