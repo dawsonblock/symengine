@@ -38,6 +38,20 @@ to point at a different version.
 `release/` holds provenance about the archive, not payload. The archive
 itself is out-of-band (`release/*.zip` is git-ignored).
 
+Release signing requires the constant-time Ed25519 backend. Install it
+in the sealing environment first:
+
+```bash
+pip install -e .[production]   # pins cryptography
+```
+
+`package_release.py --provenance-key` and `check_release_ci.py --mode
+release` refuse to run on the vendored pure-Python fallback, whose
+scalar arithmetic is not constant-time, and say so; the seal exits
+before it writes or builds anything. `requirements-lock.txt` does not
+include `cryptography`, so the test suite keeps exercising the
+fallback.
+
 1. Land every source change and make sure the tree is clean.
 2. Run the supported suite and write signed machine-readable evidence:
 
@@ -153,7 +167,8 @@ itself is out-of-band (`release/*.zip` is git-ignored).
    `kernel:gvisor` and `syscalls:seccomp_allowlist`; in CI the set comes
    from the `SIS_ISOLATION_PROPERTIES` variable (comma-separated).
 
-   Release mode refuses a missing release manifest or ZIP, a stale
+   Release mode refuses an environment without the constant-time
+   signing backend, a missing release manifest or ZIP, a stale
    source binding, a duplicate/unexpected/modified archive member, an
    unsigned or non-production provenance envelope, an unsigned or
    inconsistent test report, a missing or expired isolation attestation,
@@ -223,6 +238,11 @@ re-hashes the archive against `release/release_manifest.json`, checks
 the source binding and re-verifies the signed provenance. A missing
 archive fails with an explicit error naming the tag.
 
+The suite runs first, on the vendored signing fallback from
+`requirements-lock.txt`; the job then installs `.[production]` and only
+then calls the gate, which refuses to qualify a release without the
+constant-time backend.
+
 The gate's trust anchors come from repository configuration
 (`secrets.SIS_RELEASE_PUBLIC_KEY`, `secrets.SIS_TEST_EVIDENCE_PUBLIC_KEY`,
 `secrets.SIS_ISOLATOR_PUBLIC_KEY`, `vars.SIS_ISOLATION_IMAGE_DIGEST`,
@@ -251,6 +271,11 @@ PYTHONPATH=src:. python3 -m pytest tests/ -q
   sealing environment.
 - PostgreSQL replay tests skip without `SIS_POSTGRES_DSN`; the dedicated
   CI job supplies one and is the qualifying run for that profile.
+- `requirements-lock.txt` leaves `cryptography` out, so the suite runs
+  on the vendored Ed25519 fallback. There the `OutcomeReceiptV2` and
+  release-gate tests lift only the constant-time guard, the tests that
+  sign with `cryptography` skip, and the tests of the refusal force the
+  fallback and run everywhere.
 
 ## Static gate
 

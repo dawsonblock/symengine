@@ -46,10 +46,13 @@ import provenance
 import test_evidence as test_evidence_module
 import verify_external_attestation
 from build_canonical_zip import build, source_binding
+from sis.v3 import signatures
 from sis.v3.contracts import ContractError, ExecutionReceiptV1
 from verify_release import verify_tree
 
 SMOKE_TEST = "tests/v3/test_candidates.py"
+RELEASE_SIGNING = ("release provenance signing"
+                   " (tools/package_release.py --provenance-key)")
 
 
 def _sha256(path: Path) -> str:
@@ -356,6 +359,24 @@ def _release_readme(manifest: dict, out: Path) -> str:
     return "\n".join(lines)
 
 
+def require_release_signing_backend() -> None:
+    """Exit unless the release seal can be signed in constant time."""
+    try:
+        signatures.require_constant_time(RELEASE_SIGNING)
+    except signatures.ConstantTimeBackendRequired as exc:
+        raise SystemExit(str(exc)) from exc
+
+
+def sign_provenance(statement: dict, seed: bytes, key_id: str, *,
+                    archive_path: Path) -> tuple[dict, str]:
+    """Sign the release statement and check the envelope against the archive."""
+    signatures.require_constant_time(RELEASE_SIGNING)
+    envelope = provenance.sign_statement(statement, seed, key_id)
+    public_hex = provenance.public_key_hex(seed)
+    provenance.verify_envelope(envelope, public_hex, archive_path=archive_path)
+    return envelope, public_hex
+
+
 def package(root: Path, release: str, *, status: str,
             passed: int | None = None,
             skipped: int = 0, failed: int = 0, allow_dirty: bool = False,
@@ -376,6 +397,10 @@ def package(root: Path, release: str, *, status: str,
             isolation_properties: list[str] | None = None,
             isolation_max_age_seconds: int = 3600,
             require_external_attestation: bool = False) -> dict:
+    if provenance_seed is not None:
+        # Before anything is written or built: the seal is signed with
+        # the release secret key.
+        require_release_signing_backend()
     root = Path(root).resolve()
     out = root / "release"
     out.mkdir(parents=True, exist_ok=True)
@@ -568,11 +593,9 @@ def package(root: Path, release: str, *, status: str,
     statement_sha256 = hashlib.sha256(
         provenance.canonical_json(statement)).hexdigest()
     if provenance_seed is not None:
-        envelope = provenance.sign_statement(
-            statement, provenance_seed, provenance_key_id)
-        public_hex = provenance.public_key_hex(provenance_seed)
-        provenance.verify_envelope(
-            envelope, public_hex, archive_path=archive)
+        envelope, public_hex = sign_provenance(
+            statement, provenance_seed, provenance_key_id,
+            archive_path=archive)
         provenance_path = out / "provenance.dsse.json"
         provenance_path.write_text(
             json.dumps(envelope, indent=2, sort_keys=True) + "\n")

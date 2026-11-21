@@ -212,6 +212,21 @@
   `(task_id, tree_digest, criterion_version)` dedup marker reject
   replays; the benchmark receipt cache reuses identical-submission
   receipts by reference, not by re-evaluation.
+- **Production and release signing require the constant-time
+  backend** — `sis.v3.signatures` falls back to a pure-Python Ed25519
+  whose scalar arithmetic is not constant-time when `cryptography` is
+  absent. `signatures.require_constant_time(context)` refuses that
+  fallback, and three secret-key steps call it: a production verifier
+  (`isolation_policy` set) rejects the evaluation with
+  `constant_time_signing_required` before the run, so no
+  `OutcomeReceiptV2` is signed on the fallback and nothing is executed
+  or consumed; `tools/package_release.py --provenance-key` exits before
+  writing or building anything; and `tools/check_release_ci.py --mode
+  release` fails the release gate. Install the backend with
+  `pip install -e .[production]` (it pins `cryptography`). Development
+  and test signing keep the fallback, and `requirements-lock.txt` leaves
+  `cryptography` out so CI keeps exercising it (RFC 8032 vectors and the
+  cross-check against `cryptography`).
 
 ## What is NOT enforced here (honest limits)
 
@@ -457,3 +472,10 @@
   that share a receipt; the binding names the candidate that was
   actually served during the probe, so this is a shared outcome, not an
   unrelated one.
+- The constant-time requirement covers production receipt signing and
+  the release seal only. Other secret-key operations still run on the
+  fallback when `cryptography` is absent: the evaluator key store
+  deriving a public key from its seed, development `OutcomeReceiptV1`
+  receipts, isolation attestations, operator decisions, CI test-evidence
+  signing (`tools/run_tests.py --signing-key`) and the other signed
+  records. Install `.[production]` wherever those keys matter.

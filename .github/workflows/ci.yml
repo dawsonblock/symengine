@@ -75,6 +75,11 @@ jobs:
             echo "::error::No release archive for ${GITHUB_REF_NAME}. Attach SIS-*.zip to that release or place it at release/ before the strict gate runs."
             exit 1
           fi
+      - name: Install the constant-time signing backend (tags and published releases)
+        # The suite above ran on the vendored Ed25519 fallback from
+        # requirements-lock.txt; the release gate refuses that fallback.
+        if: runner.os != 'Windows' && (startsWith(github.ref, 'refs/tags/') || github.event_name == 'release')
+        run: python -m pip install -e ".[production]"
       - name: Verify release inventory (tags and published releases)
         # Release identity, never manifest success, selects the strict gate.
         # Every trust anchor comes from repository configuration, never from
