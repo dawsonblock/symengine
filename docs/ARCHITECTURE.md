@@ -72,7 +72,7 @@ evaluation refuse a result or submission produced under another engine with "re-
 
 ## Induction algorithm
 
-Learner v2 (`sis.synthesis`, engine `sis-induce-2`) is a typed bottom-up enumeration by cost. Programs live in one pool
+Learner v2 (`sis.synthesis`, engine `sis-induce-3`; `sis-induce-2` before forward completions were deferred, SIS-FIX-26) is a typed bottom-up enumeration by cost. Programs live in one pool
 per result type; two programs that agree on every training and development row and on a fixed prefix of unlabeled
 probes are observationally equivalent and only the cheaper is kept. The stages are:
 
@@ -82,7 +82,10 @@ probes are observationally equivalent and only the cheaper is kept. The stages a
    accepted;
 3. pool levels up to cost 7 (pool depth 3), each new program completed goal-directed against the training outputs:
    `add/sub/mul` are inverted and the missing operand is looked up in the pool or is a constant, `min/max/absdiff` and
-   `floordiv/mod` by a constant 2..12 are checked forward, and string outputs look up a prefix or suffix for `concat`;
+   `floordiv/mod` by a constant 2..12 are checked forward, and string outputs look up a prefix or suffix for `concat`.
+   The lookups run as each program is added; its forward checks, about one per terminal, are queued to the end of the
+   same stage, and every fit keeps the position the one-pass order would have found it at, so a search that completes
+   is unchanged while a wide schema reaches its `mul` pairs before the forward work of every `add` pair;
 4. when no unconditional rule fits training and development data, one-level conditionals: predicates compare leaves
    with each other or with observed constants, the training rows are split by the predicate and each branch is learned
    separately from the same pool.
