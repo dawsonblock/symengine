@@ -16,6 +16,7 @@ import json
 import os
 import pwd
 import shutil
+import signal
 import stat
 import subprocess
 import sys
@@ -607,6 +608,94 @@ class CheckoutTests(unittest.TestCase):
             with self.assertRaisesRegex(AgentPrincipalError, "one turn"):
                 with self.agent.checkout(self.workspace):
                     pass
+
+
+#: A wedged helper as sudo launches it: the process the evaluator holds
+#: (sudo) can be killed, but the helper below it (the agent user's) keeps
+#: the pipes open and never answers.
+WEDGED_HELPER = (
+    "import subprocess, sys, time\n"
+    "subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(20)'])\n"
+    "time.sleep(20)\n")
+
+
+@unittest.skipUnless(POSIX, "agent principals are POSIX-only")
+class HelperDeadlineTests(unittest.TestCase):
+    """A helper that never closes its stdout cannot block a turn."""
+
+    BOUND = 15
+
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.root = Path(temp.name)
+        self.home = self.root / "agent-home"
+        self.home.mkdir(mode=0o700)
+        self.work = self.root / "work"
+        self.work.mkdir(mode=0o700)
+        self.workspace = self.work / "arm-A-1"
+        self.workspace.mkdir()
+        (self.workspace / "mod.py").write_text("X = 1\n")
+        self.groups: list[int] = []
+        self.killed: list[str] = []
+        self.addCleanup(self.kill_groups)
+
+    def kill_groups(self):
+        for pid in self.groups:
+            try:
+                os.killpg(pid, signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                pass
+
+    def agent(self, wedged: str) -> AgentPrincipal:
+        local = local_runner()
+
+        def run(argv, **kwargs):
+            op = argv[-1]
+            if op == wedged:
+                proc = subprocess.Popen([sys.executable, "-c",
+                                         WEDGED_HELPER], **kwargs)
+                self.groups.append(proc.pid)
+                return proc
+            if op == "kill":
+                # The agent-user kill reaches the helper below sudo.
+                self.killed.append(wedged)
+                self.kill_groups()
+                return FakeProc(b'{"ok": true, "rounds": 1}\n')
+            return local(argv, **kwargs)
+        return principal(home=str(self.home), runner=run, helper_timeout=1)
+
+    def assertTimesOut(self, pattern, function):
+        start = time.monotonic()
+        with self.assertRaisesRegex(AgentPrincipalError, pattern):
+            function()
+        self.assertLess(time.monotonic() - start, self.BOUND)
+        self.assertTrue(self.killed)
+
+    def test_a_wedged_copy_in_times_out(self):
+        agent = self.agent("unpack")
+
+        def turn():
+            with agent.checkout(self.workspace):
+                self.fail("the copy-in never finished")
+        self.assertTimesOut("copy timed out", turn)
+        self.assertEqual((self.workspace / "mod.py").read_text(), "X = 1\n")
+
+    def test_a_wedged_copy_back_times_out(self):
+        agent = self.agent("pack")
+
+        def turn():
+            with agent.checkout(self.workspace) as path:
+                (Path(path) / "mod.py").write_text("X = 2\n")
+        self.assertTimesOut("copy-back timed out", turn)
+        # The workspace stays as staged and nothing of the turn is left.
+        self.assertEqual((self.workspace / "mod.py").read_text(), "X = 1\n")
+        self.assertEqual(list((self.home / "sis-work").iterdir()), [])
+        self.assertEqual(list(self.work.iterdir()), [self.workspace])
+
+    def test_a_wedged_helper_call_times_out(self):
+        agent = self.agent("probe")
+        self.assertTimesOut("probe timed out", lambda: agent.probe(["/x"]))
 
 
 class FakePrincipal:

@@ -392,12 +392,14 @@ class AgentPrincipal:
     """A dedicated OS user the agent CLI runs as (see the module docstring).
 
     ``runner`` replaces :func:`subprocess.Popen` for the helper calls in
-    tests; it receives the same arguments.
+    tests; it receives the same arguments. ``helper_timeout`` bounds each
+    helper call and each workspace transfer, in seconds.
     """
 
     def __init__(self, user: str, *, uid: int, gid: int, home: str,
                  shell: str = "/bin/sh", sudo: str = "/usr/bin/sudo",
-                 python: str = DEFAULT_PYTHON, runner=None) -> None:
+                 python: str = DEFAULT_PYTHON, runner=None,
+                 helper_timeout: float = _HELPER_TIMEOUT) -> None:
         if not isinstance(user, str) or not _USER_NAME.fullmatch(user):
             raise AgentPrincipalError(
                 f"agent user {user!r} is not a plain user name")
@@ -421,6 +423,7 @@ class AgentPrincipal:
         self.python = python
         self.work_base = os.path.join(home, _WORK_DIR)
         self._runner = runner or subprocess.Popen
+        self._helper_timeout = helper_timeout
         self._lock = threading.Lock()
         # Held by kills and by every workspace transfer: a kill (an abort
         # from another thread) never lands in the middle of a copy.
@@ -490,14 +493,18 @@ class AgentPrincipal:
         return json.dumps(dict(request)).encode("utf-8") + b"\n"
 
     def _call(self, op: str, request: Mapping, *,
-              timeout: float = _HELPER_TIMEOUT) -> dict:
+              timeout: float | None = None) -> dict:
         proc = self._spawn(op)
         try:
-            stdout, stderr = proc.communicate(self._header(request),
-                                              timeout=timeout)
+            stdout, stderr = proc.communicate(
+                self._header(request),
+                timeout=self._helper_timeout if timeout is None else timeout)
         except subprocess.TimeoutExpired as exc:
-            proc.kill()
-            proc.communicate()
+            self._abort(proc, op)
+            try:
+                proc.communicate(timeout=5)
+            except subprocess.TimeoutExpired:
+                pass
             raise AgentPrincipalError(
                 f"agent helper {op} timed out as {self.user}") from exc
         if proc.returncode != 0:
@@ -511,6 +518,46 @@ class AgentPrincipal:
         if not isinstance(document, dict):
             raise AgentPrincipalError(f"agent helper {op} returned no result")
         return document
+
+    def _abort(self, proc, op: str) -> None:
+        """Kill a helper that missed its deadline.
+
+        ``proc`` is ``sudo``: killing it does not reach the helper below
+        it, which runs as the agent user and keeps the pipes open, so every
+        process of the agent user is killed too (as that user). No lock is
+        taken: the thread that owns the transfer holds ``_kill_lock``.
+        """
+        try:
+            proc.kill()
+        except OSError:
+            pass
+        if op != "kill":
+            try:
+                self._call("kill", {}, timeout=60)
+            except AgentPrincipalError:
+                pass
+
+    @contextmanager
+    def _deadline(self, proc, op: str) -> Iterator[threading.Event]:
+        """Abort ``proc`` once ``helper_timeout`` passes; yields "expired".
+
+        Reads from a helper block until it closes its stdout, so a wedged
+        helper would otherwise hold the turn (and ``_kill_lock``) forever.
+        """
+        expired = threading.Event()
+
+        def expire() -> None:
+            expired.set()
+            self._abort(proc, op)
+
+        timer = threading.Timer(self._helper_timeout, expire)
+        timer.daemon = True
+        timer.start()
+        try:
+            yield expired
+        finally:
+            timer.cancel()
+            timer.join()
 
     def _failure(self, op: str, code, stderr: bytes | None) -> str:
         tail = (stderr or b"")[-2000:].decode("utf-8", "replace").strip()
@@ -694,29 +741,27 @@ class AgentPrincipal:
         # partial tree and exit 0, and copy-back would then replace the
         # workspace with it.
         incomplete: Exception | None = None
-        try:
-            proc.stdin.write(self._header({
-                "base": self.work_base, "persistent_home": self.home,
-                "credentials": list(CREDENTIAL_FILES), **names}))
-            with tarfile.open(fileobj=proc.stdin, mode="w|",
-                              format=tarfile.PAX_FORMAT) as archive:
-                archive.add(str(workspace), arcname=".",
-                            filter=_anonymous)
-            proc.stdin.close()
-        except (OSError, tarfile.TarError) as exc:
-            incomplete = exc
+        with self._deadline(proc, "unpack") as expired:
             try:
+                proc.stdin.write(self._header({
+                    "base": self.work_base, "persistent_home": self.home,
+                    "credentials": list(CREDENTIAL_FILES), **names}))
+                with tarfile.open(fileobj=proc.stdin, mode="w|",
+                                  format=tarfile.PAX_FORMAT) as archive:
+                    archive.add(str(workspace), arcname=".",
+                                filter=_anonymous)
                 proc.stdin.close()
-            except OSError:
-                pass
-        try:
+            except (OSError, tarfile.TarError) as exc:
+                incomplete = exc
+                try:
+                    proc.stdin.close()
+                except OSError:
+                    pass
             stdout = proc.stdout.read(_MAX_HELPER_OUTPUT)
-            proc.wait(timeout=_HELPER_TIMEOUT)
-        except subprocess.TimeoutExpired as exc:
-            proc.kill()
-            raise AgentPrincipalError("agent workspace copy timed out") \
-                from exc
-        drain.join(timeout=5)
+            proc.wait()
+            drain.join(timeout=5)
+        if expired.is_set():
+            raise AgentPrincipalError("agent workspace copy timed out")
         if proc.returncode != 0:
             raise AgentPrincipalError(self._failure(
                 "unpack", proc.returncode, b"".join(errors)))
@@ -746,16 +791,22 @@ class AgentPrincipal:
         staging = Path(tempfile.mkdtemp(prefix=".agent-return-",
                                         dir=workspace.parent))
         try:
-            try:
-                receive_tree(proc.stdout, staging)
-            finally:
-                proc.stdout.close()
+            with self._deadline(proc, "pack") as expired:
                 try:
-                    proc.wait(timeout=_HELPER_TIMEOUT)
-                except subprocess.TimeoutExpired:
-                    proc.kill()
-                    proc.wait()
-                drain.join(timeout=5)
+                    try:
+                        receive_tree(proc.stdout, staging)
+                    finally:
+                        proc.stdout.close()
+                        proc.wait()
+                        drain.join(timeout=5)
+                except Exception as exc:
+                    if expired.is_set():
+                        raise AgentPrincipalError(
+                            "agent workspace copy-back timed out") from exc
+                    raise
+            if expired.is_set():
+                raise AgentPrincipalError(
+                    "agent workspace copy-back timed out")
             if proc.returncode != 0:
                 raise AgentPrincipalError(self._failure(
                     "pack", proc.returncode, b"".join(errors)))
