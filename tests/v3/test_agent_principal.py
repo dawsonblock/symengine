@@ -471,6 +471,36 @@ class CheckoutTests(unittest.TestCase):
                 raise ValueError("agent failed")
         self.assertEqual(list(self.work.iterdir()), [self.workspace])
 
+    @unittest.skipIf(os.geteuid() == 0, "root reads a mode-000 file")
+    def test_an_unreadable_workspace_file_fails_the_copy_in(self):
+        # The archive would end cleanly before the file it could not
+        # read, and the helper would unpack a partial tree.
+        locked = self.workspace / "pkg" / "secret.py"
+        locked.write_text("S = 1\n")
+        locked.chmod(0o000)
+        with self.assertRaisesRegex(AgentPrincipalError,
+                                    "workspace copy incomplete"):
+            with self.agent.checkout(self.workspace):
+                self.fail("the agent must not work on a partial tree")
+        self.assertEqual(stat.S_IMODE(locked.stat().st_mode), 0o000)
+
+    def test_a_file_vanishing_mid_walk_fails_the_copy_in(self):
+        before = tree_digest(self.workspace)
+        original = tarfile.TarFile.add
+
+        def vanishing(archive, name, arcname=None, recursive=True, *,
+                      filter=None):
+            if arcname == "./pkg":
+                raise FileNotFoundError(2, "vanished", name)
+            return original(archive, name, arcname, recursive, filter=filter)
+
+        with mock.patch.object(tarfile.TarFile, "add", vanishing):
+            with self.assertRaisesRegex(AgentPrincipalError,
+                                        "workspace copy incomplete"):
+                with self.agent.checkout(self.workspace):
+                    self.fail("the agent must not work on a partial tree")
+        self.assertEqual(tree_digest(self.workspace), before)
+
     def test_one_turn_at_a_time(self):
         with self.agent.checkout(self.workspace):
             with self.assertRaisesRegex(AgentPrincipalError, "one turn"):

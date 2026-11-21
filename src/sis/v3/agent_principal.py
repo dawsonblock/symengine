@@ -591,6 +591,11 @@ class AgentPrincipal:
         drain = threading.Thread(target=lambda: errors.append(
             proc.stderr.read()), daemon=True)
         drain.start()
+        # A local failure (an unreadable file, one that vanished mid-walk)
+        # ends the archive early but cleanly: the helper would unpack a
+        # partial tree and exit 0, and copy-back would then replace the
+        # workspace with it.
+        incomplete: Exception | None = None
         try:
             proc.stdin.write(self._header({
                 "base": self.work_base, "persistent_home": self.home,
@@ -600,7 +605,8 @@ class AgentPrincipal:
                 archive.add(str(workspace), arcname=".",
                             filter=_anonymous)
             proc.stdin.close()
-        except (OSError, tarfile.TarError):
+        except (OSError, tarfile.TarError) as exc:
+            incomplete = exc
             try:
                 proc.stdin.close()
             except OSError:
@@ -616,6 +622,10 @@ class AgentPrincipal:
         if proc.returncode != 0:
             raise AgentPrincipalError(self._failure(
                 "unpack", proc.returncode, b"".join(errors)))
+        if incomplete is not None:
+            raise AgentPrincipalError(
+                f"agent workspace copy incomplete: {incomplete}") \
+                from incomplete
         try:
             document = json.loads(stdout.decode())
             return str(document["workspace"])
