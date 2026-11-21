@@ -638,7 +638,18 @@ class AgentPrincipal:
         try:
             with self._kill_lock:
                 self.kill_all()  # nothing left over from an earlier turn
-                agent_path = self._send(workspace, names)
+                try:
+                    agent_path = self._send(workspace, names)
+                except BaseException:
+                    # A failed or partial unpack must not leave the
+                    # agent-side copy, or the home with its credentials.
+                    try:
+                        self._call("remove", {
+                            "base": self.work_base,
+                            "names": [names["workspace"], names["home"]]})
+                    except AgentPrincipalError:
+                        pass
+                    raise
             self._turn_home = os.path.join(self.work_base, names["home"])
             completed = False
             try:

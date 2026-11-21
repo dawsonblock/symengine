@@ -525,6 +525,34 @@ class CheckoutTests(unittest.TestCase):
                 with self.agent.checkout(self.workspace):
                     self.fail("the agent must not work on a partial tree")
         self.assertEqual(tree_digest(self.workspace), before)
+        # The partial agent-side copy and the turn home are removed.
+        self.assertEqual(list((self.home / "sis-work").iterdir()), [])
+
+    def test_a_failed_copy_in_leaves_no_agent_directories(self):
+        # The helper created ws-<token> and home-<token> (with copied
+        # credentials) before the unpack failed.
+        def failing_unpack(argv, **kwargs):
+            if argv[-1] == "unpack":
+                argv = list(argv)
+                argv[argv.index(HELPER_SOURCE)] = HELPER_SOURCE.replace(
+                    "    archive.extractall(",
+                    "    raise SystemExit('unpack failed')\n"
+                    "    archive.extractall(", 1)
+            return self.runner(argv, **kwargs)
+        self.agent._runner = failing_unpack
+        with self.assertRaisesRegex(AgentPrincipalError, "unpack failed"):
+            with self.agent.checkout(self.workspace):
+                self.fail("the copy-in failed")
+        self.assertEqual(list((self.home / "sis-work").iterdir()), [])
+        # A local failure while archiving.
+        self.agent._runner = self.runner
+        with mock.patch.object(tarfile.TarFile, "add",
+                               side_effect=OSError("vanished")):
+            with self.assertRaises(AgentPrincipalError):
+                with self.agent.checkout(self.workspace):
+                    self.fail("the copy-in failed")
+        self.assertEqual(list((self.home / "sis-work").iterdir()), [])
+        self.assertEqual(list(self.work.iterdir()), [self.workspace])
 
     def test_refreshed_credentials_outlive_the_turn_home(self):
         # The CLI may refresh an OAuth token or rotate a refresh token in
