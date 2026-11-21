@@ -25,6 +25,18 @@ def _baseline_available():
     return True
 
 
+def _seal_commit():
+    """The commit that last sealed RELEASE_SHA256.json, if Git history exists."""
+    try:
+        commit = subprocess.run(
+            ["git", "-C", str(ROOT), "log", "-1", "--format=%H", "--",
+             "RELEASE_SHA256.json"],
+            capture_output=True, text=True, check=True).stdout.strip()
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    return commit or None
+
+
 def _checker():
     spec = importlib.util.spec_from_file_location(
         "check_source_manifest", ROOT / "tools" / "check_source_manifest.py")
@@ -35,10 +47,13 @@ def _checker():
 
 class SourceManifestModeTests(unittest.TestCase):
     def test_pinned_baseline_verification_reports_dev_delta_separately(self):
+        # The v2 baseline lives in the upstream SIS history. This
+        # repository was imported at v3.3.2 without it, so here the test
+        # cannot run; the seal-commit test below exercises the same mode.
         if not _baseline_available():
             self.skipTest(
-                "pinned Git baseline objects are unavailable in this source "
-                "distribution; baseline verification requires the pinned checkout"
+                "pinned v2 Git baseline daf0ccc is not in this checkout's "
+                "history (imported at v3.3.2, or an extracted archive)"
             )
         result = subprocess.run(
             [sys.executable, str(ROOT / "tools/check_source_manifest.py"), "--baseline-ref", BASELINE],
@@ -47,6 +62,27 @@ class SourceManifestModeTests(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertIn("138 source files SHA-256 verified at baseline", result.stdout)
         self.assertIn("baseline manifest does not cover these changes", result.stdout)
+
+    def test_seal_commit_baseline_verification_reports_dev_delta_separately(self):
+        seal = _seal_commit()
+        if seal is None:
+            self.skipTest("no Git history: an extracted archive has no seal commit")
+        sealed = json.loads(subprocess.run(
+            ["git", "-C", str(ROOT), "show", f"{seal}:RELEASE_SHA256.json"],
+            capture_output=True, check=True).stdout)
+        result = subprocess.run(
+            [sys.executable, str(ROOT / "tools/check_source_manifest.py"),
+             "--baseline-ref", seal],
+            cwd=ROOT, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+        )
+        # The seal commit's own tree must hold every inventoried blob.
+        self.assertIn(f"{len(sealed['files'])} source files SHA-256 verified"
+                      f" at baseline {seal}", result.stdout, result.stderr)
+        current = json.loads((ROOT / "RELEASE_SHA256.json").read_text())
+        if current == sealed:
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertIn("baseline manifest does not cover these changes",
+                          result.stdout)
 
 
 class SourceManifestSelectionTests(unittest.TestCase):
