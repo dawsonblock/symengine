@@ -8,6 +8,7 @@ a mount, an execution, or a delete touches the substituted path.
 """
 from __future__ import annotations
 
+import contextlib
 import io
 import os
 import shlex
@@ -462,6 +463,72 @@ class DockerOwnershipTests(Fixture):
         thread.join(timeout=60)
         self.assertFalse(thread.is_alive(), "copy-out blocked on tar stderr")
         self.assertEqual(finished["receipt"].exit_status, 0)
+
+    def failing_copy_out(self, tar_body, *, watchdog_seconds=None):
+        """Run once against a docker whose copy-out ``tar`` runs ``tar_body``.
+
+        Return the copy-out error message.
+        """
+        fake = self.root / "failing-tar-docker"
+        fake.write_text(
+            "#!/bin/sh\n"
+            "case \"$1\" in\n"
+            "  inspect) echo true ;;\n"
+            "  exec)\n"
+            "    case \" $* \" in\n"
+            "      *\" -x \"*) cat > /dev/null ;;\n"
+            f"      *\" tar \"*) {tar_body} ;;\n"
+            "    esac\n"
+            "    ;;\n"
+            "esac\n"
+            "exit 0\n",
+            encoding="utf-8")
+        fake.chmod(0o755)
+        executor = self.make_executor(docker_binary=str(fake))
+        info = tarfile.TarInfo("copied.txt")
+        info.size = 4
+        self.write_payload([(info, b"data")])
+        workspace = executor.prepare(self.base)
+        self.addCleanup(executor.destroy, workspace)
+        watchdog = (contextlib.nullcontext() if watchdog_seconds is None
+                    else mock.patch("sis.v3.docker_sandbox._COPY_OUT_SECONDS",
+                                    watchdog_seconds))
+        with watchdog, self.assertRaises(RunnerError) as caught:
+            executor.run(workspace, self.spec)
+        # The prepared workspace survives a failed copy-out.
+        self.assertEqual(
+            (workspace.path / "calc.py").read_text(encoding="utf-8"),
+            "x = 1\n")
+        self.assertFalse((workspace.path / "copied.txt").exists())
+        return str(caught.exception)
+
+    def test_a_silent_copy_out_failure_names_the_exit_status(self):
+        # tar streams a complete archive, then exits 1 with empty stderr.
+        payload = shlex.quote(str(self.payload))
+        self.assertEqual(
+            self.failing_copy_out(f"cat {payload}; exit 1"),
+            "workspace_copy_out_failed:exit=1")
+
+    def test_a_copy_out_failure_keeps_the_tar_stderr(self):
+        payload = shlex.quote(str(self.payload))
+        self.assertEqual(
+            self.failing_copy_out(
+                f"cat {payload}; echo 'tar: ./x: Cannot open' >&2; exit 2"),
+            "workspace_copy_out_failed:tar: ./x: Cannot open")
+
+    def test_a_watchdog_kill_after_the_archive_is_named(self):
+        # The archive ends cleanly; only the exit status (-9) is left.
+        payload = shlex.quote(str(self.payload))
+        self.assertEqual(
+            self.failing_copy_out(f"cat {payload}; exec sleep 30",
+                                  watchdog_seconds=1.0),
+            "workspace_copy_out_failed:watchdog_timeout")
+
+    def test_a_watchdog_kill_that_truncates_the_stream_is_named(self):
+        # The kill cuts the stream short, so tarfile fails first.
+        self.assertEqual(
+            self.failing_copy_out("exec sleep 30", watchdog_seconds=0.5),
+            "workspace_copy_out_failed:watchdog_timeout")
 
     def test_copy_out_rejects_a_parent_escape(self):
         info = tarfile.TarInfo("../escape.txt")

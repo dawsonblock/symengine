@@ -33,7 +33,7 @@ from . import synthesis
 #: Version of the search procedure. With ``GRAMMAR_VERSION`` it is stamped
 #: on every induction result; promotion and sealed evaluation re-run the
 #: search and refuse a result produced under another engine or grammar.
-ENGINE_VERSION = "sis-induce-2"
+ENGINE_VERSION = "sis-induce-3"
 
 
 def leaf_expressions(inputs):

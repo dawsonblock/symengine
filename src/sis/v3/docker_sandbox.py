@@ -185,6 +185,20 @@ def _error_tail(handle, limit: int = 4_096) -> str:
         return ""
 
 
+def _copy_out_reason(errors, returncode: int, expired: bool) -> str:
+    """Name why the copy-out ``tar`` failed, even when stderr is empty.
+
+    The stderr tail wins when there is one. A negative ``returncode`` means
+    the process was killed; ``expired`` says the copy-out watchdog did it.
+    """
+    tail = _error_tail(errors)
+    if tail:
+        return tail
+    if expired:
+        return "watchdog_timeout"
+    return f"exit={returncode}"
+
+
 def _default_user() -> str:
     """A non-root container identity, even when the host runs as root."""
     if os.name == "posix":
@@ -1266,7 +1280,15 @@ class DockerSandboxExecutor:
             except OSError as exc:
                 raise RunnerError(
                     f"workspace_copy_out_failed:{exc}") from exc
-            watchdog = threading.Timer(_COPY_OUT_SECONDS, proc.kill)
+            expired = threading.Event()
+
+            def expire(proc=proc):
+                # Set before the kill, so whoever sees the killed process
+                # also sees why it was killed.
+                expired.set()
+                proc.kill()
+
+            watchdog = threading.Timer(_COPY_OUT_SECONDS, expire)
             watchdog.daemon = True
             watchdog.start()
             # tarfile reads ahead in fixed-size buffers; the stream budget
@@ -1281,8 +1303,12 @@ class DockerSandboxExecutor:
                     staging, disk_bytes)
             except (tarfile.TarError, OSError) as exc:
                 proc.kill()
+                # A watchdog kill truncates the stream; the truncation is
+                # the symptom, not the cause.
+                reason = ("watchdog_timeout" if expired.is_set()
+                          else type(exc).__name__)
                 raise RunnerError(
-                    f"workspace_copy_out_failed:{type(exc).__name__}") from exc
+                    f"workspace_copy_out_failed:{reason}") from exc
             except BaseException:
                 proc.kill()
                 raise
@@ -1298,7 +1324,8 @@ class DockerSandboxExecutor:
                     returncode = -1
             if returncode != 0:
                 raise RunnerError(
-                    "workspace_copy_out_failed:" + _error_tail(errors))
+                    "workspace_copy_out_failed:" + _copy_out_reason(
+                        errors, returncode, expired.is_set()))
             retired = record.path.with_name(
                 record.path.name + ".retired-" + secrets.token_hex(4))
             try:
