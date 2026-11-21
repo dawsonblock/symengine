@@ -39,6 +39,10 @@ Integrity rules for a confirmatory label:
   gates decide what each task gets; every decision is recorded);
 - token and tool usage must be fully metered by the agent runtime;
   agent timeouts and errors count as ordinary failures;
+- a manifest declared (or implied) ``study_tier: confirmatory`` needs
+  ``--agent-user``: without a separated agent principal whose preflight
+  passed, the run stops before any agent turn with
+  ``BLOCKED_AGENT_PRINCIPAL_REQUIRED``;
 - the manifest must be ``ready`` (powered, preregistered, no
   placeholders, repository-covered). A manifest declared
   ``study_tier: confirmatory`` (the default for a powered protocol)
@@ -77,7 +81,10 @@ workspace and cannot read the hidden tests, keys, registry, trust config
 or state directory. Before any agent turn the run checks, as that user,
 that a sample of those paths is unreadable, and stops with
 ``BLOCKED_AGENT_PRINCIPAL`` if not. The principal is recorded in the
-report provenance and bound into the run journal identity.
+report provenance and bound into the run journal identity. A
+confirmatory manifest requires it (``BLOCKED_AGENT_PRINCIPAL_REQUIRED``);
+an exploratory or diagnostic run without one records the disclosure
+and a limitation instead.
 """
 from __future__ import annotations
 
@@ -105,7 +112,7 @@ from sis.v3.benchmark import (  # noqa: E402
 from sis.v3.contracts import (  # noqa: E402
     ContractError, GuidanceV1, TaskEnvelopeV1, canonical_digest)
 from sis.v3.efficacy_manifest import (  # noqa: E402
-    validate_manifest, verify_repository_binding,
+    CONFIRMATORY, validate_manifest, verify_repository_binding,
     verify_repository_execution, verify_repository_provenance)
 from sis.v3.evaluation_runtime import EvaluationRuntimeProfile  # noqa: E402
 from sis.v3.governed_eval import (GOVERNED_ARMS, PRIMARY_CONTRAST_ARMS,  # noqa: E402
@@ -1473,6 +1480,19 @@ def run_real(output: Path, manifest_path: Path | None, *,
             " powered, preregistered, repository-covered study"
             + (" (" + "; ".join(validation["problems"]) + ")"
                if validation["problems"] else ""))
+    confirmatory = validation.get("study_tier") == CONFIRMATORY
+    if confirmatory and principal is None:
+        # An agent running as the evaluator's user can read the hidden
+        # tests, keys, registry and state; a confirmatory study cannot
+        # rest on a disclosure. Exploratory and diagnostic studies may
+        # still run unseparated, with the limitation recorded.
+        return blocked(
+            "BLOCKED_AGENT_PRINCIPAL_REQUIRED",
+            "a confirmatory study requires a separated agent principal:"
+            " run with --agent-user NAME, a separate OS user that cannot"
+            " read the evaluator material (docs/v3/PILOT_RUNBOOK.md)."
+            " Only exploratory and diagnostic studies may run the agent"
+            " as the evaluator's own user.")
 
     injected = agent_factory is not None
     expected_version = _normalized_version(
@@ -1736,6 +1756,13 @@ def run_real(output: Path, manifest_path: Path | None, *,
             except AgentPrincipalError as exc:
                 close_serving()
                 return blocked("BLOCKED_AGENT_PRINCIPAL", str(exc))
+            if confirmatory and principal_record.get("separated") is not True:
+                close_serving()
+                return blocked(
+                    "BLOCKED_AGENT_PRINCIPAL_REQUIRED",
+                    "a confirmatory study requires a separated agent"
+                    " principal; the configured principal does not report"
+                    " separation")
             provenance["agent_principal"] = principal_record
         factory = agent_factory or _default_agent_factory(kind)
         try:
